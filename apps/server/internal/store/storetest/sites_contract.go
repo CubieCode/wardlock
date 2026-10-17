@@ -164,6 +164,21 @@ func sitesContract(t *testing.T, open Opener) {
 		_, err = f.r.Sites.GetByName(t.Context(), "unknown")
 		wantErr(t, err, store.ErrNotFound)
 	})
+	t.Run("GetByID", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		s := f.site(f.owner().ID)
+		f.site(f.owner().ID)
+		got, err := f.r.Sites.GetByID(t.Context(), s.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != s {
+			t.Fatalf("GetByID() = %+v, want %+v", got, s)
+		}
+		_, err = f.r.Sites.GetByID(t.Context(), "unknown")
+		wantErr(t, err, store.ErrNotFound)
+	})
 	t.Run("GetByOwnerDomain", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, open)

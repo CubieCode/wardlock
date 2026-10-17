@@ -29,9 +29,10 @@ for (const scheme of ['light', 'dark'] as const) {
   });
 }
 
-test('hello site is served by host routing', async ({ page }) => {
-  await page.goto(`http://hello.wardlock.localhost:${port}/`);
+test('an unknown site host is routed to the edge', async ({ page }) => {
+  const res = await page.goto(`http://nothing.wardlock.localhost:${port}/`);
+  expect(res?.status()).toBe(404);
   await expect(
-    page.getByRole('heading', { name: 'Hello from Wardlock' }),
+    page.getByText('No site is published at this address.'),
   ).toBeVisible();
 });

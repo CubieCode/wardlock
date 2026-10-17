@@ -99,11 +99,20 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	dash.Handle("/", dashboard.Handler(cfg.DevDashboardURL))
 
 	handler := edge.New(edge.Config{
-		BaseDomain:    cfg.BaseDomain,
 		DashboardHost: cfg.DashboardHost,
 		Dashboard:     dash,
 		Health:        platform.Healthz(),
+		Sites: siteSource{
+			baseDomain: cfg.BaseDomain,
+			sites:      db.Sites(),
+			domains:    db.Domains(),
+			deploys:    db.Deploys(),
+		},
+		Blobs:       blobs,
+		Invalidator: notifier,
+		Log:         log,
 	})
+	defer handler.Close()
 	srv := &http.Server{
 		Handler:           platform.LogRequests(log, handler),
 		ReadHeaderTimeout: 10 * time.Second,

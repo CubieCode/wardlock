@@ -37,6 +37,10 @@ type Sites interface {
 	// GetByName finds any site by name. It is the instance-wide routing
 	// lookup for the edge and must never back an owner API handler.
 	GetByName(ctx context.Context, name string) (Site, error)
+	// GetByID finds any site by ID. Like GetByName it is an instance-wide
+	// routing lookup for the edge (an active custom domain names its site
+	// by ID) and must never back an owner API handler.
+	GetByID(ctx context.Context, id string) (Site, error)
 	// List returns up to limit of ownerID's sites ordered by name, starting
 	// after afterName ("" for the first page).
 	List(ctx context.Context, ownerID, afterName string, limit int) ([]Site, error)
@@ -79,6 +83,11 @@ func (r sitesRepo) GetByOwnerDomain(ctx context.Context, ownerID, hostname strin
 func (r sitesRepo) GetByName(ctx context.Context, name string) (Site, error) {
 	row, err := r.db.q.GetSiteByName(ctx, name)
 	return siteFrom("get site by name", sqlcgen.GetSiteRow(row), err)
+}
+
+func (r sitesRepo) GetByID(ctx context.Context, id string) (Site, error) {
+	row, err := r.db.q.GetSiteByID(ctx, id)
+	return siteFrom("get site by id", sqlcgen.GetSiteRow(row), err)
 }
 
 func (r sitesRepo) List(ctx context.Context, ownerID, afterName string, limit int) ([]Site, error) {

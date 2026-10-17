@@ -76,7 +76,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.3: Edge static serving
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: feat/c1.3-edge-serving
 - PR:
 - Depends on: F0.3
