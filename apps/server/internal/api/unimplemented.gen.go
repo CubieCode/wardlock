@@ -29,6 +29,16 @@ func (Unimplemented) VerifyEmailCode(context.Context, VerifyEmailCodeRequestObje
 	return nil, ErrNotImplemented
 }
 
+// StartPasskeySignIn is not implemented yet.
+func (Unimplemented) StartPasskeySignIn(context.Context, StartPasskeySignInRequestObject) (StartPasskeySignInResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// VerifyPasskeySignIn is not implemented yet.
+func (Unimplemented) VerifyPasskeySignIn(context.Context, VerifyPasskeySignInRequestObject) (VerifyPasskeySignInResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // RedeemSignInLink is not implemented yet.
 func (Unimplemented) RedeemSignInLink(context.Context, RedeemSignInLinkRequestObject) (RedeemSignInLinkResponseObject, error) {
 	return nil, ErrNotImplemented
@@ -71,6 +81,26 @@ func (Unimplemented) GetMe(context.Context, GetMeRequestObject) (GetMeResponseOb
 
 // InviteOwner is not implemented yet.
 func (Unimplemented) InviteOwner(context.Context, InviteOwnerRequestObject) (InviteOwnerResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListPasskeys is not implemented yet.
+func (Unimplemented) ListPasskeys(context.Context, ListPasskeysRequestObject) (ListPasskeysResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// CreatePasskey is not implemented yet.
+func (Unimplemented) CreatePasskey(context.Context, CreatePasskeyRequestObject) (CreatePasskeyResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// StartPasskeyRegistration is not implemented yet.
+func (Unimplemented) StartPasskeyRegistration(context.Context, StartPasskeyRegistrationRequestObject) (StartPasskeyRegistrationResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeletePasskey is not implemented yet.
+func (Unimplemented) DeletePasskey(context.Context, DeletePasskeyRequestObject) (DeletePasskeyResponseObject, error) {
 	return nil, ErrNotImplemented
 }
 

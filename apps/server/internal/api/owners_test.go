@@ -104,7 +104,13 @@ func (h *ownerHarness) assertLogsClean() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, s := range h.secrets {
-		if strings.Contains(logs, s) {
+		found := strings.Contains(logs, s)
+		if sixDigits.MatchString(s) && len(s) == 6 {
+			// A 6-digit email code also occurs by chance inside the hex of
+			// logged IDs; only a standalone run of digits is a leak.
+			found = regexp.MustCompile(`(^|[^0-9a-f])` + s + `([^0-9a-f]|$)`).MatchString(logs)
+		}
+		if found {
 			h.t.Errorf("log output contains a credential %q", s)
 		}
 	}

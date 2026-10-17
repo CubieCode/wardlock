@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Redirect, useTitle } from '../shell/page.js';
 import { navigate, useLocation, safeReturnPath } from '../shell/router.js';
 import { failure, unreachable } from './messages.js';
+import { PasskeySignIn } from './passkey-sign-in.js';
 import { useSession, type Me } from './session.js';
 
 type LinkResult =
@@ -241,6 +242,7 @@ function EmailCodeSignIn({ next }: { next: string }) {
             {busy ? 'Sending code…' : 'Send code'}
           </Button>
         </form>
+        <PasskeySignIn next={next} disabled={busy} />
       </PanelLayout>
     );
 

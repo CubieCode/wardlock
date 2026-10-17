@@ -45,6 +45,8 @@ type Server struct {
 	// Owners authenticates dashboard sessions and serves the owner
 	// operations (C1.1).
 	Owners *owners.Service
+	// Passkeys serves passkey sign-in and management (C1.6).
+	Passkeys *owners.Passkeys
 	// Logger receives unmapped errors (500 internal); nil discards them.
 	Logger *slog.Logger
 }

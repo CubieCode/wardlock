@@ -119,13 +119,14 @@ Blobs are written to a temporary file in the same directory, fsynced, then renam
 
 ### Data model (F0.3)
 
-Migration `0002_core_schema.sql` creates every table below; `0003_deploy_spa_and_owner_blobs.sql` (C1.2) moves the SPA fallback flag from sites to deploys, adds `owner_blobs` and the optional columns the API contract exposes (`owner_sessions.user_agent`, `domains.verified_at` and `failure_detail`, `cli_login_requests.client_name`). `internal/store/schema_test.go` checks that this diagram lists exactly the schema's tables, columns, types, primary keys and foreign keys, so update both together. Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
+Migration `0002_core_schema.sql` creates every table below; `0003_deploy_spa_and_owner_blobs.sql` (C1.2) moves the SPA fallback flag from sites to deploys, adds `owner_blobs` and the optional columns the API contract exposes (`owner_sessions.user_agent`, `domains.verified_at` and `failure_detail`, `cli_login_requests.client_name`); `0004_owner_passkeys.sql` (C1.6) adds `owner_passkeys`. `internal/store/schema_test.go` checks that this diagram lists exactly the schema's tables, columns, types, primary keys and foreign keys, so update both together. Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
 
 ```mermaid
 erDiagram
   owners ||--o{ owners : "invited_by"
   owners ||--o{ owner_login_codes : "owner_id"
   owners ||--o{ owner_sessions : "owner_id"
+  owners ||--o{ owner_passkeys : "owner_id"
   owners ||--o{ api_tokens : "owner_id"
   owners ||--o{ cli_login_requests : "owner_id"
   owners ||--o{ owner_blobs : "owner_id"
@@ -169,6 +170,16 @@ erDiagram
     INTEGER expires_at "absolute"
     INTEGER revoked_at
     TEXT user_agent
+  }
+  owner_passkeys {
+    TEXT id PK
+    TEXT owner_id FK
+    TEXT credential_id UK "base64url"
+    TEXT credential "WebAuthn record, JSON"
+    INTEGER sign_count "compare-and-set on sign-in"
+    TEXT name
+    INTEGER created_at
+    INTEGER last_used_at
   }
   api_tokens {
     TEXT id PK

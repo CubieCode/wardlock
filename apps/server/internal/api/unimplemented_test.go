@@ -4,13 +4,21 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strings"
 	"testing"
+
+	"wardlock.nz/server/internal/mail"
+	"wardlock.nz/server/internal/owners"
+	"wardlock.nz/server/internal/store/storetest"
 )
 
 // implemented lists the operations Server declares itself. Add an operation
@@ -46,6 +54,14 @@ var implemented = map[string]bool{
 	"InviteOwner":      true,
 	"ListSessions":     true,
 	"RevokeSession":    true,
+
+	// C1.6 passkeys.
+	"StartPasskeySignIn":       true,
+	"VerifyPasskeySignIn":      true,
+	"ListPasskeys":             true,
+	"StartPasskeyRegistration": true,
+	"CreatePasskey":            true,
+	"DeletePasskey":            true,
 }
 
 // pathValues are valid values for every path parameter in the contract.
@@ -57,6 +73,7 @@ var pathValues = map[string]string{
 	"sha256":    strings.Repeat("ab", 32),
 	"hostname":  "docs.example.com",
 	"policyId":  "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41",
+	"passkeyId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40",
 }
 
 var pathParam = regexp.MustCompile(`\{(\w+)\}`)
@@ -113,7 +130,7 @@ func TestUnimplementedAnswers501(t *testing.T) {
 }
 
 func TestServerRoutesEveryOperation(t *testing.T) {
-	h := (&Server{Version: "test"}).Handler()
+	h := (&Server{Version: "test", Passkeys: bareOwnerServices(t)}).Handler()
 	for _, op := range operations {
 		t.Run(op.id, func(t *testing.T) {
 			if implemented[op.id] {
@@ -187,4 +204,29 @@ func TestMalformedRequestAnswers400(t *testing.T) {
 			}
 		})
 	}
+}
+
+type discardMailer struct{}
+
+func (discardMailer) Send(context.Context, mail.Message) error { return nil }
+
+// bareOwnerServices is passkey support over an empty database, for
+// operations (such as startPasskeySignIn) that reach the service without
+// any credential or body.
+func bareOwnerServices(t *testing.T) *owners.Passkeys {
+	t.Helper()
+	db := storetest.New(t)
+	svc, err := owners.New(owners.Config{
+		Owners: db.Owners(), Sessions: db.Sessions(), Mailer: discardMailer{}, Logger: slog.New(slog.DiscardHandler),
+		Secret: bytes.Repeat([]byte("k"), 32), DashboardURL: &url.URL{Scheme: "http", Host: "wardlock.localhost"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	pk, err := owners.NewPasskeys(svc, db.Passkeys())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pk
 }

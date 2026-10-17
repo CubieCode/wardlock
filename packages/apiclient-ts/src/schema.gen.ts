@@ -107,6 +107,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/auth/passkey': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Start signing in with a passkey.
+     * @description Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP, at the same rate as `verifyEmailCode` but counted separately, with at most 5 sign-ins open at once per IPv4 address or IPv6 /48.
+     */
+    post: operations['startPasskeySignIn'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/auth/passkey/verify': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Finish signing in with a passkey.
+     * @description Checks the authenticator's assertion against the challenge and starts a dashboard session for the passkey's owner. Each challenge is used once, whatever the outcome. An unknown, used or expired challenge, an assertion for another origin or relying party, a bad signature, an unknown or removed passkey and a signature counter that did not increase all answer `400 invalid_passkey`.
+     */
+    post: operations['verifyPasskeySignIn'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v0/auth/sign-out': {
     parameters: {
       query?: never;
@@ -205,6 +245,76 @@ export interface paths {
      * @description Takes effect on the session's next request.
      */
     delete: operations['revokeSession'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/passkeys': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the signed-in owner's passkeys.
+     * @description Every passkey, oldest first, in one page: an owner has at most 20.
+     */
+    get: operations['listPasskeys'];
+    put?: never;
+    /**
+     * Finish adding a passkey.
+     * @description Checks the authenticator's attestation against a challenge from `startPasskeyRegistration` started by the same owner, and stores the passkey. Each challenge is used once, whatever the outcome. A bad, used, expired, cross-origin or already registered credential answers `400 invalid_passkey`.
+     */
+    post: operations['createPasskey'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/passkeys/registration': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Start adding a passkey.
+     * @description Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes. Rate-limited per owner (10 starts per 15 minutes, at most 3 open at once).
+     */
+    post: operations['startPasskeyRegistration'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/passkeys/{passkeyId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The passkey's ID (not its WebAuthn credential ID).
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40
+         */
+        passkeyId: components['parameters']['PasskeyId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Remove one of the signed-in owner's passkeys.
+     * @description The passkey stops working for sign-in at once. Sessions it started are not ended. The authenticator keeps its copy until the owner deletes it there.
+     */
+    delete: operations['deletePasskey'];
     options?: never;
     head?: never;
     patch?: never;
@@ -797,6 +907,46 @@ export interface components {
       items: components['schemas']['OwnerSession'][];
       nextCursor?: components['schemas']['Cursor'];
     };
+    PasskeyChallenge: {
+      /** @description Names this challenge; send it back with the authenticator's response. */
+      ceremonyId: string;
+      /** @description WebAuthn `PublicKeyCredentialCreationOptions` (registration) or `PublicKeyCredentialRequestOptions` (sign-in) in their JSON form, with binary members (`challenge`, `user.id`, credential `id`s) base64url-encoded without padding. */
+      options: {
+        [key: string]: unknown;
+      };
+    };
+    /** @description The `PublicKeyCredential` the authenticator returned, in its JSON form (`PublicKeyCredential.toJSON()`), binary members base64url-encoded without padding. */
+    PasskeyCredential: {
+      id: string;
+      rawId: string;
+      /** @enum {string} */
+      type: 'public-key';
+      response: {
+        [key: string]: unknown;
+      };
+    } & {
+      [key: string]: unknown;
+    };
+    PasskeySignInRequest: {
+      ceremonyId: string;
+      credential: components['schemas']['PasskeyCredential'];
+    };
+    CreatePasskeyRequest: {
+      ceremonyId: string;
+      /** @description A label for the passkey, such as the device or password manager that holds it. Trimmed; blank or absent means "Passkey". No control characters. */
+      name?: string;
+      credential: components['schemas']['PasskeyCredential'];
+    };
+    Passkey: {
+      id: components['schemas']['Id'];
+      name: string;
+      createdAt: components['schemas']['Timestamp'];
+      /** @description The last sign-in with this passkey; absent if never used. */
+      lastUsedAt?: components['schemas']['Timestamp'];
+    };
+    PasskeyList: {
+      items: components['schemas']['Passkey'][];
+    };
     ApiToken: {
       id: components['schemas']['Id'];
       /**
@@ -1119,6 +1269,21 @@ export interface components {
         'application/json': components['schemas']['Error'];
       };
     };
+    /** @description The owner already has the most passkeys allowed (20). */
+    PasskeyLimit: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "passkey_limit",
+         *       "message": "You have 20 passkeys, the most allowed. Remove one first."
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
     /** @description The CLI login is over; start a new one. */
     Gone: {
       headers: {
@@ -1208,6 +1373,11 @@ export interface components {
      * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e0f
      */
     SessionId: components['schemas']['Id'];
+    /**
+     * @description The passkey's ID (not its WebAuthn credential ID).
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40
+     */
+    PasskeyId: components['schemas']['Id'];
     /**
      * @description The API token's ID (not its public ID).
      * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20
@@ -1404,6 +1574,84 @@ export interface operations {
       default: components['responses']['Error'];
     };
   };
+  startPasskeySignIn: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The challenge. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "ceremonyId": "3q2-7wCqUu8pX1rM0dLh9N5bYk4sQe6tVz2aJf8gHcI",
+           *       "options": {
+           *         "challenge": "oN7c4Hd0sYp2qL1v9xRk3TfW6mEuB8aZgJ5iQcV0nXs",
+           *         "timeout": 300000,
+           *         "rpId": "wardlock.example.com",
+           *         "userVerification": "preferred"
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['PasskeyChallenge'];
+        };
+      };
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  verifyPasskeySignIn: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "ceremonyId": "3q2-7wCqUu8pX1rM0dLh9N5bYk4sQe6tVz2aJf8gHcI",
+         *       "credential": {
+         *         "id": "AbCdEfGhIjKlMnOp",
+         *         "rawId": "AbCdEfGhIjKlMnOp",
+         *         "type": "public-key",
+         *         "response": {
+         *           "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0In0",
+         *           "authenticatorData": "SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2MFAAAAAQ",
+         *           "signature": "MEUCIQDexample",
+         *           "userHandle": "MDE5MjhjNWU"
+         *         },
+         *         "clientExtensionResults": {}
+         *       }
+         *     }
+         */
+        'application/json': components['schemas']['PasskeySignInRequest'];
+      };
+    };
+    responses: {
+      /** @description Signed in. */
+      200: {
+        headers: {
+          'Set-Cookie': components['headers']['SetSessionCookie'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Me'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
   signOut: {
     parameters: {
       query?: never;
@@ -1544,6 +1792,179 @@ export interface operations {
     requestBody?: never;
     responses: {
       /** @description Revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  listPasskeys: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The owner's passkeys. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40",
+           *           "name": "Chrome on macOS",
+           *           "createdAt": 1767225600000,
+           *           "lastUsedAt": 1767312000000
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['PasskeyList'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      default: components['responses']['Error'];
+    };
+  };
+  createPasskey: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "ceremonyId": "7Kq1mZp4xR9sT2vW5yA8bC3dE6fG0hJ1kL4nP7qS9uV",
+         *       "name": "Chrome on macOS",
+         *       "credential": {
+         *         "id": "AbCdEfGhIjKlMnOp",
+         *         "rawId": "AbCdEfGhIjKlMnOp",
+         *         "type": "public-key",
+         *         "response": {
+         *           "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIn0",
+         *           "attestationObject": "o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YQ",
+         *           "transports": [
+         *             "internal",
+         *             "hybrid"
+         *           ]
+         *         },
+         *         "clientExtensionResults": {}
+         *       }
+         *     }
+         */
+        'application/json': components['schemas']['CreatePasskeyRequest'];
+      };
+    };
+    responses: {
+      /** @description Added. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40",
+           *       "name": "Chrome on macOS",
+           *       "createdAt": 1767225600000
+           *     }
+           */
+          'application/json': components['schemas']['Passkey'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      409: components['responses']['PasskeyLimit'];
+      default: components['responses']['Error'];
+    };
+  };
+  startPasskeyRegistration: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The challenge. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "ceremonyId": "7Kq1mZp4xR9sT2vW5yA8bC3dE6fG0hJ1kL4nP7qS9uV",
+           *       "options": {
+           *         "rp": {
+           *           "id": "wardlock.example.com",
+           *           "name": "Wardlock"
+           *         },
+           *         "user": {
+           *           "id": "MDE5MjhjNWU",
+           *           "name": "owner@example.com",
+           *           "displayName": "owner@example.com"
+           *         },
+           *         "challenge": "oN7c4Hd0sYp2qL1v9xRk3TfW6mEuB8aZgJ5iQcV0nXs",
+           *         "pubKeyCredParams": [
+           *           {
+           *             "type": "public-key",
+           *             "alg": -7
+           *           }
+           *         ],
+           *         "timeout": 300000,
+           *         "authenticatorSelection": {
+           *           "residentKey": "required",
+           *           "requireResidentKey": true,
+           *           "userVerification": "preferred"
+           *         },
+           *         "attestation": "none"
+           *       }
+           *     }
+           */
+          'application/json': components['schemas']['PasskeyChallenge'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      409: components['responses']['PasskeyLimit'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  deletePasskey: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The passkey's ID (not its WebAuthn credential ID).
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40
+         */
+        passkeyId: components['parameters']['PasskeyId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Removed. */
       204: {
         headers: {
           [name: string]: unknown;

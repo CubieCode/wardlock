@@ -152,6 +152,21 @@ func (e MeCredential) Valid() bool {
 	}
 }
 
+// Defines values for PasskeyCredentialType.
+const (
+	PasskeyCredentialTypePublicKey PasskeyCredentialType = "public-key"
+)
+
+// Valid indicates whether the value is a known member of the PasskeyCredentialType enum.
+func (e PasskeyCredentialType) Valid() bool {
+	switch e {
+	case PasskeyCredentialTypePublicKey:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PolicyMethod.
 const (
 	PolicyMethodLinks PolicyMethod = "links"
@@ -323,6 +338,17 @@ type CreateDeployRequest struct {
 
 	// Spa Serve `/index.html` for missing extensionless paths.
 	Spa *bool `json:"spa,omitempty"`
+}
+
+// CreatePasskeyRequest defines model for CreatePasskeyRequest.
+type CreatePasskeyRequest struct {
+	CeremonyId string `json:"ceremonyId"`
+
+	// Credential The `PublicKeyCredential` the authenticator returned, in its JSON form (`PublicKeyCredential.toJSON()`), binary members base64url-encoded without padding.
+	Credential PasskeyCredential `json:"credential"`
+
+	// Name A label for the passkey, such as the device or password manager that holds it. Trimmed; blank or absent means "Passkey". No control characters.
+	Name *string `json:"name,omitempty"`
 }
 
 // CreateSiteRequest defines model for CreateSiteRequest.
@@ -629,6 +655,59 @@ type OwnerSession struct {
 	UserAgent *string `json:"userAgent,omitempty"`
 }
 
+// Passkey defines model for Passkey.
+type Passkey struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// LastUsedAt The last sign-in with this passkey; absent if never used.
+	//
+	// Examples: 1767225600000
+	LastUsedAt *Timestamp `json:"lastUsedAt,omitempty"`
+	Name       string     `json:"name"`
+}
+
+// PasskeyChallenge defines model for PasskeyChallenge.
+type PasskeyChallenge struct {
+	// CeremonyId Names this challenge; send it back with the authenticator's response.
+	CeremonyId string `json:"ceremonyId"`
+
+	// Options WebAuthn `PublicKeyCredentialCreationOptions` (registration) or `PublicKeyCredentialRequestOptions` (sign-in) in their JSON form, with binary members (`challenge`, `user.id`, credential `id`s) base64url-encoded without padding.
+	Options map[string]interface{} `json:"options"`
+}
+
+// PasskeyCredential The `PublicKeyCredential` the authenticator returned, in its JSON form (`PublicKeyCredential.toJSON()`), binary members base64url-encoded without padding.
+type PasskeyCredential struct {
+	Id                   string                 `json:"id"`
+	RawId                string                 `json:"rawId"`
+	Response             map[string]interface{} `json:"response"`
+	Type                 PasskeyCredentialType  `json:"type"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
+// PasskeyCredentialType defines model for PasskeyCredential.Type.
+type PasskeyCredentialType string
+
+// PasskeyList defines model for PasskeyList.
+type PasskeyList struct {
+	Items []Passkey `json:"items"`
+}
+
+// PasskeySignInRequest defines model for PasskeySignInRequest.
+type PasskeySignInRequest struct {
+	CeremonyId string `json:"ceremonyId"`
+
+	// Credential The `PublicKeyCredential` the authenticator returned, in its JSON form (`PublicKeyCredential.toJSON()`), binary members base64url-encoded without padding.
+	Credential PasskeyCredential `json:"credential"`
+}
+
 // Policy defines model for Policy.
 type Policy struct {
 	// CreatedAt UTC milliseconds since the Unix epoch.
@@ -825,6 +904,11 @@ type DomainHostname = Hostname
 // Limit defines model for Limit.
 type Limit = int32
 
+// PasskeyId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type PasskeyId = Id
+
 // PolicyId A lowercase, hyphenated UUIDv7.
 //
 // Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
@@ -854,6 +938,9 @@ type Gone = Error
 
 // NotFound The body of every error response.
 type NotFound = Error
+
+// PasskeyLimit The body of every error response.
+type PasskeyLimit = Error
 
 // RateLimited The body of every error response.
 type RateLimited = Error
@@ -927,6 +1014,9 @@ type SendEmailCodeJSONRequestBody = EmailCodeRequest
 // VerifyEmailCodeJSONRequestBody defines body for VerifyEmailCode for application/json ContentType.
 type VerifyEmailCodeJSONRequestBody = EmailCodeVerifyRequest
 
+// VerifyPasskeySignInJSONRequestBody defines body for VerifyPasskeySignIn for application/json ContentType.
+type VerifyPasskeySignInJSONRequestBody = PasskeySignInRequest
+
 // RedeemSignInLinkJSONRequestBody defines body for RedeemSignInLink for application/json ContentType.
 type RedeemSignInLinkJSONRequestBody = SignInLinkRequest
 
@@ -944,6 +1034,9 @@ type PollCliLoginJSONRequestBody = PollCliLoginRequest
 
 // InviteOwnerJSONRequestBody defines body for InviteOwner for application/json ContentType.
 type InviteOwnerJSONRequestBody = InviteOwnerRequest
+
+// CreatePasskeyJSONRequestBody defines body for CreatePasskey for application/json ContentType.
+type CreatePasskeyJSONRequestBody = CreatePasskeyRequest
 
 // CompleteSetupJSONRequestBody defines body for CompleteSetup for application/json ContentType.
 type CompleteSetupJSONRequestBody = SetupRequest
@@ -965,6 +1058,113 @@ type RollbackSiteJSONRequestBody = RollbackRequest
 
 // CreateApiTokenJSONRequestBody defines body for CreateApiToken for application/json ContentType.
 type CreateApiTokenJSONRequestBody = CreateApiTokenRequest
+
+// Getter for additional properties for PasskeyCredential. Returns the specified
+// element and whether it was found
+func (a PasskeyCredential) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for PasskeyCredential
+func (a *PasskeyCredential) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for PasskeyCredential to handle AdditionalProperties
+func (a *PasskeyCredential) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["id"]; found {
+		err = json.Unmarshal(raw, &a.Id)
+		if err != nil {
+			return fmt.Errorf("error reading 'id': %w", err)
+		}
+		delete(object, "id")
+	}
+
+	if raw, found := object["rawId"]; found {
+		err = json.Unmarshal(raw, &a.RawId)
+		if err != nil {
+			return fmt.Errorf("error reading 'rawId': %w", err)
+		}
+		delete(object, "rawId")
+	}
+
+	if raw, found := object["response"]; found {
+		err = json.Unmarshal(raw, &a.Response)
+		if err != nil {
+			return fmt.Errorf("error reading 'response': %w", err)
+		}
+		delete(object, "response")
+	}
+
+	if raw, found := object["type"]; found {
+		err = json.Unmarshal(raw, &a.Type)
+		if err != nil {
+			return fmt.Errorf("error reading 'type': %w", err)
+		}
+		delete(object, "type")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for PasskeyCredential to handle AdditionalProperties
+func (a PasskeyCredential) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	object["id"], err = json.Marshal(a.Id)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'id': %w", err)
+	}
+
+	object["rawId"], err = json.Marshal(a.RawId)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'rawId': %w", err)
+	}
+
+	if a.Response != nil {
+		object["response"], err = json.Marshal(a.Response)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'response': %w", err)
+		}
+	}
+
+	object["type"], err = json.Marshal(a.Type)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'type': %w", err)
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -1075,6 +1275,31 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/v0/auth/email-code/verify (the `VerifyEmailCode` operationId).
 	VerifyEmailCode(ctx context.Context, body VerifyEmailCodeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StartPasskeySignIn Start signing in with a passkey.
+	//
+	// Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP, at the same rate as `verifyEmailCode` but counted separately, with at most 5 sign-ins open at once per IPv4 address or IPv6 /48.
+	//
+	// Corresponds with POST /api/v0/auth/passkey (the `StartPasskeySignIn` operationId).
+	StartPasskeySignIn(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// VerifyPasskeySignInWithBody Finish signing in with a passkey.
+	//
+	// Checks the authenticator's assertion against the challenge and starts a dashboard session for the passkey's owner. Each challenge is used once, whatever the outcome. An unknown, used or expired challenge, an assertion for another origin or relying party, a bad signature, an unknown or removed passkey and a signature counter that did not increase all answer `400 invalid_passkey`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/auth/passkey/verify (the `VerifyPasskeySignIn` operationId).
+	VerifyPasskeySignInWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// VerifyPasskeySignIn Finish signing in with a passkey.
+	//
+	// Checks the authenticator's assertion against the challenge and starts a dashboard session for the passkey's owner. Each challenge is used once, whatever the outcome. An unknown, used or expired challenge, an assertion for another origin or relying party, a bad signature, an unknown or removed passkey and a signature counter that did not increase all answer `400 invalid_passkey`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/auth/passkey/verify (the `VerifyPasskeySignIn` operationId).
+	VerifyPasskeySignIn(ctx context.Context, body VerifyPasskeySignInJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RedeemSignInLinkWithBody Sign in with a one-time sign-in link code.
 	//
@@ -1202,6 +1427,45 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/v0/owners (the `InviteOwner` operationId).
 	InviteOwner(ctx context.Context, body InviteOwnerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListPasskeys List the signed-in owner's passkeys.
+	//
+	// Every passkey, oldest first, in one page: an owner has at most 20.
+	//
+	// Corresponds with GET /api/v0/passkeys (the `ListPasskeys` operationId).
+	ListPasskeys(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePasskeyWithBody Finish adding a passkey.
+	//
+	// Checks the authenticator's attestation against a challenge from `startPasskeyRegistration` started by the same owner, and stores the passkey. Each challenge is used once, whatever the outcome. A bad, used, expired, cross-origin or already registered credential answers `400 invalid_passkey`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/passkeys (the `CreatePasskey` operationId).
+	CreatePasskeyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePasskey Finish adding a passkey.
+	//
+	// Checks the authenticator's attestation against a challenge from `startPasskeyRegistration` started by the same owner, and stores the passkey. Each challenge is used once, whatever the outcome. A bad, used, expired, cross-origin or already registered credential answers `400 invalid_passkey`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/passkeys (the `CreatePasskey` operationId).
+	CreatePasskey(ctx context.Context, body CreatePasskeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StartPasskeyRegistration Start adding a passkey.
+	//
+	// Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes. Rate-limited per owner (10 starts per 15 minutes, at most 3 open at once).
+	//
+	// Corresponds with POST /api/v0/passkeys/registration (the `StartPasskeyRegistration` operationId).
+	StartPasskeyRegistration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeletePasskey Remove one of the signed-in owner's passkeys.
+	//
+	// The passkey stops working for sign-in at once. Sessions it started are not ended. The authenticator keeps its copy until the owner deletes it there.
+	//
+	// Corresponds with DELETE /api/v0/passkeys/{passkeyId} (the `DeletePasskey` operationId).
+	DeletePasskey(ctx context.Context, passkeyId PasskeyId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSessions List the signed-in owner's dashboard sessions.
 	//
@@ -1516,6 +1780,61 @@ func (c *Client) VerifyEmailCode(ctx context.Context, body VerifyEmailCodeJSONRe
 	return c.Client.Do(req)
 }
 
+// StartPasskeySignIn Start signing in with a passkey.
+//
+// Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP, at the same rate as `verifyEmailCode` but counted separately, with at most 5 sign-ins open at once per IPv4 address or IPv6 /48.
+//
+// Corresponds with POST /api/v0/auth/passkey (the `StartPasskeySignIn` operationId).
+func (c *Client) StartPasskeySignIn(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStartPasskeySignInRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// VerifyPasskeySignInWithBody Finish signing in with a passkey.
+//
+// Checks the authenticator's assertion against the challenge and starts a dashboard session for the passkey's owner. Each challenge is used once, whatever the outcome. An unknown, used or expired challenge, an assertion for another origin or relying party, a bad signature, an unknown or removed passkey and a signature counter that did not increase all answer `400 invalid_passkey`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/auth/passkey/verify (the `VerifyPasskeySignIn` operationId).
+func (c *Client) VerifyPasskeySignInWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVerifyPasskeySignInRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// VerifyPasskeySignIn Finish signing in with a passkey.
+//
+// Checks the authenticator's assertion against the challenge and starts a dashboard session for the passkey's owner. Each challenge is used once, whatever the outcome. An unknown, used or expired challenge, an assertion for another origin or relying party, a bad signature, an unknown or removed passkey and a signature counter that did not increase all answer `400 invalid_passkey`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/auth/passkey/verify (the `VerifyPasskeySignIn` operationId).
+func (c *Client) VerifyPasskeySignIn(ctx context.Context, body VerifyPasskeySignInJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVerifyPasskeySignInRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // RedeemSignInLinkWithBody Sign in with a one-time sign-in link code.
 //
 // Redeems the code from a one-time sign-in URL, such as the one printed by `wardlockd admin create` or sent with an invitation, and starts a dashboard session. A wrong, used or expired code answers `400 invalid_code`.
@@ -1783,6 +2102,95 @@ func (c *Client) InviteOwnerWithBody(ctx context.Context, contentType string, bo
 // Corresponds with POST /api/v0/owners (the `InviteOwner` operationId).
 func (c *Client) InviteOwner(ctx context.Context, body InviteOwnerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewInviteOwnerRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListPasskeys List the signed-in owner's passkeys.
+//
+// Every passkey, oldest first, in one page: an owner has at most 20.
+//
+// Corresponds with GET /api/v0/passkeys (the `ListPasskeys` operationId).
+func (c *Client) ListPasskeys(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPasskeysRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreatePasskeyWithBody Finish adding a passkey.
+//
+// Checks the authenticator's attestation against a challenge from `startPasskeyRegistration` started by the same owner, and stores the passkey. Each challenge is used once, whatever the outcome. A bad, used, expired, cross-origin or already registered credential answers `400 invalid_passkey`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/passkeys (the `CreatePasskey` operationId).
+func (c *Client) CreatePasskeyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePasskeyRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreatePasskey Finish adding a passkey.
+//
+// Checks the authenticator's attestation against a challenge from `startPasskeyRegistration` started by the same owner, and stores the passkey. Each challenge is used once, whatever the outcome. A bad, used, expired, cross-origin or already registered credential answers `400 invalid_passkey`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/passkeys (the `CreatePasskey` operationId).
+func (c *Client) CreatePasskey(ctx context.Context, body CreatePasskeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePasskeyRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// StartPasskeyRegistration Start adding a passkey.
+//
+// Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes. Rate-limited per owner (10 starts per 15 minutes, at most 3 open at once).
+//
+// Corresponds with POST /api/v0/passkeys/registration (the `StartPasskeyRegistration` operationId).
+func (c *Client) StartPasskeyRegistration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStartPasskeyRegistrationRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeletePasskey Remove one of the signed-in owner's passkeys.
+//
+// The passkey stops working for sign-in at once. Sessions it started are not ended. The authenticator keeps its copy until the owner deletes it there.
+//
+// Corresponds with DELETE /api/v0/passkeys/{passkeyId} (the `DeletePasskey` operationId).
+func (c *Client) DeletePasskey(ctx context.Context, passkeyId PasskeyId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePasskeyRequest(c.Server, passkeyId)
 	if err != nil {
 		return nil, err
 	}
@@ -2409,6 +2817,73 @@ func NewVerifyEmailCodeRequestWithBody(server string, contentType string, body i
 	return req, nil
 }
 
+// NewStartPasskeySignInRequest constructs an http.Request for the StartPasskeySignIn method
+func NewStartPasskeySignInRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/auth/passkey")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewVerifyPasskeySignInRequest calls the generic VerifyPasskeySignIn builder with application/json body
+func NewVerifyPasskeySignInRequest(server string, body VerifyPasskeySignInJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewVerifyPasskeySignInRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewVerifyPasskeySignInRequestWithBody constructs an http.Request for the VerifyPasskeySignIn method, with any body, and a specified content type
+func NewVerifyPasskeySignInRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/auth/passkey/verify")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewRedeemSignInLinkRequest calls the generic RedeemSignInLink builder with application/json body
 func NewRedeemSignInLinkRequest(server string, body RedeemSignInLinkJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -2726,6 +3201,134 @@ func NewInviteOwnerRequestWithBody(server string, contentType string, body io.Re
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListPasskeysRequest constructs an http.Request for the ListPasskeys method
+func NewListPasskeysRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/passkeys")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreatePasskeyRequest calls the generic CreatePasskey builder with application/json body
+func NewCreatePasskeyRequest(server string, body CreatePasskeyJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreatePasskeyRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreatePasskeyRequestWithBody constructs an http.Request for the CreatePasskey method, with any body, and a specified content type
+func NewCreatePasskeyRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/passkeys")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewStartPasskeyRegistrationRequest constructs an http.Request for the StartPasskeyRegistration method
+func NewStartPasskeyRegistrationRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/passkeys/registration")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeletePasskeyRequest constructs an http.Request for the DeletePasskey method
+func NewDeletePasskeyRequest(server string, passkeyId PasskeyId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "passkeyId", passkeyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/passkeys/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -3938,6 +4541,33 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v0/auth/email-code/verify (the `VerifyEmailCode` operationId).
 	VerifyEmailCodeWithResponse(ctx context.Context, body VerifyEmailCodeJSONRequestBody, reqEditors ...RequestEditorFn) (*VerifyEmailCodeResponse, error)
 
+	// StartPasskeySignInWithResponse Start signing in with a passkey.
+	//
+	// Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP, at the same rate as `verifyEmailCode` but counted separately, with at most 5 sign-ins open at once per IPv4 address or IPv6 /48.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/auth/passkey (the `StartPasskeySignIn` operationId).
+	StartPasskeySignInWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StartPasskeySignInResponse, error)
+
+	// VerifyPasskeySignInWithBodyWithResponse Finish signing in with a passkey.
+	//
+	// Checks the authenticator's assertion against the challenge and starts a dashboard session for the passkey's owner. Each challenge is used once, whatever the outcome. An unknown, used or expired challenge, an assertion for another origin or relying party, a bad signature, an unknown or removed passkey and a signature counter that did not increase all answer `400 invalid_passkey`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/auth/passkey/verify (the `VerifyPasskeySignIn` operationId).
+	VerifyPasskeySignInWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VerifyPasskeySignInResponse, error)
+
+	// VerifyPasskeySignInWithResponse Finish signing in with a passkey.
+	//
+	// Checks the authenticator's assertion against the challenge and starts a dashboard session for the passkey's owner. Each challenge is used once, whatever the outcome. An unknown, used or expired challenge, an assertion for another origin or relying party, a bad signature, an unknown or removed passkey and a signature counter that did not increase all answer `400 invalid_passkey`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/auth/passkey/verify (the `VerifyPasskeySignIn` operationId).
+	VerifyPasskeySignInWithResponse(ctx context.Context, body VerifyPasskeySignInJSONRequestBody, reqEditors ...RequestEditorFn) (*VerifyPasskeySignInResponse, error)
+
 	// RedeemSignInLinkWithBodyWithResponse Sign in with a one-time sign-in link code.
 	//
 	// Redeems the code from a one-time sign-in URL, such as the one printed by `wardlockd admin create` or sent with an invitation, and starts a dashboard session. A wrong, used or expired code answers `400 invalid_code`.
@@ -4070,6 +4700,51 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/v0/owners (the `InviteOwner` operationId).
 	InviteOwnerWithResponse(ctx context.Context, body InviteOwnerJSONRequestBody, reqEditors ...RequestEditorFn) (*InviteOwnerResponse, error)
+
+	// ListPasskeysWithResponse List the signed-in owner's passkeys.
+	//
+	// Every passkey, oldest first, in one page: an owner has at most 20.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/passkeys (the `ListPasskeys` operationId).
+	ListPasskeysWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPasskeysResponse, error)
+
+	// CreatePasskeyWithBodyWithResponse Finish adding a passkey.
+	//
+	// Checks the authenticator's attestation against a challenge from `startPasskeyRegistration` started by the same owner, and stores the passkey. Each challenge is used once, whatever the outcome. A bad, used, expired, cross-origin or already registered credential answers `400 invalid_passkey`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/passkeys (the `CreatePasskey` operationId).
+	CreatePasskeyWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePasskeyResponse, error)
+
+	// CreatePasskeyWithResponse Finish adding a passkey.
+	//
+	// Checks the authenticator's attestation against a challenge from `startPasskeyRegistration` started by the same owner, and stores the passkey. Each challenge is used once, whatever the outcome. A bad, used, expired, cross-origin or already registered credential answers `400 invalid_passkey`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/passkeys (the `CreatePasskey` operationId).
+	CreatePasskeyWithResponse(ctx context.Context, body CreatePasskeyJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePasskeyResponse, error)
+
+	// StartPasskeyRegistrationWithResponse Start adding a passkey.
+	//
+	// Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes. Rate-limited per owner (10 starts per 15 minutes, at most 3 open at once).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/passkeys/registration (the `StartPasskeyRegistration` operationId).
+	StartPasskeyRegistrationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StartPasskeyRegistrationResponse, error)
+
+	// DeletePasskeyWithResponse Remove one of the signed-in owner's passkeys.
+	//
+	// The passkey stops working for sign-in at once. Sessions it started are not ended. The authenticator keeps its copy until the owner deletes it there.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/passkeys/{passkeyId} (the `DeletePasskey` operationId).
+	DeletePasskeyWithResponse(ctx context.Context, passkeyId PasskeyId, reqEditors ...RequestEditorFn) (*DeletePasskeyResponse, error)
 
 	// ListSessionsWithResponse List the signed-in owner's dashboard sessions.
 	//
@@ -4470,6 +5145,144 @@ func (r VerifyEmailCodeResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r VerifyEmailCodeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// StartPasskeySignInResponse429Headers the declared response headers of an HTTP 429 response for StartPasskeySignIn
+type StartPasskeySignInResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type StartPasskeySignInResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PasskeyChallenge
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *StartPasskeySignInResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r StartPasskeySignInResponse) GetJSON200() *PasskeyChallenge {
+	return r.JSON200
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r StartPasskeySignInResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r StartPasskeySignInResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r StartPasskeySignInResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r StartPasskeySignInResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StartPasskeySignInResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r StartPasskeySignInResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// VerifyPasskeySignInResponse200Headers the declared response headers of an HTTP 200 response for VerifyPasskeySignIn
+type VerifyPasskeySignInResponse200Headers struct {
+	SetCookie *string
+}
+
+// VerifyPasskeySignInResponse429Headers the declared response headers of an HTTP 429 response for VerifyPasskeySignIn
+type VerifyPasskeySignInResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type VerifyPasskeySignInResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Me
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *VerifyPasskeySignInResponse200Headers
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *VerifyPasskeySignInResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r VerifyPasskeySignInResponse) GetJSON200() *Me {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r VerifyPasskeySignInResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r VerifyPasskeySignInResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r VerifyPasskeySignInResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r VerifyPasskeySignInResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r VerifyPasskeySignInResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r VerifyPasskeySignInResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r VerifyPasskeySignInResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -5091,6 +5904,282 @@ func (r InviteOwnerResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r InviteOwnerResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListPasskeysResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PasskeyList
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListPasskeysResponse) GetJSON200() *PasskeyList {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListPasskeysResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListPasskeysResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListPasskeysResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPasskeysResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPasskeysResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListPasskeysResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreatePasskeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Passkey
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *PasskeyLimit
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreatePasskeyResponse) GetJSON201() *Passkey {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreatePasskeyResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreatePasskeyResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreatePasskeyResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreatePasskeyResponse) GetJSON409() *PasskeyLimit {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreatePasskeyResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreatePasskeyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreatePasskeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreatePasskeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreatePasskeyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// StartPasskeyRegistrationResponse429Headers the declared response headers of an HTTP 429 response for StartPasskeyRegistration
+type StartPasskeyRegistrationResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type StartPasskeyRegistrationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PasskeyChallenge
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *PasskeyLimit
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *StartPasskeyRegistrationResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r StartPasskeyRegistrationResponse) GetJSON200() *PasskeyChallenge {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r StartPasskeyRegistrationResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r StartPasskeyRegistrationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r StartPasskeyRegistrationResponse) GetJSON409() *PasskeyLimit {
+	return r.JSON409
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r StartPasskeyRegistrationResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r StartPasskeyRegistrationResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r StartPasskeyRegistrationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r StartPasskeyRegistrationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StartPasskeyRegistrationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r StartPasskeyRegistrationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeletePasskeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeletePasskeyResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeletePasskeyResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeletePasskeyResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeletePasskeyResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeletePasskeyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeletePasskeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeletePasskeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeletePasskeyResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -6814,6 +7903,51 @@ func (c *ClientWithResponses) VerifyEmailCodeWithResponse(ctx context.Context, b
 	return ParseVerifyEmailCodeResponse(rsp)
 }
 
+// StartPasskeySignInWithResponse Start signing in with a passkey.
+//
+// Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP, at the same rate as `verifyEmailCode` but counted separately, with at most 5 sign-ins open at once per IPv4 address or IPv6 /48.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/auth/passkey (the `StartPasskeySignIn` operationId).
+func (c *ClientWithResponses) StartPasskeySignInWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StartPasskeySignInResponse, error) {
+	rsp, err := c.StartPasskeySignIn(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStartPasskeySignInResponse(rsp)
+}
+
+// VerifyPasskeySignInWithBodyWithResponse Finish signing in with a passkey.
+//
+// Checks the authenticator's assertion against the challenge and starts a dashboard session for the passkey's owner. Each challenge is used once, whatever the outcome. An unknown, used or expired challenge, an assertion for another origin or relying party, a bad signature, an unknown or removed passkey and a signature counter that did not increase all answer `400 invalid_passkey`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/auth/passkey/verify (the `VerifyPasskeySignIn` operationId).
+func (c *ClientWithResponses) VerifyPasskeySignInWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VerifyPasskeySignInResponse, error) {
+	rsp, err := c.VerifyPasskeySignInWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseVerifyPasskeySignInResponse(rsp)
+}
+
+// VerifyPasskeySignInWithResponse Finish signing in with a passkey.
+//
+// Checks the authenticator's assertion against the challenge and starts a dashboard session for the passkey's owner. Each challenge is used once, whatever the outcome. An unknown, used or expired challenge, an assertion for another origin or relying party, a bad signature, an unknown or removed passkey and a signature counter that did not increase all answer `400 invalid_passkey`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/auth/passkey/verify (the `VerifyPasskeySignIn` operationId).
+func (c *ClientWithResponses) VerifyPasskeySignInWithResponse(ctx context.Context, body VerifyPasskeySignInJSONRequestBody, reqEditors ...RequestEditorFn) (*VerifyPasskeySignInResponse, error) {
+	rsp, err := c.VerifyPasskeySignIn(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseVerifyPasskeySignInResponse(rsp)
+}
+
 // RedeemSignInLinkWithBodyWithResponse Sign in with a one-time sign-in link code.
 //
 // Redeems the code from a one-time sign-in URL, such as the one printed by `wardlockd admin create` or sent with an invitation, and starts a dashboard session. A wrong, used or expired code answers `400 invalid_code`.
@@ -7035,6 +8169,81 @@ func (c *ClientWithResponses) InviteOwnerWithResponse(ctx context.Context, body 
 		return nil, err
 	}
 	return ParseInviteOwnerResponse(rsp)
+}
+
+// ListPasskeysWithResponse List the signed-in owner's passkeys.
+//
+// Every passkey, oldest first, in one page: an owner has at most 20.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/passkeys (the `ListPasskeys` operationId).
+func (c *ClientWithResponses) ListPasskeysWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPasskeysResponse, error) {
+	rsp, err := c.ListPasskeys(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPasskeysResponse(rsp)
+}
+
+// CreatePasskeyWithBodyWithResponse Finish adding a passkey.
+//
+// Checks the authenticator's attestation against a challenge from `startPasskeyRegistration` started by the same owner, and stores the passkey. Each challenge is used once, whatever the outcome. A bad, used, expired, cross-origin or already registered credential answers `400 invalid_passkey`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/passkeys (the `CreatePasskey` operationId).
+func (c *ClientWithResponses) CreatePasskeyWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePasskeyResponse, error) {
+	rsp, err := c.CreatePasskeyWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePasskeyResponse(rsp)
+}
+
+// CreatePasskeyWithResponse Finish adding a passkey.
+//
+// Checks the authenticator's attestation against a challenge from `startPasskeyRegistration` started by the same owner, and stores the passkey. Each challenge is used once, whatever the outcome. A bad, used, expired, cross-origin or already registered credential answers `400 invalid_passkey`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/passkeys (the `CreatePasskey` operationId).
+func (c *ClientWithResponses) CreatePasskeyWithResponse(ctx context.Context, body CreatePasskeyJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePasskeyResponse, error) {
+	rsp, err := c.CreatePasskey(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePasskeyResponse(rsp)
+}
+
+// StartPasskeyRegistrationWithResponse Start adding a passkey.
+//
+// Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes. Rate-limited per owner (10 starts per 15 minutes, at most 3 open at once).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/passkeys/registration (the `StartPasskeyRegistration` operationId).
+func (c *ClientWithResponses) StartPasskeyRegistrationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StartPasskeyRegistrationResponse, error) {
+	rsp, err := c.StartPasskeyRegistration(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStartPasskeyRegistrationResponse(rsp)
+}
+
+// DeletePasskeyWithResponse Remove one of the signed-in owner's passkeys.
+//
+// The passkey stops working for sign-in at once. Sessions it started are not ended. The authenticator keeps its copy until the owner deletes it there.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/passkeys/{passkeyId} (the `DeletePasskey` operationId).
+func (c *ClientWithResponses) DeletePasskeyWithResponse(ctx context.Context, passkeyId PasskeyId, reqEditors ...RequestEditorFn) (*DeletePasskeyResponse, error) {
+	rsp, err := c.DeletePasskey(ctx, passkeyId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeletePasskeyResponse(rsp)
 }
 
 // ListSessionsWithResponse List the signed-in owner's dashboard sessions.
@@ -7609,6 +8818,129 @@ func ParseVerifyEmailCodeResponse(rsp *http.Response) (*VerifyEmailCodeResponse,
 	return response, nil
 }
 
+// ParseStartPasskeySignInResponse parses an HTTP response from a StartPasskeySignInWithResponse call
+func ParseStartPasskeySignInResponse(rsp *http.Response) (*StartPasskeySignInResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StartPasskeySignInResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PasskeyChallenge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers StartPasskeySignInResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseVerifyPasskeySignInResponse parses an HTTP response from a VerifyPasskeySignInWithResponse call
+func ParseVerifyPasskeySignInResponse(rsp *http.Response) (*VerifyPasskeySignInResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &VerifyPasskeySignInResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Me
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers VerifyPasskeySignInResponse200Headers
+		if values := rsp.Header.Values("Set-Cookie"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Set-Cookie", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.SetCookie = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 429:
+		var headers VerifyPasskeySignInResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseRedeemSignInLinkResponse parses an HTTP response from a RedeemSignInLinkWithResponse call
 func ParseRedeemSignInLinkResponse(rsp *http.Response) (*RedeemSignInLinkResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -8147,6 +9479,231 @@ func ParseInviteOwnerResponse(rsp *http.Response) (*InviteOwnerResponse, error) 
 			headers.RetryAfter = &value
 		}
 		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListPasskeysResponse parses an HTTP response from a ListPasskeysWithResponse call
+func ParseListPasskeysResponse(rsp *http.Response) (*ListPasskeysResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPasskeysResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PasskeyList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreatePasskeyResponse parses an HTTP response from a CreatePasskeyWithResponse call
+func ParseCreatePasskeyResponse(rsp *http.Response) (*CreatePasskeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreatePasskeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Passkey
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest PasskeyLimit
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStartPasskeyRegistrationResponse parses an HTTP response from a StartPasskeyRegistrationWithResponse call
+func ParseStartPasskeyRegistrationResponse(rsp *http.Response) (*StartPasskeyRegistrationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StartPasskeyRegistrationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PasskeyChallenge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest PasskeyLimit
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers StartPasskeyRegistrationResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseDeletePasskeyResponse parses an HTTP response from a DeletePasskeyWithResponse call
+func ParseDeletePasskeyResponse(rsp *http.Response) (*DeletePasskeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeletePasskeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
 	}
 
 	return response, nil

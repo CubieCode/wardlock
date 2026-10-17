@@ -63,7 +63,7 @@ for (const scheme of schemes) {
       await openMenu(page);
       await expect(
         page.getByRole('navigation', { name: 'Main' }).getByRole('link'),
-      ).toHaveText(['Overview']);
+      ).toHaveText(['Overview', 'Passkeys']);
       await expect(page.getByText(email, { exact: true })).toBeVisible();
       await shot('navigation');
       const menu = page.getByRole('button', { name: 'Close' });

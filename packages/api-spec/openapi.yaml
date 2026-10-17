@@ -18,7 +18,8 @@ info:
     ## Authentication
 
     - `sessionCookie`: the dashboard's owner session, a `__Host-` cookie set
-      by setup, sign-in-link and email-code sign-in (C1.1). Cookie-authenticated
+      by setup, sign-in-link and email-code sign-in (C1.1) and passkey sign-in
+      (C1.6). Cookie-authenticated
       requests with an unsafe method (`POST`, `PUT`, `DELETE`) must come from
       the dashboard origin (C1.1 enforces this). The server checks `Origin`;
       without it, `Sec-Fetch-Site`, which must be `same-origin`. A request with
@@ -62,11 +63,11 @@ info:
 
     | Status | Codes |
     | ------ | ----- |
-    | 400 | `invalid_request` (malformed JSON, missing or invalid field), `invalid_code`, `invalid_site_name`, `reserved_site_name`, `invalid_path`, `invalid_manifest`, `invalid_hostname`, `hash_mismatch`, `unexpected_blob`, `invalid_policy_path`, `invalid_policy` |
+    | 400 | `invalid_request` (malformed JSON, missing or invalid field), `invalid_code`, `invalid_site_name`, `reserved_site_name`, `invalid_path`, `invalid_manifest`, `invalid_hostname`, `hash_mismatch`, `unexpected_blob`, `invalid_policy_path`, `invalid_policy`, `invalid_passkey` |
     | 401 | `unauthenticated`: no credential, or an expired, revoked or unknown one |
     | 403 | `forbidden`: the credential lacks the scope, or a cookie request came from another origin |
     | 404 | `not_found` |
-    | 409 | `site_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `default_policy` |
+    | 409 | `site_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `default_policy`, `passkey_limit` |
     | 410 | `login_expired` |
     | 413 | `limit_exceeded` |
     | 429 | `rate_limited`, `slow_down`; `Retry-After` gives the seconds to wait |
@@ -82,7 +83,7 @@ tags:
   - name: system
     description: Server status.
   - name: owners
-    description: Owner bootstrap, sign-in, sessions and invitations (C1.1).
+    description: Owner bootstrap, sign-in, sessions and invitations (C1.1); passkeys (C1.6).
   - name: tokens
     description: API tokens and the CLI device login (C1.7).
   - name: sites
@@ -264,6 +265,91 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v0/auth/passkey:
+    post:
+      operationId: startPasskeySignIn
+      summary: Start signing in with a passkey.
+      description: >-
+        Returns a WebAuthn challenge for a discoverable-credential sign-in:
+        it names no owner, and the browser offers whichever of this
+        dashboard's passkeys it holds. Pass `options` to
+        `navigator.credentials.get({publicKey})` after decoding its base64url
+        fields, then send the result to `verifyPasskeySignIn` with
+        `ceremonyId` within 5 minutes. Rate-limited per IP, at the same rate
+        as `verifyEmailCode` but counted separately, with at most 5 sign-ins
+        open at once per IPv4 address or IPv6 /48.
+      tags: [owners]
+      security: []
+      responses:
+        '200':
+          description: The challenge.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyChallenge'
+              example:
+                ceremonyId: 3q2-7wCqUu8pX1rM0dLh9N5bYk4sQe6tVz2aJf8gHcI
+                options:
+                  challenge: oN7c4Hd0sYp2qL1v9xRk3TfW6mEuB8aZgJ5iQcV0nXs
+                  timeout: 300000
+                  rpId: wardlock.example.com
+                  userVerification: preferred
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/auth/passkey/verify:
+    post:
+      operationId: verifyPasskeySignIn
+      summary: Finish signing in with a passkey.
+      description: >-
+        Checks the authenticator's assertion against the challenge and starts
+        a dashboard session for the passkey's owner. Each challenge is used
+        once, whatever the outcome. An unknown, used or expired challenge, an
+        assertion for another origin or relying party, a bad signature, an
+        unknown or removed passkey and a signature counter that did not
+        increase all answer `400 invalid_passkey`.
+      tags: [owners]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeySignInRequest'
+            example:
+              ceremonyId: 3q2-7wCqUu8pX1rM0dLh9N5bYk4sQe6tVz2aJf8gHcI
+              credential:
+                id: AbCdEfGhIjKlMnOp
+                rawId: AbCdEfGhIjKlMnOp
+                type: public-key
+                response:
+                  clientDataJSON: eyJ0eXBlIjoid2ViYXV0aG4uZ2V0In0
+                  authenticatorData: SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2MFAAAAAQ
+                  signature: MEUCIQDexample
+                  userHandle: MDE5MjhjNWU
+                clientExtensionResults: {}
+      responses:
+        '200':
+          description: Signed in.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/SetSessionCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+              examples:
+                meSession:
+                  $ref: '#/components/examples/MeSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/Error'
+
   /api/v0/auth/sign-out:
     post:
       operationId: signOut
@@ -392,6 +478,162 @@ paths:
       responses:
         '204':
           description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/passkeys:
+    get:
+      operationId: listPasskeys
+      summary: List the signed-in owner's passkeys.
+      description: >-
+        Every passkey, oldest first, in one page: an owner has at most 20.
+      tags: [owners]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The owner's passkeys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyList'
+              example:
+                items:
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40
+                    name: Chrome on macOS
+                    createdAt: 1767225600000
+                    lastUsedAt: 1767312000000
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createPasskey
+      summary: Finish adding a passkey.
+      description: >-
+        Checks the authenticator's attestation against a challenge from
+        `startPasskeyRegistration` started by the same owner, and stores the
+        passkey. Each challenge is used once, whatever the outcome. A bad,
+        used, expired, cross-origin or already registered credential answers
+        `400 invalid_passkey`.
+      tags: [owners]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePasskeyRequest'
+            example:
+              ceremonyId: 7Kq1mZp4xR9sT2vW5yA8bC3dE6fG0hJ1kL4nP7qS9uV
+              name: Chrome on macOS
+              credential:
+                id: AbCdEfGhIjKlMnOp
+                rawId: AbCdEfGhIjKlMnOp
+                type: public-key
+                response:
+                  clientDataJSON: eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIn0
+                  attestationObject: o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YQ
+                  transports: [internal, hybrid]
+                clientExtensionResults: {}
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Passkey'
+              example:
+                id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40
+                name: Chrome on macOS
+                createdAt: 1767225600000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/PasskeyLimit'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/passkeys/registration:
+    post:
+      operationId: startPasskeyRegistration
+      summary: Start adding a passkey.
+      description: >-
+        Returns a WebAuthn challenge to create a discoverable passkey for the
+        signed-in owner, with the dashboard host as the relying party and the
+        owner's existing passkeys excluded. Pass `options` to
+        `navigator.credentials.create({publicKey})` after decoding its
+        base64url fields, then send the result to `createPasskey` with
+        `ceremonyId` within 5 minutes. Rate-limited per owner (10 starts per
+        15 minutes, at most 3 open at once).
+      tags: [owners]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The challenge.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyChallenge'
+              example:
+                ceremonyId: 7Kq1mZp4xR9sT2vW5yA8bC3dE6fG0hJ1kL4nP7qS9uV
+                options:
+                  rp:
+                    id: wardlock.example.com
+                    name: Wardlock
+                  user:
+                    id: MDE5MjhjNWU
+                    name: owner@example.com
+                    displayName: owner@example.com
+                  challenge: oN7c4Hd0sYp2qL1v9xRk3TfW6mEuB8aZgJ5iQcV0nXs
+                  pubKeyCredParams:
+                    - type: public-key
+                      alg: -7
+                  timeout: 300000
+                  authenticatorSelection:
+                    residentKey: required
+                    requireResidentKey: true
+                    userVerification: preferred
+                  attestation: none
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/PasskeyLimit'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/passkeys/{passkeyId}:
+    parameters:
+      - $ref: '#/components/parameters/PasskeyId'
+    delete:
+      operationId: deletePasskey
+      summary: Remove one of the signed-in owner's passkeys.
+      description: >-
+        The passkey stops working for sign-in at once. Sessions it started
+        are not ended. The authenticator keeps its copy until the owner
+        deletes it there.
+      tags: [owners]
+      security:
+        - sessionCookie: []
+      responses:
+        '204':
+          description: Removed.
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -1435,6 +1677,14 @@ components:
       schema:
         $ref: '#/components/schemas/Id'
       example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e0f
+    PasskeyId:
+      name: passkeyId
+      in: path
+      required: true
+      description: The passkey's ID (not its WebAuthn credential ID).
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40
     TokenId:
       name: tokenId
       in: path
@@ -1533,6 +1783,15 @@ components:
             code: site_name_taken
             message: The site name docs is taken.
             target: name
+    PasskeyLimit:
+      description: The owner already has the most passkeys allowed (20).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: passkey_limit
+            message: You have 20 passkeys, the most allowed. Remove one first.
     Gone:
       description: The CLI login is over; start a new one.
       content:
@@ -1910,6 +2169,95 @@ components:
             $ref: '#/components/schemas/OwnerSession'
         nextCursor:
           $ref: '#/components/schemas/Cursor'
+
+    PasskeyChallenge:
+      type: object
+      additionalProperties: false
+      required: [ceremonyId, options]
+      properties:
+        ceremonyId:
+          type: string
+          description: Names this challenge; send it back with the authenticator's response.
+          maxLength: 128
+        options:
+          type: object
+          additionalProperties: true
+          description: >-
+            WebAuthn `PublicKeyCredentialCreationOptions` (registration) or
+            `PublicKeyCredentialRequestOptions` (sign-in) in their JSON form,
+            with binary members (`challenge`, `user.id`, credential `id`s)
+            base64url-encoded without padding.
+    PasskeyCredential:
+      type: object
+      additionalProperties: true
+      description: >-
+        The `PublicKeyCredential` the authenticator returned, in its JSON
+        form (`PublicKeyCredential.toJSON()`), binary members
+        base64url-encoded without padding.
+      required: [id, rawId, type, response]
+      properties:
+        id:
+          type: string
+        rawId:
+          type: string
+        type:
+          type: string
+          enum: [public-key]
+        response:
+          type: object
+          additionalProperties: true
+    PasskeySignInRequest:
+      type: object
+      additionalProperties: false
+      required: [ceremonyId, credential]
+      properties:
+        ceremonyId:
+          type: string
+          maxLength: 128
+        credential:
+          $ref: '#/components/schemas/PasskeyCredential'
+    CreatePasskeyRequest:
+      type: object
+      additionalProperties: false
+      required: [ceremonyId, credential]
+      properties:
+        ceremonyId:
+          type: string
+          maxLength: 128
+        name:
+          type: string
+          description: >-
+            A label for the passkey, such as the device or password manager
+            that holds it. Trimmed; blank or absent means "Passkey". No
+            control characters.
+          maxLength: 100
+        credential:
+          $ref: '#/components/schemas/PasskeyCredential'
+    Passkey:
+      type: object
+      additionalProperties: false
+      required: [id, name, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+          maxLength: 100
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        lastUsedAt:
+          description: The last sign-in with this passkey; absent if never used.
+          $ref: '#/components/schemas/Timestamp'
+    PasskeyList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/Passkey'
 
     ApiToken:
       type: object

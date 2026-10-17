@@ -69,5 +69,12 @@ export function mailbox(address: string) {
 export const ownerFor = (project: string, scheme: string) =>
   `${project}-${scheme}@example.test`;
 
+/**
+ * The synthetic owner each project and theme adds passkeys as (C1.6). No
+ * address may end with another, since messagesTo matches the end of To.
+ */
+export const passkeyOwnerFor = (project: string, scheme: string) =>
+  `${project}-${scheme}-passkeys@example.test`;
+
 export const projects = ['desktop', 'mobile'] as const;
 export const schemes = ['light', 'dark'] as const;
