@@ -65,7 +65,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.2: Deploy API
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/c1.2-deploy-api`
 - PR: https://github.com/CubieCode/wardlock/pull/19
 - Depends on: F0.2, F0.3
