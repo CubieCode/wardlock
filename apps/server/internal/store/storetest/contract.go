@@ -13,6 +13,7 @@ import (
 type Repos struct {
 	Owners    store.Owners
 	Sessions  store.Sessions
+	Passkeys  store.Passkeys
 	APITokens store.APITokens
 	Sites     store.Sites
 	Domains   store.Domains
@@ -35,6 +36,7 @@ func ReposOf(db *store.DB) Repos {
 	return Repos{
 		Owners:    db.Owners(),
 		Sessions:  db.Sessions(),
+		Passkeys:  db.Passkeys(),
 		APITokens: db.APITokens(),
 		Sites:     db.Sites(),
 		Domains:   db.Domains(),
@@ -57,6 +59,7 @@ func suites() []suite {
 	return []suite{
 		{"Owners", ownersContract},
 		{"Sessions", sessionsContract},
+		{"Passkeys", passkeysContract},
 		{"APITokens", apiTokensContract},
 		{"Sites", sitesContract},
 		{"Domains", domainsContract},

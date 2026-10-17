@@ -1,14 +1,15 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
 import { expect, test } from '@playwright/test';
-import { ownerFor, projects, schemes } from './mail.js';
+import { ownerFor, passkeyOwnerFor, projects, schemes } from './mail.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 const setupURL = process.env.WARDLOCK_ACCEPTANCE_SETUP_URL;
 if (!origin || !setupURL) throw new Error('Run through pnpm browser:test');
 
 // Runs once, before the desktop and mobile projects: the setup URL creates
-// the first owner, who invites one owner per project and theme.
+// the first owner, who invites the owners each project and theme signs in
+// as.
 test('the setup URL creates the first owner', async ({
   page,
   browser,
@@ -47,13 +48,17 @@ test('the setup URL creates the first owner', async ({
   await expect(page.getByText('first-owner@example.test')).toBeVisible();
 
   for (const project of projects)
-    for (const scheme of schemes) {
-      const res = await page.request.post(`${origin}/api/v0/owners`, {
-        data: { email: ownerFor(project, scheme) },
-        headers: { Origin: origin },
-      });
-      expect(res.status()).toBe(202);
-    }
+    for (const scheme of schemes)
+      for (const email of [
+        ownerFor(project, scheme),
+        passkeyOwnerFor(project, scheme),
+      ]) {
+        const res = await page.request.post(`${origin}/api/v0/owners`, {
+          data: { email },
+          headers: { Origin: origin },
+        });
+        expect(res.status()).toBe(202);
+      }
 
   // The URL worked once: a browser without the new owner's session is
   // refused by the server, not just redirected by the dashboard.

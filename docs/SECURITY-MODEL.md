@@ -46,7 +46,7 @@ Sites are public until their owner protects them (SPEC "Policies"), so protectio
 
 ### Brute force and enumeration
 
-Tokens carry 256 bits of secret, so guessing is infeasible; even so, failed token checks are rate-limited per IP and per site, as are password attempts and email-code sends and verifications. Responses do not distinguish "no such link" from "wrong token", and the email-code form answers the same for allowed and disallowed addresses. Owner sign-in codes are 6 digits with 5 attempts and a 10-minute lifetime.
+Tokens carry 256 bits of secret, so guessing is infeasible; even so, failed token checks are rate-limited per IP and per site, as are password attempts and email-code sends and verifications. Responses do not distinguish "no such link" from "wrong token", and the email-code form answers the same for allowed and disallowed addresses. Owner sign-in codes are 6 digits with 5 attempts and a 10-minute lifetime. Owner passkeys (C1.6) are phishing-resistant: the browser binds each assertion to the dashboard origin and relying party, and the server also checks both, the single-use challenge and the signature counter, refusing every failure with one error. A hosted site cannot use an owner's passkey, since its origin is not the dashboard's; with the dashboard on a sibling of the sites (the single-domain setup), the relying party is still the dashboard host itself, never the shared parent domain. Passkey challenges are held in memory, single use, bounded in number, and lost on restart.
 
 ### OAuth-specific risks
 

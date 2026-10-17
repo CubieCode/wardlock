@@ -80,6 +80,11 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		return err
 	}
 	defer ownerSvc.Close()
+	passkeys, err := owners.NewPasskeys(ownerSvc, db.Passkeys())
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
 	setupURL, err := ownerSvc.PrepareSetup(ctx)
 	if err != nil {
 		_ = ln.Close()
@@ -106,7 +111,9 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Version: platform.Version,
 		Owners:  ownerSvc,
 		Access:  accessSvc,
-		Logger:  log,
+		// Passkey sign-in and management (C1.6).
+		Passkeys: passkeys,
+		Logger:   log,
 		Sites: sites.NewService(sites.Config{
 			Sites:         db.Sites(),
 			Notifier:      notifier,

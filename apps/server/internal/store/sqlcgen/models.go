@@ -116,6 +116,16 @@ type OwnerLoginCode struct {
 	UsedAt    sql.NullInt64
 }
 
+type OwnerPasskey struct {
+	ID           string
+	OwnerID      string
+	CredentialID string
+	Credential   string
+	Name         string
+	CreatedAt    int64
+	LastUsedAt   sql.NullInt64
+}
+
 type OwnerSession struct {
 	ID         string
 	OwnerID    string

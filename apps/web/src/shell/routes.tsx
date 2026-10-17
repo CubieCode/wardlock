@@ -3,6 +3,7 @@
 
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import type { ReactNode } from 'react';
+import { PasskeysPage } from '../auth/passkeys.js';
 import { OverviewPage } from '../overview/overview.js';
 
 export interface RouteContext {
@@ -31,5 +32,10 @@ export const shellRoutes: ShellRoute[] = [
     path: '/',
     nav: 'Overview',
     render: ({ api }) => <OverviewPage api={api} />,
+  },
+  {
+    path: '/passkeys',
+    nav: 'Passkeys',
+    render: ({ api }) => <PasskeysPage api={api} />,
   },
 ];
