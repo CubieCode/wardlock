@@ -16,7 +16,7 @@ import (
 func (f *fixture) validPasskey(ownerID string) store.Passkey {
 	return store.Passkey{
 		ID: store.NewID(), OwnerID: ownerID, CredentialID: fmt.Sprintf("cred-%d", f.seq()),
-		Credential: []byte(`{"id":"Y3JlZA","publicKey":"cGs"}`), Name: "Laptop", CreatedAt: now,
+		Credential: []byte(`{"id":"Y3JlZA","publicKey":"cGs"}`), SignCount: 3, Name: "Laptop", CreatedAt: now,
 	}
 }
 
@@ -24,16 +24,21 @@ func (f *fixture) passkey(ownerID string, createdAt time.Time) store.Passkey {
 	f.t.Helper()
 	p := f.validPasskey(ownerID)
 	p.CreatedAt = createdAt
-	f.must(f.r.Passkeys.Create(f.t.Context(), p))
+	f.must(f.r.Passkeys.Create(f.t.Context(), p, testPasskeyLimit))
 	return p
 }
+
+// testPasskeyLimit is a per-owner limit the fixtures never reach.
+const testPasskeyLimit = 100
 
 func passkeysContract(t *testing.T, open Opener) {
 	t.Run("Create", func(t *testing.T) {
 		t.Parallel()
 		runInsertCases(t, open,
 			func(f *fixture) store.Passkey { return f.validPasskey(f.owner().ID) },
-			func(f *fixture, p store.Passkey) error { return f.r.Passkeys.Create(f.t.Context(), p) },
+			func(f *fixture, p store.Passkey) error {
+				return f.r.Passkeys.Create(f.t.Context(), p, testPasskeyLimit)
+			},
 			[]insertCase[store.Passkey]{
 				{name: "valid"},
 				{name: "used before", mutate: func(_ *fixture, p *store.Passkey) { p.LastUsedAt = now.Add(time.Minute) }},
@@ -41,12 +46,12 @@ func passkeysContract(t *testing.T, open Opener) {
 				{name: "credential ID taken by another owner", mutate: func(f *fixture, p *store.Passkey) {
 					other := f.validPasskey(f.owner().ID)
 					other.CredentialID = p.CredentialID
-					f.must(f.r.Passkeys.Create(f.t.Context(), other))
+					f.must(f.r.Passkeys.Create(f.t.Context(), other, testPasskeyLimit))
 				}, want: store.ErrConflict},
 				{name: "duplicate ID", mutate: func(f *fixture, p *store.Passkey) {
 					other := f.validPasskey(p.OwnerID)
 					other.ID = p.ID
-					f.must(f.r.Passkeys.Create(f.t.Context(), other))
+					f.must(f.r.Passkeys.Create(f.t.Context(), other, testPasskeyLimit))
 				}, want: store.ErrConflict},
 				{name: "empty credential ID", mutate: func(_ *fixture, p *store.Passkey) { p.CredentialID = "" }, want: store.ErrConstraint},
 				{name: "long credential ID", mutate: func(_ *fixture, p *store.Passkey) { p.CredentialID = strings.Repeat("A", 1365) }, want: store.ErrConstraint},
@@ -55,6 +60,20 @@ func passkeysContract(t *testing.T, open Opener) {
 				{name: "long name", mutate: func(_ *fixture, p *store.Passkey) { p.Name = strings.Repeat("n", 101) }, want: store.ErrConstraint},
 				{name: "unknown owner", mutate: func(_ *fixture, p *store.Passkey) { p.OwnerID = store.NewID() }, want: store.ErrConstraint},
 			})
+	})
+	t.Run("Create at the limit", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		a, b := f.owner(), f.owner()
+		for range 2 {
+			f.must(f.r.Passkeys.Create(t.Context(), f.validPasskey(a.ID), 2))
+		}
+		over := f.validPasskey(a.ID)
+		wantErr(t, f.r.Passkeys.Create(t.Context(), over, 2), store.ErrPasskeyLimit)
+		_, err := f.r.Passkeys.GetByCredentialID(t.Context(), over.CredentialID)
+		wantErr(t, err, store.ErrNotFound)
+		// The limit is per owner.
+		f.must(f.r.Passkeys.Create(t.Context(), f.validPasskey(b.ID), 2))
 	})
 	t.Run("ListOwner", func(t *testing.T) {
 		t.Parallel()
@@ -96,16 +115,33 @@ func passkeysContract(t *testing.T, open Opener) {
 		p := f.passkey(a.ID, now)
 		record := []byte(`{"id":"Y3JlZA","publicKey":"cGs","authenticator":{"signCount":7}}`)
 		at := now.Add(time.Hour)
-		wantErr(t, f.r.Passkeys.RecordUse(t.Context(), b.ID, p.ID, record, at), store.ErrNotFound)
-		wantErr(t, f.r.Passkeys.RecordUse(t.Context(), a.ID, store.NewID(), record, at), store.ErrNotFound)
-		f.must(f.r.Passkeys.RecordUse(t.Context(), a.ID, p.ID, record, at))
+		wantErr(t, f.r.Passkeys.RecordUse(t.Context(), b.ID, p.ID, p.SignCount, 7, record, at), store.ErrNotFound)
+		wantErr(t, f.r.Passkeys.RecordUse(t.Context(), a.ID, store.NewID(), p.SignCount, 7, record, at), store.ErrNotFound)
+		f.must(f.r.Passkeys.RecordUse(t.Context(), a.ID, p.ID, p.SignCount, 7, record, at))
 		got, err := f.r.Passkeys.GetByCredentialID(t.Context(), p.CredentialID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(got.Credential) != string(record) || !got.LastUsedAt.Equal(at) {
-			t.Fatalf("after RecordUse: credential %s, last used %v; want %s, %v", got.Credential, got.LastUsedAt, record, at)
+		if string(got.Credential) != string(record) || got.SignCount != 7 || !got.LastUsedAt.Equal(at) {
+			t.Fatalf("after RecordUse: credential %s, count %d, last used %v; want %s, 7, %v", got.Credential, got.SignCount, got.LastUsedAt, record, at)
 		}
+		// A second sign-in that read the old count lost the race: nothing
+		// changes.
+		later := at.Add(time.Minute)
+		wantErr(t, f.r.Passkeys.RecordUse(t.Context(), a.ID, p.ID, p.SignCount, 8, []byte(`{"lost":true}`), later), store.ErrNotFound)
+		got, err = f.r.Passkeys.GetByCredentialID(t.Context(), p.CredentialID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got.Credential) != string(record) || got.SignCount != 7 || !got.LastUsedAt.Equal(at) {
+			t.Fatalf("a stale RecordUse changed the passkey: %+v", got)
+		}
+		// Authenticators that never count (synced passkeys) stay at zero.
+		z := f.validPasskey(a.ID)
+		z.SignCount = 0
+		f.must(f.r.Passkeys.Create(t.Context(), z, testPasskeyLimit))
+		f.must(f.r.Passkeys.RecordUse(t.Context(), a.ID, z.ID, 0, 0, record, at))
+		f.must(f.r.Passkeys.RecordUse(t.Context(), a.ID, z.ID, 0, 0, record, later))
 	})
 	t.Run("Delete", func(t *testing.T) {
 		t.Parallel()

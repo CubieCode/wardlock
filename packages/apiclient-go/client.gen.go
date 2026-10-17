@@ -1278,7 +1278,7 @@ type ClientInterface interface {
 
 	// StartPasskeySignIn Start signing in with a passkey.
 	//
-	// Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP.
+	// Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP, at the same rate as `verifyEmailCode` but counted separately, with at most 5 sign-ins open at once per IPv4 address or IPv6 /48.
 	//
 	// Corresponds with POST /api/v0/auth/passkey (the `StartPasskeySignIn` operationId).
 	StartPasskeySignIn(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1455,7 +1455,7 @@ type ClientInterface interface {
 
 	// StartPasskeyRegistration Start adding a passkey.
 	//
-	// Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes.
+	// Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes. Rate-limited per owner (10 starts per 15 minutes, at most 3 open at once).
 	//
 	// Corresponds with POST /api/v0/passkeys/registration (the `StartPasskeyRegistration` operationId).
 	StartPasskeyRegistration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1782,7 +1782,7 @@ func (c *Client) VerifyEmailCode(ctx context.Context, body VerifyEmailCodeJSONRe
 
 // StartPasskeySignIn Start signing in with a passkey.
 //
-// Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP.
+// Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP, at the same rate as `verifyEmailCode` but counted separately, with at most 5 sign-ins open at once per IPv4 address or IPv6 /48.
 //
 // Corresponds with POST /api/v0/auth/passkey (the `StartPasskeySignIn` operationId).
 func (c *Client) StartPasskeySignIn(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2169,7 +2169,7 @@ func (c *Client) CreatePasskey(ctx context.Context, body CreatePasskeyJSONReques
 
 // StartPasskeyRegistration Start adding a passkey.
 //
-// Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes.
+// Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes. Rate-limited per owner (10 starts per 15 minutes, at most 3 open at once).
 //
 // Corresponds with POST /api/v0/passkeys/registration (the `StartPasskeyRegistration` operationId).
 func (c *Client) StartPasskeyRegistration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4543,7 +4543,7 @@ type ClientWithResponsesInterface interface {
 
 	// StartPasskeySignInWithResponse Start signing in with a passkey.
 	//
-	// Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP.
+	// Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP, at the same rate as `verifyEmailCode` but counted separately, with at most 5 sign-ins open at once per IPv4 address or IPv6 /48.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -4730,7 +4730,7 @@ type ClientWithResponsesInterface interface {
 
 	// StartPasskeyRegistrationWithResponse Start adding a passkey.
 	//
-	// Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes.
+	// Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes. Rate-limited per owner (10 starts per 15 minutes, at most 3 open at once).
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -6041,6 +6041,11 @@ func (r CreatePasskeyResponse) ContentType() string {
 	return ""
 }
 
+// StartPasskeyRegistrationResponse429Headers the declared response headers of an HTTP 429 response for StartPasskeyRegistration
+type StartPasskeyRegistrationResponse429Headers struct {
+	RetryAfter *int32
+}
+
 type StartPasskeyRegistrationResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6052,8 +6057,12 @@ type StartPasskeyRegistrationResponse struct {
 	JSON403 *Forbidden
 	// JSON409 the response for an HTTP 409 `application/json` response
 	JSON409 *PasskeyLimit
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *Error
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *StartPasskeyRegistrationResponse429Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -6074,6 +6083,11 @@ func (r StartPasskeyRegistrationResponse) GetJSON403() *Forbidden {
 // GetJSON409 returns the response for an HTTP 409 `application/json` response
 func (r StartPasskeyRegistrationResponse) GetJSON409() *PasskeyLimit {
 	return r.JSON409
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r StartPasskeyRegistrationResponse) GetJSON429() *RateLimited {
+	return r.JSON429
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -7891,7 +7905,7 @@ func (c *ClientWithResponses) VerifyEmailCodeWithResponse(ctx context.Context, b
 
 // StartPasskeySignInWithResponse Start signing in with a passkey.
 //
-// Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP.
+// Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP, at the same rate as `verifyEmailCode` but counted separately, with at most 5 sign-ins open at once per IPv4 address or IPv6 /48.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -8204,7 +8218,7 @@ func (c *ClientWithResponses) CreatePasskeyWithResponse(ctx context.Context, bod
 
 // StartPasskeyRegistrationWithResponse Start adding a passkey.
 //
-// Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes.
+// Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes. Rate-limited per owner (10 starts per 15 minutes, at most 3 open at once).
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -9613,6 +9627,13 @@ func ParseStartPasskeyRegistrationResponse(rsp *http.Response) (*StartPasskeyReg
 		}
 		response.JSON409 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -9620,6 +9641,19 @@ func ParseStartPasskeyRegistrationResponse(rsp *http.Response) (*StartPasskeyReg
 		}
 		response.JSONDefault = &dest
 
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers StartPasskeyRegistrationResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
 	}
 
 	return response, nil

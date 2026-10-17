@@ -275,7 +275,9 @@ paths:
         dashboard's passkeys it holds. Pass `options` to
         `navigator.credentials.get({publicKey})` after decoding its base64url
         fields, then send the result to `verifyPasskeySignIn` with
-        `ceremonyId` within 5 minutes. Rate-limited per IP.
+        `ceremonyId` within 5 minutes. Rate-limited per IP, at the same rate
+        as `verifyEmailCode` but counted separately, with at most 5 sign-ins
+        open at once per IPv4 address or IPv6 /48.
       tags: [owners]
       security: []
       responses:
@@ -573,7 +575,8 @@ paths:
         owner's existing passkeys excluded. Pass `options` to
         `navigator.credentials.create({publicKey})` after decoding its
         base64url fields, then send the result to `createPasskey` with
-        `ceremonyId` within 5 minutes.
+        `ceremonyId` within 5 minutes. Rate-limited per owner (10 starts per
+        15 minutes, at most 3 open at once).
       tags: [owners]
       security:
         - sessionCookie: []
@@ -610,6 +613,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/PasskeyLimit'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         default:
           $ref: '#/components/responses/Error'
 

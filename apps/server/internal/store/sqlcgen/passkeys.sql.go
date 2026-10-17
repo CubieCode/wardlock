@@ -13,9 +13,10 @@ import (
 	"database/sql"
 )
 
-const createPasskey = `-- name: CreatePasskey :exec
-INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, name, created_at, last_used_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+const createPasskey = `-- name: CreatePasskey :execrows
+INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, sign_count, name, created_at, last_used_at)
+SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
+WHERE (SELECT count(*) FROM owner_passkeys AS existing WHERE existing.owner_id = ?2) < CAST(?9 AS INTEGER)
 `
 
 type CreatePasskeyParams struct {
@@ -23,22 +24,31 @@ type CreatePasskeyParams struct {
 	OwnerID      string
 	CredentialID string
 	Credential   string
+	SignCount    int64
 	Name         string
 	CreatedAt    int64
 	LastUsedAt   sql.NullInt64
+	MaxPasskeys  int64
 }
 
-func (q *Queries) CreatePasskey(ctx context.Context, arg CreatePasskeyParams) error {
-	_, err := q.db.ExecContext(ctx, createPasskey,
+// Inserts only while the owner has fewer than max_passkeys, in the same
+// statement as the count; no row inserted means the owner is at the limit.
+func (q *Queries) CreatePasskey(ctx context.Context, arg CreatePasskeyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, createPasskey,
 		arg.ID,
 		arg.OwnerID,
 		arg.CredentialID,
 		arg.Credential,
+		arg.SignCount,
 		arg.Name,
 		arg.CreatedAt,
 		arg.LastUsedAt,
+		arg.MaxPasskeys,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteOwnerPasskey = `-- name: DeleteOwnerPasskey :execrows
@@ -59,7 +69,7 @@ func (q *Queries) DeleteOwnerPasskey(ctx context.Context, arg DeleteOwnerPasskey
 }
 
 const getPasskeyByCredentialID = `-- name: GetPasskeyByCredentialID :one
-SELECT id, owner_id, credential_id, credential, name, created_at, last_used_at
+SELECT id, owner_id, credential_id, credential, sign_count, name, created_at, last_used_at
 FROM owner_passkeys WHERE credential_id = ?1
 `
 
@@ -72,6 +82,7 @@ func (q *Queries) GetPasskeyByCredentialID(ctx context.Context, credentialID str
 		&i.OwnerID,
 		&i.CredentialID,
 		&i.Credential,
+		&i.SignCount,
 		&i.Name,
 		&i.CreatedAt,
 		&i.LastUsedAt,
@@ -80,7 +91,7 @@ func (q *Queries) GetPasskeyByCredentialID(ctx context.Context, credentialID str
 }
 
 const listOwnerPasskeys = `-- name: ListOwnerPasskeys :many
-SELECT id, owner_id, credential_id, credential, name, created_at, last_used_at
+SELECT id, owner_id, credential_id, credential, sign_count, name, created_at, last_used_at
 FROM owner_passkeys
 WHERE owner_id = ?1
 ORDER BY created_at, id
@@ -101,6 +112,7 @@ func (q *Queries) ListOwnerPasskeys(ctx context.Context, ownerID string) ([]Owne
 			&i.OwnerID,
 			&i.CredentialID,
 			&i.Credential,
+			&i.SignCount,
 			&i.Name,
 			&i.CreatedAt,
 			&i.LastUsedAt,
@@ -119,23 +131,30 @@ func (q *Queries) ListOwnerPasskeys(ctx context.Context, ownerID string) ([]Owne
 }
 
 const recordPasskeyUse = `-- name: RecordPasskeyUse :execrows
-UPDATE owner_passkeys SET credential = ?1, last_used_at = ?2
-WHERE id = ?3 AND owner_id = ?4
+UPDATE owner_passkeys
+SET credential = ?1, sign_count = ?2, last_used_at = ?3
+WHERE id = ?4 AND owner_id = ?5 AND sign_count = ?6
 `
 
 type RecordPasskeyUseParams struct {
-	Credential string
-	LastUsedAt sql.NullInt64
-	ID         string
-	OwnerID    string
+	Credential        string
+	SignCount         int64
+	LastUsedAt        sql.NullInt64
+	ID                string
+	OwnerID           string
+	PreviousSignCount int64
 }
 
+// Compare-and-set on the sign count read before the sign-in, so of two
+// concurrent sign-ins with one counter value only the first is recorded.
 func (q *Queries) RecordPasskeyUse(ctx context.Context, arg RecordPasskeyUseParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, recordPasskeyUse,
 		arg.Credential,
+		arg.SignCount,
 		arg.LastUsedAt,
 		arg.ID,
 		arg.OwnerID,
+		arg.PreviousSignCount,
 	)
 	if err != nil {
 		return 0, err

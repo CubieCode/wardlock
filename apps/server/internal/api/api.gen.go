@@ -3697,6 +3697,23 @@ func (response StartPasskeyRegistration409JSONResponse) VisitStartPasskeyRegistr
 	return err
 }
 
+type StartPasskeyRegistration429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response StartPasskeyRegistration429JSONResponse) VisitStartPasskeyRegistrationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type StartPasskeyRegistrationdefaultJSONResponse struct {
 	Body       Error
 	StatusCode int

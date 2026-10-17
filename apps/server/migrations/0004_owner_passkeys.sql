@@ -9,12 +9,15 @@
 --   owner, from it.
 -- - credential is the WebAuthn credential record as JSON: public key, sign
 --   count, flags, transports and AAGUID. None of it is secret.
+-- - sign_count is the record's signature counter, kept beside the JSON so
+--   a sign-in can update it only if no other sign-in moved it first.
 -- - name is the owner's label for it, shown in the dashboard.
 CREATE TABLE owner_passkeys (
   id TEXT NOT NULL PRIMARY KEY,
   owner_id TEXT NOT NULL REFERENCES owners (id) ON DELETE CASCADE,
   credential_id TEXT NOT NULL UNIQUE CHECK (length(credential_id) BETWEEN 1 AND 1364),
   credential TEXT NOT NULL CHECK (length(credential) > 0),
+  sign_count INTEGER NOT NULL CHECK (sign_count >= 0),
   name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 100),
   created_at INTEGER NOT NULL,
   last_used_at INTEGER

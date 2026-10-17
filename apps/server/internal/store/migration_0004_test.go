@@ -17,20 +17,22 @@ func TestMigration0004(t *testing.T) {
 	ctx := t.Context()
 	for _, q := range []string{
 		`INSERT INTO owners (id, email, created_at) VALUES ('o1', 'one@example.test', 1), ('o2', 'two@example.test', 1)`,
-		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, name, created_at) VALUES ('p1', 'o1', 'c1', '{}', 'Laptop', 1)`,
-		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, name, created_at, last_used_at) VALUES ('p2', 'o2', 'c2', '{}', 'Phone', 1, 2)`,
+		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, sign_count, name, created_at) VALUES ('p1', 'o1', 'c1', '{}', 0, 'Laptop', 1)`,
+		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, sign_count, name, created_at, last_used_at) VALUES ('p2', 'o2', 'c2', '{}', 0, 'Phone', 1, 2)`,
 	} {
 		if err := db.ExecForTest(ctx, q); err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
 	}
 	for _, bad := range []string{
-		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, name, created_at) VALUES ('p3', 'o1', 'c1', '{}', 'Again', 1)`,
-		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, name, created_at) VALUES ('p3', 'nobody', 'c3', '{}', 'Laptop', 1)`,
-		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, name, created_at) VALUES ('p3', 'o1', '', '{}', 'Laptop', 1)`,
-		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, name, created_at) VALUES ('p3', 'o1', 'c3', '', 'Laptop', 1)`,
-		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, name, created_at) VALUES ('p3', 'o1', 'c3', '{}', '', 1)`,
+		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, sign_count, name, created_at) VALUES ('p3', 'o1', 'c1', '{}', 0, 'Again', 1)`,
+		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, sign_count, name, created_at) VALUES ('p3', 'nobody', 'c3', '{}', 0, 'Laptop', 1)`,
+		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, sign_count, name, created_at) VALUES ('p3', 'o1', '', '{}', 0, 'Laptop', 1)`,
+		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, sign_count, name, created_at) VALUES ('p3', 'o1', 'c3', '', 0, 'Laptop', 1)`,
+		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, sign_count, name, created_at) VALUES ('p3', 'o1', 'c3', '{}', 0, '', 1)`,
 		`INSERT INTO owner_passkeys (id, owner_id, credential_id, name, created_at) VALUES ('p3', 'o1', 'c3', 'Laptop', 1)`,
+		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, sign_count, name, created_at) VALUES ('p3', 'o1', 'c3', '{}', -1, 'Laptop', 1)`,
+		`INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, name, created_at) VALUES ('p3', 'o1', 'c3', '{}', 'Laptop', 1)`,
 	} {
 		if err := db.ExecForTest(ctx, bad); err == nil {
 			t.Errorf("%s succeeded, want a constraint error", bad)

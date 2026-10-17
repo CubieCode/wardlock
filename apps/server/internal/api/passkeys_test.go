@@ -4,6 +4,7 @@
 package api_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 
 	"wardlock.nz/server/internal/api"
 	"wardlock.nz/server/internal/owners"
+	"wardlock.nz/server/internal/store"
 	"wardlock.nz/server/internal/store/storetest"
 )
 
@@ -347,6 +349,7 @@ func TestPasskeyRegistrationRequests(t *testing.T) {
 	t.Run("limit", func(t *testing.T) {
 		for len(h.passkeys(cookie)) < owners.MaxPasskeys {
 			h.register(cookie, newSoftAuthenticator(t), "")
+			h.clock.advance(3 * time.Minute) // under the registration rate
 		}
 		wantError(t, h.do(req{method: http.MethodPost, path: "/api/v0/passkeys/registration", cookie: cookie}), http.StatusConflict, "passkey_limit")
 	})
@@ -393,4 +396,84 @@ func TestPasskeySignInRateLimit(t *testing.T) {
 	wantStatus(t, h.do(req{method: http.MethodPost, path: "/api/v0/auth/passkey", ip: "198.51.100.7"}), http.StatusOK)
 	h.clock.advance(time.Minute)
 	h.startSignIn()
+}
+
+func TestPasskeyRegistrationLimits(t *testing.T) {
+	h := newPasskeyHarness(t, owners.Limits{})
+	alice := h.owner("alice@example.test")
+
+	// An owner may hold only a few registrations open at once...
+	for range 3 {
+		h.startRegistration(alice)
+	}
+	rec := h.do(req{method: http.MethodPost, path: "/api/v0/passkeys/registration", cookie: alice})
+	wantError(t, rec, http.StatusTooManyRequests, "rate_limited")
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("no Retry-After")
+	}
+	// ...which neither starves passkey sign-in nor another owner.
+	h.startSignIn()
+	h.startRegistration(h.owner("bob@example.test"))
+
+	// Spent ceremonies free their slots, but starts are also rate-limited
+	// per owner: 3 above plus 7 more, then refused.
+	carol := h.owner("carol@example.test")
+	for range 10 {
+		c := h.startRegistration(carol)
+		wantError(t, h.finishRegistration(carol, c.CeremonyId, "", map[string]any{"id": "a", "rawId": "a", "type": "public-key", "response": map[string]any{}}), http.StatusBadRequest, "invalid_passkey")
+	}
+	wantError(t, h.do(req{method: http.MethodPost, path: "/api/v0/passkeys/registration", cookie: carol}), http.StatusTooManyRequests, "rate_limited")
+	h.clock.advance(15 * time.Minute)
+	h.startRegistration(carol)
+}
+
+func TestPasskeySignInOpenCeremoniesPerNetwork(t *testing.T) {
+	h := newPasskeyHarness(t, owners.Limits{})
+	start := func(ip string) *httptest.ResponseRecorder {
+		return h.do(req{method: http.MethodPost, path: "/api/v0/auth/passkey", ip: ip})
+	}
+	for range 5 {
+		wantStatus(t, start("2001:db8:1:1::1"), http.StatusOK)
+	}
+	// Another /64 in the same /48 shares the allowance; another /48 and an
+	// IPv4 client do not.
+	wantError(t, start("2001:db8:1:2::1"), http.StatusTooManyRequests, "rate_limited")
+	wantStatus(t, start("2001:db8:2::1"), http.StatusOK)
+	wantStatus(t, start("192.0.2.9"), http.StatusOK)
+	// Open ceremonies expire, freeing the allowance.
+	h.clock.advance(owners.CeremonyValidity)
+	wantStatus(t, start("2001:db8:1:2::1"), http.StatusOK)
+}
+
+// racyPasskeys records a concurrent sign-in with the same passkey just
+// before the one under test records its own.
+type racyPasskeys struct{ store.Passkeys }
+
+func (r racyPasskeys) RecordUse(ctx context.Context, ownerID, id string, previous, signCount uint32, credential []byte, at time.Time) error {
+	if err := r.Passkeys.RecordUse(ctx, ownerID, id, previous, signCount+1, credential, at); err != nil {
+		return err
+	}
+	return r.Passkeys.RecordUse(ctx, ownerID, id, previous, signCount, credential, at)
+}
+
+func TestPasskeySignInLosesCounterRace(t *testing.T) {
+	db := storetest.New(t)
+	h := newOwnerHarnessWith(t, db, owners.Limits{}, func(s *api.Server) {
+		pk, err := owners.NewPasskeys(s.Owners, racyPasskeys{db.Passkeys()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.Passkeys = pk
+	})
+	a := newSoftAuthenticator(t)
+	h.register(h.owner("owner@example.test"), a, "Laptop")
+	c := h.startSignIn()
+	rec := h.finishSignIn(c.CeremonyId, a.get(c.Options, dashOrig, nil))
+	wantError(t, rec, http.StatusBadRequest, "invalid_passkey")
+	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Fatalf("lost race set cookies %q", got)
+	}
+	if !strings.Contains(h.logs.String(), "used concurrently") {
+		t.Error("lost race not logged")
+	}
 }

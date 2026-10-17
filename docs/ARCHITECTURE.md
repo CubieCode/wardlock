@@ -176,6 +176,7 @@ erDiagram
     TEXT owner_id FK
     TEXT credential_id UK "base64url"
     TEXT credential "WebAuthn record, JSON"
+    INTEGER sign_count "compare-and-set on sign-in"
     TEXT name
     INTEGER created_at
     INTEGER last_used_at

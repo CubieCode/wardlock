@@ -121,6 +121,7 @@ type OwnerPasskey struct {
 	OwnerID      string
 	CredentialID string
 	Credential   string
+	SignCount    int64
 	Name         string
 	CreatedAt    int64
 	LastUsedAt   sql.NullInt64

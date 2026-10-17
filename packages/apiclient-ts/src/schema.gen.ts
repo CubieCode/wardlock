@@ -118,7 +118,7 @@ export interface paths {
     put?: never;
     /**
      * Start signing in with a passkey.
-     * @description Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP.
+     * @description Returns a WebAuthn challenge for a discoverable-credential sign-in: it names no owner, and the browser offers whichever of this dashboard's passkeys it holds. Pass `options` to `navigator.credentials.get({publicKey})` after decoding its base64url fields, then send the result to `verifyPasskeySignIn` with `ceremonyId` within 5 minutes. Rate-limited per IP, at the same rate as `verifyEmailCode` but counted separately, with at most 5 sign-ins open at once per IPv4 address or IPv6 /48.
      */
     post: operations['startPasskeySignIn'];
     delete?: never;
@@ -285,7 +285,7 @@ export interface paths {
     put?: never;
     /**
      * Start adding a passkey.
-     * @description Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes.
+     * @description Returns a WebAuthn challenge to create a discoverable passkey for the signed-in owner, with the dashboard host as the relying party and the owner's existing passkeys excluded. Pass `options` to `navigator.credentials.create({publicKey})` after decoding its base64url fields, then send the result to `createPasskey` with `ceremonyId` within 5 minutes. Rate-limited per owner (10 starts per 15 minutes, at most 3 open at once).
      */
     post: operations['startPasskeyRegistration'];
     delete?: never;
@@ -1945,6 +1945,7 @@ export interface operations {
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       409: components['responses']['PasskeyLimit'];
+      429: components['responses']['RateLimited'];
       default: components['responses']['Error'];
     };
   };

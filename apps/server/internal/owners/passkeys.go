@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -33,11 +34,26 @@ const (
 	MaxPasskeyName = 100
 	// DefaultPasskeyName names a passkey registered without a name.
 	DefaultPasskeyName = "Passkey"
-	// maxCeremonies bounds the challenges held in memory across the
-	// instance. When full, new ceremonies are refused until old ones
-	// expire, which can only delay passkey sign-in, never exhaust memory.
-	maxCeremonies = 10_000
+
+	// Ceremonies in progress are held in memory, in two separate tables so
+	// that registrations can never crowd out sign-ins. Each table is
+	// bounded overall and per holder; when either bound is reached, new
+	// ceremonies are refused (429) until old ones are used or expire, which
+	// can delay passkey sign-in but never exhaust memory.
+	//
+	// Sign-in ceremonies are held per client network (ceremonyNetwork):
+	// filling the table takes maxSignIns/signInsPerNetwork = 2,000 IPv4
+	// addresses or IPv6 /48s, each also held to Limits.VerifyPerIP starts.
+	maxSignIns        = 10_000
+	signInsPerNetwork = 5
+	// Registration ceremonies are held per owner; starts are also limited
+	// per owner by registrationRate.
+	maxRegistrations      = 1_000
+	registrationsPerOwner = 3
 )
+
+// registrationRate limits how often one owner may start adding a passkey.
+var registrationRate = Rate{N: 10, Per: 15 * time.Minute}
 
 var (
 	// ErrInvalidPasskey covers every rejected passkey response: an unknown,
@@ -61,10 +77,11 @@ var (
 // held in memory, single use, for CeremonyValidity; a restart only cancels
 // ceremonies in progress.
 type Passkeys struct {
-	svc        *Service
-	repo       store.Passkeys
-	wa         *webauthn.WebAuthn
-	ceremonies *ceremonies
+	svc           *Service
+	repo          store.Passkeys
+	wa            *webauthn.WebAuthn
+	signIns       *ceremonies
+	registrations *ceremonies
 }
 
 // NewPasskeys returns passkey support for svc's owners, stored in repo.
@@ -92,7 +109,13 @@ func NewPasskeys(svc *Service, repo store.Passkeys) (*Passkeys, error) {
 	if err != nil {
 		return nil, fmt.Errorf("owners: webauthn: %w", err)
 	}
-	return &Passkeys{svc: svc, repo: repo, wa: wa, ceremonies: newCeremonies(svc.now)}, nil
+	return &Passkeys{
+		svc:           svc,
+		repo:          repo,
+		wa:            wa,
+		signIns:       newCeremonies(svc.now, maxSignIns, signInsPerNetwork),
+		registrations: newCeremonies(svc.now, maxRegistrations, registrationsPerOwner),
+	}, nil
 }
 
 // PasskeyChallenge starts a ceremony. Options is the WebAuthn
@@ -113,8 +136,13 @@ type PasskeyInfo struct {
 	LastUsedAt time.Time // zero: never used to sign in
 }
 
-// BeginRegistration starts adding a passkey for the signed-in owner.
+// BeginRegistration starts adding a passkey for the signed-in owner. Starts
+// are rate-limited per owner, and an owner may have only a few
+// registrations open at once.
 func (p *Passkeys) BeginRegistration(ctx context.Context, ownerID string) (PasskeyChallenge, error) {
+	if err := p.svc.allow("passkey-register:"+ownerID, registrationRate); err != nil {
+		return PasskeyChallenge{}, err
+	}
 	user, err := p.user(ctx, ownerID)
 	if err != nil {
 		return PasskeyChallenge{}, err
@@ -130,7 +158,7 @@ func (p *Passkeys) BeginRegistration(ctx context.Context, ownerID string) (Passk
 	if err != nil {
 		return PasskeyChallenge{}, fmt.Errorf("begin passkey registration: %w", err)
 	}
-	return p.challenge(ceremony{kind: ceremonyRegister, ownerID: ownerID, data: *data}, creation.Response)
+	return p.challenge(p.registrations, ownerID, ceremony{kind: ceremonyRegister, ownerID: ownerID, data: *data}, creation.Response)
 }
 
 // FinishRegistration checks the authenticator's response to the ceremony
@@ -140,7 +168,7 @@ func (p *Passkeys) FinishRegistration(ctx context.Context, ownerID, ceremonyID, 
 	if err != nil {
 		return PasskeyInfo{}, err
 	}
-	c, ok := p.ceremonies.take(ceremonyID, ceremonyRegister)
+	c, ok := p.registrations.take(ceremonyID, ceremonyRegister)
 	if !ok || c.ownerID != ownerID {
 		return PasskeyInfo{}, ErrInvalidPasskey
 	}
@@ -151,9 +179,6 @@ func (p *Passkeys) FinishRegistration(ctx context.Context, ownerID, ceremonyID, 
 	user, err := p.user(ctx, ownerID)
 	if err != nil {
 		return PasskeyInfo{}, err
-	}
-	if len(user.creds) >= MaxPasskeys {
-		return PasskeyInfo{}, ErrPasskeyLimit
 	}
 	cred, err := p.wa.CreateCredential(user, c.data, parsed)
 	if err != nil {
@@ -168,11 +193,17 @@ func (p *Passkeys) FinishRegistration(ctx context.Context, ownerID, ceremonyID, 
 		OwnerID:      ownerID,
 		CredentialID: base64.RawURLEncoding.EncodeToString(cred.ID),
 		Credential:   record,
+		SignCount:    cred.Authenticator.SignCount,
 		Name:         name,
 		CreatedAt:    p.svc.now(),
 	}
-	if err := p.repo.Create(ctx, row); err != nil {
-		if errors.Is(err, store.ErrConflict) {
+	// The store enforces MaxPasskeys in the insert itself, so concurrent
+	// registrations cannot exceed it.
+	if err := p.repo.Create(ctx, row, MaxPasskeys); err != nil {
+		switch {
+		case errors.Is(err, store.ErrPasskeyLimit):
+			return PasskeyInfo{}, ErrPasskeyLimit
+		case errors.Is(err, store.ErrConflict):
 			// The credential is already registered, to this owner or
 			// another; say no more than for any other rejection.
 			return PasskeyInfo{}, p.rejected(ctx, ownerID, "registration", err)
@@ -184,7 +215,9 @@ func (p *Passkeys) FinishRegistration(ctx context.Context, ownerID, ceremonyID, 
 }
 
 // BeginSignIn starts a passkey sign-in. It names no owner: the browser
-// offers whichever of the dashboard's passkeys it holds.
+// offers whichever of the dashboard's passkeys it holds. Starts are limited
+// per IP at the same rate as email-code verifications (Limits.VerifyPerIP),
+// counted separately from them.
 func (p *Passkeys) BeginSignIn(_ context.Context, c Client) (PasskeyChallenge, error) {
 	if err := p.svc.allow("passkey-ip:"+ipKey(c.IP), p.svc.limits.VerifyPerIP); err != nil {
 		return PasskeyChallenge{}, err
@@ -193,14 +226,14 @@ func (p *Passkeys) BeginSignIn(_ context.Context, c Client) (PasskeyChallenge, e
 	if err != nil {
 		return PasskeyChallenge{}, fmt.Errorf("begin passkey sign-in: %w", err)
 	}
-	return p.challenge(ceremony{kind: ceremonySignIn, data: *data}, assertion.Response)
+	return p.challenge(p.signIns, ceremonyNetwork(c.IP), ceremony{kind: ceremonySignIn, data: *data}, assertion.Response)
 }
 
 // FinishSignIn checks the authenticator's response to a sign-in ceremony
 // and signs in the passkey's owner. The ceremony is spent whether or not
 // the response is good, so a replayed response always fails.
 func (p *Passkeys) FinishSignIn(ctx context.Context, c Client, ceremonyID string, response []byte) (store.Owner, NewSession, error) {
-	cer, ok := p.ceremonies.take(ceremonyID, ceremonySignIn)
+	cer, ok := p.signIns.take(ceremonyID, ceremonySignIn)
 	if !ok {
 		return store.Owner{}, NewSession{}, ErrInvalidPasskey
 	}
@@ -212,6 +245,8 @@ func (p *Passkeys) FinishSignIn(ctx context.Context, c Client, ceremonyID string
 		row       store.Passkey
 		lookupErr error // an unexpected store error, not a rejection
 	)
+	// The assertion is checked against this one row as read, so the sign
+	// count RecordUse compares is the one the check used.
 	find := func(rawID, userHandle []byte) (webauthn.User, error) {
 		var err error
 		row, err = p.repo.GetByCredentialID(ctx, base64.RawURLEncoding.EncodeToString(rawID))
@@ -224,11 +259,19 @@ func (p *Passkeys) FinishSignIn(ctx context.Context, c Client, ceremonyID string
 		if string(userHandle) != row.OwnerID {
 			return nil, errors.New("user handle does not match the passkey's owner")
 		}
-		user, err := p.user(ctx, row.OwnerID)
-		if err != nil && !errors.Is(err, ErrUnauthenticated) {
-			lookupErr = err
+		o, err := p.svc.owners.Get(ctx, row.OwnerID)
+		if err != nil {
+			if !errors.Is(err, store.ErrNotFound) {
+				lookupErr = err
+			}
+			return nil, err
 		}
-		return user, err
+		var cred webauthn.Credential
+		if err := json.Unmarshal(row.Credential, &cred); err != nil {
+			lookupErr = fmt.Errorf("decode passkey %s: %w", row.ID, err)
+			return nil, lookupErr
+		}
+		return &passkeyUser{owner: o, creds: []webauthn.Credential{cred}}, nil
 	}
 	_, cred, err := p.wa.ValidatePasskeyLogin(find, cer.data, parsed)
 	if lookupErr != nil {
@@ -246,10 +289,13 @@ func (p *Passkeys) FinishSignIn(ctx context.Context, c Client, ceremonyID string
 	if err != nil {
 		return store.Owner{}, NewSession{}, fmt.Errorf("encode passkey: %w", err)
 	}
-	if err := p.repo.RecordUse(ctx, row.OwnerID, row.ID, record, p.svc.now()); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return store.Owner{}, NewSession{}, ErrInvalidPasskey // removed meanwhile
-		}
+	err = p.repo.RecordUse(ctx, row.OwnerID, row.ID, row.SignCount, cred.Authenticator.SignCount, record, p.svc.now())
+	if errors.Is(err, store.ErrNotFound) {
+		// Removed meanwhile, or another sign-in with this passkey recorded
+		// a newer count first: refuse, as for a counter that went back.
+		return store.Owner{}, NewSession{}, p.rejected(ctx, row.OwnerID, "sign-in", errors.New("passkey removed or used concurrently"))
+	}
+	if err != nil {
 		return store.Owner{}, NewSession{}, err
 	}
 	return p.svc.signIn(ctx, c, row.OwnerID, "passkey")
@@ -282,13 +328,14 @@ func (p *Passkeys) Remove(ctx context.Context, ownerID, id string) error {
 	return nil
 }
 
-// challenge records c and returns its ID with the options to send.
-func (p *Passkeys) challenge(c ceremony, options any) (PasskeyChallenge, error) {
+// challenge records c in table for holder and returns its ID with the
+// options to send.
+func (p *Passkeys) challenge(table *ceremonies, holder string, c ceremony, options any) (PasskeyChallenge, error) {
 	raw, err := json.Marshal(options)
 	if err != nil {
 		return PasskeyChallenge{}, fmt.Errorf("encode passkey options: %w", err)
 	}
-	id, err := p.ceremonies.put(c)
+	id, err := table.put(c, holder)
 	if err != nil {
 		return PasskeyChallenge{}, err
 	}
@@ -381,35 +428,45 @@ type ceremony struct {
 	kind    ceremonyKind
 	ownerID string // registration only: who started it
 	data    webauthn.SessionData
+	holder  string // the key its table counts it against
 	expires time.Time
 }
 
-// ceremonies holds ceremonies in progress by random ID, each usable once.
+// ceremonies holds ceremonies in progress by random ID, each usable once,
+// at most max in all and perHolder for any one holder.
 type ceremonies struct {
-	now func() time.Time
-	max int
+	now       func() time.Time
+	max       int
+	perHolder int
 
-	mu sync.Mutex
-	m  map[string]ceremony
+	mu       sync.Mutex
+	m        map[string]ceremony
+	byHolder map[string][]string // IDs, oldest first
 }
 
-func newCeremonies(now func() time.Time) *ceremonies {
-	return &ceremonies{now: now, max: maxCeremonies, m: map[string]ceremony{}}
+func newCeremonies(now func() time.Time, total, perHolder int) *ceremonies {
+	return &ceremonies{now: now, max: total, perHolder: perHolder, m: map[string]ceremony{}, byHolder: map[string][]string{}}
 }
 
-// put stores c for CeremonyValidity and returns its ID. When the table is
-// full even after dropping expired entries, it refuses with a
-// RateLimitError for the time until the oldest entry expires.
-func (cs *ceremonies) put(c ceremony) (string, error) {
+// put stores c for holder for CeremonyValidity and returns its ID. When
+// holder already has perHolder open, or the table is full even after
+// dropping expired entries, it refuses with a RateLimitError lasting until
+// the relevant oldest entry expires.
+func (cs *ceremonies) put(c ceremony, holder string) (string, error) {
 	now := cs.now()
-	c.expires = now.Add(CeremonyValidity)
+	c.holder, c.expires = holder, now.Add(CeremonyValidity)
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
+	cs.pruneLocked(holder, now)
+	if ids := cs.byHolder[holder]; len(ids) >= cs.perHolder {
+		return "", &RateLimitError{RetryAfter: cs.m[ids[0]].expires.Sub(now)}
+	}
 	if len(cs.m) >= cs.max {
 		next := c.expires
 		for id, old := range cs.m {
 			if !now.Before(old.expires) {
 				delete(cs.m, id)
+				cs.pruneLocked(old.holder, now)
 			} else if old.expires.Before(next) {
 				next = old.expires
 			}
@@ -420,12 +477,35 @@ func (cs *ceremonies) put(c ceremony) (string, error) {
 	}
 	id := randomToken()
 	cs.m[id] = c
+	cs.byHolder[holder] = append(cs.byHolder[holder], id)
 	return id, nil
+}
+
+// pruneLocked drops holder's used and expired ceremonies.
+func (cs *ceremonies) pruneLocked(holder string, now time.Time) {
+	ids := cs.byHolder[holder]
+	kept := ids[:0]
+	for _, id := range ids {
+		c, ok := cs.m[id]
+		switch {
+		case !ok:
+		case !now.Before(c.expires):
+			delete(cs.m, id)
+		default:
+			kept = append(kept, id)
+		}
+	}
+	if len(kept) == 0 {
+		delete(cs.byHolder, holder)
+	} else {
+		cs.byHolder[holder] = kept
+	}
 }
 
 // take removes and returns ceremony id if it is of kind and unexpired. A
 // ceremony of another kind is left alone.
 func (cs *ceremonies) take(id string, kind ceremonyKind) (ceremony, bool) {
+	now := cs.now()
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	c, ok := cs.m[id]
@@ -433,5 +513,24 @@ func (cs *ceremonies) take(id string, kind ceremonyKind) (ceremony, bool) {
 		return ceremony{}, false
 	}
 	delete(cs.m, id)
-	return c, cs.now().Before(c.expires)
+	cs.pruneLocked(c.holder, now)
+	return c, now.Before(c.expires)
+}
+
+// ceremonyNetwork is the holder for sign-in ceremonies: the IPv4 address,
+// or the IPv6 /48, since one site is commonly given a whole /48.
+func ceremonyNetwork(ip string) string {
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	a = a.Unmap()
+	if a.Is4() {
+		return a.String()
+	}
+	p, err := a.WithZone("").Prefix(48)
+	if err != nil {
+		return ip
+	}
+	return p.String()
 }

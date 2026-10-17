@@ -116,6 +116,9 @@ func (s *Server) StartPasskeyRegistration(ctx context.Context, _ StartPasskeyReg
 	case errors.Is(err, owners.ErrUnauthenticated):
 		return StartPasskeyRegistration401JSONResponse{UnauthenticatedJSONResponse(unauthenticatedError())}, nil
 	case err != nil:
+		if e, ok := classifyOwnerError(err); ok && e.status == http.StatusTooManyRequests {
+			return StartPasskeyRegistration429JSONResponse{RateLimitedJSONResponse{Body: e.body, Headers: RateLimitedResponseHeaders{RetryAfter: e.retryAfter}}}, nil
+		}
 		return nil, err
 	}
 	body, err := challengeBody(c)
