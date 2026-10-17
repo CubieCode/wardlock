@@ -14,8 +14,8 @@ import (
 )
 
 const createOwnerSession = `-- name: CreateOwnerSession :exec
-INSERT INTO owner_sessions (id, owner_id, token_hash, created_at, last_seen_at, expires_at, revoked_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+INSERT INTO owner_sessions (id, owner_id, token_hash, created_at, last_seen_at, expires_at, revoked_at, user_agent)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
 `
 
 type CreateOwnerSessionParams struct {
@@ -26,6 +26,7 @@ type CreateOwnerSessionParams struct {
 	LastSeenAt int64
 	ExpiresAt  int64
 	RevokedAt  sql.NullInt64
+	UserAgent  sql.NullString
 }
 
 func (q *Queries) CreateOwnerSession(ctx context.Context, arg CreateOwnerSessionParams) error {
@@ -37,6 +38,7 @@ func (q *Queries) CreateOwnerSession(ctx context.Context, arg CreateOwnerSession
 		arg.LastSeenAt,
 		arg.ExpiresAt,
 		arg.RevokedAt,
+		arg.UserAgent,
 	)
 	return err
 }
@@ -74,5 +76,127 @@ func (q *Queries) CreateSiteSession(ctx context.Context, arg CreateSiteSessionPa
 		arg.ExpiresAt,
 		arg.RevokedAt,
 	)
+	return err
+}
+
+const getOwnerSessionByTokenHash = `-- name: GetOwnerSessionByTokenHash :one
+SELECT id, owner_id, token_hash, created_at, last_seen_at, expires_at, revoked_at, user_agent
+FROM owner_sessions WHERE token_hash = ?1
+`
+
+func (q *Queries) GetOwnerSessionByTokenHash(ctx context.Context, tokenHash string) (OwnerSession, error) {
+	row := q.db.QueryRowContext(ctx, getOwnerSessionByTokenHash, tokenHash)
+	var i OwnerSession
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.TokenHash,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.UserAgent,
+	)
+	return i, err
+}
+
+const listOwnerSessions = `-- name: ListOwnerSessions :many
+SELECT id, owner_id, token_hash, created_at, last_seen_at, expires_at, revoked_at, user_agent
+FROM owner_sessions
+WHERE owner_id = ?1
+  AND revoked_at IS NULL
+  AND expires_at > ?2
+  AND last_seen_at > ?3
+  AND (
+    last_seen_at < ?4
+    OR (last_seen_at = ?4 AND id < ?5)
+  )
+ORDER BY last_seen_at DESC, id DESC
+LIMIT ?6
+`
+
+type ListOwnerSessionsParams struct {
+	OwnerID   string
+	Now       int64
+	IdleSince int64
+	AfterSeen int64
+	AfterID   string
+	RowLimit  int64
+}
+
+// Active sessions only: not revoked, before the absolute expiry and seen
+// after idle_since. Ordered most recently used first; the cursor is the
+// (last_seen_at, id) of the previous page's last row; the first page passes
+// the largest after_seen.
+func (q *Queries) ListOwnerSessions(ctx context.Context, arg ListOwnerSessionsParams) ([]OwnerSession, error) {
+	rows, err := q.db.QueryContext(ctx, listOwnerSessions,
+		arg.OwnerID,
+		arg.Now,
+		arg.IdleSince,
+		arg.AfterSeen,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OwnerSession
+	for rows.Next() {
+		var i OwnerSession
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.TokenHash,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.UserAgent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const revokeOwnerSession = `-- name: RevokeOwnerSession :execrows
+UPDATE owner_sessions SET revoked_at = COALESCE(revoked_at, ?1)
+WHERE id = ?2 AND owner_id = ?3
+`
+
+type RevokeOwnerSessionParams struct {
+	RevokedAt sql.NullInt64
+	ID        string
+	OwnerID   string
+}
+
+func (q *Queries) RevokeOwnerSession(ctx context.Context, arg RevokeOwnerSessionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeOwnerSession, arg.RevokedAt, arg.ID, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const touchOwnerSession = `-- name: TouchOwnerSession :exec
+UPDATE owner_sessions SET last_seen_at = ?1
+WHERE id = ?2 AND last_seen_at < ?1
+`
+
+type TouchOwnerSessionParams struct {
+	LastSeenAt int64
+	ID         string
+}
+
+func (q *Queries) TouchOwnerSession(ctx context.Context, arg TouchOwnerSessionParams) error {
+	_, err := q.db.ExecContext(ctx, touchOwnerSession, arg.LastSeenAt, arg.ID)
 	return err
 }

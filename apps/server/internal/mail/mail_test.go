@@ -61,6 +61,27 @@ func TestTemplates(t *testing.T) {
 	}
 }
 
+func TestInviteMessage(t *testing.T) {
+	const link = "http://admin.example.test/sign-in?code=EXAMPLEonlyEXAMPLE"
+	msg, err := mail.InviteMessage(recipient, mail.Invite{
+		URL: link, Host: "admin.example.test", InvitedBy: "first<b>@example.test", ValidFor: 7 * 24 * time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(msg.Subject, "EXAMPLEonly") {
+		t.Errorf("subject %q contains the link; the dev sink logs subjects", msg.Subject)
+	}
+	for name, body := range map[string]string{"text": msg.Text, "html": msg.HTML} {
+		if !strings.Contains(body, link) || !strings.Contains(body, "7 days") || !strings.Contains(body, "admin.example.test") {
+			t.Errorf("%s body missing link, expiry or host:\n%s", name, body)
+		}
+	}
+	if strings.Contains(msg.HTML, "first<b>") || !strings.Contains(msg.HTML, "first&lt;b&gt;@example.test") {
+		t.Errorf("HTML does not escape the inviter:\n%s", msg.HTML)
+	}
+}
+
 func TestDevSink(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "mail")
 	var logs bytes.Buffer

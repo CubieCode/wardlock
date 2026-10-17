@@ -5,6 +5,7 @@
 // server, builds and starts wardlockd with dashboard pages proxied to Vite.
 // Ports and data directory come from .env (scripts/worktree-setup.sh).
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 
 if (existsSync('.env')) process.loadEnvFile('.env');
@@ -13,6 +14,11 @@ const webPort = env.WARDLOCK_WEB_DEV_PORT || '5173';
 env.WARDLOCK_DEV_DASHBOARD_URL = `http://127.0.0.1:${webPort}`;
 env.WARDLOCK_DATA_DIR ||= '.local/data';
 env.WARDLOCK_LOG_FORMAT ||= 'text';
+if (!env.WARDLOCK_SECRET) {
+  // Without a lane .env, use a key for this run only: sessions end on restart.
+  env.WARDLOCK_SECRET = randomBytes(32).toString('base64url');
+  console.warn('WARDLOCK_SECRET is unset; using a random key for this run.');
+}
 
 /** @param {string} cmd @param {string[]} args */
 const step = (cmd, args) => {

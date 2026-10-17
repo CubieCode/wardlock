@@ -1,0 +1,21 @@
+{{define "link"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{.Title}}</title>
+</head>
+<body style="margin:0;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;margin:0 auto;">
+<tr><td>
+<p style="margin:0 0 16px;">{{.Lead}}</p>
+<p style="margin:0 0 16px;"><a href="{{.URL}}" style="display:inline-block;padding:12px 20px;border-radius:6px;background:#1f2937;color:#ffffff;text-decoration:none;font-weight:600;">{{.Action}}</a></p>
+<p style="margin:0 0 16px;font-size:14px;word-break:break-all;">Or paste this address into your browser: {{.URL}}</p>
+<p style="margin:0 0 16px;">{{.Expiry}}</p>
+<p style="margin:0;font-size:14px;opacity:0.7;">{{.Ignore}}</p>
+</td></tr>
+</table>
+</body>
+</html>
+{{end}}

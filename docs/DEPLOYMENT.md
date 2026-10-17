@@ -11,6 +11,7 @@ Wardlock needs one machine, one binary and a data directory. SQLite is embedded;
 - Ports 80 and 443 reachable from the internet for automatic TLS, or a reverse proxy in front.
 - An SMTP server for email codes (A2.4) and owner sign-in codes (C1.1).
 - Persistent storage for `WARDLOCK_DATA_DIR`, on a local filesystem (not NFS, because of SQLite locking).
+- A server key in `WARDLOCK_SECRET`: at least 32 random bytes, base64url (`openssl rand -base64 32 | tr '+/' '-_'`). `wardlockd serve` and `wardlockd admin` refuse to start without it. See [Backups](#backups).
 
 ## Domains and DNS
 
@@ -60,7 +61,9 @@ sudo systemctl daemon-reload && sudo systemctl enable --now wardlockd
 
 [`deploy/wardlockd.service`](../deploy/wardlockd.service) runs as the `wardlock` user with `StateDirectory=wardlock` (so `WARDLOCK_DATA_DIR=/var/lib/wardlock`), `AmbientCapabilities=CAP_NET_BIND_SERVICE` for ports 80/443, and systemd hardening (`ProtectSystem=strict`, `NoNewPrivileges`, private `/tmp`, a `@system-service` system call filter, `UMask=0077`).
 
-On first start with no owners, the log shows a one-time setup URL (C1.1): `journalctl -u wardlockd | grep setup`. Or run `sudo -u wardlock wardlockd admin create --email you@example.com`.
+On first start with no owners, the log shows a one-time setup URL (`setup_url`, valid 60 minutes, single use, a new one on every start until an owner exists): `journalctl -u wardlockd | grep setup_url`. Or run `sudo -u wardlock wardlockd admin create --email you@example.com` with the same environment as the service; it creates the owner and prints a one-time sign-in URL valid for 60 minutes. Afterwards owners sign in with an emailed code and invite further owners from the dashboard; invitation links are valid for 7 days. Setup, sign-in and invitation URLs use `https://<dashboard host>` with no port, since production dashboards are reached over HTTPS on the default port; only a `localhost` or `*.localhost` dashboard host gets `http://` and the listen port.
+
+The per-address limit on sign-in emails (5 per hour) counts every request for that address, whoever sends it. Anyone who knows an owner's address can spend those sends, which delays that owner's sign-in by up to an hour; it cannot sign them in. Passkeys (C1.6) avoid this.
 
 ## Docker
 
@@ -68,6 +71,7 @@ On first start with no owners, the log shows a one-time setup URL (C1.1): `journ
 
 ```sh
 goreleaser release --snapshot --clean   # images ghcr.io/cubiecode/wardlock:<version>-amd64 and -arm64
+export WARDLOCK_SECRET=$(openssl rand -base64 32 | tr '+/' '-_')   # keep it; see Backups
 WARDLOCK_IMAGE=ghcr.io/cubiecode/wardlock:<version>-amd64 docker compose -f deploy/compose.yaml up -d
 curl http://127.0.0.1:8080/healthz
 ```
@@ -77,6 +81,7 @@ curl http://127.0.0.1:8080/healthz
 If something else already terminates TLS on the machine, run Wardlock in plain-HTTP mode (C1.4) on a loopback port and proxy every site host and the dashboard to it, preserving the `Host` header. Examples: [`deploy/Caddyfile.example`](../deploy/Caddyfile.example), [`deploy/nginx.conf.example`](../deploy/nginx.conf.example). Then:
 
 - Pass `Host` unchanged and set `X-Forwarded-For` and `X-Forwarded-Proto`; Wardlock trusts these only from addresses in its trusted-proxy setting (C1.4).
+- Until trusted-proxy support lands (C1.4), Wardlock sees every client behind the proxy as the proxy's address, so the per-IP sign-in limits (email-code sends and verifications, setup and sign-in-link redemptions) become instance-wide: one busy or hostile client can make sign-in wait for everyone until the window resets.
 - Do not cache protected responses at the proxy, and do not log query strings (they carry share-link tokens), or redact the `t` parameter. The examples do this.
 - Allow request bodies of at least the per-file limit (25 MiB default) for blob uploads.
 - For custom domains, the proxy must obtain their certificates. With Caddy, use on-demand TLS with `ask` set to `http://127.0.0.1:8080/.wardlock/tls-ask`, so it only requests certificates for hostnames Wardlock has verified (C1.9 adds this to the example). nginx cannot issue certificates on demand; use Caddy, or manage custom-domain certificates yourself.

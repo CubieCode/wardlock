@@ -19,7 +19,7 @@ var templateFS embed.FS
 // Parsed once; templates are read-only after parsing.
 var (
 	textTemplates = texttemplate.Must(texttemplate.New("").
-			Funcs(texttemplate.FuncMap{"minutes": minutes}).
+			Funcs(texttemplate.FuncMap{"minutes": minutes, "days": days}).
 			ParseFS(templateFS, "templates/*.txt.tmpl"))
 	htmlTemplates = htmltemplate.Must(htmltemplate.New("").ParseFS(templateFS, "templates/*.html.tmpl"))
 )
@@ -39,6 +39,17 @@ type EmailCode struct {
 	// Site is the host name of the site the code opens.
 	Site     string
 	ValidFor time.Duration
+}
+
+// Invite is the data for an invitation to become an owner (C1.1). URL is a
+// one-time sign-in link.
+type Invite struct {
+	URL string
+	// Host is the dashboard host the link signs in to.
+	Host string
+	// InvitedBy is the inviting owner's address.
+	InvitedBy string
+	ValidFor  time.Duration
 }
 
 // layout is the HTML body shared by every code message.
@@ -72,6 +83,31 @@ func EmailCodeMessage(to netmail.Address, d EmailCode) (Message, error) {
 	})
 }
 
+// linkLayout is the HTML body of a message carrying a one-time link.
+type linkLayout struct {
+	Title, Lead, Action, URL, Expiry, Ignore string
+}
+
+// InviteMessage builds the invitation email. The subject never contains
+// the link, because the dev sink logs subjects.
+func InviteMessage(to netmail.Address, d Invite) (Message, error) {
+	var text, body bytes.Buffer
+	if err := textTemplates.ExecuteTemplate(&text, "invite.txt.tmpl", d); err != nil {
+		return Message{}, fmt.Errorf("render invite.txt.tmpl: %w", err)
+	}
+	if err := htmlTemplates.ExecuteTemplate(&body, "link", linkLayout{
+		Title:  "You're invited to Wardlock",
+		Lead:   d.InvitedBy + " invited you to manage sites on the Wardlock server at " + d.Host + ".",
+		Action: "Sign in to Wardlock",
+		URL:    d.URL,
+		Expiry: fmt.Sprintf("The link expires in %d days and works once. After that, sign in at %s with a code sent to this address.", days(d.ValidFor), d.Host),
+		Ignore: "If you did not expect this invitation, you can ignore this email.",
+	}); err != nil {
+		return Message{}, fmt.Errorf("render html: %w", err)
+	}
+	return Message{To: to, Subject: "You're invited to Wardlock on " + d.Host, Text: text.String(), HTML: body.String()}, nil
+}
+
 func render(to netmail.Address, subject, textName string, data any, html layout) (Message, error) {
 	var text, body bytes.Buffer
 	if err := textTemplates.ExecuteTemplate(&text, textName, data); err != nil {
@@ -84,3 +120,5 @@ func render(to netmail.Address, subject, textName string, data any, html layout)
 }
 
 func minutes(d time.Duration) int { return int(d.Round(time.Minute) / time.Minute) }
+
+func days(d time.Duration) int { return int(d.Round(24*time.Hour) / (24 * time.Hour)) }

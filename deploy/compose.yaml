@@ -17,6 +17,7 @@ services:
       WARDLOCK_BASE_DOMAIN: ${WARDLOCK_BASE_DOMAIN:-wardlock.localhost}
       WARDLOCK_DASHBOARD_HOST: ${WARDLOCK_DASHBOARD_HOST:-}
       WARDLOCK_LOG_FORMAT: json
+      WARDLOCK_SECRET: ${WARDLOCK_SECRET:?set WARDLOCK_SECRET; see docs/DEPLOYMENT.md}
     volumes:
       - wardlock-data:/data
     read_only: true
