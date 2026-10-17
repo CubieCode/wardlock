@@ -19,7 +19,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### F0.2: API contract v0 and generation pipeline
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/f0.2-api-contract`
 - PR: https://github.com/CubieCode/wardlock/pull/14
 - Depends on: F0.1
