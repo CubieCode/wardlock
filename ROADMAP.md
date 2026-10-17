@@ -131,9 +131,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.8: Blob garbage collection
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/c1.8-blob-gc`
+- PR: https://github.com/CubieCode/wardlock/pull/33
 - Depends on: C1.2
 - Scope: Periodic and on-demand (`wardlockd gc`) removal of blobs referenced by no deploy, with a grace period covering in-flight uploads; pruning deploy history beyond the configured limit (never the active deploy); metrics of bytes freed in logs.
 - Acceptance: Tests prove referenced blobs and blobs younger than the grace period survive, concurrent upload plus GC never loses a blob needed by activation, and history pruning keeps the active deploy.

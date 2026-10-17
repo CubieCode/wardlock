@@ -150,7 +150,7 @@ The server certificate is always verified against the system roots. Percent-enco
 
 ## Deploy storage and limits
 
-Deploy file bodies are stored once per content hash under `WARDLOCK_BLOB_DIR` (default `<WARDLOCK_DATA_DIR>/blobs`, laid out as `sha256/ab/cdef…`). Each upload is written to a temporary file in the same directory, fsynced and renamed into place, so put the blob directory on the same local filesystem as its parent, and give it room for every deploy you keep. Unreferenced blobs are removed by garbage collection (C1.8).
+Deploy file bodies are stored once per content hash under `WARDLOCK_BLOB_DIR` (default `<WARDLOCK_DATA_DIR>/blobs`, laid out as `sha256/ab/cdef…`). Each upload is written to a temporary file in the same directory, fsynced and renamed into place, so put the blob directory on the same local filesystem as its parent, and give it room for every deploy you keep. Unreferenced blobs are removed by garbage collection (see below).
 
 | Variable                    | Default              | Limit                   |
 | --------------------------- | -------------------- | ----------------------- |
@@ -159,6 +159,18 @@ Deploy file bodies are stored once per content hash under `WARDLOCK_BLOB_DIR` (d
 | `WARDLOCK_MAX_DEPLOY_SIZE`  | `1073741824` (1 GiB) | bytes in a whole deploy |
 
 Values are whole numbers of at least 1, without units. A deploy over a limit is rejected when it is created (`413 limit_exceeded`, naming the file where one is at fault), and an upload body longer than the per-file limit is rejected too. Raising the per-file limit means raising a reverse proxy's request body limit to match.
+
+### Garbage collection
+
+The server prunes deploy history and removes file bodies no deploy references at start and then every `WARDLOCK_GC_INTERVAL_MINUTES`. Each site keeps its newest `WARDLOCK_DEPLOY_HISTORY` deploys plus its active deploy, which is never pruned, so rollback works within that history. Deploys not yet activated and bodies uploaded within `WARDLOCK_GC_GRACE_HOURS` are kept, so a slow upload is never cut short; keep the grace period longer than your longest deploy. `wardlockd gc` runs one collection with the same settings and prints what it removed. It is safe to run while the server is running, for example from cron with `WARDLOCK_GC_INTERVAL_MINUTES=0`.
+
+| Variable                       | Default | Meaning                                                               |
+| ------------------------------ | ------- | --------------------------------------------------------------------- |
+| `WARDLOCK_GC_INTERVAL_MINUTES` | `60`    | minutes between collections in the server, 0 to 525600; 0 runs none   |
+| `WARDLOCK_GC_GRACE_HOURS`      | `24`    | hours that new uploads and pending deploys are protected, 1 to 8760   |
+| `WARDLOCK_DEPLOY_HISTORY`      | `50`    | newest deploys kept per site, 1 to 100000; the active one is kept too |
+
+Every run logs `garbage collection finished` with `deploys_pruned`, `blobs_deleted`, `files_deleted` (stored files with no database record, left by a crash mid-upload, and abandoned temporary uploads) and `bytes_freed`, or `garbage collection failed` with the error; a failed run is retried at the next interval.
 
 ## Access log
 
@@ -180,7 +192,7 @@ Entries are written in batches off the request path: serving never waits on the 
 Everything lives in `WARDLOCK_DATA_DIR`: `wardlock.db` and `blobs/` (or `WARDLOCK_BLOB_DIR` if set; and `certs/`, which can be re-issued).
 
 - **Database:** never copy `wardlock.db` while the server runs. Use the online backup command (O4.2), `wardlockd backup /path/to/backup.db`, which uses SQLite's backup API to write a consistent copy, or stop the service first. As an option, [Litestream](https://litestream.io) can replicate the database continuously to object storage.
-- **Blobs:** content-addressed and write-once, so a plain `rsync` (after the database backup) is consistent: every blob the backed-up database references already exists.
+- **Blobs:** content-addressed and write-once, so a plain `rsync` (after the database backup) is consistent: every blob the backed-up database references already exists, provided garbage collection does not run in between. Schedule backups away from collections, or set `WARDLOCK_GC_INTERVAL_MINUTES=0` and run `wardlockd gc` after each backup.
 - **Restore** (O4.2): stop the server, put the database and `blobs/` back in an empty data directory, start the server. Migrations run automatically; a server older than the database refuses to start.
 
 Keep `WARDLOCK_SECRET` with your backups, separately and securely. Without it, every share link, API token and session stops working after a restore.
