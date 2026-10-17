@@ -65,6 +65,18 @@ func TestLoadConfig(t *testing.T) {
 		{"retention with unit", map[string]string{"WARDLOCK_ACCESS_LOG_RETENTION_DAYS": "30d"}, true, nil},
 		{"zero buffer", map[string]string{"WARDLOCK_ACCESS_LOG_BUFFER": "0"}, true, nil},
 		{"buffer too large", map[string]string{"WARDLOCK_ACCESS_LOG_BUFFER": "1000001"}, true, nil},
+		{"gc defaults", nil, false, func(c platform.Config) bool {
+			return c.GCInterval == time.Hour && c.GCGrace == 24*time.Hour && c.DeployHistory == 50
+		}},
+		{"gc settings", map[string]string{
+			"WARDLOCK_GC_INTERVAL_MINUTES": "0", "WARDLOCK_GC_GRACE_HOURS": "2", "WARDLOCK_DEPLOY_HISTORY": "5",
+		}, false, func(c platform.Config) bool {
+			return c.GCInterval == 0 && c.GCGrace == 2*time.Hour && c.DeployHistory == 5
+		}},
+		{"zero grace", map[string]string{"WARDLOCK_GC_GRACE_HOURS": "0"}, true, nil},
+		{"zero history", map[string]string{"WARDLOCK_DEPLOY_HISTORY": "0"}, true, nil},
+		{"negative interval", map[string]string{"WARDLOCK_GC_INTERVAL_MINUTES": "-1"}, true, nil},
+		{"interval with unit", map[string]string{"WARDLOCK_GC_INTERVAL_MINUTES": "1h"}, true, nil},
 		{"bad address", map[string]string{"WARDLOCK_HTTP_ADDR": "8080"}, true, nil},
 		{"bad base domain", map[string]string{"WARDLOCK_BASE_DOMAIN": "under_score.example"}, true, nil},
 		{"bad log level", map[string]string{"WARDLOCK_LOG_LEVEL": "loud"}, true, nil},

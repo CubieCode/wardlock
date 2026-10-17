@@ -20,6 +20,7 @@ type Repos struct {
 	Policies  store.Policies
 	Links     store.Links
 	AccessLog store.AccessLog
+	GC        store.GC
 }
 
 // Opener returns repositories over a fresh, empty, migrated database that
@@ -41,6 +42,7 @@ func ReposOf(db *store.DB) Repos {
 		Policies:  db.Policies(),
 		Links:     db.Links(),
 		AccessLog: db.AccessLog(),
+		GC:        db.GC(),
 	}
 }
 
@@ -62,6 +64,7 @@ func suites() []suite {
 		{"Policies", policiesContract},
 		{"Links", linksContract},
 		{"AccessLog", accessLogContract},
+		{"GC", gcContract},
 	}
 }
 

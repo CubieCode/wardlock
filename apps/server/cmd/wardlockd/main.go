@@ -23,6 +23,7 @@ Usage:
 Commands:
   serve                         Start the server
   admin create --email ADDRESS  Create an owner and print a one-time sign-in URL
+  gc                            Prune deploy history and remove unreferenced blobs
   version                       Print the version
   help                          Show this help
 
@@ -55,6 +56,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		return serve(ctx, getenv, stderr)
 	case "admin":
 		return admin(ctx, args[1:], getenv, stdout, stderr)
+	case "gc":
+		return gcCommand(ctx, args[1:], getenv, stdout, stderr)
 	case "version", "--version":
 		fmt.Fprintln(stdout, "wardlockd", version())
 		return nil

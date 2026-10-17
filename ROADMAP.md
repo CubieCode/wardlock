@@ -131,7 +131,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.8: Blob garbage collection
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: `feat/c1.8-blob-gc`
 - PR:
 - Depends on: C1.2

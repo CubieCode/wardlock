@@ -57,6 +57,8 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	defer func() { _ = db.Close() }()
 	recorder, stopAccessLog := startAccessLog(ctx, cfg, log, db)
 	defer stopAccessLog()
+	stopGC := startGC(ctx, cfg, log, db)
+	defer stopGC()
 
 	ln, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {

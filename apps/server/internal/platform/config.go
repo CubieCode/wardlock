@@ -54,6 +54,12 @@ type Config struct {
 	AccessLogIPv6Prefix int
 	AccessLogRetention  time.Duration
 	AccessLogBuffer     int
+	// Garbage collection: GCInterval between runs in serve (0 runs none;
+	// `wardlockd gc` still works), GCGrace protecting recent uploads and
+	// pending deploys, DeployHistory deploys kept per site.
+	GCInterval    time.Duration
+	GCGrace       time.Duration
+	DeployHistory int
 	// Secret is the decoded WARDLOCK_SECRET: the server key for token,
 	// code and session hashes. Empty when unset; commands that need it
 	// call RequireSecret.
@@ -149,6 +155,9 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	if err := cfg.loadAccessLog(get); err != nil {
 		return Config{}, err
 	}
+	if err := cfg.loadGC(get); err != nil {
+		return Config{}, err
+	}
 	if raw := get("WARDLOCK_SECRET", ""); raw != "" {
 		key, err := decodeSecret(raw)
 		if err != nil {
@@ -185,6 +194,30 @@ func (c *Config) loadAccessLog(get func(key, fallback string) string) error {
 		return fmt.Errorf("%w: WARDLOCK_ACCESS_LOG_BUFFER must be a whole number from 1 to 1000000", ErrInvalidConfig)
 	}
 	c.AccessLogBuffer = int(buf)
+	return nil
+}
+
+// loadGC reads the garbage collection variables.
+func (c *Config) loadGC(get func(key, fallback string) string) error {
+	for _, l := range []struct {
+		key                string
+		fallback, min, max int64
+		dst                func(int64)
+	}{
+		{"WARDLOCK_GC_INTERVAL_MINUTES", 60, 0, 525_600, func(v int64) { c.GCInterval = time.Duration(v) * time.Minute }},
+		{"WARDLOCK_GC_GRACE_HOURS", 24, 1, 8_760, func(v int64) { c.GCGrace = time.Duration(v) * time.Hour }},
+		{"WARDLOCK_DEPLOY_HISTORY", 50, 1, 100_000, func(v int64) { c.DeployHistory = int(v) }},
+	} {
+		raw := get(l.key, "")
+		v, err := strconv.ParseInt(raw, 10, 64)
+		switch {
+		case raw == "":
+			v = l.fallback
+		case err != nil || v < l.min || v > l.max:
+			return fmt.Errorf("%w: %s must be a whole number from %d to %d", ErrInvalidConfig, l.key, l.min, l.max)
+		}
+		l.dst(v)
+	}
 	return nil
 }
 
