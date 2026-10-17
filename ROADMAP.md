@@ -54,7 +54,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.1: Owner bootstrap, email-code sign-in and dashboard sessions
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/c1.1-owner-sign-in`
 - PR: https://github.com/CubieCode/wardlock/pull/18
 - Depends on: F0.2, F0.3, F0.4
