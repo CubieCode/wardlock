@@ -236,7 +236,7 @@ func TestCheckPrefix(t *testing.T) {
 		{"/.WardLock/x/", false},
 		{"/a\\b/", false},
 		{"/a\x00b/", false},
-		{"/a​b/", false},
+		{"/a\u200bb/", false},
 		{"/\xff/", false},
 		{"/" + strings.Repeat("a", 1023) + "/", false},
 		{"/" + strings.Repeat("a", 1022) + "/", true},

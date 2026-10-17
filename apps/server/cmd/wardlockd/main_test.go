@@ -114,7 +114,7 @@ func TestServe(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "http://"+addr+"/api/v0/me", nil)
 	req.Host = "wardlock.localhost"
 	req.AddCookie(&http.Cookie{Name: access.SessionCookieName, Value: "djE.c2lnbmF0dXJl"})
-	if res, err := http.DefaultClient.Do(req); err != nil || res.StatusCode != 401 {
+	if res, err := http.DefaultClient.Do(req); err != nil || res.StatusCode != http.StatusUnauthorized {
 		t.Errorf("/api/v0/me with a site cookie = %v %v", res, err)
 	} else {
 		_ = res.Body.Close()
