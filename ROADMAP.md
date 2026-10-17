@@ -111,7 +111,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: `feat/c1.6-owner-passkeys`
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/34
 - Depends on: C1.1
 - Scope: WebAuthn passkey registration and sign-in for owners (relying party = dashboard host), listing and removing passkeys; dashboard sign-in screen offers passkeys alongside email code once D3.1 exists.
 - Acceptance: Ceremony tests with a software authenticator; replayed or cross-origin assertions rejected; two-owner isolation for passkey management; browser test with a virtual authenticator once D3.1 is done.
