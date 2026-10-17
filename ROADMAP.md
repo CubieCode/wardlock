@@ -8,7 +8,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### F0.1: Monorepo scaffold
 
-- Status: `review`
+- Status: `done`
 - Owner: feat/f0.1-monorepo-scaffold
 - PR: https://github.com/CubieCode/wardlock/pull/1
 - Depends on: none
