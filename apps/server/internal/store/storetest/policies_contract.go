@@ -4,12 +4,165 @@
 package storetest
 
 import (
+	"slices"
 	"testing"
+	"time"
 
 	"wardlock.nz/server/internal/store"
 )
 
 func policiesContract(t *testing.T, open Opener) {
+	t.Run("Create", func(t *testing.T) {
+		t.Parallel()
+		policiesCreate(t, open)
+	})
+	t.Run("ForSite", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner().ID
+		s, other := f.site(o).ID, f.site(o).ID
+		docs := f.validPolicy(s)
+		docs.PathPrefix = "/docs/"
+		f.must(f.r.Policies.Create(t.Context(), o, docs))
+		def := f.policy(o, s)
+		f.policy(o, other)
+		got, err := f.r.Policies.ForSite(t.Context(), s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := []store.Policy{def, docs}; !slices.Equal(got, want) {
+			t.Fatalf("ForSite() = %+v, want %+v", got, want)
+		}
+		got, err = f.r.Policies.ForSite(t.Context(), store.NewID())
+		if err != nil || len(got) != 0 {
+			t.Fatalf("ForSite(unknown) = %+v, %v", got, err)
+		}
+	})
+	t.Run("EnsureDefault", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner().ID
+		s := f.site(o).ID
+		p := f.validPolicy(s)
+		f.must(f.r.Policies.EnsureDefault(t.Context(), p))
+		again := f.validPolicy(s)
+		again.Visibility, again.LinksEnabled = store.Public, false
+		f.must(f.r.Policies.EnsureDefault(t.Context(), again))
+		got, err := f.r.Policies.ForSite(t.Context(), s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 || got[0] != p {
+			t.Fatalf("after EnsureDefault twice: %+v, want only %+v", got, p)
+		}
+		wantErr(t, f.r.Policies.EnsureDefault(t.Context(), f.validPolicy(store.NewID())), store.ErrConstraint)
+	})
+	t.Run("List", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		a, b := f.owner().ID, f.owner().ID
+		s := f.site(a).ID
+		var want []string
+		for _, prefix := range []string{"/", "/a/", "/b/", "/c/", "/d/"} {
+			p := f.validPolicy(s)
+			p.PathPrefix = prefix
+			f.must(f.r.Policies.Create(t.Context(), a, p))
+			want = append(want, p.ID)
+		}
+		f.policy(a, f.site(a).ID)
+		var got []string
+		after := ""
+		for range 4 {
+			page, err := f.r.Policies.List(t.Context(), a, s, after, 2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, p := range page {
+				got = append(got, p.ID)
+			}
+			if len(page) < 2 {
+				break
+			}
+			after = page[len(page)-1].PathPrefix
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("List pages = %v, want %v", got, want)
+		}
+		page, err := f.r.Policies.List(t.Context(), b, s, "", 10)
+		if err != nil || len(page) != 0 {
+			t.Fatalf("owner B lists %+v, %v", page, err)
+		}
+	})
+	t.Run("Set", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		a, b := f.owner().ID, f.owner().ID
+		s := f.site(a).ID
+		p := f.validPolicy(s)
+		p.PathPrefix, p.Version, p.CreatedAt = "/docs/", 7, time.Time{}
+		created, err := f.r.Policies.Set(t.Context(), a, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if created.ID != p.ID || created.Version != 1 || !created.CreatedAt.Equal(p.UpdatedAt) {
+			t.Fatalf("created %+v", created)
+		}
+
+		same := p
+		same.ID, same.UpdatedAt = store.NewID(), now.Add(time.Hour)
+		got, err := f.r.Policies.Set(t.Context(), a, same)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != created {
+			t.Fatalf("Set(same settings) = %+v, want unchanged %+v", got, created)
+		}
+
+		changed := same
+		changed.Visibility, changed.LinksEnabled = store.Public, false
+		got, err = f.r.Policies.Set(t.Context(), a, changed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := changed
+		want.ID, want.CreatedAt, want.Version = created.ID, created.CreatedAt, 2
+		if got != want {
+			t.Fatalf("Set(changed) = %+v, want %+v", got, want)
+		}
+		stored, err := f.r.Policies.ForSite(t.Context(), s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(stored) != 1 || stored[0] != want {
+			t.Fatalf("stored %+v, want %+v", stored, want)
+		}
+
+		_, err = f.r.Policies.Set(t.Context(), b, changed)
+		wantErr(t, err, store.ErrNotFound)
+		bad := changed
+		bad.Visibility = store.Public
+		bad.LinksEnabled = true
+		_, err = f.r.Policies.Set(t.Context(), a, bad)
+		wantErr(t, err, store.ErrConstraint)
+	})
+	t.Run("Delete", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		a, b := f.owner().ID, f.owner().ID
+		s := f.site(a).ID
+		p := f.policy(a, s)
+		sess := f.validSiteSession(s, p)
+		f.must(f.r.Sessions.CreateSite(t.Context(), sess))
+		wantErr(t, f.r.Policies.Delete(t.Context(), b, s, p.ID), store.ErrNotFound)
+		wantErr(t, f.r.Policies.Delete(t.Context(), a, f.site(a).ID, p.ID), store.ErrNotFound)
+		f.must(f.r.Policies.Delete(t.Context(), a, s, p.ID))
+		wantErr(t, f.r.Policies.Delete(t.Context(), a, s, p.ID), store.ErrNotFound)
+		_, err := f.r.Sessions.GetSiteByTokenHash(t.Context(), sess.TokenHash)
+		wantErr(t, err, store.ErrNotFound)
+	})
+}
+
+func policiesCreate(t *testing.T, open Opener) {
 	type owned struct {
 		ownerID string
 		p       store.Policy

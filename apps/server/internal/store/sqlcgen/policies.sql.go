@@ -50,3 +50,229 @@ func (q *Queries) CreatePolicy(ctx context.Context, arg CreatePolicyParams) erro
 	)
 	return err
 }
+
+const deletePolicy = `-- name: DeletePolicy :execrows
+DELETE FROM policies
+WHERE policies.id = ?1 AND policies.site_id = ?2
+  AND policies.site_id IN (SELECT sites.id FROM sites WHERE sites.owner_id = ?3)
+`
+
+type DeletePolicyParams struct {
+	ID      string
+	SiteID  string
+	OwnerID string
+}
+
+func (q *Queries) DeletePolicy(ctx context.Context, arg DeletePolicyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deletePolicy, arg.ID, arg.SiteID, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const ensureDefaultPolicy = `-- name: EnsureDefaultPolicy :exec
+INSERT INTO policies (id, site_id, path_prefix, visibility, links_enabled, password_enabled, email_enabled, oauth_enabled, password_hash, version, created_at, updated_at)
+VALUES (?1, ?2, '/', ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?9)
+ON CONFLICT (site_id, path_prefix) DO NOTHING
+`
+
+type EnsureDefaultPolicyParams struct {
+	ID              string
+	SiteID          string
+	Visibility      string
+	LinksEnabled    int64
+	PasswordEnabled int64
+	EmailEnabled    int64
+	OauthEnabled    int64
+	PasswordHash    sql.NullString
+	CreatedAt       int64
+}
+
+// Instance-wide: inserts the site default unless one exists.
+func (q *Queries) EnsureDefaultPolicy(ctx context.Context, arg EnsureDefaultPolicyParams) error {
+	_, err := q.db.ExecContext(ctx, ensureDefaultPolicy,
+		arg.ID,
+		arg.SiteID,
+		arg.Visibility,
+		arg.LinksEnabled,
+		arg.PasswordEnabled,
+		arg.EmailEnabled,
+		arg.OauthEnabled,
+		arg.PasswordHash,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const getPolicyByPrefix = `-- name: GetPolicyByPrefix :one
+SELECT policies.id, policies.site_id, policies.path_prefix, policies.visibility, policies.links_enabled, policies.password_enabled, policies.email_enabled, policies.oauth_enabled, policies.password_hash, policies.version, policies.created_at, policies.updated_at
+FROM policies JOIN sites ON sites.id = policies.site_id
+WHERE sites.owner_id = ?1 AND policies.site_id = ?2
+  AND policies.path_prefix = ?3
+`
+
+type GetPolicyByPrefixParams struct {
+	OwnerID    string
+	SiteID     string
+	PathPrefix string
+}
+
+func (q *Queries) GetPolicyByPrefix(ctx context.Context, arg GetPolicyByPrefixParams) (Policy, error) {
+	row := q.db.QueryRowContext(ctx, getPolicyByPrefix, arg.OwnerID, arg.SiteID, arg.PathPrefix)
+	var i Policy
+	err := row.Scan(
+		&i.ID,
+		&i.SiteID,
+		&i.PathPrefix,
+		&i.Visibility,
+		&i.LinksEnabled,
+		&i.PasswordEnabled,
+		&i.EmailEnabled,
+		&i.OauthEnabled,
+		&i.PasswordHash,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listOwnerPolicies = `-- name: ListOwnerPolicies :many
+SELECT policies.id, policies.site_id, policies.path_prefix, policies.visibility, policies.links_enabled, policies.password_enabled, policies.email_enabled, policies.oauth_enabled, policies.password_hash, policies.version, policies.created_at, policies.updated_at
+FROM policies JOIN sites ON sites.id = policies.site_id
+WHERE sites.owner_id = ?1 AND policies.site_id = ?2
+  AND policies.path_prefix > ?3
+ORDER BY policies.path_prefix
+LIMIT ?4
+`
+
+type ListOwnerPoliciesParams struct {
+	OwnerID     string
+	SiteID      string
+	AfterPrefix string
+	RowLimit    int64
+}
+
+// Ordered by path prefix; the cursor is the previous page's last prefix
+// (” for the first page).
+func (q *Queries) ListOwnerPolicies(ctx context.Context, arg ListOwnerPoliciesParams) ([]Policy, error) {
+	rows, err := q.db.QueryContext(ctx, listOwnerPolicies,
+		arg.OwnerID,
+		arg.SiteID,
+		arg.AfterPrefix,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Policy
+	for rows.Next() {
+		var i Policy
+		if err := rows.Scan(
+			&i.ID,
+			&i.SiteID,
+			&i.PathPrefix,
+			&i.Visibility,
+			&i.LinksEnabled,
+			&i.PasswordEnabled,
+			&i.EmailEnabled,
+			&i.OauthEnabled,
+			&i.PasswordHash,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSitePolicies = `-- name: ListSitePolicies :many
+SELECT id, site_id, path_prefix, visibility, links_enabled, password_enabled, email_enabled, oauth_enabled, password_hash, version, created_at, updated_at
+FROM policies WHERE site_id = ?1
+ORDER BY path_prefix
+`
+
+// Instance-wide: edge routing only, never owner API handlers.
+func (q *Queries) ListSitePolicies(ctx context.Context, siteID string) ([]Policy, error) {
+	rows, err := q.db.QueryContext(ctx, listSitePolicies, siteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Policy
+	for rows.Next() {
+		var i Policy
+		if err := rows.Scan(
+			&i.ID,
+			&i.SiteID,
+			&i.PathPrefix,
+			&i.Visibility,
+			&i.LinksEnabled,
+			&i.PasswordEnabled,
+			&i.EmailEnabled,
+			&i.OauthEnabled,
+			&i.PasswordHash,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updatePolicy = `-- name: UpdatePolicy :exec
+UPDATE policies
+SET visibility = ?1, links_enabled = ?2, password_enabled = ?3,
+  email_enabled = ?4, oauth_enabled = ?5, password_hash = ?6,
+  version = ?7, updated_at = ?8
+WHERE id = ?9 AND site_id = ?10
+`
+
+type UpdatePolicyParams struct {
+	Visibility      string
+	LinksEnabled    int64
+	PasswordEnabled int64
+	EmailEnabled    int64
+	OauthEnabled    int64
+	PasswordHash    sql.NullString
+	Version         int64
+	UpdatedAt       int64
+	ID              string
+	SiteID          string
+}
+
+func (q *Queries) UpdatePolicy(ctx context.Context, arg UpdatePolicyParams) error {
+	_, err := q.db.ExecContext(ctx, updatePolicy,
+		arg.Visibility,
+		arg.LinksEnabled,
+		arg.PasswordEnabled,
+		arg.EmailEnabled,
+		arg.OauthEnabled,
+		arg.PasswordHash,
+		arg.Version,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.SiteID,
+	)
+	return err
+}

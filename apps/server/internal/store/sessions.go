@@ -79,6 +79,13 @@ type Sessions interface {
 	RevokeOwner(ctx context.Context, ownerID, id string, at time.Time) error
 	// ListOwner returns one page of active dashboard sessions.
 	ListOwner(ctx context.Context, q OwnerSessionQuery) ([]OwnerSession, error)
+	// GetSiteByTokenHash finds a visitor session by its cookie token hash,
+	// whatever its state; callers check the site, expiry, revocation and
+	// policy version. Instance-wide: the edge calls it for every site.
+	GetSiteByTokenHash(ctx context.Context, hash string) (SiteSession, error)
+	// RevokeSite revokes session id on siteID. A missing session or one on
+	// another site is ErrNotFound; revoking twice keeps the first time.
+	RevokeSite(ctx context.Context, siteID, id string, at time.Time) error
 }
 
 // Sessions returns the SQLite Sessions repository.
@@ -166,4 +173,29 @@ func (r sessionsRepo) CreateSite(ctx context.Context, s SiteSession) error {
 		ExpiresAt:     ms(s.ExpiresAt),
 		RevokedAt:     nullMs(s.RevokedAt),
 	}))
+}
+
+func (r sessionsRepo) GetSiteByTokenHash(ctx context.Context, hash string) (SiteSession, error) {
+	row, err := r.db.q.GetSiteSessionByTokenHash(ctx, hash)
+	if err != nil {
+		return SiteSession{}, mapErr("get site session", err)
+	}
+	return SiteSession{
+		ID:            row.ID,
+		SiteID:        row.SiteID,
+		TokenHash:     row.TokenHash,
+		Method:        SessionMethod(row.Method),
+		ShareLinkID:   row.ShareLinkID.String,
+		PolicyID:      row.PolicyID,
+		PolicyVersion: int(row.PolicyVersion),
+		Subject:       row.Subject.String,
+		CreatedAt:     fromMs(row.CreatedAt),
+		ExpiresAt:     fromMs(row.ExpiresAt),
+		RevokedAt:     fromNullMs(row.RevokedAt),
+	}, nil
+}
+
+func (r sessionsRepo) RevokeSite(ctx context.Context, siteID, id string, at time.Time) error {
+	n, err := r.db.q.RevokeSiteSession(ctx, sqlcgen.RevokeSiteSessionParams{ID: id, SiteID: siteID, RevokedAt: nullMs(at)})
+	return rowsAffected("revoke site session", n, err)
 }

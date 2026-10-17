@@ -155,8 +155,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.1: Policy model and evaluation
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: feat/a2.1-policy-model
 - PR:
 - Depends on: C1.3
 - Scope: `internal/access` policy evaluation: site default plus path-prefix policies, longest prefix wins, public or protected with alternative methods; policy versioning; site session cookie primitives (`__Host-`, signed, site- and version-bound); edge integration returning login page, 401 or allow; protected-site response headers; API and repository methods for reading and setting policies; `wardlock policy set` for `--public`/`--protected --links`.

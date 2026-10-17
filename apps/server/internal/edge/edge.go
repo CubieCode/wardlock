@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"wardlock.nz/server/internal/access"
 )
 
 // ReservedPrefix is served by Wardlock on every site. Deployed files under
@@ -34,8 +36,8 @@ type Config struct {
 	Blobs BlobOpener
 	// Invalidator announces site changes, which drop cached manifests.
 	Invalidator Invalidator
-	// Access decides each request; nil means AllowAll.
-	Access AccessHook
+	// Access decides each request; nil means every site is public.
+	Access Access
 	Log    *slog.Logger
 }
 
@@ -43,7 +45,7 @@ type Config struct {
 type Edge struct {
 	cfg         Config
 	blobs       BlobOpener
-	access      AccessHook
+	access      Access
 	log         *slog.Logger
 	cache       *cache
 	unsubscribe func()
@@ -59,7 +61,7 @@ func New(cfg Config) *Edge {
 		cache:  newCache(cfg.Sites),
 	}
 	if e.access == nil {
-		e.access = AllowAll
+		e.access = public{}
 	}
 	if e.log == nil {
 		e.log = slog.New(slog.DiscardHandler)
@@ -103,7 +105,8 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Clean before the reserved check so /x/../.wardlock/ cannot slip past.
 	clean := cleanPath(r.URL.Path)
 	if reserved(strings.TrimPrefix(clean, "/")) {
-		serveReserved(w, r, clean)
+		// Wardlock's own pages: policies never apply here.
+		e.serveReserved(w, r, s.site, clean)
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -112,22 +115,39 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d := e.access(r.Context(), s.site, clean)
-	if d.Protected {
-		w.Header().Set("X-Robots-Tag", "noindex")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-	}
-	if !d.Allow {
-		// A2.1 replaces this with the login page.
-		w.Header().Set("Cache-Control", "no-store")
-		http.NotFound(w, r)
+	req := access.Request{SiteID: s.site.ID, Path: clean, Cookie: sessionCookieValue(r), Browser: acceptsHTML(r)}
+	d, ok := e.decide(w, r, req)
+	if !ok {
 		return
 	}
+	if d.ClearCookie {
+		w.Header().Add("Set-Cookie", ClearSessionCookie().String())
+	}
+	if d.Outcome != access.Allow {
+		e.challenge(w, r, s.site, d)
+		return
+	}
+	protected := d.Protected
 
 	res, ok := resolve(s, strings.TrimPrefix(clean, "/"))
+	if ok && res.redirect == "" && !sameDirectory(clean, res.file.Path) {
+		// 404.html, the SPA index or a clean URL's page.html answers from
+		// another path, which may sit behind a stricter policy: it must
+		// allow the visitor too, or they get a plain 404 rather than its
+		// content.
+		req.Path = "/" + res.file.Path
+		fd, allowed := e.decide(w, r, req)
+		if !allowed {
+			return
+		}
+		protected = protected || fd.Protected
+		if fd.Outcome != access.Allow {
+			ok = false
+		}
+	}
 	switch {
 	case !ok:
-		w.Header().Set("Cache-Control", cacheControl(d))
+		w.Header().Set("Cache-Control", cacheControl(protected))
 		http.NotFound(w, r)
 	case res.redirect != "":
 		// An absolute path: cleaning leaves no empty first segment, so it
@@ -136,24 +156,12 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.URL.RawQuery != "" {
 			target += "?" + r.URL.RawQuery
 		}
-		w.Header().Set("Cache-Control", cacheControl(d))
+		w.Header().Set("Cache-Control", cacheControl(protected))
 		w.Header().Set("Location", target)
 		w.WriteHeader(http.StatusMovedPermanently)
 	default:
-		e.serveFile(w, r, s, res.file, res.status, d)
+		e.serveFile(w, r, s, res.file, res.status, protected)
 	}
-}
-
-// serveReserved answers /.wardlock/* on a site. Login pages, callbacks and
-// logout join health here in A2.
-func serveReserved(w http.ResponseWriter, r *http.Request, clean string) {
-	w.Header().Set("Cache-Control", "no-store")
-	if clean == ReservedPrefix+"health" {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}` + "\n"))
-		return
-	}
-	http.NotFound(w, r)
 }
 
 // reserved reports whether name, a cleaned path without its leading slash,

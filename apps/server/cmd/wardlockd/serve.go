@@ -19,6 +19,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 
+	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/api"
 	"wardlock.nz/server/internal/dashboard"
 	"wardlock.nz/server/internal/deploys"
@@ -83,9 +84,24 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 
 	blobs := deploys.NewFSBlobStore(cfg.BlobDir)
 	notifier := deploys.NewLocalNotifier()
+	accessSvc, err := access.New(access.Config{
+		Sites:    db.Sites(),
+		Policies: db.Policies(),
+		Sessions: db.Sessions(),
+		Notifier: notifier,
+		Secret:   cfg.Secret,
+		Now:      time.Now,
+		Log:      log,
+	})
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
+	defer accessSvc.Close()
 	apiServer := &api.Server{
 		Version: platform.Version,
 		Owners:  ownerSvc,
+		Access:  accessSvc,
 		Logger:  log,
 		Sites: sites.NewService(sites.Config{
 			Sites:         db.Sites(),
@@ -125,6 +141,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		},
 		Blobs:       blobs,
 		Invalidator: notifier,
+		Access:      accessSvc,
 		Log:         log,
 	})
 	defer handler.Close()

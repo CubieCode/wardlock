@@ -152,6 +152,39 @@ func (e MeCredential) Valid() bool {
 	}
 }
 
+// Defines values for PolicyMethod.
+const (
+	PolicyMethodLinks PolicyMethod = "links"
+)
+
+// Valid indicates whether the value is a known member of the PolicyMethod enum.
+func (e PolicyMethod) Valid() bool {
+	switch e {
+	case PolicyMethodLinks:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PolicyVisibility.
+const (
+	PolicyVisibilityProtected PolicyVisibility = "protected"
+	PolicyVisibilityPublic    PolicyVisibility = "public"
+)
+
+// Valid indicates whether the value is a known member of the PolicyVisibility enum.
+func (e PolicyVisibility) Valid() bool {
+	switch e {
+	case PolicyVisibilityProtected:
+		return true
+	case PolicyVisibilityPublic:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Scope.
 const (
 	ScopeDeploy Scope = "deploy"
@@ -596,6 +629,59 @@ type OwnerSession struct {
 	UserAgent *string `json:"userAgent,omitempty"`
 }
 
+// Policy defines model for Policy.
+type Policy struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Methods Enabled methods; empty exactly when the policy is public.
+	Methods []PolicyMethod `json:"methods"`
+
+	// Path `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
+	//
+	// Examples: /docs/
+	Path PolicyPath `json:"path"`
+
+	// UpdatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	UpdatedAt Timestamp `json:"updatedAt"`
+
+	// Version Starts at 1 and increases with every change. Visitor sessions are bound to the version they were created under.
+	Version int32 `json:"version"`
+
+	// Visibility `public`: anyone may read. `protected`: a visitor must satisfy one of the policy's methods.
+	Visibility PolicyVisibility `json:"visibility"`
+}
+
+// PolicyMethod A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). Password, email code and OAuth join with A2.3, A2.4 and A2.5.
+type PolicyMethod string
+
+// PolicyPage defines model for PolicyPage.
+type PolicyPage struct {
+	Items []Policy `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// PolicyPath `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
+//
+// Examples: /docs/
+type PolicyPath = string
+
+// PolicyVisibility `public`: anyone may read. `protected`: a visitor must satisfy one of the policy's methods.
+type PolicyVisibility string
+
 // PollCliLoginRequest defines model for PollCliLoginRequest.
 type PollCliLoginRequest struct {
 	DeviceCode string `json:"deviceCode"`
@@ -609,7 +695,7 @@ type RollbackRequest struct {
 	DeployId *Id `json:"deployId,omitempty"`
 }
 
-// Scope An API token scope. `deploy` creates sites and deploys, uploads, activates and rolls back; `manage` deletes sites and manages custom domains. Both read.
+// Scope An API token scope. `deploy` creates sites and deploys, uploads, activates and rolls back; `manage` deletes sites, manages custom domains and sets access policies. Both read.
 type Scope string
 
 // Scopes Examples: ["deploy","manage"]
@@ -623,6 +709,20 @@ type SessionPage struct {
 	//
 	// Examples: c2l0ZTpkb2Nz
 	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// SetPolicyRequest defines model for SetPolicyRequest.
+type SetPolicyRequest struct {
+	// Methods Methods to enable on a protected policy; omitted means `[links]` (share links are on by default). Must be empty or omitted for a public policy.
+	Methods *[]PolicyMethod `json:"methods,omitempty"`
+
+	// Path `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
+	//
+	// Examples: /docs/
+	Path PolicyPath `json:"path"`
+
+	// Visibility `public`: anyone may read. `protected`: a visitor must satisfy one of the policy's methods.
+	Visibility PolicyVisibility `json:"visibility"`
 }
 
 // SetupRequest defines model for SetupRequest.
@@ -725,6 +825,11 @@ type DomainHostname = Hostname
 // Limit defines model for Limit.
 type Limit = int32
 
+// PolicyId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type PolicyId = Id
+
 // SessionId A lowercase, hyphenated UUIDv7.
 //
 // Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
@@ -798,6 +903,15 @@ type ListDomainsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListPoliciesParams defines parameters for ListPolicies.
+type ListPoliciesParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListApiTokensParams defines parameters for ListApiTokens.
 type ListApiTokensParams struct {
 	// Limit Page size.
@@ -842,6 +956,9 @@ type CreateDeployJSONRequestBody = CreateDeployRequest
 
 // AddDomainJSONRequestBody defines body for AddDomain for application/json ContentType.
 type AddDomainJSONRequestBody = AddDomainRequest
+
+// SetPolicyJSONRequestBody defines body for SetPolicy for application/json ContentType.
+type SetPolicyJSONRequestBody = SetPolicyRequest
 
 // RollbackSiteJSONRequestBody defines body for RollbackSite for application/json ContentType.
 type RollbackSiteJSONRequestBody = RollbackRequest
@@ -1239,6 +1356,38 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/v0/sites/{site}/domains/{hostname}/verify (the `VerifyDomain` operationId).
 	VerifyDomain(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListPolicies List a site's access policies.
+	//
+	// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is protected with share links only.
+	//
+	// Corresponds with GET /api/v0/sites/{site}/policies (the `ListPolicies` operationId).
+	ListPolicies(ctx context.Context, site SiteName, params *ListPoliciesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetPolicyWithBody Set the default or a path policy.
+	//
+	// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/policies (the `SetPolicy` operationId).
+	SetPolicyWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetPolicy Set the default or a path policy.
+	//
+	// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/policies (the `SetPolicy` operationId).
+	SetPolicy(ctx context.Context, site SiteName, body SetPolicyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeletePolicy Delete a path policy.
+	//
+	// Its paths fall back to the next longest matching policy on the next request, and visitor sessions created under it end. The site default cannot be deleted (`409 default_policy`); set it instead.
+	//
+	// Corresponds with DELETE /api/v0/sites/{site}/policies/{policyId} (the `DeletePolicy` operationId).
+	DeletePolicy(ctx context.Context, site SiteName, policyId PolicyId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RollbackSiteWithBody Reactivate an earlier deploy.
 	//
@@ -1988,6 +2137,78 @@ func (c *Client) GetDomain(ctx context.Context, site SiteName, hostname DomainHo
 // Corresponds with POST /api/v0/sites/{site}/domains/{hostname}/verify (the `VerifyDomain` operationId).
 func (c *Client) VerifyDomain(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewVerifyDomainRequest(c.Server, site, hostname)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListPolicies List a site's access policies.
+//
+// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is protected with share links only.
+//
+// Corresponds with GET /api/v0/sites/{site}/policies (the `ListPolicies` operationId).
+func (c *Client) ListPolicies(ctx context.Context, site SiteName, params *ListPoliciesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPoliciesRequest(c.Server, site, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetPolicyWithBody Set the default or a path policy.
+//
+// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v0/sites/{site}/policies (the `SetPolicy` operationId).
+func (c *Client) SetPolicyWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPolicyRequestWithBody(c.Server, site, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetPolicy Set the default or a path policy.
+//
+// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v0/sites/{site}/policies (the `SetPolicy` operationId).
+func (c *Client) SetPolicy(ctx context.Context, site SiteName, body SetPolicyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPolicyRequest(c.Server, site, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeletePolicy Delete a path policy.
+//
+// Its paths fall back to the next longest matching policy on the next request, and visitor sessions created under it end. The site default cannot be deleted (`409 default_policy`); set it instead.
+//
+// Corresponds with DELETE /api/v0/sites/{site}/policies/{policyId} (the `DeletePolicy` operationId).
+func (c *Client) DeletePolicy(ctx context.Context, site SiteName, policyId PolicyId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePolicyRequest(c.Server, site, policyId)
 	if err != nil {
 		return nil, err
 	}
@@ -3289,6 +3510,167 @@ func NewVerifyDomainRequest(server string, site SiteName, hostname DomainHostnam
 	return req, nil
 }
 
+// NewListPoliciesRequest constructs an http.Request for the ListPolicies method
+func NewListPoliciesRequest(server string, site SiteName, params *ListPoliciesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/policies", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetPolicyRequest calls the generic SetPolicy builder with application/json body
+func NewSetPolicyRequest(server string, site SiteName, body SetPolicyJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetPolicyRequestWithBody(server, site, "application/json", bodyReader)
+}
+
+// NewSetPolicyRequestWithBody constructs an http.Request for the SetPolicy method, with any body, and a specified content type
+func NewSetPolicyRequestWithBody(server string, site SiteName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/policies", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeletePolicyRequest constructs an http.Request for the DeletePolicy method
+func NewDeletePolicyRequest(server string, site SiteName, policyId PolicyId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "policyId", policyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/policies/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewRollbackSiteRequest calls the generic RollbackSite builder with application/json body
 func NewRollbackSiteRequest(server string, site SiteName, body RollbackSiteJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -3864,6 +4246,42 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/v0/sites/{site}/domains/{hostname}/verify (the `VerifyDomain` operationId).
 	VerifyDomainWithResponse(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*VerifyDomainResponse, error)
+
+	// ListPoliciesWithResponse List a site's access policies.
+	//
+	// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is protected with share links only.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sites/{site}/policies (the `ListPolicies` operationId).
+	ListPoliciesWithResponse(ctx context.Context, site SiteName, params *ListPoliciesParams, reqEditors ...RequestEditorFn) (*ListPoliciesResponse, error)
+
+	// SetPolicyWithBodyWithResponse Set the default or a path policy.
+	//
+	// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/policies (the `SetPolicy` operationId).
+	SetPolicyWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPolicyResponse, error)
+
+	// SetPolicyWithResponse Set the default or a path policy.
+	//
+	// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/policies (the `SetPolicy` operationId).
+	SetPolicyWithResponse(ctx context.Context, site SiteName, body SetPolicyJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPolicyResponse, error)
+
+	// DeletePolicyWithResponse Delete a path policy.
+	//
+	// Its paths fall back to the next longest matching policy on the next request, and visitor sessions created under it end. The site default cannot be deleted (`409 default_policy`); set it instead.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/sites/{site}/policies/{policyId} (the `DeletePolicy` operationId).
+	DeletePolicyWithResponse(ctx context.Context, site SiteName, policyId PolicyId, reqEditors ...RequestEditorFn) (*DeletePolicyResponse, error)
 
 	// RollbackSiteWithBodyWithResponse Reactivate an earlier deploy.
 	//
@@ -5839,6 +6257,227 @@ func (r VerifyDomainResponse) ContentType() string {
 	return ""
 }
 
+type ListPoliciesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PolicyPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListPoliciesResponse) GetJSON200() *PolicyPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListPoliciesResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListPoliciesResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListPoliciesResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListPoliciesResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListPoliciesResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListPoliciesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPoliciesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPoliciesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListPoliciesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetPolicyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Policy
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SetPolicyResponse) GetJSON200() *Policy {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SetPolicyResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r SetPolicyResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r SetPolicyResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r SetPolicyResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SetPolicyResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SetPolicyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SetPolicyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetPolicyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetPolicyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeletePolicyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeletePolicyResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeletePolicyResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeletePolicyResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeletePolicyResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeletePolicyResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeletePolicyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeletePolicyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeletePolicyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeletePolicyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type RollbackSiteResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6692,6 +7331,66 @@ func (c *ClientWithResponses) VerifyDomainWithResponse(ctx context.Context, site
 		return nil, err
 	}
 	return ParseVerifyDomainResponse(rsp)
+}
+
+// ListPoliciesWithResponse List a site's access policies.
+//
+// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is protected with share links only.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sites/{site}/policies (the `ListPolicies` operationId).
+func (c *ClientWithResponses) ListPoliciesWithResponse(ctx context.Context, site SiteName, params *ListPoliciesParams, reqEditors ...RequestEditorFn) (*ListPoliciesResponse, error) {
+	rsp, err := c.ListPolicies(ctx, site, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPoliciesResponse(rsp)
+}
+
+// SetPolicyWithBodyWithResponse Set the default or a path policy.
+//
+// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v0/sites/{site}/policies (the `SetPolicy` operationId).
+func (c *ClientWithResponses) SetPolicyWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPolicyResponse, error) {
+	rsp, err := c.SetPolicyWithBody(ctx, site, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPolicyResponse(rsp)
+}
+
+// SetPolicyWithResponse Set the default or a path policy.
+//
+// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v0/sites/{site}/policies (the `SetPolicy` operationId).
+func (c *ClientWithResponses) SetPolicyWithResponse(ctx context.Context, site SiteName, body SetPolicyJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPolicyResponse, error) {
+	rsp, err := c.SetPolicy(ctx, site, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPolicyResponse(rsp)
+}
+
+// DeletePolicyWithResponse Delete a path policy.
+//
+// Its paths fall back to the next longest matching policy on the next request, and visitor sessions created under it end. The site default cannot be deleted (`409 default_policy`); set it instead.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/sites/{site}/policies/{policyId} (the `DeletePolicy` operationId).
+func (c *ClientWithResponses) DeletePolicyWithResponse(ctx context.Context, site SiteName, policyId PolicyId, reqEditors ...RequestEditorFn) (*DeletePolicyResponse, error) {
+	rsp, err := c.DeletePolicy(ctx, site, policyId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeletePolicyResponse(rsp)
 }
 
 // RollbackSiteWithBodyWithResponse Reactivate an earlier deploy.
@@ -8395,6 +9094,185 @@ func ParseVerifyDomainResponse(rsp *http.Response) (*VerifyDomainResponse, error
 			headers.RetryAfter = &value
 		}
 		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListPoliciesResponse parses an HTTP response from a ListPoliciesWithResponse call
+func ParseListPoliciesResponse(rsp *http.Response) (*ListPoliciesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPoliciesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PolicyPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetPolicyResponse parses an HTTP response from a SetPolicyWithResponse call
+func ParseSetPolicyResponse(rsp *http.Response) (*SetPolicyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetPolicyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Policy
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeletePolicyResponse parses an HTTP response from a DeletePolicyWithResponse call
+func ParseDeletePolicyResponse(rsp *http.Response) (*DeletePolicyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeletePolicyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
 	}
 
 	return response, nil

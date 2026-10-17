@@ -31,6 +31,11 @@ var implemented = map[string]bool{
 	"ActivateDeploy":   true,
 	"RollbackSite":     true,
 
+	// Policies (A2.1).
+	"ListPolicies": true,
+	"SetPolicy":    true,
+	"DeletePolicy": true,
+
 	// C1.1 owners.
 	"CompleteSetup":    true,
 	"RedeemSignInLink": true,
@@ -51,6 +56,7 @@ var pathValues = map[string]string{
 	"tokenId":   "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20",
 	"sha256":    strings.Repeat("ab", 32),
 	"hostname":  "docs.example.com",
+	"policyId":  "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41",
 }
 
 var pathParam = regexp.MustCompile(`\{(\w+)\}`)

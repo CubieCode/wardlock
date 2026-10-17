@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/api"
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/sites"
@@ -65,7 +66,16 @@ func newHarness(t *testing.T, limits deploys.Limits) *harness {
 		defer hs.mu.Unlock()
 		hs.notified = append(hs.notified, siteID)
 	})
+	policies, err := access.New(access.Config{
+		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Notifier: notifier,
+		Secret: []byte("api-test-server-key-0123456789abcdef-01"), Now: time.Now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(policies.Close)
 	srv := &api.Server{
+		Access: policies,
 		Sites: sites.NewService(sites.Config{
 			Sites: db.Sites(), Notifier: notifier, BaseDomain: baseDomain,
 			DashboardHost: "console." + baseDomain, Now: time.Now,

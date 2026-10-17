@@ -153,6 +153,39 @@ func (e MeCredential) Valid() bool {
 	}
 }
 
+// Defines values for PolicyMethod.
+const (
+	PolicyMethodLinks PolicyMethod = "links"
+)
+
+// Valid indicates whether the value is a known member of the PolicyMethod enum.
+func (e PolicyMethod) Valid() bool {
+	switch e {
+	case PolicyMethodLinks:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PolicyVisibility.
+const (
+	PolicyVisibilityProtected PolicyVisibility = "protected"
+	PolicyVisibilityPublic    PolicyVisibility = "public"
+)
+
+// Valid indicates whether the value is a known member of the PolicyVisibility enum.
+func (e PolicyVisibility) Valid() bool {
+	switch e {
+	case PolicyVisibilityProtected:
+		return true
+	case PolicyVisibilityPublic:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Scope.
 const (
 	ScopeDeploy Scope = "deploy"
@@ -597,6 +630,59 @@ type OwnerSession struct {
 	UserAgent *string `json:"userAgent,omitempty"`
 }
 
+// Policy defines model for Policy.
+type Policy struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Methods Enabled methods; empty exactly when the policy is public.
+	Methods []PolicyMethod `json:"methods"`
+
+	// Path `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
+	//
+	// Examples: /docs/
+	Path PolicyPath `json:"path"`
+
+	// UpdatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	UpdatedAt Timestamp `json:"updatedAt"`
+
+	// Version Starts at 1 and increases with every change. Visitor sessions are bound to the version they were created under.
+	Version int32 `json:"version"`
+
+	// Visibility `public`: anyone may read. `protected`: a visitor must satisfy one of the policy's methods.
+	Visibility PolicyVisibility `json:"visibility"`
+}
+
+// PolicyMethod A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). Password, email code and OAuth join with A2.3, A2.4 and A2.5.
+type PolicyMethod string
+
+// PolicyPage defines model for PolicyPage.
+type PolicyPage struct {
+	Items []Policy `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// PolicyPath `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
+//
+// Examples: /docs/
+type PolicyPath = string
+
+// PolicyVisibility `public`: anyone may read. `protected`: a visitor must satisfy one of the policy's methods.
+type PolicyVisibility string
+
 // PollCliLoginRequest defines model for PollCliLoginRequest.
 type PollCliLoginRequest struct {
 	DeviceCode string `json:"deviceCode"`
@@ -610,7 +696,7 @@ type RollbackRequest struct {
 	DeployId *Id `json:"deployId,omitempty"`
 }
 
-// Scope An API token scope. `deploy` creates sites and deploys, uploads, activates and rolls back; `manage` deletes sites and manages custom domains. Both read.
+// Scope An API token scope. `deploy` creates sites and deploys, uploads, activates and rolls back; `manage` deletes sites, manages custom domains and sets access policies. Both read.
 type Scope string
 
 // Scopes Examples: ["deploy","manage"]
@@ -624,6 +710,20 @@ type SessionPage struct {
 	//
 	// Examples: c2l0ZTpkb2Nz
 	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// SetPolicyRequest defines model for SetPolicyRequest.
+type SetPolicyRequest struct {
+	// Methods Methods to enable on a protected policy; omitted means `[links]` (share links are on by default). Must be empty or omitted for a public policy.
+	Methods *[]PolicyMethod `json:"methods,omitempty"`
+
+	// Path `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
+	//
+	// Examples: /docs/
+	Path PolicyPath `json:"path"`
+
+	// Visibility `public`: anyone may read. `protected`: a visitor must satisfy one of the policy's methods.
+	Visibility PolicyVisibility `json:"visibility"`
 }
 
 // SetupRequest defines model for SetupRequest.
@@ -726,6 +826,11 @@ type DomainHostname = Hostname
 // Limit defines model for Limit.
 type Limit = int32
 
+// PolicyId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type PolicyId = Id
+
 // SessionId A lowercase, hyphenated UUIDv7.
 //
 // Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
@@ -799,6 +904,15 @@ type ListDomainsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListPoliciesParams defines parameters for ListPolicies.
+type ListPoliciesParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListApiTokensParams defines parameters for ListApiTokens.
 type ListApiTokensParams struct {
 	// Limit Page size.
@@ -843,6 +957,9 @@ type CreateDeployJSONRequestBody = CreateDeployRequest
 
 // AddDomainJSONRequestBody defines body for AddDomain for application/json ContentType.
 type AddDomainJSONRequestBody = AddDomainRequest
+
+// SetPolicyJSONRequestBody defines body for SetPolicy for application/json ContentType.
+type SetPolicyJSONRequestBody = SetPolicyRequest
 
 // RollbackSiteJSONRequestBody defines body for RollbackSite for application/json ContentType.
 type RollbackSiteJSONRequestBody = RollbackRequest
@@ -933,6 +1050,15 @@ type ServerInterface interface {
 	// VerifyDomain Check a custom domain's DNS now.
 	// (POST /api/v0/sites/{site}/domains/{hostname}/verify)
 	VerifyDomain(w http.ResponseWriter, r *http.Request, site SiteName, hostname DomainHostname)
+	// ListPolicies List a site's access policies.
+	// (GET /api/v0/sites/{site}/policies)
+	ListPolicies(w http.ResponseWriter, r *http.Request, site SiteName, params ListPoliciesParams)
+	// SetPolicy Set the default or a path policy.
+	// (PUT /api/v0/sites/{site}/policies)
+	SetPolicy(w http.ResponseWriter, r *http.Request, site SiteName)
+	// DeletePolicy Delete a path policy.
+	// (DELETE /api/v0/sites/{site}/policies/{policyId})
+	DeletePolicy(w http.ResponseWriter, r *http.Request, site SiteName, policyId PolicyId)
 	// RollbackSite Reactivate an earlier deploy.
 	// (POST /api/v0/sites/{site}/rollback)
 	RollbackSite(w http.ResponseWriter, r *http.Request, site SiteName)
@@ -1667,6 +1793,122 @@ func (siw *ServerInterfaceWrapper) VerifyDomain(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListPolicies operation middleware
+func (siw *ServerInterfaceWrapper) ListPolicies(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPoliciesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPolicies(w, r, site, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetPolicy operation middleware
+func (siw *ServerInterfaceWrapper) SetPolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetPolicy(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePolicy operation middleware
+func (siw *ServerInterfaceWrapper) DeletePolicy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "policyId" -------------
+	var policyId PolicyId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "policyId", r.PathValue("policyId"), &policyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "policyId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePolicy(w, r, site, policyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RollbackSite operation middleware
 func (siw *ServerInterfaceWrapper) RollbackSite(w http.ResponseWriter, r *http.Request) {
 
@@ -1930,6 +2172,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/domains/{hostname}", wrapper.RemoveDomain)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/domains/{hostname}", wrapper.GetDomain)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/domains/{hostname}/verify", wrapper.VerifyDomain)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/policies", wrapper.ListPolicies)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v0/sites/{site}/policies", wrapper.SetPolicy)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/policies/{policyId}", wrapper.DeletePolicy)
 
 	return m
 }
@@ -4210,6 +4455,288 @@ func (response VerifyDomaindefaultJSONResponse) VisitVerifyDomainResponse(w http
 	return err
 }
 
+type ListPoliciesRequestObject struct {
+	Site   SiteName `json:"site"`
+	Params ListPoliciesParams
+}
+
+type ListPoliciesResponseObject interface {
+	VisitListPoliciesResponse(w http.ResponseWriter) error
+}
+
+type ListPolicies200JSONResponse PolicyPage
+
+func (response ListPolicies200JSONResponse) VisitListPoliciesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPolicies400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListPolicies400JSONResponse) VisitListPoliciesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPolicies401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListPolicies401JSONResponse) VisitListPoliciesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPolicies403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListPolicies403JSONResponse) VisitListPoliciesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPolicies404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListPolicies404JSONResponse) VisitListPoliciesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPoliciesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListPoliciesdefaultJSONResponse) VisitListPoliciesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPolicyRequestObject struct {
+	Site SiteName `json:"site"`
+	Body *SetPolicyJSONRequestBody
+}
+
+type SetPolicyResponseObject interface {
+	VisitSetPolicyResponse(w http.ResponseWriter) error
+}
+
+type SetPolicy200JSONResponse Policy
+
+func (response SetPolicy200JSONResponse) VisitSetPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPolicy400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response SetPolicy400JSONResponse) VisitSetPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPolicy401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetPolicy401JSONResponse) VisitSetPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPolicy403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetPolicy403JSONResponse) VisitSetPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPolicy404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response SetPolicy404JSONResponse) VisitSetPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPolicydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SetPolicydefaultJSONResponse) VisitSetPolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePolicyRequestObject struct {
+	Site     SiteName `json:"site"`
+	PolicyId PolicyId `json:"policyId"`
+}
+
+type DeletePolicyResponseObject interface {
+	VisitDeletePolicyResponse(w http.ResponseWriter) error
+}
+
+type DeletePolicy204Response struct {
+}
+
+func (response DeletePolicy204Response) VisitDeletePolicyResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeletePolicy401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeletePolicy401JSONResponse) VisitDeletePolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePolicy403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeletePolicy403JSONResponse) VisitDeletePolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePolicy404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeletePolicy404JSONResponse) VisitDeletePolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePolicy409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeletePolicy409JSONResponse) VisitDeletePolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePolicydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeletePolicydefaultJSONResponse) VisitDeletePolicyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RollbackSiteRequestObject struct {
 	Site SiteName `json:"site"`
 	Body *RollbackSiteJSONRequestBody
@@ -4626,6 +5153,15 @@ type StrictServerInterface interface {
 	// VerifyDomain Check a custom domain's DNS now.
 	// (POST /api/v0/sites/{site}/domains/{hostname}/verify)
 	VerifyDomain(ctx context.Context, request VerifyDomainRequestObject) (VerifyDomainResponseObject, error)
+	// ListPolicies List a site's access policies.
+	// (GET /api/v0/sites/{site}/policies)
+	ListPolicies(ctx context.Context, request ListPoliciesRequestObject) (ListPoliciesResponseObject, error)
+	// SetPolicy Set the default or a path policy.
+	// (PUT /api/v0/sites/{site}/policies)
+	SetPolicy(ctx context.Context, request SetPolicyRequestObject) (SetPolicyResponseObject, error)
+	// DeletePolicy Delete a path policy.
+	// (DELETE /api/v0/sites/{site}/policies/{policyId})
+	DeletePolicy(ctx context.Context, request DeletePolicyRequestObject) (DeletePolicyResponseObject, error)
 	// RollbackSite Reactivate an earlier deploy.
 	// (POST /api/v0/sites/{site}/rollback)
 	RollbackSite(ctx context.Context, request RollbackSiteRequestObject) (RollbackSiteResponseObject, error)
@@ -5442,6 +5978,93 @@ func (sh *strictHandler) VerifyDomain(w http.ResponseWriter, r *http.Request, si
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(VerifyDomainResponseObject); ok {
 		if err := validResponse.VisitVerifyDomainResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPolicies operation middleware
+func (sh *strictHandler) ListPolicies(w http.ResponseWriter, r *http.Request, site SiteName, params ListPoliciesParams) {
+	var request ListPoliciesRequestObject
+
+	request.Site = site
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPolicies(ctx, request.(ListPoliciesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPolicies")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPoliciesResponseObject); ok {
+		if err := validResponse.VisitListPoliciesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetPolicy operation middleware
+func (sh *strictHandler) SetPolicy(w http.ResponseWriter, r *http.Request, site SiteName) {
+	var request SetPolicyRequestObject
+
+	request.Site = site
+
+	var body SetPolicyJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetPolicy(ctx, request.(SetPolicyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetPolicy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetPolicyResponseObject); ok {
+		if err := validResponse.VisitSetPolicyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeletePolicy operation middleware
+func (sh *strictHandler) DeletePolicy(w http.ResponseWriter, r *http.Request, site SiteName, policyId PolicyId) {
+	var request DeletePolicyRequestObject
+
+	request.Site = site
+	request.PolicyId = policyId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePolicy(ctx, request.(DeletePolicyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePolicy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeletePolicyResponseObject); ok {
+		if err := validResponse.VisitDeletePolicyResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

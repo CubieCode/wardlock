@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/platform"
 )
@@ -107,6 +108,16 @@ func TestServe(t *testing.T) {
 	// The sites API is wired; without a credential it answers 401.
 	if code, body := get("wardlock.localhost", "/api/v0/sites"); code != 401 || !strings.Contains(body, "unauthenticated") {
 		t.Errorf("/api/v0/sites = %d %q", code, body)
+	}
+
+	// A site session cookie never authenticates the dashboard API.
+	req, _ := http.NewRequest(http.MethodGet, "http://"+addr+"/api/v0/me", nil)
+	req.Host = "wardlock.localhost"
+	req.AddCookie(&http.Cookie{Name: access.SessionCookieName, Value: "djE.c2lnbmF0dXJl"})
+	if res, err := http.DefaultClient.Do(req); err != nil || res.StatusCode != 401 {
+		t.Errorf("/api/v0/me with a site cookie = %v %v", res, err)
+	} else {
+		_ = res.Body.Close()
 	}
 
 	if !strings.Contains(logs.String(), "setup_url") || !strings.Contains(logs.String(), "/setup?code=") {
