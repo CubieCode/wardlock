@@ -74,6 +74,8 @@
   --focus-ring: 3px solid var(--color-focus);
   --touch-target: 44px;
   --content-width: 64rem;
+  --sidebar-width: 16rem;
+  --panel-width: 26rem;
   --duration-short: 120ms;
 }
 

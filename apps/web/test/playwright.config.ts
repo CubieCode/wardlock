@@ -13,7 +13,18 @@ export default defineConfig({
   use: { trace: 'retain-on-failure' },
   projects: [
     {
+      // Creates the first owner and invites one per project and theme.
+      name: 'setup',
+      testMatch: 'setup.spec.ts',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 },
+      },
+    },
+    {
       name: 'desktop',
+      dependencies: ['setup'],
+      testIgnore: 'setup.spec.ts',
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 },
@@ -21,6 +32,8 @@ export default defineConfig({
     },
     {
       name: 'mobile',
+      dependencies: ['setup'],
+      testIgnore: 'setup.spec.ts',
       use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 } },
     },
   ],

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
 import '@wardlock/ui/styles.css';
+import './app.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app.js';

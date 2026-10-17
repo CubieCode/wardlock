@@ -1,6 +1,6 @@
 # Product specification
 
-This is the intended v1 behaviour. Built so far: F0.1 (the server serves a dashboard placeholder, `/healthz`, `/.wardlock/health` and `GET /api/v0/health`; the CLI has `version` and `help`), C1.1 (owner bootstrap, email-code sign-in, invitations and dashboard sessions in the API and `wardlockd admin create`; the dashboard screens for them are D3.x), C1.2 (the deploy API: sites, manifests, blob upload, activation, rollback and teardown), C1.3 (the edge serves each site's active deploy; see Serving) and A2.1 (policies, their enforcement at the edge and the policy API; see Policies). Sites are public unless their owner protects them; no sign-in method exists yet (share links arrive with A2.2), so a protected path cannot be opened until then. Each section names the roadmap item that delivers it. Where a rule is a proposal awaiting confirmation, it says so; items must not silently change these rules.
+This is the intended v1 behaviour. Built so far: F0.1 (the server serves a dashboard placeholder, `/healthz`, `/.wardlock/health` and `GET /api/v0/health`; the CLI has `version` and `help`), C1.1 (owner bootstrap, email-code sign-in, invitations and dashboard sessions in the API and `wardlockd admin create`), C1.2 (the deploy API: sites, manifests, blob upload, activation, rollback and teardown), C1.3 (the edge serves each site's active deploy; see Serving), A2.1 (policies, their enforcement at the edge and the policy API; see Policies) and D3.1 (the dashboard's signed-in shell, email-code sign-in and sign-out, the `/setup` and `/sign-in?code=` pages, and session expiry; see Dashboard). Sites are public unless their owner protects them; no sign-in method exists yet (share links arrive with A2.2), so a protected path cannot be opened until then. Each section names the roadmap item that delivers it. Where a rule is a proposal awaiting confirmation, it says so; items must not silently change these rules.
 
 ## Terms
 
@@ -26,6 +26,14 @@ Share links and API tokens use one format: `wl_<public id>_<secret>`. The public
 - **Owner sessions** are `__Host-` cookies on the dashboard host, `HttpOnly`, `Secure`, `SameSite=Lax`, idle timeout 14 days, absolute 90 days, revocable from the dashboard.
 - **API tokens** (C1.7) are scoped (`deploy`, `manage`), named, revocable, optionally expiring, and shown once. They use the same format and hashing as share-link tokens (see Tokens).
 - **CLI login** (C1.7): `wardlock login --server URL` starts a device-code style flow. The CLI shows a short user code and opens the browser at `https://<dashboard host>/cli-login`; the signed-in owner confirms the code and chooses scopes; the CLI polls until approved and receives an API token. The token is stored in the OS keychain where available (macOS Keychain, Windows Credential Manager, Secret Service on Linux), otherwise in `~/.config/wardlock/credentials.json` with mode 0600. `wardlock logout` deletes it locally and revokes it on the server.
+
+## Dashboard (D3.1)
+
+- Signed-out visitors to any dashboard page are sent to `/sign-in?next=<path>` and returned to that path (same origin only) after signing in.
+- `/sign-in` asks for an email address, sends a code and then asks for it; a wrong, expired or exhausted code says so beside the field and offers a new code. The page says a code was sent "if the address belongs to an owner", matching the API's non-revealing answer.
+- `/sign-in?code=` and `/setup?code=` read the one-time code once and remove it from the address bar and history; a used or expired code explains what to do next.
+- The dashboard rechecks the session when the window regains focus and treats any `401` from an owner call as an ended session (expired, revoked or signed out elsewhere): it returns to sign-in with "Your session has ended" and comes back to the same page afterwards.
+- The signed-in shell has a sidebar (a top bar with a Menu button below 48rem) listing only built screens, the signed-in owner's address and Sign out.
 
 ## Sites (C1.2)
 

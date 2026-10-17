@@ -1,57 +1,78 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
-import type { ApiClient, Health } from '@wardlock/apiclient-ts';
-import { AppShell, Card, Notice, PageHeader, StatusBadge } from '@wardlock/ui';
-import { useEffect, useState } from 'react';
+import type { ApiClient } from '@wardlock/apiclient-ts';
+import { Button, Notice, PanelLayout } from '@wardlock/ui';
+import { SessionProvider, useSession } from './auth/session.js';
+import { SetupPage } from './auth/setup.js';
+import { SignInPage } from './auth/sign-in.js';
+import { Redirect } from './shell/page.js';
+import { matchPath, useLinkInterception, useLocation } from './shell/router.js';
+import { shellRoutes } from './shell/routes.js';
+import { NotFoundPage, Shell } from './shell/shell.js';
 
-type ServerState =
-  { kind: 'loading' } | { kind: 'ready'; health: Health } | { kind: 'error' };
-
-/** F0.1 placeholder: proves the dashboard, API client and server connect. */
 export function App({ api }: { api: ApiClient }) {
-  const [server, setServer] = useState<ServerState>({ kind: 'loading' });
-
-  useEffect(() => {
-    let live = true;
-    api
-      .GET('/api/v0/health')
-      .then(({ data }) => {
-        if (live)
-          setServer(data ? { kind: 'ready', health: data } : { kind: 'error' });
-      })
-      .catch(() => {
-        if (live) setServer({ kind: 'error' });
-      });
-    return () => {
-      live = false;
-    };
-  }, [api]);
-
   return (
-    <AppShell productName="Wardlock">
-      <PageHeader
-        title="Overview"
-        description="This is an early build. There is nothing to manage yet."
+    <SessionProvider api={api}>
+      <Routes />
+    </SessionProvider>
+  );
+}
+
+function Routes() {
+  useLinkInterception();
+  const { session, api, refresh } = useSession();
+  const { pathname, params } = useLocation();
+
+  if (session.status === 'loading')
+    return (
+      <PanelLayout productName="Wardlock">
+        <p role="status">Loading…</p>
+      </PanelLayout>
+    );
+  if (session.status === 'unreachable')
+    return (
+      <PanelLayout productName="Wardlock">
+        <h1 className="auth-title">Could not reach the server</h1>
+        <Notice tone="danger">
+          Check that wardlockd is running and that this address is its
+          dashboard, then try again.
+        </Notice>
+        <Button type="button" variant="primary" onClick={refresh}>
+          Try again
+        </Button>
+      </PanelLayout>
+    );
+
+  // Pages reached signed out. The one-time links in setup and sign-in URLs
+  // land here (docs/SPEC.md, "One-time URL paths").
+  if (pathname === '/sign-in') return <SignInPage />;
+  if (pathname === '/setup') return <SetupPage />;
+
+  if (session.status === 'signed-out') {
+    const here = pathname + (params.size ? `?${params}` : '');
+    return (
+      <Redirect
+        to={
+          here === '/'
+            ? '/sign-in'
+            : `/sign-in?next=${encodeURIComponent(here)}`
+        }
       />
-      <Card title="Server">
-        {server.kind === 'loading' && (
-          <StatusBadge tone="neutral">Checking…</StatusBadge>
-        )}
-        {server.kind === 'ready' && (
-          <>
-            <StatusBadge tone="success">Connected</StatusBadge>
-            <p>
-              Version <code>{server.health.version}</code>
-            </p>
-          </>
-        )}
-        {server.kind === 'error' && (
-          <Notice tone="danger">
-            Could not reach the server. Check that wardlockd is running, then
-            reload this page.
-          </Notice>
-        )}
-      </Card>
-    </AppShell>
+    );
+  }
+
+  for (const route of shellRoutes) {
+    const routeParams = matchPath(route.path, pathname);
+    if (routeParams)
+      return (
+        <Shell me={session.me} pathname={pathname}>
+          {route.render({ api, params: routeParams, query: params })}
+        </Shell>
+      );
+  }
+  return (
+    <Shell me={session.me} pathname={pathname}>
+      <NotFoundPage />
+    </Shell>
   );
 }

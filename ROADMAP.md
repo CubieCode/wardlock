@@ -245,8 +245,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.1: Dashboard shell and owner sign-in
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: `feat/d3.1-dashboard-shell`
 - PR:
 - Depends on: C1.1
 - Scope: Router, authenticated shell with navigation for built screens only, email-code sign-in and sign-out screens, setup-URL first-owner flow, session expiry handling, design-system additions they need (text field, form errors).
