@@ -10,7 +10,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: feat/f0.1-monorepo-scaffold
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/1
 - Depends on: none
 - Scope: pnpm + Turborepo workspace and Go workspace (`go.work`); tooling (ESLint, Prettier, Vitest, Playwright, golangci-lint, govulncheck, sqlc, oapi-codegen pinned in `tools/`); `pnpm check` and `pnpm dev`; CI and snapshot-only release workflow with GoReleaser; licences and SPDX headers; README, AGENTS, SPEC, ARCHITECTURE, MODULES, SECURITY-MODEL, DEPLOYMENT, DESIGN-SYSTEM, DESIGN, CONTRIBUTING, SECURITY; skills; Orca setup; hello-world server, CLI and dashboard wired end to end (`GET /api/v0/health` through generated Go and TS clients).
 - Acceptance: `pnpm install --frozen-lockfile && pnpm check` passes from a clean clone; `scripts/worktree-setup.sh` works in a second worktree with different ports and no shared state; `wardlockd serve` serves the embedded dashboard (a `packages/ui` placeholder) on the dashboard host, the hello-world site at `hello.wardlock.localhost` and `/healthz`; `wardlock version` and `--help` work and list only built commands; codegen drift check runs in CI; no secrets committed; `.local/`, `.env` and data are ignored.
