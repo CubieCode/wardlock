@@ -67,7 +67,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: `feat/c1.2-deploy-api`
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/19
 - Depends on: F0.2, F0.3
 - Scope: `internal/deploys` and `internal/sites`: filesystem `BlobStore` (temp file, fsync, rename; SHA-256 verified on upload); create deploy from manifest returning missing hashes; blob upload; atomic activation; list, rollback and teardown; path validation (no `..`, control characters or `.wardlock/`); configurable size and count limits; site creation on first deploy with reserved-name checks; `Notifier` interface with an in-process implementation fired on activation. Implement the `Sites`, `Deploys` and blob repository methods.
 - Acceptance: Tests cover an unchanged re-deploy uploading nothing, a hash mismatch rejected, activation failing with a missing blob, concurrent activations, rollback to any earlier deploy, teardown, every limit, every rejected path form, and reserved names; two-owner isolation (owner B cannot see, deploy to, roll back or tear down owner A's site); contract tests for every new repository method.
