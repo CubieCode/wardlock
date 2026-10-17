@@ -157,7 +157,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: feat/a2.1-policy-model
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/26
 - Depends on: C1.3
 - Scope: `internal/access` policy evaluation: site default plus path-prefix policies, longest prefix wins, public or protected with alternative methods; policy versioning; site session cookie primitives (`__Host-`, signed, site- and version-bound); edge integration returning login page, 401 or allow; protected-site response headers; API and repository methods for reading and setting policies; `wardlock policy set` for `--public`/`--protected --links`.
 - Acceptance: Unit tests over the decision function cover precedence, method alternatives, version bumps invalidating sessions and cookie tamper/forgery/cross-site use; edge tests prove headers on protected responses and that `/.wardlock/` is unaffected by policies; `access` imports no HTTP packages.
