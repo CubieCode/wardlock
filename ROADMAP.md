@@ -245,9 +245,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.1: Dashboard shell and owner sign-in
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: `feat/d3.1-dashboard-shell`
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/25
 - Depends on: C1.1
 - Scope: Router, authenticated shell with navigation for built screens only, email-code sign-in and sign-out screens, setup-URL first-owner flow, session expiry handling, design-system additions they need (text field, form errors).
 - Acceptance: Browser tests at 1440px and 390px in light and dark cover sign-in, wrong code, expiry and sign-out; component tests for new `packages/ui` components; no navigation to unbuilt screens. Mobbin references cited in the PR (start with: email one-time-code sign-in flow; web app shell with sidebar navigation on desktop and mobile).
