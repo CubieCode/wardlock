@@ -29,6 +29,8 @@ type Config struct {
 	DevDashboardURL *url.URL
 	LogLevel        slog.Level
 	LogFormat       string
+	// SMTP is outgoing mail: WARDLOCK_SMTP_URL and WARDLOCK_SMTP_FROM.
+	SMTP SMTPConfig
 }
 
 // ErrInvalidConfig wraps every configuration error.
@@ -73,6 +75,11 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		}
 		cfg.DevDashboardURL = u
 	}
+	smtp, err := parseSMTPConfig(get("WARDLOCK_SMTP_URL", "dev://"), get("WARDLOCK_SMTP_FROM", ""), cfg.DashboardHost)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.SMTP = smtp
 	return cfg, nil
 }
 

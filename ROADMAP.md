@@ -41,8 +41,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### F0.4: Mail delivery and dev mail sink
 
-- Status: `todo`
-- Owner:
+- Status: `review`
+- Owner: `feat/f0.4-mail-delivery`
 - PR:
 - Depends on: F0.1
 - Scope: `internal/mail` with a `Mailer` interface; `WARDLOCK_SMTP_URL` parsing in `platform` config (`smtp://` with required STARTTLS, `smtps://`, `dev://`); the `dev://` sink that logs each message (recipient and subject, never codes in production modes) to the console and writes it to `.local/mail/` as `.eml`; plain-text and HTML templates for sign-in and email-code messages. Split out of A2.4 because owner sign-in (C1.1) needs mail first.
