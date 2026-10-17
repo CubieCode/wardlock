@@ -245,7 +245,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.1: Dashboard shell and owner sign-in
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/d3.1-dashboard-shell`
 - PR: https://github.com/CubieCode/wardlock/pull/25
 - Depends on: C1.1
