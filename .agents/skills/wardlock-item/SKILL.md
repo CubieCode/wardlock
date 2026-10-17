@@ -14,9 +14,9 @@ Branch `feat/<id-lower>-<slug>`, e.g. `feat/c1.2-deploy-api` (rename Orca's bran
 Load the skills the item lists, and also:
 - Go server or client code: [wardlock-go-service](../wardlock-go-service/SKILL.md).
 - Anything under `internal/edge` or `internal/access`, cookies, tokens or sessions: [wardlock-access](../wardlock-access/SKILL.md), including its test matrix.
-- Dashboard or `packages/ui`: [wardlock-web](../wardlock-web/SKILL.md) and [vercel-react-best-practices](../vercel-react-best-practices/SKILL.md) (skip its Next.js and server-rendering rules).
+- Dashboard or `packages/ui`: [wardlock-web](../wardlock-web/SKILL.md) and [vercel-react-best-practices](../vercel-react-best-practices/SKILL.md) (skip its Next.js and server-rendering rules). Do the skill's Mobbin design research before designing any new or changed screen.
 
-Run targeted tests, then `pnpm check` and `git diff --check`. API or query changes need `pnpm codegen` with the output committed. UI changes need `pnpm browser:test` plus your own look at desktop and mobile widths in light and dark. Never put real tokens, passwords, emails or customer content in fixtures, logs, screenshots or PR text.
+Run targeted tests, then `pnpm check` and `git diff --check`. API or query changes need `pnpm codegen` with the output committed. UI changes need `pnpm browser:test` plus your own look at desktop and mobile widths in light and dark, and Mobbin design references in the PR body. Never put real tokens, passwords, emails or customer content in fixtures, logs, screenshots or PR text.
 
 Set Status to `review`, commit `<ID>: <result>`, push the branch and open a PR against main titled `<ID>: <title>` using `gh pr create --body-file <temporary file>` with real newlines. The body covers scope, checks run with results, open decisions and any visual gate. Record the PR URL in your item (a follow-up commit is fine). Never mark `done`; the coordinator does that after merge. Merge only with explicit authority.
 

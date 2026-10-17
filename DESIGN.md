@@ -10,6 +10,10 @@ Calm, trustworthy and plain. People use Wardlock to hand something to a client, 
 
 [DESIGN-SYSTEM](docs/DESIGN-SYSTEM.md) owns the implemented tokens and components; [SPEC](docs/SPEC.md) owns behaviour. This file is intent, not a second palette.
 
+## Research before designing
+
+New screens and flows start from evidence: the [wardlock-web](.agents/skills/wardlock-web/SKILL.md) skill has designers and agents search Mobbin for how established products handle the same job (share dialogs, deploy histories, access logs, sign-in), then adapt the pattern to Wardlock's own character and tokens. References are cited in the PR as Mobbin links. Borrow structure and behaviour, never another product's branding, copy or illustrations.
+
 ## Colour and type
 
 Deep ink text on a soft neutral canvas, a dark teal for decisive actions, and a brass accent taken from a key, used sparingly (the mark, small highlights), never as a warning colour or button fill. Success, warning and danger each pair text, surface and border, and always come with a word: Public, Protected, Expired, Revoked. Light and dark themes follow the system preference with the same identity. Contrast meets WCAG 2.2 AA on every drawn pair; a test enforces it.

@@ -239,7 +239,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - PR:
 - Depends on: C1.1
 - Scope: Router, authenticated shell with navigation for built screens only, email-code sign-in and sign-out screens, setup-URL first-owner flow, session expiry handling, design-system additions they need (text field, form errors).
-- Acceptance: Browser tests at 1440px and 390px in light and dark cover sign-in, wrong code, expiry and sign-out; component tests for new `packages/ui` components; no navigation to unbuilt screens.
+- Acceptance: Browser tests at 1440px and 390px in light and dark cover sign-in, wrong code, expiry and sign-out; component tests for new `packages/ui` components; no navigation to unbuilt screens. Mobbin references cited in the PR (start with: email one-time-code sign-in flow; web app shell with sidebar navigation on desktop and mobile).
 - Skills: wardlock-item, wardlock-web
 - Parallel: Wave 3 or later, alone among UI lanes (owns `packages/ui` gate and `apps/web/src` shell).
 
@@ -250,7 +250,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - PR:
 - Depends on: D3.1, C1.2
 - Scope: Site list with policy and last deploy, site detail with deploy history, rollback and teardown with clear confirmations, copyable site URL.
-- Acceptance: Browser tests for list, empty state, rollback and teardown at both widths and themes; foreign site IDs show the same not-found state.
+- Acceptance: Browser tests for list, empty state, rollback and teardown at both widths and themes; foreign site IDs show the same not-found state. Mobbin references cited in the PR (start with: hosting dashboard project list; deployment history with rollback; delete-project confirmation).
 - Skills: wardlock-item, wardlock-web
 - Parallel: Wave 4 with C1.5, A2.2 and C1.8. Owns `apps/web/src/sites/`. `packages/ui` additions agreed with no other UI lane in the wave.
 
@@ -261,7 +261,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - PR:
 - Depends on: D3.2, A2.2
 - Scope: Create a link (label, expiry or never, use limit, path scope), show the URL once with a copy action, list links, revoke, rotate, per-link access log.
-- Acceptance: Browser tests cover creation, the one-time display, copy, revoke and rotate confirmations and the access log view; tokens never appear after creation, in page titles or in screenshots.
+- Acceptance: Browser tests cover creation, the one-time display, copy, revoke and rotate confirmations and the access log view; tokens never appear after creation, in page titles or in screenshots. Mobbin references cited in the PR (start with: create share link dialog with expiry and permissions; API key shown once with copy; activity or access log table).
 - Skills: wardlock-item, wardlock-web, wardlock-access
 - Parallel: Wave 6 with A2.5 and D3.4 (D3.4 owns separate screens; only one may change `packages/ui`).
 
@@ -272,7 +272,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - PR:
 - Depends on: D3.2, A2.3, A2.4
 - Scope: View and edit the site default and path policies, choose methods, set a password, manage email allowlists, and OAuth allowlists once A2.5 is done.
-- Acceptance: Browser tests for each method and for path policy precedence explained in the UI; passwords never echoed back.
+- Acceptance: Browser tests for each method and for path policy precedence explained in the UI; passwords never echoed back. Mobbin references cited in the PR (start with: page visibility and access settings; password-protect a page; allowlist of emails and domains).
 - Skills: wardlock-item, wardlock-web, wardlock-access
 - Parallel: Wave 6 with A2.5 and D3.3. Owns `apps/web/src/policies/`.
 
