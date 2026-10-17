@@ -28,13 +28,65 @@ WARDLOCK_BASE_DOMAIN=example-sites.net
 WARDLOCK_DASHBOARD_HOST=wardlock.example.com
 ```
 
-Wildcard certificates need the DNS-01 challenge, so Wardlock needs an API token for your DNS provider (C1.4; Cloudflare first, then one other `libdns` provider). Give the token the narrowest scope the provider allows (edit DNS records for this zone only). Custom domains for individual sites use on-demand TLS with HTTP-01/TLS-ALPN-01 after the domain is verified.
+Wildcard certificates need the DNS-01 challenge, so automatic TLS needs an API token for the DNS provider of the sites zone (Cloudflare or deSEC; see [TLS](#tls)). Custom domains for individual sites use on-demand TLS with HTTP-01/TLS-ALPN-01 after the domain is verified.
 
 ### Custom domains (C1.9)
 
 Owners add their own hostnames to a site; the operator sets nothing up per domain. The owner creates a `CNAME` from their hostname to `<name>.<base domain>`, which reaches the server through the sites wildcard. Apex domains and CDN-proxied records use the TXT fallback described in [SPEC](SPEC.md#custom-domains-c19-d35) plus A/AAAA records (or ALIAS/flattening) pointing at the server, so publish the server's addresses to owners who need them. Ports 80 and 443 must be reachable from the internet for HTTP-01/TLS-ALPN-01.
 
 `WARDLOCK_DNS_RESOLVERS` (comma-separated `host:port`, default the system resolver) chooses where verification lookups go. Use public or authoritative-facing resolvers if the local one caches aggressively or answers split-horizon records.
+
+## TLS
+
+`WARDLOCK_TLS_MODE` chooses who terminates TLS:
+
+| Mode    | Default when                                     | Behaviour                                                                                                                                                           |
+| ------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `local` | base domain and dashboard host are `*.localhost` | Plain HTTP on `WARDLOCK_HTTP_ADDR`. Browsers treat `http://*.localhost` as a secure context. Refused for any other host.                                            |
+| `proxy` | any other host                                   | Plain HTTP on `WARDLOCK_HTTP_ADDR` behind a TLS-terminating proxy ([Behind Caddy or nginx](#behind-caddy-or-nginx)). URLs Wardlock prints use `https://`.           |
+| `auto`  | never: set it explicitly                         | Wardlock obtains and renews its own certificates with ACME (certmagic) and serves HTTPS on `WARDLOCK_HTTPS_ADDR`; plain HTTP answers ACME challenges and redirects. |
+
+A misconfiguration stops `wardlockd serve` with a message naming the variable: an unknown mode, `local` with public hosts, `auto` with `localhost` or IP hosts or without a DNS provider and token, or an `auto`-only variable (`WARDLOCK_ACME_*`, `WARDLOCK_DNS_*`) or `WARDLOCK_TRUSTED_PROXIES` set in a mode that ignores it.
+
+### Automatic TLS
+
+```sh
+WARDLOCK_TLS_MODE=auto
+WARDLOCK_BASE_DOMAIN=example-sites.net
+WARDLOCK_DASHBOARD_HOST=wardlock.example.com
+WARDLOCK_DNS_PROVIDER=cloudflare          # or desec
+WARDLOCK_DNS_API_TOKEN=…                  # keep it in the env file, mode 0640
+WARDLOCK_ACME_EMAIL=ops@example.com       # optional: expiry and account notices
+```
+
+| Variable                 | Default                                          | Meaning                                                                                      |
+| ------------------------ | ------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `WARDLOCK_HTTP_ADDR`     | `:80` in auto mode                               | ACME HTTP-01 answers, `/healthz`, and a redirect to HTTPS for everything else                |
+| `WARDLOCK_HTTPS_ADDR`    | `:443`                                           | Sites, the dashboard and the API over TLS (HTTP/2 and HTTP/1.1, TLS 1.2 or later)            |
+| `WARDLOCK_ACME_CA`       | `https://acme-v02.api.letsencrypt.org/directory` | ACME directory. Use `https://acme-staging-v02.api.letsencrypt.org/directory` for a first try |
+| `WARDLOCK_ACME_EMAIL`    | none                                             | ACME account contact                                                                         |
+| `WARDLOCK_ACME_CA_ROOT`  | system roots                                     | PEM bundle to trust for the ACME server itself (a private CA or Pebble)                      |
+| `WARDLOCK_DNS_PROVIDER`  | required                                         | `cloudflare` or `desec`                                                                      |
+| `WARDLOCK_DNS_API_TOKEN` | required                                         | The provider's API token; never logged                                                       |
+
+Setting `auto` agrees to the CA's terms of service. What Wardlock certifies:
+
+- `*.<base domain>` through DNS-01. One wildcard covers every site and the auth origin `auth.<base domain>` (A2.5).
+- The dashboard host: through DNS-01 with the same token when it is the base domain itself or deeper inside its zone (one label under it is already covered by the wildcard), otherwise through HTTP-01 or TLS-ALPN-01, so the token needs no access to the dashboard's zone.
+- Custom domains (C1.9) on demand, at the first TLS handshake for the name, through HTTP-01 or TLS-ALPN-01, and only while the domain is verified and active. A name that has never been active (unverified or pending domains, nested names under the base domain, IP addresses) gets no certificate and the handshake fails. A domain that lapses or is removed after its certificate was issued may still complete the handshake with that cached certificate until it is due for renewal or the server restarts, but the edge answers it with the same 404 as an unknown host, and renewal is refused because the decision no longer allows it. C1.9 removes the certificate when a domain is deactivated.
+
+ACME validation reaches the server on ports 80 and 443 from the internet, and the redirect and every URL Wardlock prints use the default HTTPS port, so publish ports 80 and 443. The listen addresses may differ when something forwards them, for example in Docker (`WARDLOCK_HTTP_ADDR=:8080`, `WARDLOCK_HTTPS_ADDR=:8443`, published as `80:8080` and `443:8443`); the systemd unit can bind 80 and 443 directly. Both listeners drop idle keep-alive connections after 120 seconds and slow request headers after 10 seconds; the plain-HTTP listener also limits whole requests and responses to 30 seconds. The HTTPS listener has no whole-request limit, so slow uploads and downloads of large deploy files still complete. Certificates obtain and renew in the background, retrying with backoff; failures are logged with the name and the CA's reason. Until the first wildcard arrives, handshakes for site hosts fail.
+
+Certificates, keys and the ACME account live in `<WARDLOCK_DATA_DIR>/certs` (certmagic file storage). They are re-issued if lost, but keep them across restarts to stay within the CA's rate limits.
+
+**DNS tokens.** Give the token the narrowest scope the provider allows and nothing else:
+
+- **Cloudflare:** an API token (not the global API key) with the permissions _Zone → DNS → Edit_ and _Zone → Zone → Read_, with _Zone Resources_ set to the sites zone only. Optionally restrict _Client IP Address Filtering_ to the server.
+- **deSEC:** a token without permission to manage tokens. Restrict it with token policies: a default policy that denies writes, and one policy allowing writes to `TXT` records at subname `_acme-challenge` in the base domain (and at `_acme-challenge.<dashboard label>` if the dashboard host is deeper in that zone). Set _allowed subnets_ to the server's address.
+
+DNS-01 records are created under `_acme-challenge.<base domain>` and removed after validation.
+
+**Testing issuance.** `internal/tls` tests run the whole flow against Pebble, Let's Encrypt's test CA, in process with a fake DNS server and DNS provider, as part of `pnpm check`; no Docker, network or credentials are involved. To try a real server without touching Let's Encrypt, run [Pebble](https://github.com/letsencrypt/pebble) with `pebble-challtestsrv` as its DNS server, point `WARDLOCK_ACME_CA` at Pebble's directory and `WARDLOCK_ACME_CA_ROOT` at its `test/certs/pebble.minica.pem`, and resolve your test names to the server through the challenge test server. A real DNS provider is needed for DNS-01 outside the tests, so use the Let's Encrypt staging directory with a throwaway zone instead when you want to check provider credentials.
 
 ## Install a release binary
 
@@ -78,10 +130,10 @@ curl http://127.0.0.1:8080/healthz
 
 ## Behind Caddy or nginx
 
-If something else already terminates TLS on the machine, run Wardlock in plain-HTTP mode (C1.4) on a loopback port and proxy every site host and the dashboard to it, preserving the `Host` header. Examples: [`deploy/Caddyfile.example`](../deploy/Caddyfile.example), [`deploy/nginx.conf.example`](../deploy/nginx.conf.example). Then:
+If something else already terminates TLS on the machine, run Wardlock in proxy mode (`WARDLOCK_TLS_MODE=proxy`, the default for non-`localhost` hosts) on a loopback port and proxy every site host and the dashboard to it, preserving the `Host` header. Examples: [`deploy/Caddyfile.example`](../deploy/Caddyfile.example), [`deploy/nginx.conf.example`](../deploy/nginx.conf.example). Then:
 
-- Pass `Host` unchanged and set `X-Forwarded-For` and `X-Forwarded-Proto`; Wardlock trusts these only from addresses in its trusted-proxy setting (C1.4).
-- Until trusted-proxy support lands (C1.4), Wardlock sees every client behind the proxy as the proxy's address, so the per-IP sign-in limits (email-code sends and verifications, setup and sign-in-link redemptions) become instance-wide: one busy or hostile client can make sign-in wait for everyone until the window resets.
+- Pass `Host` unchanged and set `X-Forwarded-For` and `X-Forwarded-Proto`. Set `WARDLOCK_TRUSTED_PROXIES` to the proxy's addresses, comma-separated IP addresses or CIDR ranges (`127.0.0.1,::1` for a proxy on the same machine). A range covering every address (`0.0.0.0/0`, `::/0`) is refused, and IPv4-mapped forms (`::ffff:10.0.0.1`) are read as IPv4. Wardlock believes forwarding headers only from those peers: it reads `X-Forwarded-For` from the right, skipping trusted hops, so the first untrusted address is the client and anything a client prepends is ignored; it keeps `X-Forwarded-Proto` only when it is `http` or `https`; and it removes `X-Forwarded-*`, `X-Real-IP` and `Forwarded` from every other peer. `X-Forwarded-Host` is never used: routing is by `Host`.
+- Without `WARDLOCK_TRUSTED_PROXIES` (Wardlock logs a warning at startup), Wardlock sees every client behind the proxy as the proxy's address, so the per-IP sign-in limits (email-code sends and verifications, setup and sign-in-link redemptions) become instance-wide: one busy or hostile client can make sign-in wait for everyone until the window resets. Never list an address that untrusted clients can connect from, or they can choose their own address.
 - Do not cache protected responses at the proxy, and do not log query strings (they carry share-link tokens), or redact the `t` parameter. The examples do this.
 - Allow request bodies of at least the per-file limit (25 MiB default) for blob uploads.
 - For custom domains, the proxy must obtain their certificates. With Caddy, use on-demand TLS with `ask` set to `http://127.0.0.1:8080/.wardlock/tls-ask`, so it only requests certificates for hostnames Wardlock has verified (C1.9 adds this to the example). nginx cannot issue certificates on demand; use Caddy, or manage custom-domain certificates yourself.

@@ -14,19 +14,19 @@ MIT modules never import AGPL code: depguard denies `wardlock.nz/server` in `app
 
 ## Server packages (`apps/server/internal`)
 
-| Package     | Owns                                                                                                                     | Must not import                                      |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| `platform`  | Config, logging and redaction, request logging, health, graceful shutdown, version                                       | any other internal package                           |
-| `store`     | SQLite connection, migration runner, sqlc queries, repository interfaces and their SQLite implementations, `storetest`   | domain packages                                      |
-| `edge`      | Host routing, static serving, policy enforcement at request time, `/.wardlock/*`, response headers, renditions selection | `api`, `database/sql`, `sqlcgen`, SQLite driver      |
-| `access`    | Policies and their evaluation, share links and tokens, site sessions and cookie primitives, password, email code, OAuth  | `net/http`, `api`, `edge`, `database/sql`, `sqlcgen` |
-| `deploys`   | Upload sessions, manifests, `BlobStore`, activation, rollback, garbage collection, rendition generation                  | `api`, `edge`, `database/sql`, `sqlcgen`             |
-| `sites`     | Sites, names, custom domains and verification                                                                            | `api`, `edge`, `database/sql`, `sqlcgen`             |
-| `owners`    | Owner accounts, dashboard sessions, email-code and passkey sign-in, API tokens, CLI login                                | `edge`, `database/sql`, `sqlcgen`                    |
-| `mail`      | `Mailer` interface, SMTP delivery (STARTTLS or implicit TLS), the `dev://` sink, sign-in and email-code templates        | `api`, `edge`, `database/sql`, `sqlcgen`             |
-| `tls`       | certmagic configuration and modes                                                                                        | `api`, `edge`                                        |
-| `api`       | Generated OpenAPI interface, handlers that translate HTTP to domain calls, error-to-status mapping                       | `edge`                                               |
-| `dashboard` | Embedded dashboard files, SPA fallback, dev proxy                                                                        | domain packages                                      |
+| Package     | Owns                                                                                                                      | Must not import                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `platform`  | Config, logging and redaction, request logging, health, graceful shutdown, version                                        | any other internal package                           |
+| `store`     | SQLite connection, migration runner, sqlc queries, repository interfaces and their SQLite implementations, `storetest`    | domain packages                                      |
+| `edge`      | Host routing, static serving, policy enforcement at request time, `/.wardlock/*`, response headers, renditions selection  | `api`, `database/sql`, `sqlcgen`, SQLite driver      |
+| `access`    | Policies and their evaluation, share links and tokens, site sessions and cookie primitives, password, email code, OAuth   | `net/http`, `api`, `edge`, `database/sql`, `sqlcgen` |
+| `deploys`   | Upload sessions, manifests, `BlobStore`, activation, rollback, garbage collection, rendition generation                   | `api`, `edge`, `database/sql`, `sqlcgen`             |
+| `sites`     | Sites, names, custom domains and verification                                                                             | `api`, `edge`, `database/sql`, `sqlcgen`             |
+| `owners`    | Owner accounts, dashboard sessions, email-code and passkey sign-in, API tokens, CLI login                                 | `edge`, `database/sql`, `sqlcgen`                    |
+| `mail`      | `Mailer` interface, SMTP delivery (STARTTLS or implicit TLS), the `dev://` sink, sign-in and email-code templates         | `api`, `edge`, `database/sql`, `sqlcgen`             |
+| `tls`       | certmagic configuration and modes, the on-demand decision, HTTP to HTTPS redirect, trusted-proxy `X-Forwarded-*` handling | `api`, `edge`, `database/sql`, `sqlcgen`             |
+| `api`       | Generated OpenAPI interface, handlers that translate HTTP to domain calls, error-to-status mapping                        | `edge`                                               |
+| `dashboard` | Embedded dashboard files, SPA fallback, dev proxy                                                                         | domain packages                                      |
 
 Rules of thumb:
 

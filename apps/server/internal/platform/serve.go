@@ -21,27 +21,53 @@ var Version = "dev"
 // shutdown signal.
 const ShutdownTimeout = 10 * time.Second
 
-// Serve runs srv on ln until ctx is cancelled, then shuts it down gracefully.
-func Serve(ctx context.Context, log *slog.Logger, srv *http.Server, ln net.Listener) error {
-	errs := make(chan error, 1)
-	go func() { errs <- srv.Serve(ln) }()
-	log.Info("listening", slog.String("addr", ln.Addr().String()))
+// Listener is a server and the listener it serves. A server with a
+// TLSConfig serves TLS on the listener.
+type Listener struct {
+	Server   *http.Server
+	Listener net.Listener
+}
 
+// Serve runs every server until ctx is cancelled or one of them fails, then
+// shuts them all down gracefully.
+func Serve(ctx context.Context, log *slog.Logger, servers ...Listener) error {
+	errs := make(chan error, len(servers))
+	for _, s := range servers {
+		// Read TLSConfig before serving: ServeTLS and Serve configure HTTP/2
+		// on the server concurrently.
+		tls := s.Server.TLSConfig != nil
+		log.Info("listening", slog.String("addr", s.Listener.Addr().String()), slog.Bool("tls", tls))
+		go func() {
+			if tls {
+				errs <- s.Server.ServeTLS(s.Listener, "", "")
+				return
+			}
+			errs <- s.Server.Serve(s.Listener)
+		}()
+	}
+
+	var failed error
+	received := 0
 	select {
 	case err := <-errs:
-		return fmt.Errorf("serve: %w", err)
+		received++
+		failed = fmt.Errorf("serve: %w", err)
 	case <-ctx.Done():
 	}
 	log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ShutdownTimeout)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
+	for _, s := range servers {
+		if err := s.Server.Shutdown(shutdownCtx); err != nil && failed == nil {
+			failed = fmt.Errorf("shutdown: %w", err)
+		}
 	}
-	if err := <-errs; !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("serve: %w", err)
+	for ; received < len(servers); received++ {
+		if err := <-errs; !errors.Is(err, http.ErrServerClosed) && failed == nil {
+			failed = fmt.Errorf("serve: %w", err)
+		}
 	}
-	return nil
+	return failed
 }
 
 // Healthz reports liveness. Readiness (database, certificates) is O4.2.

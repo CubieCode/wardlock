@@ -58,8 +58,16 @@ linters:
               desc: mail is called by domain packages, never the reverse
             - pkg: wardlock.nz/server/internal/edge
               desc: mail is called by domain packages, never the reverse
+        tls:
+          files: ['**/apps/server/internal/tls/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/api
+              desc: tls wraps the edge from cmd/wardlockd; it never imports the API
+            - pkg: wardlock.nz/server/internal/edge
+              desc: tls wraps the edge from cmd/wardlockd; it never imports the edge
         domain-storage:
           files:
+            - '**/apps/server/internal/tls/**'
             - '**/apps/server/internal/mail/**'
             - '**/apps/server/internal/access/**'
             - '**/apps/server/internal/deploys/**'
