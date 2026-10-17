@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config is the server configuration, read once at startup from WARDLOCK_*
@@ -45,6 +46,14 @@ type Config struct {
 	MaxFileSize    int64
 	MaxDeployFiles int
 	MaxDeploySize  int64
+	// Access log: client IPs keep only the first AccessLogIPv4Prefix or
+	// AccessLogIPv6Prefix bits (0 stores none), entries older than
+	// AccessLogRetention are pruned (0 keeps them forever) and at most
+	// AccessLogBuffer entries wait for a write.
+	AccessLogIPv4Prefix int
+	AccessLogIPv6Prefix int
+	AccessLogRetention  time.Duration
+	AccessLogBuffer     int
 	// Secret is the decoded WARDLOCK_SECRET: the server key for token,
 	// code and session hashes. Empty when unset; commands that need it
 	// call RequireSecret.
@@ -137,6 +146,9 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		}
 		l.dst(v)
 	}
+	if err := cfg.loadAccessLog(get); err != nil {
+		return Config{}, err
+	}
 	if raw := get("WARDLOCK_SECRET", ""); raw != "" {
 		key, err := decodeSecret(raw)
 		if err != nil {
@@ -145,6 +157,35 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		cfg.Secret = key
 	}
 	return cfg, nil
+}
+
+// loadAccessLog reads the WARDLOCK_ACCESS_LOG_* variables.
+func (c *Config) loadAccessLog(get func(key, fallback string) string) error {
+	for _, l := range []struct {
+		key           string
+		fallback, max int64
+		dst           func(int64)
+	}{
+		{"WARDLOCK_ACCESS_LOG_IPV4_PREFIX", 24, 32, func(v int64) { c.AccessLogIPv4Prefix = int(v) }},
+		{"WARDLOCK_ACCESS_LOG_IPV6_PREFIX", 48, 128, func(v int64) { c.AccessLogIPv6Prefix = int(v) }},
+		{"WARDLOCK_ACCESS_LOG_RETENTION_DAYS", 90, 36_500, func(v int64) { c.AccessLogRetention = time.Duration(v) * 24 * time.Hour }},
+	} {
+		raw := get(l.key, "")
+		v, err := strconv.ParseInt(raw, 10, 64)
+		switch {
+		case raw == "":
+			v = l.fallback
+		case err != nil || v < 0 || v > l.max:
+			return fmt.Errorf("%w: %s must be a whole number from 0 to %d", ErrInvalidConfig, l.key, l.max)
+		}
+		l.dst(v)
+	}
+	buf, err := positiveInt(get("WARDLOCK_ACCESS_LOG_BUFFER", ""), 10_000)
+	if err != nil || buf > 1_000_000 {
+		return fmt.Errorf("%w: WARDLOCK_ACCESS_LOG_BUFFER must be a whole number from 1 to 1000000", ErrInvalidConfig)
+	}
+	c.AccessLogBuffer = int(buf)
+	return nil
 }
 
 // positiveInt parses s as an integer of at least 1, or returns fallback

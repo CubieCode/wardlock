@@ -39,7 +39,9 @@ type Config struct {
 	// Access decides each request. It is required: there is no implicit
 	// allow-all, so a wiring mistake cannot publish protected sites.
 	Access Access
-	Log    *slog.Logger
+	// Recorder receives one record per site access; nil records nothing.
+	Recorder AccessRecorder
+	Log      *slog.Logger
 }
 
 // Edge is the edge handler.
@@ -124,6 +126,8 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	w, done := e.recordAccess(w, r, s.site, clean, d)
+	defer done()
 	if d.ClearCookie {
 		w.Header().Add("Set-Cookie", ClearSessionCookie().String())
 	}
