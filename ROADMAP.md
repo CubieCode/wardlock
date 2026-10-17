@@ -30,8 +30,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### F0.3: Data model and migrations v0
 
-- Status: `todo`
-- Owner:
+- Status: `review`
+- Owner: feat/f0.3-data-model-migrations
 - PR:
 - Depends on: F0.1
 - Scope: Migration `0002` onward for owners, owner sessions, API tokens, CLI login requests, sites, domains (hostname unique per instance, site, status `pending`/`active`/`lapsed`, verification token (shown again in the TXT record, so stored as is; it is public once published in DNS), last check, first consecutive failure, last failure reason), deploys, blobs, deploy files (manifests), policies, share links, site sessions and the access log, following the portable-SQL rules. Declare the per-area repository interfaces in `internal/store` (`Owners`, `Sessions`, `APITokens`, `Sites`, `Domains`, `Deploys`, `Policies`, `Links`, `AccessLog`) with Go types that hide sqlc; an ID helper (UUIDv7). Implement only what contract tests need to exercise constraints; feature items implement the remaining methods in their own `queries/<area>.sql`. Contract-test harness that each interface's suite plugs into.

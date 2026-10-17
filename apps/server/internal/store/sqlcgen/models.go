@@ -7,8 +7,171 @@
 
 package sqlcgen
 
+import (
+	"database/sql"
+)
+
+type AccessLog struct {
+	ID           string
+	OccurredAt   int64
+	SiteID       string
+	Host         string
+	Path         string
+	Status       int64
+	Via          string
+	LinkPublicID sql.NullString
+	Ip           sql.NullString
+	UserAgent    sql.NullString
+}
+
+type ApiToken struct {
+	ID          string
+	OwnerID     string
+	PublicID    string
+	TokenHash   string
+	Name        string
+	ScopeDeploy int64
+	ScopeManage int64
+	CreatedAt   int64
+	ExpiresAt   sql.NullInt64
+	LastUsedAt  sql.NullInt64
+	RevokedAt   sql.NullInt64
+}
+
+type Blob struct {
+	Sha256    string
+	Size      int64
+	CreatedAt int64
+}
+
+type CliLoginRequest struct {
+	ID             string
+	DeviceCodeHash string
+	UserCode       string
+	Status         string
+	OwnerID        sql.NullString
+	ScopeDeploy    int64
+	ScopeManage    int64
+	ApiTokenID     sql.NullString
+	CreatedAt      int64
+	ExpiresAt      int64
+	DecidedAt      sql.NullInt64
+}
+
+type Deploy struct {
+	ID          string
+	SiteID      string
+	Message     sql.NullString
+	FileCount   int64
+	TotalSize   int64
+	CreatedAt   int64
+	ActivatedAt sql.NullInt64
+}
+
+type DeployFile struct {
+	DeployID string
+	Path     string
+	Sha256   string
+	Size     int64
+}
+
+type Domain struct {
+	ID                string
+	SiteID            string
+	Hostname          string
+	Status            string
+	VerificationToken string
+	CreatedAt         int64
+	LastCheckedAt     sql.NullInt64
+	FailingSince      sql.NullInt64
+	LastFailureReason sql.NullString
+}
+
+type Owner struct {
+	ID         string
+	Email      string
+	InvitedBy  sql.NullString
+	CreatedAt  int64
+	AcceptedAt sql.NullInt64
+}
+
+type OwnerLoginCode struct {
+	ID        string
+	OwnerID   sql.NullString
+	Purpose   string
+	CodeHash  string
+	Attempts  int64
+	CreatedAt int64
+	ExpiresAt int64
+	UsedAt    sql.NullInt64
+}
+
+type OwnerSession struct {
+	ID         string
+	OwnerID    string
+	TokenHash  string
+	CreatedAt  int64
+	LastSeenAt int64
+	ExpiresAt  int64
+	RevokedAt  sql.NullInt64
+}
+
+type Policy struct {
+	ID              string
+	SiteID          string
+	PathPrefix      string
+	Visibility      string
+	LinksEnabled    int64
+	PasswordEnabled int64
+	EmailEnabled    int64
+	OauthEnabled    int64
+	PasswordHash    sql.NullString
+	Version         int64
+	CreatedAt       int64
+	UpdatedAt       int64
+}
+
 type SchemaMigration struct {
 	Version   int64
 	Name      string
 	AppliedAt int64
+}
+
+type ShareLink struct {
+	ID             string
+	SiteID         string
+	PublicID       string
+	TokenHash      string
+	Label          sql.NullString
+	PathPrefix     string
+	CreatedAt      int64
+	ExpiresAt      sql.NullInt64
+	MaxUses        sql.NullInt64
+	UseCount       int64
+	LastAccessedAt sql.NullInt64
+	RotatedAt      sql.NullInt64
+	RevokedAt      sql.NullInt64
+}
+
+type Site struct {
+	ID             string
+	OwnerID        string
+	Name           string
+	SpaFallback    int64
+	CreatedAt      int64
+	ActiveDeployID sql.NullString
+}
+
+type SiteSession struct {
+	ID            string
+	SiteID        string
+	TokenHash     string
+	Method        string
+	ShareLinkID   sql.NullString
+	PolicyID      string
+	PolicyVersion int64
+	Subject       sql.NullString
+	CreatedAt     int64
+	ExpiresAt     int64
+	RevokedAt     sql.NullInt64
 }
