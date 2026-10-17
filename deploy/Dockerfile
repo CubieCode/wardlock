@@ -5,8 +5,9 @@
 # under <os>/<arch>/ in the build context (.goreleaser.yaml, dockers_v2); this
 # file only packages it. Data lives in the /data volume.
 # Distroless has no shell, so create the data directory, owned by the
-# nonroot user (65532), in a throwaway stage. A new volume inherits it.
-FROM busybox:1.37 AS data
+# nonroot user (65532), in a throwaway stage. A new volume inherits it. The
+# stage runs on the build platform, so arm64 images need no emulation.
+FROM --platform=$BUILDPLATFORM busybox:1.37 AS data
 RUN mkdir /data && chown 65532:65532 /data && chmod 0700 /data
 
 FROM gcr.io/distroless/static-debian12:nonroot

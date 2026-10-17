@@ -302,8 +302,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.1: Release artefacts
 
-- Status: `todo`
-- Owner:
+- Status: `review`
+- Owner: feat/o4.1-release-artefacts
 - PR:
 - Depends on: F0.1
 - Scope: Finish `.goreleaser.yaml` (server and CLI for linux/darwin/windows on amd64/arm64, checksums, SBOMs, multi-arch image for `ghcr.io/cubiecode/wardlock`), an install script, the systemd unit and compose example, and the Go module tag scheme for vanity paths (see DEPLOYMENT). Publishing stays disabled until a release is explicitly authorised.

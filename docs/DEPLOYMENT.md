@@ -35,26 +35,41 @@ Owners add their own hostnames to a site; the operator sets nothing up per domai
 
 `WARDLOCK_DNS_RESOLVERS` (comma-separated `host:port`, default the system resolver) chooses where verification lookups go. Use public or authoritative-facing resolvers if the local one caches aggressively or answers split-horizon records.
 
+## Install a release binary
+
+Releases are not published yet (O4.4). When they are, each GitHub release carries `wardlockd_<version>_<os>_<arch>` and `wardlock_<version>_<os>_<arch>` archives for linux, darwin and windows on amd64 and arm64 (`.zip` on Windows), `checksums.txt` (SHA-256 of every archive and SBOM) and an SPDX SBOM per archive (`<archive>.sbom.json`). The wardlockd archive also contains `wardlockd.service`.
+
+[`deploy/install.sh`](../deploy/install.sh) installs the binary for this machine (Linux or macOS) after checking the archive against `checksums.txt`; it refuses a missing or mismatched checksum and never runs `sudo` itself:
+
+```sh
+sh install.sh --version 0.1.0 --component wardlockd   # or wardlock (default), or all
+sh install.sh --component all --dir ~/.local/bin      # latest release, no root
+```
+
+`--base-url` installs from a mirror or a local snapshot directory instead, for example `--base-url file://$PWD/.local/goreleaser --version 0.0.1-snapshot.abc1234`.
+
 ## Single binary with systemd
 
 ```sh
 sudo useradd --system --home /var/lib/wardlock --create-home wardlock
-sudo install -m 0755 wardlockd /usr/local/bin/wardlockd
+sudo sh deploy/install.sh --version 0.1.0 --component wardlockd
 sudo install -m 0640 -o root -g wardlock wardlock.env /etc/wardlock/wardlock.env
 sudo install -m 0644 deploy/wardlockd.service /etc/systemd/system/wardlockd.service
 sudo systemctl daemon-reload && sudo systemctl enable --now wardlockd
 ```
 
-[`deploy/wardlockd.service`](../deploy/wardlockd.service) runs as the `wardlock` user with `StateDirectory=wardlock` (so `WARDLOCK_DATA_DIR=/var/lib/wardlock`), `AmbientCapabilities=CAP_NET_BIND_SERVICE` for ports 80/443, and systemd hardening (`ProtectSystem=strict`, `NoNewPrivileges`, private `/tmp`). Release binaries and an install script are O4.1.
+[`deploy/wardlockd.service`](../deploy/wardlockd.service) runs as the `wardlock` user with `StateDirectory=wardlock` (so `WARDLOCK_DATA_DIR=/var/lib/wardlock`), `AmbientCapabilities=CAP_NET_BIND_SERVICE` for ports 80/443, and systemd hardening (`ProtectSystem=strict`, `NoNewPrivileges`, private `/tmp`, a `@system-service` system call filter, `UMask=0077`).
 
 On first start with no owners, the log shows a one-time setup URL (C1.1): `journalctl -u wardlockd | grep setup`. Or run `sudo -u wardlock wardlockd admin create --email you@example.com`.
 
 ## Docker
 
-[`deploy/Dockerfile`](../deploy/Dockerfile) builds a static image (distroless, non-root); [`deploy/compose.yaml`](../deploy/compose.yaml) is an example with one volume for data. Release images will be published to `ghcr.io/cubiecode/wardlock` (O4.1); none are published yet.
+[`deploy/Dockerfile`](../deploy/Dockerfile) packages the static `wardlockd` into a distroless image that runs as the `nonroot` user (uid 65532) with data in the `/data` volume. Release images will be multi-arch (`linux/amd64`, `linux/arm64`) at `ghcr.io/cubiecode/wardlock:<version>` and `:latest`; none are published yet (O4.4). [`deploy/compose.yaml`](../deploy/compose.yaml) is an example with a read-only root filesystem, all capabilities dropped and one volume for data. Until images are published, build a snapshot and point the example at it:
 
 ```sh
-docker compose -f deploy/compose.yaml up -d
+goreleaser release --snapshot --clean   # images ghcr.io/cubiecode/wardlock:<version>-amd64 and -arm64
+WARDLOCK_IMAGE=ghcr.io/cubiecode/wardlock:<version>-amd64 docker compose -f deploy/compose.yaml up -d
+curl http://127.0.0.1:8080/healthz
 ```
 
 ## Behind Caddy or nginx
@@ -106,4 +121,25 @@ The Go modules use vanity import paths on the project's own domain: `wardlock.nz
 />
 ```
 
-The fourth field is the module's directory inside the repository; Go supports it from 1.25. Release tags for such modules are prefixed with that directory (for example `apps/cli/v0.1.0`). O4.1 must confirm the exact tag scheme with `go install wardlock.nz/cli/cmd/wardlock@<version>` against a test tag before the first release. Until the domain serves these tags, local builds rely on `go.work` and the `replace` directives in `apps/server/go.mod` and `apps/cli/go.mod`. Serving the tags is a launch task (O4.4); no DNS or hosting change is part of the current work.
+The fourth field is the module's directory inside the repository; Go supports it from 1.25. Until the domain serves this metadata, local builds rely on `go.work` and the `replace` directives in `apps/server/go.mod` and `apps/cli/go.mod`. Serving it is a launch task (O4.4); no DNS or hosting change is part of the current work.
+
+## Releases and module tags
+
+A release has one version, `vX.Y.Z`, and four tags on the same release commit:
+
+| Tag                            | Used by                                              |
+| ------------------------------ | ---------------------------------------------------- |
+| `vX.Y.Z`                       | GoReleaser (archives, image, GitHub release)         |
+| `packages/apiclient-go/vX.Y.Z` | `go get wardlock.nz/apiclient@vX.Y.Z`                |
+| `apps/cli/vX.Y.Z`              | `go install wardlock.nz/cli/cmd/wardlock@vX.Y.Z`     |
+| `apps/server/vX.Y.Z`           | `go install wardlock.nz/server/cmd/wardlockd@vX.Y.Z` |
+
+Module tags are prefixed with the module's directory, the fourth `go-import` field; a plain `vX.Y.Z` tag is not a version of any module. `go install pkg@version` refuses a module whose `go.mod` has `replace` directives, so the tagged commit cannot be the development state. The release steps are:
+
+1. On the release branch, tag `packages/apiclient-go/vX.Y.Z` at the commit to release.
+2. In `apps/cli/go.mod` and `apps/server/go.mod`, drop the `replace wardlock.nz/apiclient` directives, require `wardlock.nz/apiclient vX.Y.Z` where it is used, and run `GOWORK=off go mod tidy` so `go.sum` records the client's hash (the release owner holds the lockfile gate for this). Commit.
+3. Tag that commit `vX.Y.Z`, `apps/cli/vX.Y.Z` and `apps/server/vX.Y.Z`, push the tags, and run the release workflow's publish job. Main keeps its `replace` directives; only the release commit drops them.
+
+[`scripts/test-module-tags.sh`](../scripts/test-module-tags.sh) proves this scheme without publishing: it makes the release commit and tags in a temporary clone, serves that clone with `git daemon` and answers `wardlock.nz/<module>?go-get=1` from a local proxy, then runs `go install` for both commands. It also checks that an unprefixed tag and a tag on a commit with `replace` directives fail. The tags exist only in the deleted clone. The release workflow runs it on every pull request.
+
+[`.goreleaser.yaml`](../.goreleaser.yaml) builds every artefact, and [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs `goreleaser release --snapshot --clean` on pull requests and main, then [`scripts/release-smoke.sh`](../scripts/release-smoke.sh) checks the snapshot: all 12 archives and SBOMs match `checksums.txt`, `install.sh` installs them and rejects a bad checksum, and the image runs as uid 65532 and answers `/healthz`. Publishing is off three ways: snapshots never push, the image and GitHub release are skipped outside snapshots unless `WARDLOCK_PUBLISH=true`, and the publish job that sets it is `if: false`. Turning it on is O4.4 and needs explicit authorisation.

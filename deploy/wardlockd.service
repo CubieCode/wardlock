@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: 2026 CubieCode
 # SPDX-License-Identifier: MIT
 #
-# systemd unit for wardlockd. Install to /etc/systemd/system/ and put
-# configuration in /etc/wardlock/wardlock.env (see .env.example).
+# systemd unit for wardlockd, also shipped in the wardlockd release archives.
+# Install to /etc/systemd/system/ and put configuration in
+# /etc/wardlock/wardlock.env (see .env.example and docs/DEPLOYMENT.md).
 [Unit]
 Description=Wardlock static site server
 Documentation=https://github.com/CubieCode/wardlock
@@ -20,6 +21,7 @@ Restart=on-failure
 RestartSec=5s
 StateDirectory=wardlock
 StateDirectoryMode=0700
+UMask=0077
 # Bind 80/443 without running as root (automatic TLS, C1.4).
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
@@ -31,11 +33,21 @@ PrivateDevices=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RemoveIPC=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
 
 [Install]
 WantedBy=multi-user.target
