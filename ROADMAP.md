@@ -302,7 +302,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.1: Release artefacts
 
-- Status: `review`
+- Status: `done`
 - Owner: feat/o4.1-release-artefacts
 - PR: https://github.com/CubieCode/wardlock/pull/13
 - Depends on: F0.1
