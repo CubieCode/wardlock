@@ -1,0 +1,79 @@
+// SPDX-FileCopyrightText: 2026 CubieCode
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package platform_test
+
+import (
+	"bytes"
+	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+
+	"wardlock.nz/server/internal/platform"
+)
+
+func TestLoadConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr bool
+		check   func(platform.Config) bool
+	}{
+		{"defaults", nil, false, func(c platform.Config) bool {
+			return c.BaseDomain == "wardlock.localhost" && c.DashboardHost == "wardlock.localhost" && c.DevDashboardURL == nil
+		}},
+		{"hosts are normalised", map[string]string{"WARDLOCK_BASE_DOMAIN": "Sites.Example.", "WARDLOCK_DASHBOARD_HOST": "Admin.Example"}, false,
+			func(c platform.Config) bool {
+				return c.BaseDomain == "sites.example" && c.DashboardHost == "admin.example"
+			}},
+		{"dev dashboard URL", map[string]string{"WARDLOCK_DEV_DASHBOARD_URL": "http://127.0.0.1:5173"}, false,
+			func(c platform.Config) bool {
+				return c.DevDashboardURL != nil && c.DevDashboardURL.Host == "127.0.0.1:5173"
+			}},
+		{"bad address", map[string]string{"WARDLOCK_HTTP_ADDR": "8080"}, true, nil},
+		{"bad base domain", map[string]string{"WARDLOCK_BASE_DOMAIN": "under_score.example"}, true, nil},
+		{"bad log level", map[string]string{"WARDLOCK_LOG_LEVEL": "loud"}, true, nil},
+		{"bad log format", map[string]string{"WARDLOCK_LOG_FORMAT": "xml"}, true, nil},
+		{"bad dev URL", map[string]string{"WARDLOCK_DEV_DASHBOARD_URL": "ftp://x"}, true, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := platform.LoadConfig(func(k string) string { return tt.env[k] })
+			if tt.wantErr {
+				if !errors.Is(err, platform.ErrInvalidConfig) {
+					t.Fatalf("error = %v, want ErrInvalidConfig", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !tt.check(cfg) {
+				t.Fatalf("unexpected config %+v", cfg)
+			}
+		})
+	}
+}
+
+func TestRedactURL(t *testing.T) {
+	u, _ := url.Parse("/report?t=wl_abc.secret&format=md")
+	got := platform.RedactURL(u)
+	if strings.Contains(got, "secret") || !strings.Contains(got, "format=md") {
+		t.Fatalf("RedactURL = %q", got)
+	}
+}
+
+func TestLogsNeverContainSecrets(t *testing.T) {
+	var buf bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&buf, nil))
+	log.Info("x", slog.Any("token", platform.Secret("wl_live_value")))
+	h := platform.LogRequests(log, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/p?t=wl_live_value", nil))
+	if strings.Contains(buf.String(), "wl_live_value") {
+		t.Fatalf("log leaked a secret: %s", buf.String())
+	}
+}

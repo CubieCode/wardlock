@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: 2026 CubieCode
+# SPDX-License-Identifier: MIT
+#
+# Shared by every Go module; scripts/check-go.sh runs golangci-lint in each.
+# depguard enforces the package boundaries in docs/MODULES.md.
+version: '2'
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - depguard
+    - errorlint
+    - gochecknoinits
+    - gosec
+    - misspell
+    - nolintlint
+    - sloglint
+    - usestdlibvars
+  settings:
+    misspell:
+      # Prose is NZ English; flag only real misspellings, not UK spellings.
+      ignore-rules:
+        [
+          behaviour,
+          colour,
+          licence,
+          normalise,
+          organisation,
+          serialisation,
+          initialise,
+          authorise,
+          recognise,
+        ]
+    depguard:
+      rules:
+        edge:
+          files: ['**/apps/server/internal/edge/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/api
+              desc: the edge never imports the API; receive handlers through edge.Config
+        access:
+          files: ['**/apps/server/internal/access/**']
+          deny:
+            - pkg: net/http
+              desc: access takes plain values from the edge; keep HTTP out
+            - pkg: wardlock.nz/server/internal/api
+              desc: access never imports the HTTP layer
+            - pkg: wardlock.nz/server/internal/edge
+              desc: access never imports the HTTP layer
+        domain-storage:
+          files:
+            - '**/apps/server/internal/access/**'
+            - '**/apps/server/internal/deploys/**'
+            - '**/apps/server/internal/sites/**'
+            - '**/apps/server/internal/owners/**'
+            - '**/apps/server/internal/edge/**'
+          deny:
+            - pkg: database/sql
+              desc: domain code depends on store's repository interfaces
+            - pkg: wardlock.nz/server/internal/store/sqlcgen
+              desc: domain code depends on store's repository interfaces, not sqlc types
+            - pkg: modernc.org/sqlite
+              desc: only internal/store opens the database
+        mit-modules:
+          files: ['**/apps/cli/**', '**/packages/apiclient-go/**']
+          deny:
+            - pkg: wardlock.nz/server
+              desc: MIT code must never import the AGPL server
+  exclusions:
+    generated: lax
+    presets: [std-error-handling]
+    rules:
+      - path: _test\.go
+        linters: [gosec]
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes: [wardlock.nz]

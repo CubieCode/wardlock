@@ -1,0 +1,89 @@
+name: CI
+# Runs the full definition-of-done gate (`pnpm check`) on every pull request,
+# including the codegen drift check and govulncheck, plus the Playwright
+# acceptance suite against a real server at desktop and mobile widths.
+# Actions are pinned by commit; the comment gives the release.
+#
+# Runners: vars.RUNNER selects them as JSON, e.g. ["self-hosted","foundry"];
+# unset means ubuntu-latest. Pull requests from forks always run on
+# ubuntu-latest, so outside code never runs on self-hosted machines. Steps
+# branch on runner.environment:
+# - github-hosted: pnpm and Go caches go through actions/cache, Playwright
+#   installs Chromium's system packages with sudo.
+# - self-hosted: runners share one user's home, so the pnpm store, Go caches,
+#   pinned Go tools and Playwright browsers stay warm on disk there. The host
+#   provides gcc (for -race) and Chromium's system packages; jobs have no sudo.
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: &runner ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || fromJSON(vars.RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 30
+    steps:
+      - &paths
+        name: Select cache paths
+        run: |
+          # Checkout removes ignored files, so keep the pinned Go tools in $HOME.
+          echo "WARDLOCK_TOOLS_DIR=$HOME/.cache/wardlock-tools" >> "$GITHUB_ENV"
+          echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright" >> "$GITHUB_ENV"
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - &pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          # Concurrent self-hosted jobs share $HOME; install pnpm per job.
+          dest: ${{ runner.environment == 'github-hosted' && '~/setup-pnpm' || format('{0}/setup-pnpm', runner.temp) }}
+      - &node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
+      - &go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: ${{ runner.environment == 'github-hosted' }}
+          cache-dependency-path: |
+            apps/*/go.sum
+            packages/*/go.sum
+            tools/go.sum
+      - name: Restore pinned Go tools
+        if: runner.environment == 'github-hosted'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/wardlock-tools
+          key: go-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/go.mod', 'tools/go.sum', 'go.work') }}
+      - &install
+        run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: git diff --check && git diff --exit-code
+
+  browser:
+    runs-on: *runner
+    timeout-minutes: 20
+    steps:
+      - *paths
+      - *checkout
+      - *pnpm
+      - *node
+      - *go
+      - *install
+      - name: Install Chromium with system packages
+        if: runner.environment == 'github-hosted'
+        run: pnpm --filter @wardlock/web exec playwright install --with-deps --only-shell chromium
+      - name: Install Chromium
+        if: runner.environment != 'github-hosted'
+        run: pnpm --filter @wardlock/web exec playwright install --only-shell chromium
+      - run: pnpm browser:test
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-results
+          path: .local/test-results
+          retention-days: 7

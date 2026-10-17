@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: 2026 CubieCode
+# SPDX-License-Identifier: MIT
+#
+# The Wardlock HTTP API contract and the single source of truth for API types.
+# Changing this file is a serialization gate (AGENTS.md). After editing, run
+# `pnpm codegen` and commit the regenerated Go and TypeScript code.
+openapi: 3.1.0
+info:
+  title: Wardlock API
+  version: 0.0.0
+  summary: Owner API for the Wardlock server, used by the dashboard and the CLI.
+  license:
+    name: MIT
+    identifier: MIT
+paths:
+  /api/v0/health:
+    get:
+      operationId: getHealth
+      summary: Report that the API is serving requests.
+      description: >-
+        Unauthenticated. Returns the server version so clients can report it.
+        Database and certificate readiness are reported separately (O4.2).
+      tags: [system]
+      responses:
+        '200':
+          description: The API is serving requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+components:
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status, version]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+          description: The server's release version, or `dev` for local builds.
+          examples: ['0.1.0']

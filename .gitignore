@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.turbo/
+coverage/
+.env
+.env.*
+!.env.example
+.local/
+*.tsbuildinfo
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+.claude/settings.local.json
+# The dashboard build copied into the server for go:embed (scripts/embed-dashboard.sh).
+apps/server/internal/dashboard/ui/dist/
+test-results/
+playwright-report/

@@ -1,0 +1,13 @@
+{
+  "name": "@wardlock/api-spec",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "generate": "bash generate.sh"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0"
+  }
+}

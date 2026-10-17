@@ -1,0 +1,65 @@
+// SPDX-FileCopyrightText: 2026 CubieCode
+// SPDX-License-Identifier: AGPL-3.0-only
+
+// Command wardlockd is the Wardlock server: edge, owner API and dashboard in
+// one process. Configuration comes from WARDLOCK_* environment variables.
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+const usage = `wardlockd runs the Wardlock server.
+
+Usage:
+  wardlockd <command>
+
+Commands:
+  serve     Start the server
+  version   Print the version
+  help      Show this help
+
+Configuration is read from WARDLOCK_* environment variables;
+see .env.example in the source repository.
+`
+
+var errUsage = errors.New("usage")
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := run(ctx, os.Args[1:], os.Getenv, os.Stdout, os.Stderr)
+	stop()
+	switch {
+	case errors.Is(err, errUsage):
+		os.Exit(2)
+	case err != nil:
+		fmt.Fprintln(os.Stderr, "wardlockd:", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context, args []string, getenv func(string) string, stdout, stderr io.Writer) error {
+	if len(args) == 0 {
+		fmt.Fprint(stderr, usage)
+		return errUsage
+	}
+	switch args[0] {
+	case "serve":
+		return serve(ctx, getenv, stderr)
+	case "version", "--version":
+		fmt.Fprintln(stdout, "wardlockd", version())
+		return nil
+	case "help", "--help", "-h":
+		fmt.Fprint(stdout, usage)
+		return nil
+	default:
+		fmt.Fprintf(stderr, "wardlockd: unknown command %q\n\n%s", args[0], usage)
+		return errUsage
+	}
+}

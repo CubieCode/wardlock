@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: 2026 CubieCode
+# SPDX-License-Identifier: MIT
+#
+# Release builds for wardlockd and wardlock. Publishing is disabled: CI runs
+# `goreleaser release --snapshot --clean` and keeps the artefacts as workflow
+# artifacts only. Enabling real releases (GitHub releases, ghcr.io images,
+# Homebrew) is O4.1/O4.4 and needs explicit authorisation.
+version: 2
+project_name: wardlock
+dist: .local/goreleaser
+
+before:
+  hooks:
+    # Builds the dashboard and copies it into the server for go:embed.
+    - pnpm install --frozen-lockfile
+    - pnpm exec turbo build
+    - bash scripts/embed-dashboard.sh
+
+builds:
+  - id: wardlockd
+    dir: apps/server
+    main: ./cmd/wardlockd
+    binary: wardlockd
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X wardlock.nz/server/internal/platform.Version={{ .Version }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+  - id: wardlock
+    dir: apps/cli
+    main: ./cmd/wardlock
+    binary: wardlock
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: wardlockd
+    ids: [wardlockd]
+    name_template: 'wardlockd_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE, apps/server/LICENSE, README.md]
+  - id: wardlock
+    ids: [wardlock]
+    name_template: 'wardlock_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE, apps/cli/LICENSE, README.md]
+
+checksum:
+  name_template: checksums.txt
+
+dockers_v2:
+  - id: wardlockd
+    ids: [wardlockd]
+    dockerfile: deploy/Dockerfile
+    images: [ghcr.io/cubiecode/wardlock]
+    tags: ['{{ .Version }}']
+    platforms: [linux/amd64, linux/arm64]
+    labels:
+      org.opencontainers.image.source: https://github.com/CubieCode/wardlock
+      org.opencontainers.image.licenses: AGPL-3.0-only
+      org.opencontainers.image.version: '{{ .Version }}'
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-snapshot.{{ .ShortCommit }}'
+
+changelog:
+  disable: true
+
+release:
+  disable: true

@@ -1,0 +1,38 @@
+{
+  "name": "wardlock",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "packageManager": "pnpm@12.14.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "turbo build && bash scripts/build-go.sh",
+    "lint": "eslint . && prettier --check .",
+    "typecheck": "turbo typecheck && tsc -p tsconfig.tools.json",
+    "test": "turbo build --filter=./packages/* && vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write . && bash scripts/go-fmt.sh --write",
+    "codegen": "bash scripts/codegen.sh",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm check:boundaries && pnpm check:codegen && pnpm check:go",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "check:codegen": "bash scripts/codegen.sh --check",
+    "check:go": "bash scripts/check-go.sh",
+    "browser:test": "pnpm build && node scripts/browser-acceptance.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "turbo": "2.11.8",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^5.0.5"
+  }
+}
