@@ -1,58 +1,110 @@
-name: Release (snapshot)
-# Builds snapshot release artefacts with GoReleaser: server and CLI binaries
-# for every platform, archives, checksums and the multi-arch container image.
-# Nothing is published: there is no tag trigger, `release` is disabled in
-# .goreleaser.yaml and the image is never pushed. Artefacts are kept as
-# workflow artifacts for inspection. Publishing is roadmap O4.1/O4.4 and
-# needs explicit authorisation.
+name: Release
+# Snapshot release builds with GoReleaser: server and CLI binaries for every
+# platform, archives, checksums, SBOMs and the multi-arch container image,
+# then scripts/release-smoke.sh checks them (checksums, install.sh, the image
+# runs as non-root and answers /healthz). scripts/test-module-tags.sh proves
+# the Go module tag scheme against a temporary local clone.
 #
-# Runners: vars.RUNNER as in ci.yml (unset means ubuntu-latest). Only pushes
-# to main and manual runs trigger this workflow, never pull requests. A
-# self-hosted runner needs Docker with buildx and QEMU/binfmt for the arm64
-# image.
+# Nothing is published. Snapshots never push or create a release, and there
+# is no tag trigger. The publish job is disabled with `if: false`; enabling it
+# (O4.4) needs explicit authorisation, a tag and a reviewed change to this
+# file. Artefacts are kept as workflow artifacts for inspection.
+#
+# Runners: vars.RUNNER as in ci.yml (unset means ubuntu-latest); pull
+# requests from forks always run on ubuntu-latest. A self-hosted runner needs
+# Docker with buildx; the arm64 image needs no emulation.
 on:
+  pull_request:
   workflow_dispatch:
   push:
     branches: [main]
 permissions:
   contents: read
 concurrency:
-  group: release-snapshot
+  group: release-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   snapshot:
-    runs-on: ${{ fromJSON(vars.RUNNER || '"ubuntu-latest"') }}
+    runs-on: &runner ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || fromJSON(vars.RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           dest: ${{ runner.environment == 'github-hosted' && '~/setup-pnpm' || format('{0}/setup-pnpm', runner.temp) }}
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - &node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - &go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
           cache: ${{ runner.environment == 'github-hosted' }}
           cache-dependency-path: |
             apps/*/go.sum
             packages/*/go.sum
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - &syft
+        name: Install syft for SBOMs
+        # Built from the pinned module (checked against the Go checksum
+        # database) outside the repository, so no go.sum changes.
+        run: |
+          GOWORK=off GOFLAGS= GOBIN="$RUNNER_TEMP/syft" go -C "$RUNNER_TEMP" install github.com/anchore/syft/cmd/syft@v1.52.0
+          echo "$RUNNER_TEMP/syft" >> "$GITHUB_PATH"
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: v2.18.3
           args: release --snapshot --clean
+      - run: bash scripts/release-smoke.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: snapshot
           path: |
             .local/goreleaser/*.tar.gz
             .local/goreleaser/*.zip
+            .local/goreleaser/*.sbom.json
             .local/goreleaser/checksums.txt
           retention-days: 7
+
+  module-tags:
+    runs-on: *runner
+    timeout-minutes: 15
+    steps:
+      - *checkout
+      - *node
+      - *go
+      - run: bash scripts/test-module-tags.sh
+
+  # Disabled: publishing needs explicit authorisation (O4.4). When enabled it
+  # runs for a pushed vX.Y.Z tag, pushes ghcr.io/cubiecode/wardlock and creates
+  # a draft GitHub release; module tags are created separately (DEPLOYMENT).
+  # Enabling it also needs a trigger for those tags and a ghcr.io login step.
+  publish:
+    if: false
+    needs: [snapshot, module-tags]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - *checkout
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - *node
+      - *go
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - *syft
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.18.3
+          args: release --clean
+        env:
+          WARDLOCK_PUBLISH: 'true'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
