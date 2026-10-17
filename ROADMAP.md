@@ -131,7 +131,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.8: Blob garbage collection
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/c1.8-blob-gc`
 - PR: https://github.com/CubieCode/wardlock/pull/33
 - Depends on: C1.2
