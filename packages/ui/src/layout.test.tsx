@@ -62,6 +62,21 @@ describe('AppShell with navigation', () => {
     expect(panel.dataset.open).toBe('false');
   });
 
+  it('moves focus into the open menu and closes it with Escape', () => {
+    shell();
+    const menu = screen.getByRole('button', { name: 'Menu' });
+    fireEvent.click(menu);
+    expect(document.activeElement).toBe(
+      screen.getByRole('link', { name: 'Overview' }),
+    );
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(menu.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(menu);
+    // Escape with the menu closed does nothing.
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(menu.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('has no menu button without navigation', () => {
     render(
       <AppShell productName="Wardlock">

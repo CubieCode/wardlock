@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import {
+  useEffect,
   useId,
+  useRef,
   useState,
   type AnchorHTMLAttributes,
   type ReactNode,
@@ -48,8 +50,9 @@ function Wordmark({
 /**
  * Page frame for signed-in screens: a sidebar with the wordmark, the
  * navigation and an account area, and a single main landmark. Below 48rem the
- * sidebar collapses into a top bar whose Menu button shows the navigation;
- * following a link in it closes it again.
+ * sidebar collapses into a top bar whose Menu button shows the navigation:
+ * opening it moves focus to the first link, and Escape or following a link
+ * closes it (Escape returns focus to the button).
  */
 export function AppShell({
   productName,
@@ -68,13 +71,28 @@ export function AppShell({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const panelId = useId();
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (menuOpen)
+      panel.current?.querySelector<HTMLElement>('a[href], button')?.focus();
+  }, [menuOpen]);
   const hasSidebar = Boolean(navigation || account);
   return (
     <div className={cx('wl-shell', hasSidebar ? 'wl-shell-sidebar' : null)}>
-      <header className="wl-shell-header">
+      <header
+        className="wl-shell-header"
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape' || !menuOpen) return;
+          setMenuOpen(false);
+          menuButton.current?.focus();
+        }}
+      >
         <Wordmark productName={productName} href={homeHref} />
         {hasSidebar ? (
           <button
+            ref={menuButton}
             type="button"
             className="wl-button wl-button-secondary wl-shell-menu"
             aria-expanded={menuOpen}
@@ -86,6 +104,7 @@ export function AppShell({
         ) : null}
         {hasSidebar ? (
           <div
+            ref={panel}
             id={panelId}
             className="wl-shell-panel"
             data-open={menuOpen}

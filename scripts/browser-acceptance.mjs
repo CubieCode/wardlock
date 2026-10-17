@@ -7,7 +7,7 @@
 // get the server's one-time setup URL and its dev:// mail directory, so they
 // can sign in as synthetic owners; neither is printed.
 // Install the browser once: pnpm --filter @wardlock/web exec playwright install chromium
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -74,28 +74,33 @@ try {
     if (i > 50) throw new Error('wardlockd did not start');
     await new Promise((r) => setTimeout(r, 100));
   }
-  status =
-    spawnSync(
-      'pnpm',
-      [
-        '--filter',
-        '@wardlock/web',
-        'exec',
-        'playwright',
-        'test',
-        '-c',
-        'test/playwright.config.ts',
-      ],
-      {
-        stdio: 'inherit',
-        env: {
-          ...process.env,
-          WARDLOCK_ACCEPTANCE_ORIGIN: origin,
-          WARDLOCK_ACCEPTANCE_SETUP_URL: setupURL,
-          WARDLOCK_ACCEPTANCE_MAIL_DIR: mailDir,
-        },
+  // Asynchronous, so this process keeps draining wardlockd's piped log
+  // while the specs run; a blocked pipe would stall the server.
+  const playwright = spawn(
+    'pnpm',
+    [
+      '--filter',
+      '@wardlock/web',
+      'exec',
+      'playwright',
+      'test',
+      '-c',
+      'test/playwright.config.ts',
+    ],
+    {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        WARDLOCK_ACCEPTANCE_ORIGIN: origin,
+        WARDLOCK_ACCEPTANCE_SETUP_URL: setupURL,
+        WARDLOCK_ACCEPTANCE_MAIL_DIR: mailDir,
       },
-    ).status ?? 1;
+    },
+  );
+  status = await new Promise((resolve) => {
+    playwright.on('error', () => resolve(1));
+    playwright.on('exit', (code) => resolve(code ?? 1));
+  });
 } finally {
   server.kill('SIGTERM');
   rmSync(dataDir, { recursive: true, force: true });

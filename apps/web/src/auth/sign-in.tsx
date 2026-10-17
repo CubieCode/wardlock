@@ -34,6 +34,10 @@ function redeem(api: ApiClient, code: string) {
   return pending;
 }
 
+/** The sign-in page, returning to `next` afterwards. */
+export const signInPath = (next: string) =>
+  next === '/' ? '/sign-in' : `/sign-in?next=${encodeURIComponent(next)}`;
+
 /**
  * `/sign-in`: email-code sign-in, and the landing page for one-time sign-in
  * links (`/sign-in?code=…` from `wardlockd admin create` and invitations).
@@ -74,15 +78,15 @@ function SignInLink({
 
   useEffect(() => {
     let live = true;
+    // Take the code out of the address bar and history before using it,
+    // keeping where to go afterwards.
+    navigate(signInPath(next), { replace: true });
     void redeem(api, code).then((outcome) => {
       if (!live) return;
       if (outcome.kind === 'ok') {
         signedIn(outcome.me);
         navigate(next, { replace: true });
-      } else {
-        navigate('/sign-in', { replace: true });
-        setResult(outcome);
-      }
+      } else setResult(outcome);
     });
     return () => {
       live = false;

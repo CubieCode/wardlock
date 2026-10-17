@@ -9,7 +9,10 @@ if (!origin || !setupURL) throw new Error('Run through pnpm browser:test');
 
 // Runs once, before the desktop and mobile projects: the setup URL creates
 // the first owner, who invites one owner per project and theme.
-test('the setup URL creates the first owner', async ({ page }, info) => {
+test('the setup URL creates the first owner', async ({
+  page,
+  browser,
+}, info) => {
   await page.goto(setupURL);
   await expect(
     page.getByRole('heading', { level: 1, name: 'Create the first owner' }),
@@ -52,7 +55,26 @@ test('the setup URL creates the first owner', async ({ page }, info) => {
       expect(res.status()).toBe(202);
     }
 
-  // The URL worked once.
-  await page.goto(setupURL);
-  await expect(page).toHaveURL(`${origin}/`);
+  // The URL worked once: a browser without the new owner's session is
+  // refused by the server, not just redirected by the dashboard.
+  const stranger = await browser.newContext();
+  try {
+    const other = await stranger.newPage();
+    await other.goto(setupURL);
+    await other
+      .getByRole('textbox', { name: 'Email address' })
+      .fill('second-owner@example.test');
+    await other
+      .getByRole('button', { name: 'Create owner and sign in' })
+      .click();
+    await expect(
+      other.getByRole('heading', {
+        level: 1,
+        name: 'This setup link no longer works',
+      }),
+    ).toBeVisible();
+    expect(await stranger.cookies(origin)).toEqual([]);
+  } finally {
+    await stranger.close();
+  }
 });

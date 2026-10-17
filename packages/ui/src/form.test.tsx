@@ -59,6 +59,25 @@ describe('TextField', () => {
     );
   });
 
+  it('keeps its own description and invalid state over passed props', () => {
+    render(
+      <>
+        <p id="extra">Extra guidance.</p>
+        <TextField
+          label="Code"
+          error="That code is not right."
+          aria-describedby="extra"
+          aria-invalid={false}
+        />
+      </>,
+    );
+    const input = screen.getByRole('textbox', {
+      name: 'Code',
+      description: 'Extra guidance. That code is not right.',
+    });
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+  });
+
   it('gives each field its own ids', () => {
     render(
       <>

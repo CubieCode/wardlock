@@ -66,6 +66,18 @@ for (const scheme of schemes) {
       ).toHaveText(['Overview']);
       await expect(page.getByText(email, { exact: true })).toBeVisible();
       await shot('navigation');
+      const menu = page.getByRole('button', { name: 'Close' });
+      if (await menu.isVisible()) {
+        // The open menu holds focus; Escape closes it and returns focus.
+        await expect(
+          page.getByRole('link', { name: 'Overview' }),
+        ).toBeFocused();
+        await page.keyboard.press('Escape');
+        const reopen = page.getByRole('button', { name: 'Menu' });
+        await expect(reopen).toBeFocused();
+        await expect(reopen).toHaveAttribute('aria-expanded', 'false');
+        await reopen.click();
+      }
     });
 
     await test.step('signing out returns to sign-in', async () => {
@@ -114,15 +126,18 @@ for (const scheme of schemes) {
         (c) => c.name === '__Host-wardlock_session',
       );
       expect(cookie).toBeTruthy();
-      const res = await playwright.request.newContext().then((api) =>
-        api.post(`${origin}/api/v0/auth/sign-out`, {
+      const other = await playwright.request.newContext();
+      try {
+        const res = await other.post(`${origin}/api/v0/auth/sign-out`, {
           headers: {
             Cookie: `${cookie!.name}=${cookie!.value}`,
             Origin: origin,
           },
-        }),
-      );
-      expect(res.status()).toBe(204);
+        });
+        expect(res.status()).toBe(204);
+      } finally {
+        await other.dispose();
+      }
       expect(await page.context().cookies(origin)).toContainEqual(
         expect.objectContaining({ name: '__Host-wardlock_session' }),
       );

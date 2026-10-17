@@ -8,6 +8,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -23,7 +24,17 @@ const owner = {
   scopes: ['deploy', 'manage'],
 };
 
-type Handler = (body: unknown, request: Request) => Response;
+type Handler = (
+  body: unknown,
+  request: Request,
+) => Response | Promise<Response>;
+
+/** A response the test releases later. */
+function deferred() {
+  let release!: (response: Response) => void;
+  const promise = new Promise<Response>((resolve) => (release = resolve));
+  return { promise, release };
+}
 
 /** A fake server: `routes["POST /api/v0/setup"]` answers that call. */
 function fakeServer(routes: Record<string, Handler>) {
@@ -144,7 +155,7 @@ describe('email-code sign-in', () => {
     const heading = await screen.findByRole('heading', {
       name: 'Check your email',
     });
-    expect(document.activeElement).toBe(heading);
+    await waitFor(() => expect(document.activeElement).toBe(heading));
     expect(server.calls.at(-1)?.body).toEqual({ email: 'owner@example.test' });
 
     type('Sign-in code', '12');
@@ -323,6 +334,76 @@ describe('signed in', () => {
     expect(here()).toBe('/missing');
   });
 
+  it('ignores a 401 that started before the owner signed in again', async () => {
+    let held: ReturnType<typeof deferred> | null = null;
+    let signedIn = true;
+    const server = fakeServer({
+      'GET /api/v0/me': () =>
+        held
+          ? held.promise
+          : signedIn
+            ? Response.json(owner)
+            : unauthenticated(),
+      'POST /api/v0/auth/sign-out': () => {
+        signedIn = false;
+        return new Response(null, { status: 204 });
+      },
+      'POST /api/v0/auth/email-code': () => new Response(null, { status: 202 }),
+      'POST /api/v0/auth/email-code/verify': () => {
+        signedIn = true;
+        return Response.json(owner);
+      },
+    });
+    render(<App api={server.api} />);
+    await screen.findByRole('heading', { level: 1, name: 'Overview' });
+
+    // A recheck goes out and stalls.
+    const stale = deferred();
+    held = stale;
+    const checks = server.count('GET /api/v0/me');
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() =>
+      expect(server.count('GET /api/v0/me')).toBe(checks + 1),
+    );
+    held = null;
+
+    // Meanwhile the owner signs out and back in.
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByText('You have signed out.');
+    type('Email address', 'owner@example.test');
+    fireEvent.click(screen.getByRole('button', { name: 'Send code' }));
+    await screen.findByRole('heading', { name: 'Check your email' });
+    type('Sign-in code', '482913');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await screen.findByRole('heading', { level: 1, name: 'Overview' });
+
+    // The stale check now answers 401: the new session stays.
+    await act(async () => {
+      stale.release(unauthenticated());
+      await stale.promise;
+    });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Overview' }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Your session has ended/)).toBeNull();
+    expect(here()).toBe('/');
+  });
+
+  it('checks the session once when the tab comes back', async () => {
+    const server = fakeServer({ 'GET /api/v0/me': () => Response.json(owner) });
+    render(<App api={server.api} />);
+    await screen.findByRole('heading', { level: 1, name: 'Overview' });
+    const before = server.count('GET /api/v0/me');
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+    });
+    await act(async () => {});
+    expect(server.count('GET /api/v0/me')).toBe(before + 1);
+  });
+
   it('redirects away from sign-in', async () => {
     at('/sign-in?next=%2Felsewhere');
     const { api } = fakeServer({
@@ -357,6 +438,31 @@ describe('one-time links', () => {
     ).toBeTruthy();
     expect(server.count('POST /api/v0/auth/sign-in-link')).toBe(1);
     expect(here()).toBe('/');
+  });
+
+  it('drops the code from the address before redeeming it', async () => {
+    at('/sign-in?code=EXAMPLEheldCode&next=%2Fsomewhere');
+    const held = deferred();
+    const server = fakeServer({
+      'GET /api/v0/me': unauthenticated,
+      'POST /api/v0/auth/sign-in-link': () => held.promise,
+    });
+    render(<App api={server.api} />);
+    await screen.findByText('Checking your sign-in link…');
+    await waitFor(() =>
+      expect(server.count('POST /api/v0/auth/sign-in-link')).toBe(1),
+    );
+    expect(here()).toBe('/sign-in?next=%2Fsomewhere');
+    expect(window.location.href).not.toContain('EXAMPLEheldCode');
+    await act(async () => {
+      held.release(invalidCode());
+      await held.promise;
+    });
+    await screen.findByRole('heading', {
+      name: 'This sign-in link no longer works',
+    });
+    // A failed link keeps where the owner was going.
+    expect(here()).toBe('/sign-in?next=%2Fsomewhere');
   });
 
   it('offers email-code sign-in when a link no longer works', async () => {

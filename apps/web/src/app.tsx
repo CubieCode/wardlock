@@ -4,7 +4,7 @@ import type { ApiClient } from '@wardlock/apiclient-ts';
 import { Button, Notice, PanelLayout } from '@wardlock/ui';
 import { SessionProvider, useSession } from './auth/session.js';
 import { SetupPage } from './auth/setup.js';
-import { SignInPage } from './auth/sign-in.js';
+import { SignInPage, signInPath } from './auth/sign-in.js';
 import { Redirect } from './shell/page.js';
 import { matchPath, useLinkInterception, useLocation } from './shell/router.js';
 import { shellRoutes } from './shell/routes.js';
@@ -50,15 +50,7 @@ function Routes() {
 
   if (session.status === 'signed-out') {
     const here = pathname + (params.size ? `?${params}` : '');
-    return (
-      <Redirect
-        to={
-          here === '/'
-            ? '/sign-in'
-            : `/sign-in?next=${encodeURIComponent(here)}`
-        }
-      />
-    );
+    return <Redirect to={signInPath(here)} />;
   }
 
   for (const route of shellRoutes) {

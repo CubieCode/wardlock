@@ -8,11 +8,15 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 
 export type Me = components['schemas']['Me'];
+
+// The client's middleware type, without importing openapi-fetch directly.
+type Middleware = Parameters<ApiClient['use']>[0];
 
 export type Session =
   | { status: 'loading' }
@@ -56,6 +60,10 @@ async function loadSession(api: ApiClient): Promise<Session> {
  * whenever the window regains focus, and treats any 401 from an authenticated
  * call as the session having ended (expired, revoked or signed out
  * elsewhere), so every screen falls back to sign-in the same way.
+ *
+ * Every change of session starts a new epoch. A response only acts on the
+ * epoch its request started in, so a slow 401 from before a fresh sign-in
+ * cannot end the new session.
  */
 export function SessionProvider({
   api,
@@ -65,48 +73,64 @@ export function SessionProvider({
   children: ReactNode;
 }) {
   const [session, setSession] = useState<Session>({ status: 'loading' });
+  const epoch = useRef(0);
+  const status = useRef<Session['status']>('loading');
+
+  const enter = useCallback((next: Session) => {
+    epoch.current += 1;
+    status.current = next.status;
+    setSession(next);
+  }, []);
 
   useEffect(() => {
     // An owner-only call answering 401 means the session is gone. Sign-in
     // calls under /auth/ answer 401 for other reasons and are left alone.
-    const middleware = {
-      onResponse({
-        request,
-        response,
-      }: {
-        request: Request;
-        response: Response;
-      }) {
-        if (response.status === 401 && !request.url.includes('/api/v0/auth/'))
-          setSession((current) =>
-            current.status === 'signed-in'
-              ? { status: 'signed-out', reason: 'expired' }
-              : current,
-          );
-        return undefined;
+    const startedIn = new Map<string, number>();
+    const middleware: Middleware = {
+      onRequest({ id }) {
+        startedIn.set(id, epoch.current);
+      },
+      onResponse({ id, request, response }) {
+        const started = startedIn.get(id);
+        startedIn.delete(id);
+        if (
+          response.status === 401 &&
+          !request.url.includes('/api/v0/auth/') &&
+          started === epoch.current &&
+          status.current === 'signed-in'
+        )
+          enter({ status: 'signed-out', reason: 'expired' });
+      },
+      onError({ id }) {
+        startedIn.delete(id);
       },
     };
     api.use(middleware);
     return () => api.eject(middleware);
-  }, [api]);
+  }, [api, enter]);
 
   useEffect(() => {
-    let live = true;
+    const started = epoch.current;
     void loadSession(api).then((loaded) => {
-      if (live) setSession(loaded);
+      if (epoch.current === started) enter(loaded);
     });
-    return () => {
-      live = false;
-    };
-  }, [api]);
+  }, [api, enter]);
 
   const signedInNow = session.status === 'signed-in';
   useEffect(() => {
     if (!signedInNow) return;
-    // A 401 here reaches the middleware above, which marks it expired.
+    // Returning to the tab fires both focus and visibilitychange; one check
+    // at a time is enough. A 401 reaches the middleware above.
+    let checking = false;
     const recheck = () => {
-      if (document.visibilityState === 'visible')
-        api.GET('/api/v0/me').catch(() => undefined);
+      if (checking || document.visibilityState !== 'visible') return;
+      checking = true;
+      api
+        .GET('/api/v0/me')
+        .catch(() => undefined)
+        .finally(() => {
+          checking = false;
+        });
     };
     window.addEventListener('focus', recheck);
     document.addEventListener('visibilitychange', recheck);
@@ -117,8 +141,8 @@ export function SessionProvider({
   }, [signedInNow, api]);
 
   const signedIn = useCallback(
-    (me: Me) => setSession({ status: 'signed-in', me }),
-    [],
+    (me: Me) => enter({ status: 'signed-in', me }),
+    [enter],
   );
 
   const signOut = useCallback(async () => {
@@ -126,13 +150,16 @@ export function SessionProvider({
     // 401: the session had already ended, which is what was asked for.
     if (!response.ok && response.status !== 401)
       throw new Error(`sign-out failed: ${response.status}`);
-    setSession({ status: 'signed-out', reason: 'signed-out' });
-  }, [api]);
+    enter({ status: 'signed-out', reason: 'signed-out' });
+  }, [api, enter]);
 
   const refresh = useCallback(() => {
-    setSession({ status: 'loading' });
-    void loadSession(api).then(setSession);
-  }, [api]);
+    enter({ status: 'loading' });
+    const started = epoch.current;
+    void loadSession(api).then((loaded) => {
+      if (epoch.current === started) enter(loaded);
+    });
+  }, [api, enter]);
 
   const value = useMemo(
     () => ({ session, api, signedIn, signOut, refresh }),

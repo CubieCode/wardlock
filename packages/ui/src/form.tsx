@@ -26,14 +26,18 @@ export function TextField({
   error,
   className,
   type = 'text',
+  'aria-describedby': describedByProp,
+  'aria-invalid': invalidProp,
   ...props
 }: TextFieldProps) {
   const id = useId();
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
+  // Our hint and error always describe the input; a caller's ids are added.
   const describedBy =
-    [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(' ') ||
-    undefined;
+    [describedByProp, hint ? hintId : null, error ? errorId : null]
+      .filter(Boolean)
+      .join(' ') || undefined;
   return (
     <div className={cx('wl-field', error ? 'wl-field-invalid' : null)}>
       <label className="wl-field-label" htmlFor={id}>
@@ -45,12 +49,12 @@ export function TextField({
         </p>
       ) : null}
       <input
+        {...props}
         id={id}
         type={type}
         className={cx('wl-input', className)}
-        aria-invalid={error ? true : undefined}
+        aria-invalid={error ? true : invalidProp}
         aria-describedby={describedBy}
-        {...props}
       />
       {error ? (
         <p className="wl-field-error" id={errorId} role="alert">
