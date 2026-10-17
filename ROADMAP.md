@@ -155,7 +155,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.1: Policy model and evaluation
 
-- Status: `review`
+- Status: `done`
 - Owner: feat/a2.1-policy-model
 - PR: https://github.com/CubieCode/wardlock/pull/26
 - Depends on: C1.3
