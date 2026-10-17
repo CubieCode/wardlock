@@ -61,7 +61,7 @@ flowchart TD
   CHK -.-> LOG[access log buffer, batched writes]
 ```
 
-F0.1 implements health, host routing, the dashboard, the built-in hello site and `/.wardlock/health`. The hello site is embedded in `internal/edge/hello` and is removed when C1.3 serves real deploys. The edge's manifest and policy caches are invalidated through a `Notifier` (in-process in v1).
+F0.1 implements health, host routing, the dashboard and `/.wardlock/health`; C1.3 serves deploys. The edge reads sites through its own `SiteSource` interface (host to site, active manifest), opens file bodies through a `BlobOpener` and subscribes to an `Invalidator`; `cmd/wardlockd` adapts `store` and the deploys `BlobStore` and `Notifier` to them, so the edge imports neither `store` nor `deploys`. It caches each served host's site and active manifest in memory (hits only, so a new site is found on its first request) and drops a site's hosts when the `Notifier` (in-process in v1) reports a change to it; a cached small file is served without touching the database. Until A2.1 the access step is a hook that allows everything; the hook's `Protected` answer is the one place that switches `Cache-Control` to `private` and adds the protected-site headers.
 
 ## Deploy upload protocol (C1.2)
 

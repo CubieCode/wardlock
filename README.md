@@ -4,7 +4,7 @@ Wardlock ([wardlock.nz](https://wardlock.nz)) is a free, open-source, self-hosta
 
 It is pronounced "ward-lock", not "warlock". A warded lock has internal obstructions, called wards, that only a key cut to the right shape can pass.
 
-> **Status: pre-alpha.** This repository holds the foundation only. The server starts and serves a dashboard placeholder, a built-in hello-world site and health endpoints; the CLI prints its version. Deploys, share links and every other feature below are planned in the [roadmap](ROADMAP.md) and are not built yet. Do not use Wardlock for anything real.
+> **Status: pre-alpha.** This repository holds the foundation only. The server starts and serves a dashboard placeholder, health endpoints and the static files of each site's active deploy; the CLI prints its version. Deploys, share links and every other feature below are planned in the [roadmap](ROADMAP.md) and are not built yet. Do not use Wardlock for anything real.
 
 ## What it will do
 
@@ -30,7 +30,7 @@ pnpm dev
 Then open:
 
 - <http://wardlock.localhost:8080> for the dashboard placeholder;
-- <http://hello.wardlock.localhost:8080> for the built-in hello-world site;
+- `http://<name>.wardlock.localhost:8080` for a site once one of its deploys is active;
 - <http://wardlock.localhost:8080/healthz> for health.
 
 `*.localhost` resolves to your own machine, so subdomain routing works without DNS. To build the binaries instead, run `pnpm build` and start `.local/bin/wardlockd serve`; `.local/bin/wardlock --help` shows the CLI.

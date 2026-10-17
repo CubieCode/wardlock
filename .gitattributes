@@ -1,5 +1,7 @@
 * text=auto eol=lf
 *.png binary
+*.br binary
+*.gz binary
 
 # Generated code: collapsed in diffs, still reviewed by the drift check.
 *.gen.go linguist-generated=true

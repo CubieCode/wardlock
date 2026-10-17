@@ -76,8 +76,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.3: Edge static serving
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: feat/c1.3-edge-serving
 - PR:
 - Depends on: F0.3
 - Scope: Replace the built-in hello site with real serving: host to site lookup (base-domain names and verified custom domains), active manifest cache invalidated by `Notifier`, index and clean URLs, `404.html`, optional SPA fallback, `ETag`/`Last-Modified` and conditional requests, `Range`, precompressed `.br`/`.gz` siblings, cache headers, `/.wardlock/` reserved before deploy content. Policies are not enforced yet (all sites public until A2.1); the edge calls an access hook that allows everything.
