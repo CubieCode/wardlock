@@ -14,8 +14,8 @@ import (
 )
 
 const createDeploy = `-- name: CreateDeploy :exec
-INSERT INTO deploys (id, site_id, message, file_count, total_size, created_at, activated_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, created_at, activated_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
 `
 
 type CreateDeployParams struct {
@@ -24,6 +24,7 @@ type CreateDeployParams struct {
 	Message     sql.NullString
 	FileCount   int64
 	TotalSize   int64
+	Spa         int64
 	CreatedAt   int64
 	ActivatedAt sql.NullInt64
 }
@@ -35,6 +36,7 @@ func (q *Queries) CreateDeploy(ctx context.Context, arg CreateDeployParams) erro
 		arg.Message,
 		arg.FileCount,
 		arg.TotalSize,
+		arg.Spa,
 		arg.CreatedAt,
 		arg.ActivatedAt,
 	)
@@ -81,6 +83,277 @@ func (q *Queries) DeleteDeploy(ctx context.Context, arg DeleteDeployParams) (int
 	return result.RowsAffected()
 }
 
+const getDeploy = `-- name: GetDeploy :one
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.created_at, deploys.activated_at
+FROM deploys JOIN sites ON sites.id = deploys.site_id
+WHERE deploys.id = ?1 AND deploys.site_id = ?2 AND sites.owner_id = ?3
+`
+
+type GetDeployParams struct {
+	ID      string
+	SiteID  string
+	OwnerID string
+}
+
+type GetDeployRow struct {
+	ID          string
+	SiteID      string
+	Message     sql.NullString
+	FileCount   int64
+	TotalSize   int64
+	Spa         int64
+	CreatedAt   int64
+	ActivatedAt sql.NullInt64
+}
+
+func (q *Queries) GetDeploy(ctx context.Context, arg GetDeployParams) (GetDeployRow, error) {
+	row := q.db.QueryRowContext(ctx, getDeploy, arg.ID, arg.SiteID, arg.OwnerID)
+	var i GetDeployRow
+	err := row.Scan(
+		&i.ID,
+		&i.SiteID,
+		&i.Message,
+		&i.FileCount,
+		&i.TotalSize,
+		&i.Spa,
+		&i.CreatedAt,
+		&i.ActivatedAt,
+	)
+	return i, err
+}
+
+const listDeployFiles = `-- name: ListDeployFiles :many
+SELECT path, sha256, size FROM deploy_files WHERE deploy_id = ?1 ORDER BY path
+`
+
+type ListDeployFilesRow struct {
+	Path   string
+	Sha256 string
+	Size   int64
+}
+
+// Instance-wide: edge serving only.
+func (q *Queries) ListDeployFiles(ctx context.Context, deployID string) ([]ListDeployFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDeployFiles, deployID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDeployFilesRow
+	for rows.Next() {
+		var i ListDeployFilesRow
+		if err := rows.Scan(&i.Path, &i.Sha256, &i.Size); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDeploys = `-- name: ListDeploys :many
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.created_at, deploys.activated_at
+FROM deploys JOIN sites ON sites.id = deploys.site_id
+WHERE deploys.site_id = ?1 AND sites.owner_id = ?2
+  AND (deploys.created_at < ?3
+    OR (deploys.created_at = ?3 AND deploys.id < ?4))
+ORDER BY deploys.created_at DESC, deploys.id DESC
+LIMIT ?5
+`
+
+type ListDeploysParams struct {
+	SiteID          string
+	OwnerID         string
+	BeforeCreatedAt int64
+	BeforeID        string
+	RowLimit        int64
+}
+
+type ListDeploysRow struct {
+	ID          string
+	SiteID      string
+	Message     sql.NullString
+	FileCount   int64
+	TotalSize   int64
+	Spa         int64
+	CreatedAt   int64
+	ActivatedAt sql.NullInt64
+}
+
+// Newest first, strictly before the cursor (created_at, id); the first page
+// passes the largest created_at.
+func (q *Queries) ListDeploys(ctx context.Context, arg ListDeploysParams) ([]ListDeploysRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDeploys,
+		arg.SiteID,
+		arg.OwnerID,
+		arg.BeforeCreatedAt,
+		arg.BeforeID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDeploysRow
+	for rows.Next() {
+		var i ListDeploysRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SiteID,
+			&i.Message,
+			&i.FileCount,
+			&i.TotalSize,
+			&i.Spa,
+			&i.CreatedAt,
+			&i.ActivatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const manifestBlobSize = `-- name: ManifestBlobSize :one
+SELECT deploy_files.size FROM deploy_files
+JOIN deploys ON deploys.id = deploy_files.deploy_id
+JOIN sites ON sites.id = deploys.site_id
+WHERE deploy_files.deploy_id = ?1 AND deploy_files.sha256 = ?2
+  AND deploys.site_id = ?3 AND sites.owner_id = ?4
+LIMIT 1
+`
+
+type ManifestBlobSizeParams struct {
+	DeployID string
+	Sha256   string
+	SiteID   string
+	OwnerID  string
+}
+
+func (q *Queries) ManifestBlobSize(ctx context.Context, arg ManifestBlobSizeParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, manifestBlobSize,
+		arg.DeployID,
+		arg.Sha256,
+		arg.SiteID,
+		arg.OwnerID,
+	)
+	var size int64
+	err := row.Scan(&size)
+	return size, err
+}
+
+const manifestHashes = `-- name: ManifestHashes :many
+SELECT DISTINCT sha256 FROM deploy_files WHERE deploy_id = ?1 ORDER BY sha256
+`
+
+func (q *Queries) ManifestHashes(ctx context.Context, deployID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, manifestHashes, deployID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var sha256 string
+		if err := rows.Scan(&sha256); err != nil {
+			return nil, err
+		}
+		items = append(items, sha256)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markDeployActivated = `-- name: MarkDeployActivated :exec
+UPDATE deploys SET activated_at = ?1 WHERE id = ?2
+`
+
+type MarkDeployActivatedParams struct {
+	ActivatedAt sql.NullInt64
+	ID          string
+}
+
+func (q *Queries) MarkDeployActivated(ctx context.Context, arg MarkDeployActivatedParams) error {
+	_, err := q.db.ExecContext(ctx, markDeployActivated, arg.ActivatedAt, arg.ID)
+	return err
+}
+
+const missingOwnerBlobs = `-- name: MissingOwnerBlobs :many
+SELECT DISTINCT deploy_files.sha256 FROM deploy_files
+WHERE deploy_files.deploy_id = ?1
+  AND NOT EXISTS (
+    SELECT 1 FROM owner_blobs
+    WHERE owner_blobs.owner_id = ?2 AND owner_blobs.sha256 = deploy_files.sha256
+  )
+ORDER BY deploy_files.sha256
+`
+
+type MissingOwnerBlobsParams struct {
+	DeployID string
+	OwnerID  string
+}
+
+// The deploy's distinct hashes the owner has not uploaded.
+func (q *Queries) MissingOwnerBlobs(ctx context.Context, arg MissingOwnerBlobsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, missingOwnerBlobs, arg.DeployID, arg.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var sha256 string
+		if err := rows.Scan(&sha256); err != nil {
+			return nil, err
+		}
+		items = append(items, sha256)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const previousDeploy = `-- name: PreviousDeploy :one
+SELECT deploys.id FROM deploys
+WHERE deploys.site_id = ?1 AND deploys.activated_at IS NOT NULL AND deploys.id <> ?2
+ORDER BY deploys.activated_at DESC, deploys.id DESC
+LIMIT 1
+`
+
+type PreviousDeployParams struct {
+	SiteID    string
+	CurrentID string
+}
+
+// The activated deploy other than the current one that was activated most
+// recently: the rollback target when none is named.
+func (q *Queries) PreviousDeploy(ctx context.Context, arg PreviousDeployParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, previousDeploy, arg.SiteID, arg.CurrentID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
 const putBlob = `-- name: PutBlob :exec
 INSERT INTO blobs (sha256, size, created_at)
 VALUES (?1, ?2, ?3)
@@ -95,5 +368,22 @@ type PutBlobParams struct {
 
 func (q *Queries) PutBlob(ctx context.Context, arg PutBlobParams) error {
 	_, err := q.db.ExecContext(ctx, putBlob, arg.Sha256, arg.Size, arg.CreatedAt)
+	return err
+}
+
+const putOwnerBlob = `-- name: PutOwnerBlob :exec
+INSERT INTO owner_blobs (owner_id, sha256, created_at)
+VALUES (?1, ?2, ?3)
+ON CONFLICT (owner_id, sha256) DO NOTHING
+`
+
+type PutOwnerBlobParams struct {
+	OwnerID   string
+	Sha256    string
+	CreatedAt int64
+}
+
+func (q *Queries) PutOwnerBlob(ctx context.Context, arg PutOwnerBlobParams) error {
+	_, err := q.db.ExecContext(ctx, putOwnerBlob, arg.OwnerID, arg.Sha256, arg.CreatedAt)
 	return err
 }

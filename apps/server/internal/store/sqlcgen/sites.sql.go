@@ -14,16 +14,15 @@ import (
 )
 
 const createSite = `-- name: CreateSite :exec
-INSERT INTO sites (id, owner_id, name, spa_fallback, created_at)
-VALUES (?1, ?2, ?3, ?4, ?5)
+INSERT INTO sites (id, owner_id, name, created_at)
+VALUES (?1, ?2, ?3, ?4)
 `
 
 type CreateSiteParams struct {
-	ID          string
-	OwnerID     string
-	Name        string
-	SpaFallback int64
-	CreatedAt   int64
+	ID        string
+	OwnerID   string
+	Name      string
+	CreatedAt int64
 }
 
 func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) error {
@@ -31,7 +30,6 @@ func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) error {
 		arg.ID,
 		arg.OwnerID,
 		arg.Name,
-		arg.SpaFallback,
 		arg.CreatedAt,
 	)
 	return err
@@ -55,8 +53,9 @@ func (q *Queries) DeleteSite(ctx context.Context, arg DeleteSiteParams) (int64, 
 }
 
 const getSite = `-- name: GetSite :one
-SELECT id, owner_id, name, spa_fallback, active_deploy_id, created_at FROM sites
-WHERE id = ?1 AND owner_id = ?2
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+WHERE sites.id = ?1 AND sites.owner_id = ?2
 `
 
 type GetSiteParams struct {
@@ -68,9 +67,9 @@ type GetSiteRow struct {
 	ID             string
 	OwnerID        string
 	Name           string
-	SpaFallback    int64
 	ActiveDeployID sql.NullString
 	CreatedAt      int64
+	ActivatedAt    sql.NullInt64
 }
 
 func (q *Queries) GetSite(ctx context.Context, arg GetSiteParams) (GetSiteRow, error) {
@@ -80,11 +79,165 @@ func (q *Queries) GetSite(ctx context.Context, arg GetSiteParams) (GetSiteRow, e
 		&i.ID,
 		&i.OwnerID,
 		&i.Name,
-		&i.SpaFallback,
 		&i.ActiveDeployID,
 		&i.CreatedAt,
+		&i.ActivatedAt,
 	)
 	return i, err
+}
+
+const getSiteByName = `-- name: GetSiteByName :one
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+WHERE sites.name = ?1
+`
+
+type GetSiteByNameRow struct {
+	ID             string
+	OwnerID        string
+	Name           string
+	ActiveDeployID sql.NullString
+	CreatedAt      int64
+	ActivatedAt    sql.NullInt64
+}
+
+// Instance-wide: edge routing only, never owner API handlers.
+func (q *Queries) GetSiteByName(ctx context.Context, name string) (GetSiteByNameRow, error) {
+	row := q.db.QueryRowContext(ctx, getSiteByName, name)
+	var i GetSiteByNameRow
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.ActiveDeployID,
+		&i.CreatedAt,
+		&i.ActivatedAt,
+	)
+	return i, err
+}
+
+const getSiteByOwnerDomain = `-- name: GetSiteByOwnerDomain :one
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+FROM sites
+JOIN domains ON domains.site_id = sites.id
+LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+WHERE domains.hostname = ?1 AND sites.owner_id = ?2
+`
+
+type GetSiteByOwnerDomainParams struct {
+	Hostname string
+	OwnerID  string
+}
+
+type GetSiteByOwnerDomainRow struct {
+	ID             string
+	OwnerID        string
+	Name           string
+	ActiveDeployID sql.NullString
+	CreatedAt      int64
+	ActivatedAt    sql.NullInt64
+}
+
+// Any status: the owner API resolves pending and lapsed hostnames too.
+func (q *Queries) GetSiteByOwnerDomain(ctx context.Context, arg GetSiteByOwnerDomainParams) (GetSiteByOwnerDomainRow, error) {
+	row := q.db.QueryRowContext(ctx, getSiteByOwnerDomain, arg.Hostname, arg.OwnerID)
+	var i GetSiteByOwnerDomainRow
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.ActiveDeployID,
+		&i.CreatedAt,
+		&i.ActivatedAt,
+	)
+	return i, err
+}
+
+const getSiteByOwnerName = `-- name: GetSiteByOwnerName :one
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+WHERE sites.name = ?1 AND sites.owner_id = ?2
+`
+
+type GetSiteByOwnerNameParams struct {
+	Name    string
+	OwnerID string
+}
+
+type GetSiteByOwnerNameRow struct {
+	ID             string
+	OwnerID        string
+	Name           string
+	ActiveDeployID sql.NullString
+	CreatedAt      int64
+	ActivatedAt    sql.NullInt64
+}
+
+func (q *Queries) GetSiteByOwnerName(ctx context.Context, arg GetSiteByOwnerNameParams) (GetSiteByOwnerNameRow, error) {
+	row := q.db.QueryRowContext(ctx, getSiteByOwnerName, arg.Name, arg.OwnerID)
+	var i GetSiteByOwnerNameRow
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.ActiveDeployID,
+		&i.CreatedAt,
+		&i.ActivatedAt,
+	)
+	return i, err
+}
+
+const listSites = `-- name: ListSites :many
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+WHERE sites.owner_id = ?1 AND sites.name > ?2
+ORDER BY sites.name
+LIMIT ?3
+`
+
+type ListSitesParams struct {
+	OwnerID   string
+	AfterName string
+	RowLimit  int64
+}
+
+type ListSitesRow struct {
+	ID             string
+	OwnerID        string
+	Name           string
+	ActiveDeployID sql.NullString
+	CreatedAt      int64
+	ActivatedAt    sql.NullInt64
+}
+
+func (q *Queries) ListSites(ctx context.Context, arg ListSitesParams) ([]ListSitesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSites, arg.OwnerID, arg.AfterName, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSitesRow
+	for rows.Next() {
+		var i ListSitesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.Name,
+			&i.ActiveDeployID,
+			&i.CreatedAt,
+			&i.ActivatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setActiveDeploy = `-- name: SetActiveDeploy :execrows

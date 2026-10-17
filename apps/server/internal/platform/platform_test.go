@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -34,6 +35,19 @@ func TestLoadConfig(t *testing.T) {
 			func(c platform.Config) bool {
 				return c.DevDashboardURL != nil && c.DevDashboardURL.Host == "127.0.0.1:5173"
 			}},
+		{"deploy defaults", map[string]string{"WARDLOCK_DATA_DIR": "/srv/wl"}, false, func(c platform.Config) bool {
+			return c.BlobDir == filepath.Join("/srv/wl", "blobs") && c.MaxFileSize == 25<<20 && c.MaxDeployFiles == 20_000 && c.MaxDeploySize == 1<<30
+		}},
+		{"deploy settings", map[string]string{
+			"WARDLOCK_BLOB_DIR": "/mnt/blobs", "WARDLOCK_MAX_FILE_SIZE": "1048576",
+			"WARDLOCK_MAX_DEPLOY_FILES": "100", "WARDLOCK_MAX_DEPLOY_SIZE": "10485760",
+		}, false, func(c platform.Config) bool {
+			return c.BlobDir == "/mnt/blobs" && c.MaxFileSize == 1<<20 && c.MaxDeployFiles == 100 && c.MaxDeploySize == 10<<20
+		}},
+		{"zero file size", map[string]string{"WARDLOCK_MAX_FILE_SIZE": "0"}, true, nil},
+		{"negative file count", map[string]string{"WARDLOCK_MAX_DEPLOY_FILES": "-1"}, true, nil},
+		{"file count too large", map[string]string{"WARDLOCK_MAX_DEPLOY_FILES": "99999999999999999999"}, true, nil},
+		{"size with unit", map[string]string{"WARDLOCK_MAX_DEPLOY_SIZE": "1GiB"}, true, nil},
 		{"bad address", map[string]string{"WARDLOCK_HTTP_ADDR": "8080"}, true, nil},
 		{"bad base domain", map[string]string{"WARDLOCK_BASE_DOMAIN": "under_score.example"}, true, nil},
 		{"bad log level", map[string]string{"WARDLOCK_LOG_LEVEL": "loud"}, true, nil},

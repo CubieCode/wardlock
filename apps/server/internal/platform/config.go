@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -31,6 +33,12 @@ type Config struct {
 	LogFormat       string
 	// SMTP is outgoing mail: WARDLOCK_SMTP_URL and WARDLOCK_SMTP_FROM.
 	SMTP SMTPConfig
+	// BlobDir holds deploy file bodies; <DataDir>/blobs by default.
+	BlobDir string
+	// Deploy limits: bytes per file, files per deploy, bytes per deploy.
+	MaxFileSize    int64
+	MaxDeployFiles int
+	MaxDeploySize  int64
 }
 
 // ErrInvalidConfig wraps every configuration error.
@@ -80,7 +88,39 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	cfg.SMTP = smtp
+	cfg.BlobDir = get("WARDLOCK_BLOB_DIR", filepath.Join(cfg.DataDir, "blobs"))
+	for _, l := range []struct {
+		key      string
+		fallback int64
+		dst      func(int64)
+	}{
+		{"WARDLOCK_MAX_FILE_SIZE", 25 << 20, func(v int64) { cfg.MaxFileSize = v }},
+		{"WARDLOCK_MAX_DEPLOY_FILES", 20_000, func(v int64) { cfg.MaxDeployFiles = int(v) }},
+		{"WARDLOCK_MAX_DEPLOY_SIZE", 1 << 30, func(v int64) { cfg.MaxDeploySize = v }},
+	} {
+		v, err := positiveInt(get(l.key, ""), l.fallback)
+		if err != nil {
+			return Config{}, fmt.Errorf("%w: %s must be a positive whole number: %w", ErrInvalidConfig, l.key, err)
+		}
+		l.dst(v)
+	}
 	return cfg, nil
+}
+
+// positiveInt parses s as an integer of at least 1, or returns fallback
+// for "".
+func positiveInt(s string, fallback int64) (int64, error) {
+	if s == "" {
+		return fallback, nil
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	if v < 1 {
+		return 0, errors.New("below 1")
+	}
+	return v, nil
 }
 
 func normaliseHost(h string) string {

@@ -4,6 +4,7 @@
 package storetest
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +17,6 @@ func sitesContract(t *testing.T, open Opener) {
 		t.Parallel()
 		f := newFixture(t, open)
 		want := f.validSite(f.owner().ID)
-		want.SPAFallback = true
 		f.must(f.r.Sites.Create(t.Context(), want))
 		got, err := f.r.Sites.Get(t.Context(), want.OwnerID, want.ID)
 		if err != nil {
@@ -112,5 +112,121 @@ func sitesContract(t *testing.T, open Opener) {
 		f.must(f.r.Sessions.CreateSite(t.Context(), sess))
 		d.SiteID = s2.ID
 		f.must(f.r.Deploys.Create(t.Context(), o.ID, d, []store.DeployFile{{Path: "index.html", SHA256: sha('a'), Size: 5}}))
+	})
+	t.Run("GetReportsActivation", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		d := f.deploy(o.ID, s.ID)
+		f.uploadAll(o.ID, s.ID, d.ID)
+		at := now.Add(time.Minute)
+		if _, err := f.r.Deploys.Activate(t.Context(), o.ID, s.ID, d.ID, at); err != nil {
+			t.Fatal(err)
+		}
+		got, err := f.r.Sites.Get(t.Context(), o.ID, s.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.ActiveDeployID != d.ID || !got.ActivatedAt.Equal(at) {
+			t.Fatalf("Get() = %+v, want active %s at %v", got, d.ID, at)
+		}
+	})
+	t.Run("GetByOwnerName", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		got, err := f.r.Sites.GetByOwnerName(t.Context(), o.ID, s.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != s {
+			t.Fatalf("GetByOwnerName() = %+v, want %+v", got, s)
+		}
+		_, err = f.r.Sites.GetByOwnerName(t.Context(), f.owner().ID, s.Name)
+		wantErr(t, err, store.ErrNotFound)
+		_, err = f.r.Sites.GetByOwnerName(t.Context(), o.ID, "unknown")
+		wantErr(t, err, store.ErrNotFound)
+	})
+	t.Run("GetByName", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		s := f.site(f.owner().ID)
+		f.site(f.owner().ID)
+		got, err := f.r.Sites.GetByName(t.Context(), s.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != s {
+			t.Fatalf("GetByName() = %+v, want %+v", got, s)
+		}
+		_, err = f.r.Sites.GetByName(t.Context(), "unknown")
+		wantErr(t, err, store.ErrNotFound)
+	})
+	t.Run("GetByOwnerDomain", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		f.site(o.ID)
+		dom := f.validDomain(s.ID) // pending: the owner API finds every status
+		f.must(f.r.Domains.Create(t.Context(), o.ID, dom))
+		got, err := f.r.Sites.GetByOwnerDomain(t.Context(), o.ID, dom.Hostname)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != s {
+			t.Fatalf("GetByOwnerDomain() = %+v, want %+v", got, s)
+		}
+		_, err = f.r.Sites.GetByOwnerDomain(t.Context(), f.owner().ID, dom.Hostname)
+		wantErr(t, err, store.ErrNotFound)
+		_, err = f.r.Sites.GetByOwnerDomain(t.Context(), o.ID, "unknown.example.test")
+		wantErr(t, err, store.ErrNotFound)
+	})
+	t.Run("List", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		for _, name := range []string{"charlie", "alpha", "bravo"} {
+			s := f.validSite(o.ID)
+			s.Name = name
+			f.must(f.r.Sites.Create(t.Context(), s))
+		}
+		want := []string{"alpha", "bravo", "charlie"}
+		f.site(f.owner().ID) // another owner's site is never listed
+
+		names := func(sites []store.Site) []string {
+			var out []string
+			for _, s := range sites {
+				out = append(out, s.Name)
+			}
+			return out
+		}
+		got, err := f.r.Sites.List(t.Context(), o.ID, "", 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(names(got), want) {
+			t.Fatalf("List() = %v, want %v", names(got), want)
+		}
+		got, err = f.r.Sites.List(t.Context(), o.ID, "", 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(names(got), want[:2]) {
+			t.Fatalf("List(limit 2) = %v, want %v", names(got), want[:2])
+		}
+		got, err = f.r.Sites.List(t.Context(), o.ID, "bravo", 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(names(got), want[2:]) {
+			t.Fatalf("List(after bravo) = %v, want %v", names(got), want[2:])
+		}
+		got, err = f.r.Sites.List(t.Context(), f.owner().ID, "", 10)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("List(new owner) = %v, %v; want none", got, err)
+		}
 	})
 }

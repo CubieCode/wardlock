@@ -56,6 +56,7 @@ type CliLoginRequest struct {
 	CreatedAt      int64
 	ExpiresAt      int64
 	DecidedAt      sql.NullInt64
+	ClientName     sql.NullString
 }
 
 type Deploy struct {
@@ -66,6 +67,7 @@ type Deploy struct {
 	TotalSize   int64
 	CreatedAt   int64
 	ActivatedAt sql.NullInt64
+	Spa         int64
 }
 
 type DeployFile struct {
@@ -85,6 +87,8 @@ type Domain struct {
 	LastCheckedAt     sql.NullInt64
 	FailingSince      sql.NullInt64
 	LastFailureReason sql.NullString
+	VerifiedAt        sql.NullInt64
+	FailureDetail     sql.NullString
 }
 
 type Owner struct {
@@ -93,6 +97,12 @@ type Owner struct {
 	InvitedBy  sql.NullString
 	CreatedAt  int64
 	AcceptedAt sql.NullInt64
+}
+
+type OwnerBlob struct {
+	OwnerID   string
+	Sha256    string
+	CreatedAt int64
 }
 
 type OwnerLoginCode struct {
@@ -114,6 +124,7 @@ type OwnerSession struct {
 	LastSeenAt int64
 	ExpiresAt  int64
 	RevokedAt  sql.NullInt64
+	UserAgent  sql.NullString
 }
 
 type Policy struct {
@@ -157,7 +168,6 @@ type Site struct {
 	ID             string
 	OwnerID        string
 	Name           string
-	SpaFallback    int64
 	CreatedAt      int64
 	ActiveDeployID sql.NullString
 }
