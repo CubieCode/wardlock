@@ -77,6 +77,38 @@ func (f *fixture) deploy(ownerID, siteID string) store.Deploy {
 	return d
 }
 
+// deployFiles creates a deploy with files on one of ownerID's sites.
+func (f *fixture) deployFiles(ownerID, siteID string, files ...store.DeployFile) store.Deploy {
+	f.t.Helper()
+	d := f.validDeploy(siteID)
+	d.FileCount, d.TotalSize = len(files), 0
+	for _, file := range files {
+		d.TotalSize += file.Size
+	}
+	f.must(f.r.Deploys.Create(f.t.Context(), ownerID, d, files))
+	return d
+}
+
+// uploadAll records every blob in the deploy's manifest as ownerID's.
+func (f *fixture) uploadAll(ownerID, siteID, deployID string) {
+	f.t.Helper()
+	hashes, err := f.r.Deploys.Hashes(f.t.Context(), ownerID, siteID, deployID)
+	f.must(err)
+	for _, h := range hashes {
+		f.must(f.r.Deploys.RecordUpload(f.t.Context(), ownerID, store.Blob{SHA256: h, Size: 5, CreatedAt: now}))
+	}
+}
+
+// activated creates a deploy and activates it at.
+func (f *fixture) activated(ownerID, siteID string, at time.Time) store.Deploy {
+	f.t.Helper()
+	d := f.deploy(ownerID, siteID)
+	f.uploadAll(ownerID, siteID, d.ID)
+	d, err := f.r.Deploys.Activate(f.t.Context(), ownerID, siteID, d.ID, at)
+	f.must(err)
+	return d
+}
+
 func (f *fixture) validPolicy(siteID string) store.Policy {
 	return store.Policy{
 		ID: store.NewID(), SiteID: siteID, PathPrefix: "/", Visibility: store.Protected,

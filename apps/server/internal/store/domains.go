@@ -40,9 +40,13 @@ type Domain struct {
 	VerificationToken string
 	CreatedAt         time.Time
 	LastCheckedAt     time.Time
+	// VerifiedAt is when a check last passed; zero if never.
+	VerifiedAt time.Time
 	// FailingSince is the first failure in the current run of failed checks.
 	FailingSince      time.Time
 	LastFailureReason DomainFailure
+	// FailureDetail is a plain explanation of the last failure for the owner.
+	FailureDetail string
 }
 
 // Domains stores custom domains. A hostname belongs to at most one site on
@@ -50,6 +54,10 @@ type Domain struct {
 type Domains interface {
 	// Create attaches d to one of ownerID's sites.
 	Create(ctx context.Context, ownerID string, d Domain) error
+	// GetActiveByHostname finds an active domain on any site. It is the
+	// instance-wide routing lookup for the edge; a pending or lapsed
+	// hostname is ErrNotFound.
+	GetActiveByHostname(ctx context.Context, hostname string) (Domain, error)
 }
 
 // Domains returns the SQLite Domains repository.
@@ -70,8 +78,30 @@ func (r domainsRepo) Create(ctx context.Context, ownerID string, d Domain) error
 			VerificationToken: d.VerificationToken,
 			CreatedAt:         ms(d.CreatedAt),
 			LastCheckedAt:     nullMs(d.LastCheckedAt),
+			VerifiedAt:        nullMs(d.VerifiedAt),
 			FailingSince:      nullMs(d.FailingSince),
 			LastFailureReason: nullString(string(d.LastFailureReason)),
+			FailureDetail:     nullString(d.FailureDetail),
 		}))
 	})
+}
+
+func (r domainsRepo) GetActiveByHostname(ctx context.Context, hostname string) (Domain, error) {
+	row, err := r.db.q.GetActiveDomainByHostname(ctx, hostname)
+	if err != nil {
+		return Domain{}, mapErr("get active domain", err)
+	}
+	return Domain{
+		ID:                row.ID,
+		SiteID:            row.SiteID,
+		Hostname:          row.Hostname,
+		Status:            DomainStatus(row.Status),
+		VerificationToken: row.VerificationToken,
+		CreatedAt:         fromMs(row.CreatedAt),
+		LastCheckedAt:     fromNullMs(row.LastCheckedAt),
+		VerifiedAt:        fromNullMs(row.VerifiedAt),
+		FailingSince:      fromNullMs(row.FailingSince),
+		LastFailureReason: DomainFailure(row.LastFailureReason.String),
+		FailureDetail:     row.FailureDetail.String,
+	}, nil
 }

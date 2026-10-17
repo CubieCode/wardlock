@@ -17,3 +17,9 @@ func (db *DB) PragmaForTest(ctx context.Context, name string) (string, error) {
 	err := db.sql.QueryRowContext(ctx, "PRAGMA "+name).Scan(&v)
 	return v, err
 }
+
+func (db *DB) CountForTest(ctx context.Context, query string) (int, error) {
+	var n int
+	err := db.sql.QueryRowContext(ctx, query).Scan(&n)
+	return n, err
+}

@@ -11,6 +11,41 @@ import (
 )
 
 func domainsContract(t *testing.T, open Opener) {
+	t.Run("Create", func(t *testing.T) {
+		t.Parallel()
+		domainsCreateContract(t, open)
+	})
+	t.Run("GetActiveByHostname", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		active := f.validDomain(s.ID)
+		active.Status, active.LastCheckedAt, active.VerifiedAt = store.DomainActive, now, now
+		f.must(f.r.Domains.Create(t.Context(), o.ID, active))
+		got, err := f.r.Domains.GetActiveByHostname(t.Context(), active.Hostname)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != active {
+			t.Fatalf("GetActiveByHostname() = %+v, want %+v", got, active)
+		}
+		for _, status := range []store.DomainStatus{store.DomainPending, store.DomainLapsed} {
+			d := f.validDomain(s.ID)
+			d.Status = status
+			if status == store.DomainLapsed {
+				d.LastCheckedAt, d.FailingSince, d.LastFailureReason, d.FailureDetail = now, now, store.DomainNoRecord, "No CNAME or TXT record found."
+			}
+			f.must(f.r.Domains.Create(t.Context(), o.ID, d))
+			_, err := f.r.Domains.GetActiveByHostname(t.Context(), d.Hostname)
+			wantErr(t, err, store.ErrNotFound)
+		}
+		_, err = f.r.Domains.GetActiveByHostname(t.Context(), "unknown.example.test")
+		wantErr(t, err, store.ErrNotFound)
+	})
+}
+
+func domainsCreateContract(t *testing.T, open Opener) {
 	type owned struct {
 		ownerID string
 		d       store.Domain
@@ -25,6 +60,10 @@ func domainsContract(t *testing.T, open Opener) {
 			{name: "valid"},
 			{name: "failing with reason", mutate: func(_ *fixture, v *owned) {
 				v.d.Status, v.d.LastCheckedAt, v.d.FailingSince, v.d.LastFailureReason = store.DomainActive, now, now, store.DomainCNAMEElsewhere
+			}},
+			{name: "verified with failure detail", mutate: func(_ *fixture, v *owned) {
+				v.d.Status, v.d.LastCheckedAt, v.d.VerifiedAt = store.DomainActive, now, now
+				v.d.FailingSince, v.d.LastFailureReason, v.d.FailureDetail = now, store.DomainDNSError, "SERVFAIL from 192.0.2.53"
 			}},
 			{name: "253 characters", mutate: func(_ *fixture, v *owned) { v.d.Hostname = strings.Repeat("a", 249) + ".com" }},
 			{name: "duplicate hostname on another owner's site", mutate: func(f *fixture, v *owned) {

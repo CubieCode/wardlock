@@ -19,6 +19,17 @@ import (
 // rather than answering 401.
 var implemented = map[string]bool{
 	"GetHealth": true,
+
+	// Sites and deploys (C1.2).
+	"ListSites":        true,
+	"CreateSite":       true,
+	"GetSite":          true,
+	"DeleteSite":       true,
+	"ListDeploys":      true,
+	"CreateDeploy":     true,
+	"UploadDeployBlob": true,
+	"ActivateDeploy":   true,
+	"RollbackSite":     true,
 }
 
 // pathValues are valid values for every path parameter in the contract.
@@ -124,8 +135,9 @@ func TestRollbackWithoutBodyReachesOperation(t *testing.T) {
 	h := (&Server{}).Handler()
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v0/sites/docs/rollback", nil))
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("status %d, want 501; body %s", rec.Code, rec.Body)
+	// 401 comes from the operation itself; a decoding failure would be 400.
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status %d, want 401; body %s", rec.Code, rec.Body)
 	}
 }
 

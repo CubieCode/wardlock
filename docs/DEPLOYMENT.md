@@ -91,9 +91,21 @@ If something else already terminates TLS on the machine, run Wardlock in plain-H
 
 The server certificate is always verified against the system roots. Percent-encode special characters in the user name and password (`@` is `%40`). Credentials never appear in logs or errors, which show the server as `smtp://[redacted]@host:port`. `WARDLOCK_SMTP_FROM` sets the sender (`Wardlock <no-reply@example.com>`); it defaults to `Wardlock <wardlock@<dashboard host>>`. Configure SPF, DKIM and DMARC for the sending domain or codes will land in spam.
 
+## Deploy storage and limits
+
+Deploy file bodies are stored once per content hash under `WARDLOCK_BLOB_DIR` (default `<WARDLOCK_DATA_DIR>/blobs`, laid out as `sha256/ab/cdef…`). Each upload is written to a temporary file in the same directory, fsynced and renamed into place, so put the blob directory on the same local filesystem as its parent, and give it room for every deploy you keep. Unreferenced blobs are removed by garbage collection (C1.8).
+
+| Variable                    | Default              | Limit                   |
+| --------------------------- | -------------------- | ----------------------- |
+| `WARDLOCK_MAX_FILE_SIZE`    | `26214400` (25 MiB)  | bytes per file          |
+| `WARDLOCK_MAX_DEPLOY_FILES` | `20000`              | files per deploy        |
+| `WARDLOCK_MAX_DEPLOY_SIZE`  | `1073741824` (1 GiB) | bytes in a whole deploy |
+
+Values are whole numbers of at least 1, without units. A deploy over a limit is rejected when it is created (`413 limit_exceeded`, naming the file where one is at fault), and an upload body longer than the per-file limit is rejected too. Raising the per-file limit means raising a reverse proxy's request body limit to match.
+
 ## Backups
 
-Everything lives in `WARDLOCK_DATA_DIR`: `wardlock.db` and `blobs/` (and `certs/`, which can be re-issued).
+Everything lives in `WARDLOCK_DATA_DIR`: `wardlock.db` and `blobs/` (or `WARDLOCK_BLOB_DIR` if set; and `certs/`, which can be re-issued).
 
 - **Database:** never copy `wardlock.db` while the server runs. Use the online backup command (O4.2), `wardlockd backup /path/to/backup.db`, which uses SQLite's backup API to write a consistent copy, or stop the service first. As an option, [Litestream](https://litestream.io) can replicate the database continuously to object storage.
 - **Blobs:** content-addressed and write-once, so a plain `rsync` (after the database backup) is consistent: every blob the backed-up database references already exists.

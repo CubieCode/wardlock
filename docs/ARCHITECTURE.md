@@ -91,7 +91,9 @@ sequenceDiagram
   API->>API: Notifier: invalidate site cache
 ```
 
-The server verifies each uploaded blob's SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in that deploy's manifest (`400 unexpected_blob`); re-uploading a blob it already holds succeeds, so retries are safe. Activation rejects a deploy with blobs still missing (`409 blobs_missing`) and is a single transaction that moves the site's `active_deploy_id`. Rollback (`POST /sites/{site}/rollback {deployId?}`) is the same transaction pointed at an earlier activated deploy, the previous one by default, with no upload. Path and limit violations are rejected when the deploy is created (`400 invalid_path` naming the path, `413 limit_exceeded`). Renditions (A2.6) are generated between upload completion and activation and stored as blobs referenced from the manifest.
+The server verifies each uploaded blob's SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in that deploy's manifest (`400 unexpected_blob`); re-uploading a blob it already holds succeeds, so retries are safe.
+
+Missing hashes are computed **per owner**. A blob counts as held for an owner only when that owner has uploaded it with a verified hash (a row in `owner_blobs`) and it is still in the BlobStore. Uploading a blob another owner already stored still reads and verifies the whole body, then records the claim without rewriting the file. Activation requires the same for every hash in the manifest, re-checked inside its transaction. So neither the `missing` list, `uploadDeployBlob` nor `blobs_missing` ever tells one owner whether another owner's content is on the server; the cost is that two owners publishing the same file each upload it once. Activation rejects a deploy with blobs still missing (`409 blobs_missing`) and is a single transaction that moves the site's `active_deploy_id`. Rollback (`POST /sites/{site}/rollback {deployId?}`) is the same transaction pointed at an earlier activated deploy, the previous one by default, with no upload. Path and limit violations are rejected when the deploy is created (`400 invalid_path` naming the path, `413 limit_exceeded`). Renditions (A2.6) are generated between upload completion and activation and stored as blobs referenced from the manifest.
 
 ## Storage layout
 
@@ -102,7 +104,7 @@ $WARDLOCK_DATA_DIR/
   certs/                       certmagic storage (C1.4)
 ```
 
-Blobs are written to a temporary file in the same directory, fsynced, then renamed into place, so a blob either exists completely or not at all. Garbage collection (C1.8) removes blobs no deploy references, after a grace period that covers uploads in progress.
+Blobs are written to a temporary file in the same directory, fsynced, then renamed into place, so a blob either exists completely or not at all. `WARDLOCK_BLOB_DIR` moves `blobs/` elsewhere. Garbage collection (C1.8) removes blobs no deploy references, after a grace period that covers uploads in progress; it must delete a blob's `owner_blobs` rows (and its `blobs` row) together with the file, so no owner is told it still holds a blob that is gone. The deploy service also treats a claimed hash whose file is missing as missing, so a crash between the two leaves the owner asked to upload it again.
 
 ## Database
 
@@ -113,7 +115,7 @@ Blobs are written to a temporary file in the same directory, fsynced, then renam
 
 ### Data model (F0.3)
 
-Migration `0002_core_schema.sql` creates every table below. `internal/store/schema_test.go` checks that this diagram lists exactly the schema's tables, columns, types, primary keys and foreign keys, so update both together. Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
+Migration `0002_core_schema.sql` creates every table below; `0003_deploy_spa_and_owner_blobs.sql` (C1.2) moves the SPA fallback flag from sites to deploys, adds `owner_blobs` and the optional columns the API contract exposes (`owner_sessions.user_agent`, `domains.verified_at` and `failure_detail`, `cli_login_requests.client_name`). `internal/store/schema_test.go` checks that this diagram lists exactly the schema's tables, columns, types, primary keys and foreign keys, so update both together. Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
 
 ```mermaid
 erDiagram
@@ -122,6 +124,7 @@ erDiagram
   owners ||--o{ owner_sessions : "owner_id"
   owners ||--o{ api_tokens : "owner_id"
   owners ||--o{ cli_login_requests : "owner_id"
+  owners ||--o{ owner_blobs : "owner_id"
   api_tokens |o--o| cli_login_requests : "api_token_id"
   owners ||--o{ sites : "owner_id"
   sites ||--o{ domains : "site_id"
@@ -129,6 +132,7 @@ erDiagram
   sites |o--o| deploys : "active_deploy_id"
   deploys ||--o{ deploy_files : "deploy_id"
   blobs |o..o{ deploy_files : "sha256, no FK"
+  blobs |o..o{ owner_blobs : "sha256, no FK"
   sites ||--o{ policies : "site_id"
   sites ||--o{ share_links : "site_id"
   sites ||--o{ site_sessions : "site_id"
@@ -160,6 +164,7 @@ erDiagram
     INTEGER last_seen_at
     INTEGER expires_at "absolute"
     INTEGER revoked_at
+    TEXT user_agent
   }
   api_tokens {
     TEXT id PK
@@ -186,12 +191,12 @@ erDiagram
     INTEGER created_at
     INTEGER expires_at
     INTEGER decided_at
+    TEXT client_name
   }
   sites {
     TEXT id PK
     TEXT owner_id FK
     TEXT name UK
-    INTEGER spa_fallback
     INTEGER created_at
     TEXT active_deploy_id FK
   }
@@ -205,6 +210,8 @@ erDiagram
     INTEGER last_checked_at
     INTEGER failing_since "first consecutive failure"
     TEXT last_failure_reason
+    INTEGER verified_at
+    TEXT failure_detail
   }
   deploys {
     TEXT id PK
@@ -214,10 +221,16 @@ erDiagram
     INTEGER total_size
     INTEGER created_at
     INTEGER activated_at
+    INTEGER spa
   }
   blobs {
     TEXT sha256 PK
     INTEGER size
+    INTEGER created_at
+  }
+  owner_blobs {
+    TEXT owner_id PK, FK
+    TEXT sha256 PK
     INTEGER created_at
   }
   deploy_files {

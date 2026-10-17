@@ -65,8 +65,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.2: Deploy API
 
-- Status: `todo`
-- Owner:
+- Status: `review`
+- Owner: `feat/c1.2-deploy-api`
 - PR:
 - Depends on: F0.2, F0.3
 - Scope: `internal/deploys` and `internal/sites`: filesystem `BlobStore` (temp file, fsync, rename; SHA-256 verified on upload); create deploy from manifest returning missing hashes; blob upload; atomic activation; list, rollback and teardown; path validation (no `..`, control characters or `.wardlock/`); configurable size and count limits; site creation on first deploy with reserved-name checks; `Notifier` interface with an in-process implementation fired on activation. Implement the `Sites`, `Deploys` and blob repository methods.

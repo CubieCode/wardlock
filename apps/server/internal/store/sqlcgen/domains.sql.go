@@ -14,8 +14,8 @@ import (
 )
 
 const createDomain = `-- name: CreateDomain :exec
-INSERT INTO domains (id, site_id, hostname, status, verification_token, created_at, last_checked_at, failing_since, last_failure_reason)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+INSERT INTO domains (id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
 `
 
 type CreateDomainParams struct {
@@ -26,8 +26,10 @@ type CreateDomainParams struct {
 	VerificationToken string
 	CreatedAt         int64
 	LastCheckedAt     sql.NullInt64
+	VerifiedAt        sql.NullInt64
 	FailingSince      sql.NullInt64
 	LastFailureReason sql.NullString
+	FailureDetail     sql.NullString
 }
 
 func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) error {
@@ -39,8 +41,50 @@ func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) erro
 		arg.VerificationToken,
 		arg.CreatedAt,
 		arg.LastCheckedAt,
+		arg.VerifiedAt,
 		arg.FailingSince,
 		arg.LastFailureReason,
+		arg.FailureDetail,
 	)
 	return err
+}
+
+const getActiveDomainByHostname = `-- name: GetActiveDomainByHostname :one
+SELECT id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail
+FROM domains
+WHERE hostname = ?1 AND status = 'active'
+`
+
+type GetActiveDomainByHostnameRow struct {
+	ID                string
+	SiteID            string
+	Hostname          string
+	Status            string
+	VerificationToken string
+	CreatedAt         int64
+	LastCheckedAt     sql.NullInt64
+	VerifiedAt        sql.NullInt64
+	FailingSince      sql.NullInt64
+	LastFailureReason sql.NullString
+	FailureDetail     sql.NullString
+}
+
+// Instance-wide: edge routing only. Pending and lapsed hostnames are not served.
+func (q *Queries) GetActiveDomainByHostname(ctx context.Context, hostname string) (GetActiveDomainByHostnameRow, error) {
+	row := q.db.QueryRowContext(ctx, getActiveDomainByHostname, hostname)
+	var i GetActiveDomainByHostnameRow
+	err := row.Scan(
+		&i.ID,
+		&i.SiteID,
+		&i.Hostname,
+		&i.Status,
+		&i.VerificationToken,
+		&i.CreatedAt,
+		&i.LastCheckedAt,
+		&i.VerifiedAt,
+		&i.FailingSince,
+		&i.LastFailureReason,
+		&i.FailureDetail,
+	)
+	return i, err
 }

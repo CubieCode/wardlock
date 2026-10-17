@@ -13,6 +13,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+
+	"wardlock.nz/server/internal/deploys"
+	"wardlock.nz/server/internal/sites"
 )
 
 // ErrNotImplemented is returned by operations that are in the contract but
@@ -26,6 +29,13 @@ type Server struct {
 
 	// Version is reported by GET /api/v0/health.
 	Version string
+
+	// Sites and Deploys back the sites and deploys operations (C1.2).
+	Sites   *sites.Service
+	Deploys *deploys.Service
+	// SiteURL returns the URL of the site at a base-domain hostname;
+	// https://<hostname>/ when nil.
+	SiteURL func(hostname string) string
 }
 
 var _ StrictServerInterface = (*Server)(nil)

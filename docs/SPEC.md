@@ -49,7 +49,7 @@ The goal is that adding one DNS record is all an owner has to do. The record nam
 
 ## Deploys and rollback (C1.2)
 
-- A deploy uploads a directory. The client sends a manifest of `{path, sha256, size}`; the server replies with the hashes it does not have; the client uploads only those; then the client activates the deploy. Unchanged files are never re-uploaded. The protocol is in ARCHITECTURE "Deploy upload protocol" and the operations in `packages/api-spec/openapi.yaml`.
+- A deploy uploads a directory. The client sends a manifest of `{path, sha256, size}`; the server replies with the hashes it does not yet hold for that owner (each owner uploads a file once, even if another owner already published the same content); the client uploads only those; then the client activates the deploy. Unchanged files are never re-uploaded. The protocol is in ARCHITECTURE "Deploy upload protocol" and the operations in `packages/api-spec/openapi.yaml`.
 - Activation is atomic: a visitor sees either the previous deploy or the new one, never a mix.
 - Every deploy stays in history with its time, file count, total size and an optional message. **Rollback** reactivates any earlier deploy instantly, with no upload.
 - Default limits (configurable): 25 MiB per file, 20,000 files and 1 GiB per deploy, 50 deploys of history per site (older ones are pruned, never the active one).

@@ -92,6 +92,10 @@ func TestServe(t *testing.T) {
 	if code, body := get("hello.wardlock.localhost", "/"); code != 200 || !strings.Contains(body, "Hello from Wardlock") {
 		t.Errorf("hello site = %d %q", code, body)
 	}
+	// The sites API is wired; without a credential it answers 401.
+	if code, body := get("wardlock.localhost", "/api/v0/sites"); code != 401 || !strings.Contains(body, "unauthenticated") {
+		t.Errorf("/api/v0/sites = %d %q", code, body)
+	}
 
 	cancel()
 	select {
