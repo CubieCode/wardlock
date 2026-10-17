@@ -16,11 +16,591 @@ export interface paths {
     };
     /**
      * Report that the API is serving requests.
-     * @description Unauthenticated. Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
+     * @description Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
      */
     get: operations['getHealth'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/setup': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create the first owner from the one-time setup code.
+     * @description Redeems the code from the setup URL that `wardlockd serve` prints while no owner exists, creates the owner with the given email address and signs them in. The code is single use and valid for 60 minutes. A wrong, used or expired code, or an instance that already has an owner, all answer `400 invalid_code`.
+     */
+    post: operations['completeSetup'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/auth/sign-in-link': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Sign in with a one-time sign-in link code.
+     * @description Redeems the code from a one-time sign-in URL, such as the one printed by `wardlockd admin create` or sent with an invitation, and starts a dashboard session. A wrong, used or expired code answers `400 invalid_code`.
+     */
+    post: operations['redeemSignInLink'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/auth/email-code': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Email a sign-in code.
+     * @description Sends a 6-digit code valid for 10 minutes if the address belongs to an owner. The response is the same whether or not it does. Sends are rate-limited per IP and per address.
+     */
+    post: operations['sendEmailCode'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/auth/email-code/verify': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Sign in with an emailed code.
+     * @description Checks the code sent to the address and starts a dashboard session. A code allows 5 attempts. A wrong, expired or exhausted code, and an address that is not an owner's, all answer `400 invalid_code`.
+     */
+    post: operations['verifyEmailCode'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/auth/sign-out': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * End the current session or revoke the current API token.
+     * @description With a session cookie, ends that session and clears the cookie. With an API token, revokes that token (`wardlock logout`).
+     */
+    post: operations['signOut'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/me': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Describe the signed-in owner and the credential used. */
+    get: operations['getMe'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/owners': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Invite another owner by email.
+     * @description Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+     */
+    post: operations['inviteOwner'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sessions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the signed-in owner's dashboard sessions.
+     * @description Most recently used first.
+     */
+    get: operations['listSessions'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sessions/{sessionId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The session's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e0f
+         */
+        sessionId: components['parameters']['SessionId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Revoke one of the signed-in owner's sessions.
+     * @description Takes effect on the session's next request.
+     */
+    delete: operations['revokeSession'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/tokens': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the signed-in owner's API tokens.
+     * @description Newest first. Token secrets are never returned.
+     */
+    get: operations['listApiTokens'];
+    put?: never;
+    /**
+     * Create an API token.
+     * @description The response is the only time the token is shown.
+     */
+    post: operations['createApiToken'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/tokens/{tokenId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The API token's ID (not its public ID).
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20
+         */
+        tokenId: components['parameters']['TokenId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Revoke an API token.
+     * @description Takes effect on the token's next request.
+     */
+    delete: operations['revokeApiToken'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/cli-login': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Start a CLI device login.
+     * @description Called by `wardlock login`. The CLI shows `userCode`, opens `verificationUrlComplete` in a browser and polls `pollCliLogin` with `deviceCode` no more often than every `interval` seconds until a signed-in owner approves or denies it on the dashboard, or it expires. `deviceCode` is a secret: keep it out of logs.
+     */
+    post: operations['startCliLogin'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/cli-login/poll': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Poll a CLI device login for its token.
+     * @description Answers `202` while the login waits for approval and `200` with a new API token once approved; the token is delivered once. A denied, expired, already delivered or unknown login answers `410 login_expired`. Polling faster than `interval` answers `429 slow_down`.
+     */
+    post: operations['pollCliLogin'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/cli-login/approve': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Approve a CLI device login.
+     * @description Called by the dashboard's `/cli-login` page once the owner confirms the code matches their terminal. Creates an API token with the chosen scopes for the waiting CLI. An unknown, expired or already decided code answers `400 invalid_code`.
+     */
+    post: operations['approveCliLogin'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/cli-login/deny': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Deny a CLI device login.
+     * @description An unknown, expired or already decided code answers `400 invalid_code`.
+     */
+    post: operations['denyCliLogin'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the owner's sites.
+     * @description Ordered by name. With `hostname`, answers the owner's site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
+     */
+    get: operations['listSites'];
+    put?: never;
+    /**
+     * Create an empty site.
+     * @description Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+     */
+    post: operations['createSite'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    /** Get one of the owner's sites. */
+    get: operations['getSite'];
+    put?: never;
+    post?: never;
+    /**
+     * Tear down a site.
+     * @description Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8).
+     */
+    delete: operations['deleteSite'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/deploys': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    /**
+     * List a site's deploys.
+     * @description Newest first.
+     */
+    get: operations['listDeploys'];
+    put?: never;
+    /**
+     * Create a deploy from a manifest.
+     * @description Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+     */
+    post: operations['createDeploy'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The deploy's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
+         */
+        deployId: components['parameters']['DeployId'];
+        /**
+         * @description The blob's SHA-256, as listed in the deploy's manifest.
+         * @example fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9
+         */
+        sha256: components['schemas']['Sha256'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Upload one file body for a pending deploy.
+     * @description The body is the file's raw bytes. The server verifies the SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in this deploy's manifest (`400 unexpected_blob`). Uploading a blob the server already holds succeeds without storing it again, so retries are safe. Bodies over the per-file limit answer `413 limit_exceeded`.
+     */
+    put: operations['uploadDeployBlob'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/deploys/{deployId}/activate': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The deploy's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
+         */
+        deployId: components['parameters']['DeployId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Make a pending deploy the site's active deploy.
+     * @description Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy).
+     */
+    post: operations['activateDeploy'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/rollback': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Reactivate an earlier deploy.
+     * @description Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+     */
+    post: operations['rollbackSite'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/domains': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    /**
+     * List a site's custom domains.
+     * @description Ordered by hostname.
+     */
+    get: operations['listDomains'];
+    put?: never;
+    /**
+     * Attach a custom domain to a site.
+     * @description Normalises the hostname (lowercase, IDN to A-label, no trailing dot or port) and answers with the records to create. The domain starts `pending` and is checked straight away. IP addresses, wildcards, the base domain and names under it, the dashboard host and the auth origin answer `400 invalid_hostname`. A hostname attached to any site answers `409 domain_taken` without saying which.
+     */
+    post: operations['addDomain'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/domains/{hostname}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The custom domain, in its normalised form.
+         * @example docs.example.com
+         */
+        hostname: components['parameters']['DomainHostname'];
+      };
+      cookie?: never;
+    };
+    /** Get one of a site's custom domains. */
+    get: operations['getDomain'];
+    put?: never;
+    post?: never;
+    /**
+     * Detach a custom domain from its site.
+     * @description Serving stops immediately and the domain's certificate is deleted. The owner should also delete the DNS record, or whoever later holds the site name could claim the hostname.
+     */
+    delete: operations['removeDomain'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/domains/{hostname}/verify': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The custom domain, in its normalised form.
+         * @example docs.example.com
+         */
+        hostname: components['parameters']['DomainHostname'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Check a custom domain's DNS now.
+     * @description Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain.
+     */
+    post: operations['verifyDomain'];
     delete?: never;
     options?: never;
     head?: never;
@@ -40,11 +620,523 @@ export interface components {
        */
       version: string;
     };
+    /** @description The body of every error response. */
+    Error: {
+      /**
+       * @description Stable machine-readable error code; see the table in the API description. New codes may be added.
+       * @example not_found
+       */
+      code: string;
+      /**
+       * @description Human-readable explanation. Never contains secrets.
+       * @example Not found.
+       */
+      message: string;
+      /**
+       * @description The field, manifest path or hostname the error is about.
+       * @example assets/../secret.txt
+       */
+      target?: string;
+    };
+    /**
+     * @description A lowercase, hyphenated UUIDv7.
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+     */
+    Id: string;
+    /**
+     * Format: int64
+     * @description UTC milliseconds since the Unix epoch.
+     * @example 1767225600000
+     */
+    Timestamp: number;
+    /**
+     * @description Opaque pagination cursor.
+     * @example c2l0ZTpkb2Nz
+     */
+    Cursor: string;
+    /**
+     * Format: email
+     * @example owner@example.com
+     */
+    Email: string;
+    /**
+     * @description An API token scope. `deploy` creates sites and deploys, uploads, activates and rolls back; `manage` deletes sites and manages custom domains. Both read.
+     * @enum {string}
+     */
+    Scope: 'deploy' | 'manage';
+    /**
+     * @example [
+     *       "deploy",
+     *       "manage"
+     *     ]
+     */
+    Scopes: components['schemas']['Scope'][];
+    /**
+     * @description A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+     * @example docs
+     */
+    SiteName: string;
+    /**
+     * @description A hostname. Stored and returned lowercase, as A-labels, with no trailing dot or port.
+     * @example docs.example.com
+     */
+    Hostname: string;
+    /**
+     * @description A SHA-256 digest as 64 lowercase hex characters.
+     * @example 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+     */
+    Sha256: string;
+    SetupRequest: {
+      /** @description The `code` query parameter of the setup URL. */
+      code: string;
+      email: components['schemas']['Email'];
+    };
+    SignInLinkRequest: {
+      /** @description The `code` query parameter of the sign-in URL. */
+      code: string;
+    };
+    EmailCodeRequest: {
+      email: components['schemas']['Email'];
+    };
+    EmailCodeVerifyRequest: {
+      email: components['schemas']['Email'];
+      /** @description The 6-digit code from the email. */
+      code: string;
+    };
+    InviteOwnerRequest: {
+      email: components['schemas']['Email'];
+    };
+    Owner: {
+      id: components['schemas']['Id'];
+      email: components['schemas']['Email'];
+      createdAt: components['schemas']['Timestamp'];
+    };
+    Me: {
+      owner: components['schemas']['Owner'];
+      /**
+       * @description How this request was authenticated.
+       * @enum {string}
+       */
+      credential: 'session' | 'apiToken';
+      /** @description What the credential may do. A session has every scope. */
+      scopes: components['schemas']['Scopes'];
+    };
+    OwnerSession: {
+      id: components['schemas']['Id'];
+      createdAt: components['schemas']['Timestamp'];
+      lastUsedAt: components['schemas']['Timestamp'];
+      /** @description When the session ends if not used again: the earlier of the idle and absolute expiry. */
+      expiresAt: components['schemas']['Timestamp'];
+      /** @description The User-Agent that signed in, truncated to 200 characters. */
+      userAgent?: string;
+      /** @description Whether this is the session making the request. */
+      current: boolean;
+    };
+    SessionPage: {
+      items: components['schemas']['OwnerSession'][];
+      nextCursor?: components['schemas']['Cursor'];
+    };
+    ApiToken: {
+      id: components['schemas']['Id'];
+      /**
+       * @description The token's public ID, shown in the dashboard and logs.
+       * @example k7m2q6xw4a
+       */
+      publicId: string;
+      name: string;
+      scopes: components['schemas']['Scopes'];
+      createdAt: components['schemas']['Timestamp'];
+      /** @description Absent when the token never expires. */
+      expiresAt?: components['schemas']['Timestamp'];
+      /** @description Absent until the token is first used. */
+      lastUsedAt?: components['schemas']['Timestamp'];
+    };
+    ApiTokenPage: {
+      items: components['schemas']['ApiToken'][];
+      nextCursor?: components['schemas']['Cursor'];
+    };
+    CreateApiTokenRequest: {
+      name: string;
+      scopes: components['schemas']['Scopes'];
+      /** @description Omit for a token that never expires. */
+      expiresAt?: components['schemas']['Timestamp'];
+    };
+    CreatedApiToken: {
+      apiToken: components['schemas']['ApiToken'];
+      /** @description The secret token. Shown only in this response. */
+      token: string;
+    };
+    StartCliLoginRequest: {
+      /** @description Shown to the owner on the approval page. */
+      clientName?: string;
+    };
+    CliLogin: {
+      /** @description Secret the CLI polls with. Never log it. */
+      deviceCode: string;
+      userCode: components['schemas']['UserCode'];
+      /**
+       * Format: uri
+       * @description The dashboard page where the owner approves the login.
+       */
+      verificationUrl: string;
+      /**
+       * Format: uri
+       * @description `verificationUrl` with the user code filled in.
+       */
+      verificationUrlComplete: string;
+      expiresAt: components['schemas']['Timestamp'];
+      /**
+       * Format: int32
+       * @description Minimum seconds between polls.
+       */
+      interval: number;
+    };
+    /**
+     * @description Eight letters from an alphabet without vowels or look-alikes, in two groups of four.
+     * @example BDFH-KMPR
+     */
+    UserCode: string;
+    PollCliLoginRequest: {
+      deviceCode: string;
+    };
+    CliLoginPending: {
+      /** @enum {string} */
+      status: 'pending';
+    };
+    ApproveCliLoginRequest: {
+      userCode: components['schemas']['UserCode'];
+      scopes: components['schemas']['Scopes'];
+      /** @description The new token's name; defaults to the CLI's `clientName`. */
+      name?: string;
+    };
+    DenyCliLoginRequest: {
+      userCode: components['schemas']['UserCode'];
+    };
+    Site: {
+      id: components['schemas']['Id'];
+      name: components['schemas']['SiteName'];
+      /** @description `<name>.<base domain>`. */
+      hostname: components['schemas']['Hostname'];
+      /**
+       * Format: uri
+       * @description The site's URL on the base domain.
+       */
+      url: string;
+      createdAt: components['schemas']['Timestamp'];
+      /** @description Absent until the first activation. */
+      activeDeployId?: components['schemas']['Id'];
+      /** @description When the active deploy was last activated. */
+      activatedAt?: components['schemas']['Timestamp'];
+    };
+    SitePage: {
+      items: components['schemas']['Site'][];
+      nextCursor?: components['schemas']['Cursor'];
+    };
+    CreateSiteRequest: {
+      name: components['schemas']['SiteName'];
+    };
+    Deploy: {
+      id: components['schemas']['Id'];
+      /**
+       * @description `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from.
+       * @enum {string}
+       */
+      status: 'pending' | 'active' | 'inactive';
+      createdAt: components['schemas']['Timestamp'];
+      /** @description When it was last activated. Absent while pending. */
+      activatedAt?: components['schemas']['Timestamp'];
+      /** Format: int32 */
+      fileCount: number;
+      /**
+       * Format: int64
+       * @description Sum of file sizes in bytes.
+       */
+      totalSize: number;
+      message?: string;
+      /** @description Whether missing paths without a file extension serve `/index.html` while this deploy is active. */
+      spa: boolean;
+    };
+    DeployPage: {
+      items: components['schemas']['Deploy'][];
+      nextCursor?: components['schemas']['Cursor'];
+    };
+    ManifestFile: {
+      /**
+       * @description Path relative to the deployed directory, with forward slashes.
+       * @example docs/install.html
+       */
+      path: string;
+      sha256: components['schemas']['Sha256'];
+      /**
+       * Format: int64
+       * @description File size in bytes.
+       */
+      size: number;
+    };
+    CreateDeployRequest: {
+      files: components['schemas']['ManifestFile'][];
+      message?: string;
+      /**
+       * @description Serve `/index.html` for missing extensionless paths.
+       * @default false
+       */
+      spa: boolean;
+    };
+    CreatedDeploy: {
+      deploy: components['schemas']['Deploy'];
+      /** @description Hashes to upload before activating, each once. */
+      missing: components['schemas']['Sha256'][];
+    };
+    RollbackRequest: {
+      /** @description Omit to return to the deploy active before the current one. */
+      deployId?: components['schemas']['Id'];
+    };
+    Activation: {
+      site: components['schemas']['Site'];
+      deploy: components['schemas']['Deploy'];
+    };
+    DnsRecord: {
+      /** @enum {string} */
+      type: 'CNAME' | 'TXT';
+      name: components['schemas']['Hostname'];
+      /** @example docs.wardlock.example.net */
+      value: string;
+    };
+    Domain: {
+      id: components['schemas']['Id'];
+      hostname: components['schemas']['Hostname'];
+      /**
+       * @description `pending`: added, not yet verified, not served. `active`: verified, served and eligible for a certificate. `lapsed`: was active but has failed re-checks for 72 hours; not served until it passes again.
+       * @enum {string}
+       */
+      status: 'pending' | 'active' | 'lapsed';
+      /** @description `CNAME <hostname> → <name>.<base domain>`. */
+      routingRecord: components['schemas']['DnsRecord'];
+      /** @description `TXT _wardlock.<hostname> → wardlock-verify=<token>`, needed only where the CNAME cannot be seen (apex or CDN-proxied records). */
+      verificationRecord: components['schemas']['DnsRecord'];
+      createdAt: components['schemas']['Timestamp'];
+      /** @description When the domain last became active. */
+      verifiedAt?: components['schemas']['Timestamp'];
+      /** @description When DNS was last checked. */
+      lastCheckedAt?: components['schemas']['Timestamp'];
+      /** @description When the next automatic check is due. Absent for a pending domain past its 48-hour window, which is checked only on request. */
+      nextCheckAt?: components['schemas']['Timestamp'];
+      /** @description Start of the current run of failed checks. Absent after a pass. */
+      failingSince?: components['schemas']['Timestamp'];
+      /**
+       * @description Why the last check failed. Absent after a pass. `no_record`: no matching CNAME or TXT; `cname_elsewhere`: the CNAME chain leads somewhere else; `txt_mismatch`: the TXT record holds another token; `dns_error`: the lookup failed or timed out.
+       * @enum {string}
+       */
+      failureReason?:
+        'no_record' | 'cname_elsewhere' | 'txt_mismatch' | 'dns_error';
+      /** @description Plain-language detail for the last failure. */
+      failureDetail?: string;
+    };
+    DomainPage: {
+      items: components['schemas']['Domain'][];
+      nextCursor?: components['schemas']['Cursor'];
+    };
+    AddDomainRequest: {
+      /** @description The hostname as typed; the server normalises it. */
+      hostname: string;
+    };
   };
-  responses: never;
-  parameters: never;
+  responses: {
+    /** @description The request is malformed or a field is invalid. */
+    BadRequest: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "invalid_request",
+         *       "message": "name must be 1-63 characters of a-z, 0-9 and '-'.",
+         *       "target": "name"
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
+    /** @description No valid credential. */
+    Unauthenticated: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "unauthenticated",
+         *       "message": "Sign in or provide an API token."
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
+    /** @description The credential lacks the scope this operation needs, or a cookie-authenticated request came from another origin. */
+    Forbidden: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "forbidden",
+         *       "message": "This API token lacks the manage scope."
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
+    /** @description No such resource for this owner. Missing resources and other owners' resources get the same response. */
+    NotFound: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "not_found",
+         *       "message": "Not found."
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
+    /** @description The request conflicts with the current state. */
+    Conflict: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "site_name_taken",
+         *       "message": "The site name docs is taken.",
+         *       "target": "name"
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
+    /** @description The CLI login is over; start a new one. */
+    Gone: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "login_expired",
+         *       "message": "This login has expired or was denied. Run wardlock login again."
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
+    /** @description A size or count limit was exceeded. */
+    TooLarge: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "limit_exceeded",
+         *       "message": "assets/video.mp4 is 31457280 bytes; the limit is 26214400.",
+         *       "target": "assets/video.mp4"
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
+    /** @description Too many requests. */
+    RateLimited: {
+      headers: {
+        'Retry-After': components['headers']['RetryAfter'];
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "rate_limited",
+         *       "message": "Too many attempts. Try again in 30 seconds."
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
+    /** @description Any other error, including `500 internal` and `501 not_implemented` for an operation that is in the contract but not built yet. */
+    Error: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "not_implemented",
+         *       "message": "This operation is not implemented yet."
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
+  };
+  parameters: {
+    /**
+     * @description Page size.
+     * @example 50
+     */
+    Limit: number;
+    /**
+     * @description The `nextCursor` of the previous page.
+     * @example c2l0ZTpkb2Nz
+     */
+    Cursor: components['schemas']['Cursor'];
+    /**
+     * @description The site's name.
+     * @example docs
+     */
+    SiteName: components['schemas']['SiteName'];
+    /**
+     * @description The deploy's ID.
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
+     */
+    DeployId: components['schemas']['Id'];
+    /**
+     * @description The session's ID.
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e0f
+     */
+    SessionId: components['schemas']['Id'];
+    /**
+     * @description The API token's ID (not its public ID).
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20
+     */
+    TokenId: components['schemas']['Id'];
+    /**
+     * @description The custom domain, in its normalised form.
+     * @example docs.example.com
+     */
+    DomainHostname: components['schemas']['Hostname'];
+  };
   requestBodies: never;
-  headers: never;
+  headers: {
+    /**
+     * @description The dashboard session cookie, `__Host-wardlock_session`, `Path=/`, `Secure`, `HttpOnly`, `SameSite=Lax`.
+     * @example __Host-wardlock_session=<opaque>; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=1209600
+     */
+    SetSessionCookie: string;
+    /**
+     * @description Clears the dashboard session cookie when the request used one.
+     * @example __Host-wardlock_session=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0
+     */
+    ClearSessionCookie: string;
+    /**
+     * @description Seconds to wait before retrying.
+     * @example 30
+     */
+    RetryAfter: number;
+  };
   pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -64,9 +1156,1222 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
+          /**
+           * @example {
+           *       "status": "ok",
+           *       "version": "0.1.0"
+           *     }
+           */
           'application/json': components['schemas']['Health'];
         };
       };
+      default: components['responses']['Error'];
+    };
+  };
+  completeSetup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "code": "Xq3vT9mPz7LcR2wKj5HnBd",
+         *       "email": "owner@example.com"
+         *     }
+         */
+        'application/json': components['schemas']['SetupRequest'];
+      };
+    };
+    responses: {
+      /** @description The owner exists and is signed in. */
+      201: {
+        headers: {
+          'Set-Cookie': components['headers']['SetSessionCookie'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Me'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  redeemSignInLink: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "code": "Nf8sKq2LmV4xT7cWz9RbPd"
+         *     }
+         */
+        'application/json': components['schemas']['SignInLinkRequest'];
+      };
+    };
+    responses: {
+      /** @description Signed in. */
+      200: {
+        headers: {
+          'Set-Cookie': components['headers']['SetSessionCookie'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Me'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  sendEmailCode: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "email": "owner@example.com"
+         *     }
+         */
+        'application/json': components['schemas']['EmailCodeRequest'];
+      };
+    };
+    responses: {
+      /** @description Accepted. A code is on its way if the address belongs to an owner. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components['responses']['BadRequest'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  verifyEmailCode: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "email": "owner@example.com",
+         *       "code": "482913"
+         *     }
+         */
+        'application/json': components['schemas']['EmailCodeVerifyRequest'];
+      };
+    };
+    responses: {
+      /** @description Signed in. */
+      200: {
+        headers: {
+          'Set-Cookie': components['headers']['SetSessionCookie'];
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Me'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  signOut: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Signed out. */
+      204: {
+        headers: {
+          'Set-Cookie': components['headers']['ClearSessionCookie'];
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      default: components['responses']['Error'];
+    };
+  };
+  getMe: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The signed-in owner. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Me'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      default: components['responses']['Error'];
+    };
+  };
+  inviteOwner: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "email": "colleague@example.com"
+         *     }
+         */
+        'application/json': components['schemas']['InviteOwnerRequest'];
+      };
+    };
+    responses: {
+      /** @description Accepted. The invitation is on its way. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  listSessions: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One page of sessions. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e0f",
+           *           "createdAt": 1767225600000,
+           *           "lastUsedAt": 1767312000000,
+           *           "expiresAt": 1768521600000,
+           *           "userAgent": "Mozilla/5.0 (X11; Linux x86_64)",
+           *           "current": true
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['SessionPage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      default: components['responses']['Error'];
+    };
+  };
+  revokeSession: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The session's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e0f
+         */
+        sessionId: components['parameters']['SessionId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  listApiTokens: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One page of API tokens. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20",
+           *           "publicId": "k7m2q6xw4a",
+           *           "name": "CI deploys",
+           *           "scopes": [
+           *             "deploy"
+           *           ],
+           *           "createdAt": 1767225600000,
+           *           "expiresAt": 1798761600000,
+           *           "lastUsedAt": 1767312000000
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['ApiTokenPage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      default: components['responses']['Error'];
+    };
+  };
+  createApiToken: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "name": "CI deploys",
+         *       "scopes": [
+         *         "deploy"
+         *       ],
+         *       "expiresAt": 1798761600000
+         *     }
+         */
+        'application/json': components['schemas']['CreateApiTokenRequest'];
+      };
+    };
+    responses: {
+      /** @description Created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CreatedApiToken'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      default: components['responses']['Error'];
+    };
+  };
+  revokeApiToken: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The API token's ID (not its public ID).
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20
+         */
+        tokenId: components['parameters']['TokenId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  startCliLogin: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "clientName": "wardlock 0.1.0 on build-laptop"
+         *     }
+         */
+        'application/json': components['schemas']['StartCliLoginRequest'];
+      };
+    };
+    responses: {
+      /** @description Started. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "deviceCode": "dc_7RkPq2Vx9LmT4wZc8NbJ5sHf3GdY6aEu1KoQ0iXv",
+           *       "userCode": "BDFH-KMPR",
+           *       "verificationUrl": "https://wardlock.example.com/cli-login",
+           *       "verificationUrlComplete": "https://wardlock.example.com/cli-login?code=BDFH-KMPR",
+           *       "expiresAt": 1767226500000,
+           *       "interval": 5
+           *     }
+           */
+          'application/json': components['schemas']['CliLogin'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  pollCliLogin: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "deviceCode": "dc_7RkPq2Vx9LmT4wZc8NbJ5sHf3GdY6aEu1KoQ0iXv"
+         *     }
+         */
+        'application/json': components['schemas']['PollCliLoginRequest'];
+      };
+    };
+    responses: {
+      /** @description Approved. The response carries the new API token. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CreatedApiToken'];
+        };
+      };
+      /** @description Waiting for approval. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "status": "pending"
+           *     }
+           */
+          'application/json': components['schemas']['CliLoginPending'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      410: components['responses']['Gone'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  approveCliLogin: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "userCode": "BDFH-KMPR",
+         *       "scopes": [
+         *         "deploy",
+         *         "manage"
+         *       ],
+         *       "name": "wardlock CLI on build-laptop"
+         *     }
+         */
+        'application/json': components['schemas']['ApproveCliLoginRequest'];
+      };
+    };
+    responses: {
+      /** @description Approved. The CLI receives its token on its next poll. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  denyCliLogin: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "userCode": "BDFH-KMPR"
+         *     }
+         */
+        'application/json': components['schemas']['DenyCliLoginRequest'];
+      };
+    };
+    responses: {
+      /** @description Denied. The CLI's next poll answers `410 login_expired`. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  listSites: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+        /**
+         * @description Only the site served at this hostname.
+         * @example docs.example.com
+         */
+        hostname?: components['schemas']['Hostname'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One page of sites. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01",
+           *           "name": "docs",
+           *           "hostname": "docs.wardlock.example.net",
+           *           "url": "https://docs.wardlock.example.net/",
+           *           "createdAt": 1767225600000,
+           *           "activeDeployId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10",
+           *           "activatedAt": 1767225660000
+           *         }
+           *       ],
+           *       "nextCursor": "c2l0ZTpkb2Nz"
+           *     }
+           */
+          'application/json': components['schemas']['SitePage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      default: components['responses']['Error'];
+    };
+  };
+  createSite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "name": "docs"
+         *     }
+         */
+        'application/json': components['schemas']['CreateSiteRequest'];
+      };
+    };
+    responses: {
+      /** @description Created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01",
+           *       "name": "docs",
+           *       "hostname": "docs.wardlock.example.net",
+           *       "url": "https://docs.wardlock.example.net/",
+           *       "createdAt": 1767225600000
+           *     }
+           */
+          'application/json': components['schemas']['Site'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  getSite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The site. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Site'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  deleteSite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  listDeploys: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+      };
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One page of deploys. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10",
+           *           "status": "active",
+           *           "createdAt": 1767225600000,
+           *           "activatedAt": 1767225660000,
+           *           "fileCount": 42,
+           *           "totalSize": 1532918,
+           *           "message": "Fix typo on the install page",
+           *           "spa": false
+           *         },
+           *         {
+           *           "id": "01928c4a-1f2e-7d3c-8b4a-596877665544",
+           *           "status": "inactive",
+           *           "createdAt": 1767139200000,
+           *           "activatedAt": 1767139260000,
+           *           "fileCount": 40,
+           *           "totalSize": 1480233,
+           *           "spa": false
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['DeployPage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  createDeploy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "message": "Fix typo on the install page",
+         *       "spa": false,
+         *       "files": [
+         *         {
+         *           "path": "index.html",
+         *           "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+         *           "size": 5120
+         *         },
+         *         {
+         *           "path": "assets/app.js",
+         *           "sha256": "fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9",
+         *           "size": 48211
+         *         }
+         *       ]
+         *     }
+         */
+        'application/json': components['schemas']['CreateDeployRequest'];
+      };
+    };
+    responses: {
+      /** @description Created. Upload the missing blobs, then activate. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "deploy": {
+           *         "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10",
+           *         "status": "pending",
+           *         "createdAt": 1767225600000,
+           *         "fileCount": 2,
+           *         "totalSize": 53331,
+           *         "message": "Fix typo on the install page",
+           *         "spa": false
+           *       },
+           *       "missing": [
+           *         "fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9"
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['CreatedDeploy'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      413: components['responses']['TooLarge'];
+      default: components['responses']['Error'];
+    };
+  };
+  uploadDeployBlob: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The deploy's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
+         */
+        deployId: components['parameters']['DeployId'];
+        /**
+         * @description The blob's SHA-256, as listed in the deploy's manifest.
+         * @example fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9
+         */
+        sha256: components['schemas']['Sha256'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /** @example console.log("hello"); */
+        'application/octet-stream': string;
+      };
+    };
+    responses: {
+      /** @description Stored. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      413: components['responses']['TooLarge'];
+      default: components['responses']['Error'];
+    };
+  };
+  activateDeploy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The deploy's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
+         */
+        deployId: components['parameters']['DeployId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Activated. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Activation'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  rollbackSite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "deployId": "01928c4a-1f2e-7d3c-8b4a-596877665544"
+         *     }
+         */
+        'application/json': components['schemas']['RollbackRequest'];
+      };
+    };
+    responses: {
+      /** @description Rolled back. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Activation'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  listDomains: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+      };
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One page of custom domains. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31",
+           *           "hostname": "www.example.org",
+           *           "status": "active",
+           *           "routingRecord": {
+           *             "type": "CNAME",
+           *             "name": "www.example.org",
+           *             "value": "docs.wardlock.example.net"
+           *           },
+           *           "verificationRecord": {
+           *             "type": "TXT",
+           *             "name": "_wardlock.www.example.org",
+           *             "value": "wardlock-verify=EXAMPLEverifyTokenEXAMPLE1"
+           *           },
+           *           "createdAt": 1767225600000,
+           *           "verifiedAt": 1767225660000,
+           *           "lastCheckedAt": 1767312060000,
+           *           "nextCheckAt": 1767398460000
+           *         },
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30",
+           *           "hostname": "docs.example.com",
+           *           "status": "pending",
+           *           "routingRecord": {
+           *             "type": "CNAME",
+           *             "name": "docs.example.com",
+           *             "value": "docs.wardlock.example.net"
+           *           },
+           *           "verificationRecord": {
+           *             "type": "TXT",
+           *             "name": "_wardlock.docs.example.com",
+           *             "value": "wardlock-verify=EXAMPLEverifyTokenEXAMPLE0"
+           *           },
+           *           "createdAt": 1767225600000,
+           *           "lastCheckedAt": 1767225660000,
+           *           "nextCheckAt": 1767225780000,
+           *           "failingSince": 1767225600000,
+           *           "failureReason": "no_record",
+           *           "failureDetail": "No CNAME or TXT record found for docs.example.com."
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['DomainPage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  addDomain: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "hostname": "Docs.Example.com."
+         *     }
+         */
+        'application/json': components['schemas']['AddDomainRequest'];
+      };
+    };
+    responses: {
+      /** @description Attached and pending verification. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Domain'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  getDomain: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The custom domain, in its normalised form.
+         * @example docs.example.com
+         */
+        hostname: components['parameters']['DomainHostname'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The custom domain. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Domain'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  removeDomain: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The custom domain, in its normalised form.
+         * @example docs.example.com
+         */
+        hostname: components['parameters']['DomainHostname'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Removed. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  verifyDomain: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The custom domain, in its normalised form.
+         * @example docs.example.com
+         */
+        hostname: components['parameters']['DomainHostname'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Checked. The body carries the outcome. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Domain'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
     };
   };
 }

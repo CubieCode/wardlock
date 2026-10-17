@@ -28,7 +28,7 @@ Share links and API tokens use one format: `wl_<public id>_<secret>`. The public
 ## Sites (C1.2)
 
 - Site names are DNS labels: 1–63 characters of `a-z`, `0-9` and `-`, not starting or ending with `-`. Reserved names: `auth`, `www`, `api`, `admin`, `app`, `dashboard`, `mail`, `wardlock`, anything starting with `xn--`, and the dashboard host's first label when it sits under the base domain.
-- A site is created by its first deploy or from the dashboard. Names are unique per instance.
+- A site is created by its first deploy (the CLI creates it before uploading) or from the dashboard. Names are unique per instance; a name held by another owner's site is reported as taken (site names are public through DNS).
 - **Custom domains** (C1.9): a site can also be served at domains its owner controls; see Custom domains.
 - **Teardown** deletes the site, its deploys, links, policies and custom domains, and frees the name. Blobs no longer referenced are removed by garbage collection (C1.8).
 
@@ -49,7 +49,7 @@ The goal is that adding one DNS record is all an owner has to do. The record nam
 
 ## Deploys and rollback (C1.2)
 
-- A deploy uploads a directory. The client sends a manifest of `{path, sha256, size}`; the server replies with the hashes it does not have; the client uploads only those; then the client activates the deploy. Unchanged files are never re-uploaded.
+- A deploy uploads a directory. The client sends a manifest of `{path, sha256, size}`; the server replies with the hashes it does not have; the client uploads only those; then the client activates the deploy. Unchanged files are never re-uploaded. The protocol is in ARCHITECTURE "Deploy upload protocol" and the operations in `packages/api-spec/openapi.yaml`.
 - Activation is atomic: a visitor sees either the previous deploy or the new one, never a mix.
 - Every deploy stays in history with its time, file count, total size and an optional message. **Rollback** reactivates any earlier deploy instantly, with no upload.
 - Default limits (configurable): 25 MiB per file, 20,000 files and 1 GiB per deploy, 50 deploys of history per site (older ones are pruned, never the active one).
@@ -58,7 +58,7 @@ The goal is that adding one DNS record is all an owner has to do. The record nam
 ## Serving (C1.3)
 
 - `/` and `/dir/` serve `index.html`; `/page` serves `page.html` when `page` does not exist (clean URLs); `/page.html` is served as is.
-- A missing path serves the deploy's `404.html` with status 404 if present, otherwise a plain 404. With the per-site **SPA fallback** option, missing paths without a file extension serve `/index.html` with status 200.
+- A missing path serves the deploy's `404.html` with status 404 if present, otherwise a plain 404. With the **SPA fallback** option (recorded on each deploy from `--spa` or `wardlock.json`, so rollback restores it), missing paths without a file extension serve `/index.html` with status 200.
 - Responses carry `ETag` (content hash) and `Last-Modified` (activation time), honour conditional requests and byte `Range` requests, and serve precompressed `.br` or `.gz` siblings when the client accepts them.
 - Cache headers: `Cache-Control: public, max-age=0, must-revalidate` for public HTML, `public, max-age=31536000, immutable` for files under `/assets/` with hashed names when the site opts in; `private` replaces `public` on protected sites.
 - `/.wardlock/` is reserved on every site (see Reserved path).

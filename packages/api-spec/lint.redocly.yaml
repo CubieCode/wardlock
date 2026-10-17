@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 CubieCode
+# SPDX-License-Identifier: MIT
+#
+# Lint rules for openapi.yaml, run by `pnpm check:api-spec`.
+extends:
+  - recommended-strict
+rules:
+  operation-4xx-response: error
+  operation-operationId: error
+  operation-summary: error
+  operation-description: off
+  security-defined: error
+  no-unused-components: error
+  tags-alphabetical: off
+  rule/media-type-has-example:
+    severity: error
+    message: Every request and response body needs an example.
+    subject:
+      type: MediaType
+    assertions:
+      requireAny: [example, examples]
+  rule/operation-has-default-error:
+    severity: error
+    message: Every operation answers errors with the shared Error response.
+    subject:
+      type: Responses
+    assertions:
+      required: [default]

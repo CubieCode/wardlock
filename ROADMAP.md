@@ -19,8 +19,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### F0.2: API contract v0 and generation pipeline
 
-- Status: `todo`
-- Owner:
+- Status: `review`
+- Owner: `feat/f0.2-api-contract`
 - PR:
 - Depends on: F0.1
 - Scope: Extend `packages/api-spec/openapi.yaml` with every C1 endpoint so C1 lanes can build in parallel against an agreed contract: shared error schema (`code`, `message`) and status conventions; security schemes (dashboard session cookie, `Bearer` API token); owner bootstrap and email-code sign-in, sessions, sign-out; API tokens and the CLI device-login flow; sites (create, list, get, delete); deploys (create with manifest returning missing hashes, upload blob, activate, list, rollback); custom domains (add, list, get, verify, remove; responses carry status, the routing and TXT records to create, last check time and failure reason, per SPEC "Custom domains"). Pagination and ID conventions. Add an OpenAPI lint step (for example Redocly CLI or vacuum, pinned) to `pnpm check`. The server keeps returning 501 for operations not yet implemented, through a generated-interface stub, and `--help`/UI expose none of them.

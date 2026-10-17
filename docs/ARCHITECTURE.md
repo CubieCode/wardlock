@@ -65,26 +65,33 @@ F0.1 implements health, host routing, the dashboard, the built-in hello site and
 
 ## Deploy upload protocol (C1.2)
 
+The operations are in `packages/api-spec/openapi.yaml` (tag `deploys`); paths below are relative to `/api/v0`.
+
 ```mermaid
 sequenceDiagram
   participant CLI as wardlock
   participant API as wardlockd API
   participant BS as BlobStore
   CLI->>CLI: walk dir, apply .wardlockignore, sha256 each file
-  CLI->>API: POST /api/v0/sites/{site}/deploys {files:[{path,sha256,size}]}
-  API->>BS: Has(hash) for each
-  API-->>CLI: 201 {deployId, missing:[hash...]}
-  loop each missing hash (parallel, bounded)
-    CLI->>API: PUT /api/v0/blobs/{sha256} (body = file bytes)
-    API->>BS: verify hash, Put
+  opt site does not exist yet
+    CLI->>API: POST /sites {name}
+    API-->>CLI: 201 Site (409 site_name_taken if any site holds the name)
   end
-  CLI->>API: POST /api/v0/deploys/{id}/activate
+  CLI->>API: POST /sites/{site}/deploys {files:[{path,sha256,size}], message, spa}
+  API->>BS: Has(hash) for each
+  API-->>CLI: 201 {deploy (status pending), missing:[sha256...]}
+  loop each missing hash (parallel, bounded)
+    CLI->>API: PUT /sites/{site}/deploys/{deployId}/blobs/{sha256} (body = file bytes)
+    API->>BS: verify hash, Put
+    API-->>CLI: 204
+  end
+  CLI->>API: POST /sites/{site}/deploys/{deployId}/activate
   API->>API: all blobs present? one transaction: set active deploy
-  API-->>CLI: 200 {url}
+  API-->>CLI: 200 {site (with url), deploy (status active)}
   API->>API: Notifier: invalidate site cache
 ```
 
-The server verifies each uploaded blob's SHA-256 before storing it and rejects activation if any blob is missing. Activation is a single transaction that moves the site's `active_deploy_id`; rollback is the same operation pointed at an older deploy. Renditions (A2.6) are generated between upload completion and activation and stored as blobs referenced from the manifest.
+The server verifies each uploaded blob's SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in that deploy's manifest (`400 unexpected_blob`); re-uploading a blob it already holds succeeds, so retries are safe. Activation rejects a deploy with blobs still missing (`409 blobs_missing`) and is a single transaction that moves the site's `active_deploy_id`. Rollback (`POST /sites/{site}/rollback {deployId?}`) is the same transaction pointed at an earlier activated deploy, the previous one by default, with no upload. Path and limit violations are rejected when the deploy is created (`400 invalid_path` naming the path, `413 limit_exceeded`). Renditions (A2.6) are generated between upload completion and activation and stored as blobs referenced from the manifest.
 
 ## Storage layout
 
@@ -320,9 +327,10 @@ flowchart LR
   Q[internal/store/queries/*.sql] -->|sqlc| SQLC
 ```
 
-- The OpenAPI 3.1 document is the single source of truth. The server implements oapi-codegen's strict interface (`internal/api`); the CLI uses the generated Go client; the dashboard uses `openapi-fetch` typed by `openapi-typescript`. All API paths sit under `/api/v0/` on the dashboard host.
+- The OpenAPI 3.1 document is the single source of truth. The server implements oapi-codegen's strict interface (`internal/api`); the CLI uses the generated Go client; the dashboard uses `openapi-fetch` typed by `openapi-typescript`. All API paths sit under `/api/v0/` on the dashboard host. The document's description records the conventions every operation follows: the `Error` body (`code`, `message`, optional `target`) and its status codes, the `sessionCookie` and `apiToken` (scopes `deploy`, `manage`) security schemes, UUIDv7 text IDs, Unix-millisecond timestamps, and cursor pagination (`limit`, `cursor`, `{items, nextCursor}`).
+- Every operation in the contract is routed from the start. `Server` embeds the generated `Unimplemented` stub (`unimplemented.gen.go`, rendered from `internal/api/templates/`), so an operation answers `501 not_implemented` until its handler lands; a test generated from the same contract proves each one answers 501 rather than 404. The dashboard and CLI expose an operation only once it is built.
 - `pnpm codegen` (`scripts/codegen.sh`) regenerates everything and prepends SPDX headers. `pnpm check:codegen` regenerates and fails if any generated file changed, which is how CI catches hand edits and forgotten regeneration.
-- Tool versions are pinned in `tools/go.mod` (sqlc, oapi-codegen, golangci-lint, govulncheck) and built into `.local/bin` on first use; `openapi-typescript` is pinned in `packages/api-spec/package.json`.
+- Tool versions are pinned in `tools/go.mod` (sqlc, oapi-codegen, golangci-lint, govulncheck) and built into `.local/bin` on first use; `openapi-typescript` and Redocly CLI are pinned in `packages/api-spec/package.json`. `pnpm check:api-spec` lints the contract with Redocly's `recommended-strict` rules plus the rules in `packages/api-spec/lint.redocly.yaml` (every operation has an `operationId`, a 4xx and a default error response, and every body an example).
 - The dashboard is built by Vite to `apps/web/dist`, copied by `scripts/embed-dashboard.sh` into `apps/server/internal/dashboard/ui/dist` (gitignored) and embedded with `go:embed`. A server built without it serves `ui/fallback.html`. In `pnpm dev` the server proxies dashboard pages to Vite instead.
 
 ## Go workspace
@@ -331,4 +339,4 @@ flowchart LR
 
 ## Checks
 
-`pnpm check` runs, in order: ESLint and Prettier; TypeScript typecheck; Vitest; the Turbo build and `scripts/build-go.sh`; `scripts/check-boundaries.mjs` (SPDX headers, package licences, MIT modules not requiring the server); the codegen drift check; then `scripts/check-go.sh` for each workspace module (gofmt, `go vet`, golangci-lint with depguard boundaries, `go test -race`, govulncheck). Go runs from a script rather than through Turborepo because Go's own build and test caches already make reruns cheap, and wrapping each module in a `package.json` would duplicate them. `pnpm browser:test` runs separately because it needs a browser.
+`pnpm check` runs, in order: ESLint and Prettier; the OpenAPI lint (`pnpm check:api-spec`); TypeScript typecheck; Vitest; the Turbo build and `scripts/build-go.sh`; `scripts/check-boundaries.mjs` (SPDX headers, package licences, MIT modules not requiring the server); the codegen drift check; then `scripts/check-go.sh` for each workspace module (gofmt, `go vet`, golangci-lint with depguard boundaries, `go test -race`, govulncheck). Go runs from a script rather than through Turborepo because Go's own build and test caches already make reruns cheap, and wrapping each module in a `package.json` would duplicate them. `pnpm browser:test` runs separately because it needs a browser.
