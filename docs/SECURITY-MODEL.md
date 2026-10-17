@@ -22,19 +22,27 @@ Wardlock protects static content with secrets that travel in URLs. That is a del
 
 Rotation and revocation take effect on the next request, including for sessions created from the link.
 
+### The server key
+
+`WARDLOCK_SECRET` keys every stored token, code and session hash and signs site session cookies. There is no key rotation yet: changing it ends every owner (dashboard) session and every site session at once, and, from A2.2 and C1.7, invalidates every share link and API token. Treat it as a long-lived secret and change it only to recover from a leak.
+
 ### Cookie tossing and cross-site session abuse
 
-All sites share one parent domain, so a page on `evil.<base>` could set a cookie with `Domain=<base>` that the browser then sends to `docs.<base>`. Wardlock's site cookies use the `__Host-` prefix, which browsers only accept when the cookie is host-only, `Secure` and `Path=/`, so a sibling cannot forge or overwrite them, and Wardlock ignores any session cookie without the prefix. Cookies are signed and bound to one site, so a cookie copied from one site fails on another.
+All sites share one parent domain, so a page on `evil.<base>` could set a cookie with `Domain=<base>` that the browser then sends to `docs.<base>`. Wardlock's site cookies use the `__Host-` prefix, which browsers only accept when the cookie is host-only, `Secure` and `Path=/`, so a sibling cannot forge or overwrite them, and Wardlock ignores any session cookie without the prefix. Cookies are signed and bound to one site, so a cookie copied from one site fails on another (and is cleared there). `/.wardlock/logout` only ends a session for a same-origin request, so a sibling site cannot sign a visitor out of another site. Protected responses send `Vary: Cookie` so no shared cache hands one visitor's page to another. The signature also binds the cookie to one policy and its version, so a policy change or deletion ends its sessions on the next request; the cookie's token is stored only as an HMAC, so revocation (logout, and link revocation from A2.2) is checked against the database on every protected request. The site cookie (`__Host-wardlock_site`) and the dashboard cookie (`__Host-wardlock_session`) have different names, MAC purposes and hashes, so neither ever authenticates the other.
 
 Production deployments should serve sites from a **different registrable domain** from the dashboard (for example sites on `example-sites.net`, dashboard on `wardlock.example.com`). Hosted sites run arbitrary JavaScript; keeping them off the dashboard's registrable domain means they are cross-site to it, so `SameSite` protections apply and no site can toss cookies at the dashboard. The single-domain layout is fine for local development and trusted single-owner instances. The [Public Suffix List](https://publicsuffix.org) is an additional option for large public instances.
 
 ### XSS from hosted sites
 
-Wardlock serves owner-supplied HTML and JavaScript as is; it does not sanitise sites. Containment comes from isolation, not filtering: every site is its own origin; site cookies are `HttpOnly` and host-only; the dashboard and API live on a different host (ideally a different registrable domain) with a strict Content Security Policy and `X-Frame-Options: DENY`; `/.wardlock/` pages are rendered by Wardlock, not by the site, and send `Cache-Control: no-store`. A deploy can never place files under `/.wardlock/`.
+Wardlock serves owner-supplied HTML and JavaScript as is; it does not sanitise sites. Containment comes from isolation, not filtering: every site is its own origin; site cookies are `HttpOnly` and host-only; the dashboard and API live on a different host (ideally a different registrable domain) with a strict Content Security Policy and `X-Frame-Options: DENY`; `/.wardlock/` pages are rendered by Wardlock, not by the site, and send `Cache-Control: no-store`; the login page also sends a `Content-Security-Policy` that allows no scripts and `X-Frame-Options: DENY`. A deploy can never place files under `/.wardlock/`.
 
 ### Preview bots and email scanners
 
 Chat apps, email security scanners and link unfurlers fetch URLs automatically. For ordinary links that is intended (AI-readability is a feature). For use-limited links it would spend uses, so those links show an interstitial on GET and count a use only on POST. Bots do not press buttons.
+
+### Path policies and fallbacks
+
+Sites are public until their owner protects them (SPEC "Policies"), so protection is a deliberate choice per site or path rather than a default an owner might assume. A path policy covers URL paths, not just files: `/docs/` also governs `/docs`, so its clean-URL and redirect answers sit behind it. Files that answer for another path (`404.html`, the SPA `index.html`, a clean URL's `page.html`) are checked against their own path's policy too, so a public path under a protected site never serves protected content as a fallback. A request a protected policy refuses gets the same 401 whether or not the path exists, so policies do not reveal a protected site's file names. Matching is case-sensitive, like file paths; `/Docs/` is not covered by a `/docs/` policy, and the owner must protect the paths their deploy actually uses.
 
 ### Brute force and enumeration
 

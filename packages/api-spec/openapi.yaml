@@ -29,7 +29,8 @@ info:
       token carries one or both scopes. `deploy` covers creating sites and
       deploys, uploading blobs, activation and rollback. `manage` covers
       deleting sites and managing custom domains. Read operations accept
-      either scope. Tokens never manage owners, sessions or other tokens.
+      either scope. `manage` also covers setting and deleting access
+      policies. Tokens never manage owners, sessions or other tokens.
 
     Each operation lists the credentials it accepts; any one of them is
     enough. Operations with no security take no credentials and are
@@ -61,11 +62,11 @@ info:
 
     | Status | Codes |
     | ------ | ----- |
-    | 400 | `invalid_request` (malformed JSON, missing or invalid field), `invalid_code`, `invalid_site_name`, `reserved_site_name`, `invalid_path`, `invalid_manifest`, `invalid_hostname`, `hash_mismatch`, `unexpected_blob` |
+    | 400 | `invalid_request` (malformed JSON, missing or invalid field), `invalid_code`, `invalid_site_name`, `reserved_site_name`, `invalid_path`, `invalid_manifest`, `invalid_hostname`, `hash_mismatch`, `unexpected_blob`, `invalid_policy_path`, `invalid_policy` |
     | 401 | `unauthenticated`: no credential, or an expired, revoked or unknown one |
     | 403 | `forbidden`: the credential lacks the scope, or a cookie request came from another origin |
     | 404 | `not_found` |
-    | 409 | `site_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy` |
+    | 409 | `site_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `default_policy` |
     | 410 | `login_expired` |
     | 413 | `limit_exceeded` |
     | 429 | `rate_limited`, `slow_down`; `Retry-After` gives the seconds to wait |
@@ -90,6 +91,8 @@ tags:
     description: Deploys, blob uploads, activation and rollback (C1.2).
   - name: domains
     description: Custom domains (C1.9).
+  - name: policies
+    description: Access policies (A2.1).
 security: []
 paths:
   /api/v0/health:
@@ -1242,6 +1245,134 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v0/sites/{site}/policies:
+    parameters:
+      - $ref: '#/components/parameters/SiteName'
+    get:
+      operationId: listPolicies
+      summary: List a site's access policies.
+      description: >-
+        Ordered by path, so the site default (`/`) comes first. Every site
+        has a default; until its owner sets one it is public, so protection
+        is opt-in per site or path.
+      tags: [policies]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of policies.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyPage'
+              example:
+                items:
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40
+                    path: /
+                    visibility: protected
+                    methods: [links]
+                    version: 3
+                    createdAt: 1767225600000
+                    updatedAt: 1767312000000
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41
+                    path: /assets/
+                    visibility: public
+                    methods: []
+                    version: 1
+                    createdAt: 1767225600000
+                    updatedAt: 1767225600000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: setPolicy
+      summary: Set the default or a path policy.
+      description: >-
+        Creates the policy for `path` or replaces its settings. The policy
+        for a request is the one with the longest path matching it, falling
+        back to the default (`/`); policies do not stack. A change takes
+        effect on the next request and increments `version`, which ends
+        every visitor session created under the old version. Setting the
+        same settings again changes nothing. A path that is not `/` or a
+        clean directory prefix such as `/docs/` answers
+        `400 invalid_policy_path`; methods on a public policy, or none on a
+        protected one, answer `400 invalid_policy`.
+      tags: [policies]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPolicyRequest'
+            example:
+              path: /docs/
+              visibility: protected
+              methods: [links]
+      responses:
+        '200':
+          description: The stored policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+              examples:
+                policy:
+                  $ref: '#/components/examples/Policy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/sites/{site}/policies/{policyId}:
+    parameters:
+      - $ref: '#/components/parameters/SiteName'
+      - $ref: '#/components/parameters/PolicyId'
+    delete:
+      operationId: deletePolicy
+      summary: Delete a path policy.
+      description: >-
+        Its paths fall back to the next longest matching policy on the next
+        request, and visitor sessions created under it end. The site
+        default cannot be deleted (`409 default_policy`); set it instead.
+      tags: [policies]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   securitySchemes:
     sessionCookie:
@@ -1312,6 +1443,14 @@ components:
       schema:
         $ref: '#/components/schemas/Id'
       example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20
+    PolicyId:
+      name: policyId
+      in: path
+      required: true
+      description: The policy's ID.
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41
     DomainHostname:
       name: hostname
       in: path
@@ -1497,6 +1636,16 @@ components:
           totalSize: 1532918
           message: Fix typo on the install page
           spa: false
+    Policy:
+      summary: A protected path policy.
+      value:
+        id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e42
+        path: /docs/
+        visibility: protected
+        methods: [links]
+        version: 1
+        createdAt: 1767225600000
+        updatedAt: 1767225600000
     PendingDomain:
       summary: A domain waiting for its DNS record.
       value:
@@ -1618,8 +1767,8 @@ components:
       type: string
       description: >-
         An API token scope. `deploy` creates sites and deploys, uploads,
-        activates and rolls back; `manage` deletes sites and manages custom
-        domains. Both read.
+        activates and rolls back; `manage` deletes sites, manages custom
+        domains and sets access policies. Both read.
       enum: [deploy, manage]
     Scopes:
       type: array
@@ -2154,3 +2303,85 @@ components:
           description: The hostname as typed; the server normalises it.
           minLength: 1
           maxLength: 253
+
+    PolicyVisibility:
+      type: string
+      description: >-
+        `public`: anyone may read. `protected`: a visitor must satisfy one of
+        the policy's methods.
+      enum: [public, protected]
+    PolicyMethod:
+      type: string
+      description: >-
+        A way for a visitor to satisfy a protected policy. Methods are
+        alternatives, not layers. `links`: share links (A2.2). Password,
+        email code and OAuth join with A2.3, A2.4 and A2.5.
+      enum: [links]
+    PolicyPath:
+      type: string
+      description: >-
+        `/` for the site default, or a directory prefix starting and ending
+        with `/`, such as `/docs/`. A prefix also covers the directory's own
+        path without its slash (`/docs`). Matched case-sensitively against
+        the decoded request path; `/.wardlock/` is never subject to
+        policies.
+      minLength: 1
+      maxLength: 1024
+      examples: [/docs/]
+    Policy:
+      type: object
+      additionalProperties: false
+      required: [id, path, visibility, methods, version, createdAt, updatedAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        path:
+          $ref: '#/components/schemas/PolicyPath'
+        visibility:
+          $ref: '#/components/schemas/PolicyVisibility'
+        methods:
+          type: array
+          description: Enabled methods; empty exactly when the policy is public.
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PolicyMethod'
+        version:
+          type: integer
+          format: int32
+          minimum: 1
+          description: >-
+            Starts at 1 and increases with every change. Visitor sessions are
+            bound to the version they were created under.
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        updatedAt:
+          $ref: '#/components/schemas/Timestamp'
+    PolicyPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Policy'
+        nextCursor:
+          $ref: '#/components/schemas/Cursor'
+    SetPolicyRequest:
+      type: object
+      additionalProperties: false
+      required: [path, visibility]
+      properties:
+        path:
+          $ref: '#/components/schemas/PolicyPath'
+        visibility:
+          $ref: '#/components/schemas/PolicyVisibility'
+        methods:
+          type: array
+          description: >-
+            Methods to enable on a protected policy; omitted means `[links]`
+            (share links are on by default). Must be empty or omitted for a
+            public policy.
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PolicyMethod'

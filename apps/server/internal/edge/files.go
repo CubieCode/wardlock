@@ -123,15 +123,15 @@ func qvalue(header, coding string) float64 {
 // cacheControl is the Cache-Control for deploy content. Every file
 // revalidates (ETag and Last-Modified make that cheap); protected sites are
 // cached privately.
-func cacheControl(d Decision) string {
-	if d.Protected {
+func cacheControl(protected bool) string {
+	if protected {
 		return "private, max-age=0, must-revalidate"
 	}
 	return "public, max-age=0, must-revalidate"
 }
 
 // serveFile writes f (or a precompressed sibling) with status.
-func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f ServedFile, status int, d Decision) {
+func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f ServedFile, status int, protected bool) {
 	send, coding, vary := negotiate(s, f, r.Header.Get("Accept-Encoding"))
 	blob, err := e.blobs.Open(r.Context(), send.SHA256)
 	if err != nil {
@@ -143,7 +143,7 @@ func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f Se
 	defer func() { _ = blob.Close() }()
 
 	h := w.Header()
-	h.Set("Cache-Control", cacheControl(d))
+	h.Set("Cache-Control", cacheControl(protected))
 	if vary {
 		h.Add("Vary", "Accept-Encoding")
 	}

@@ -607,6 +607,67 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/sites/{site}/policies': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    /**
+     * List a site's access policies.
+     * @description Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is public, so protection is opt-in per site or path.
+     */
+    get: operations['listPolicies'];
+    /**
+     * Set the default or a path policy.
+     * @description Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+     */
+    put: operations['setPolicy'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/policies/{policyId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The policy's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41
+         */
+        policyId: components['parameters']['PolicyId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete a path policy.
+     * @description Its paths fall back to the next longest matching policy on the next request, and visitor sessions created under it end. The site default cannot be deleted (`409 default_policy`); set it instead.
+     */
+    delete: operations['deletePolicy'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -660,7 +721,7 @@ export interface components {
      */
     Email: string;
     /**
-     * @description An API token scope. `deploy` creates sites and deploys, uploads, activates and rolls back; `manage` deletes sites and manages custom domains. Both read.
+     * @description An API token scope. `deploy` creates sites and deploys, uploads, activates and rolls back; `manage` deletes sites, manages custom domains and sets access policies. Both read.
      * @enum {string}
      */
     Scope: 'deploy' | 'manage';
@@ -940,6 +1001,45 @@ export interface components {
       /** @description The hostname as typed; the server normalises it. */
       hostname: string;
     };
+    /**
+     * @description `public`: anyone may read. `protected`: a visitor must satisfy one of the policy's methods.
+     * @enum {string}
+     */
+    PolicyVisibility: 'public' | 'protected';
+    /**
+     * @description A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). Password, email code and OAuth join with A2.3, A2.4 and A2.5.
+     * @enum {string}
+     */
+    PolicyMethod: 'links';
+    /**
+     * @description `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
+     * @example /docs/
+     */
+    PolicyPath: string;
+    Policy: {
+      id: components['schemas']['Id'];
+      path: components['schemas']['PolicyPath'];
+      visibility: components['schemas']['PolicyVisibility'];
+      /** @description Enabled methods; empty exactly when the policy is public. */
+      methods: components['schemas']['PolicyMethod'][];
+      /**
+       * Format: int32
+       * @description Starts at 1 and increases with every change. Visitor sessions are bound to the version they were created under.
+       */
+      version: number;
+      createdAt: components['schemas']['Timestamp'];
+      updatedAt: components['schemas']['Timestamp'];
+    };
+    PolicyPage: {
+      items: components['schemas']['Policy'][];
+      nextCursor?: components['schemas']['Cursor'];
+    };
+    SetPolicyRequest: {
+      path: components['schemas']['PolicyPath'];
+      visibility: components['schemas']['PolicyVisibility'];
+      /** @description Methods to enable on a protected policy; omitted means `[links]` (share links are on by default). Must be empty or omitted for a public policy. */
+      methods?: components['schemas']['PolicyMethod'][];
+    };
   };
   responses: {
     /** @description The request is malformed or a field is invalid. */
@@ -1113,6 +1213,11 @@ export interface components {
      * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20
      */
     TokenId: components['schemas']['Id'];
+    /**
+     * @description The policy's ID.
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41
+     */
+    PolicyId: components['schemas']['Id'];
     /**
      * @description The custom domain, in its normalised form.
      * @example docs.example.com
@@ -2371,6 +2476,152 @@ export interface operations {
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
       429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  listPolicies: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+      };
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One page of policies. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40",
+           *           "path": "/",
+           *           "visibility": "protected",
+           *           "methods": [
+           *             "links"
+           *           ],
+           *           "version": 3,
+           *           "createdAt": 1767225600000,
+           *           "updatedAt": 1767312000000
+           *         },
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41",
+           *           "path": "/assets/",
+           *           "visibility": "public",
+           *           "methods": [],
+           *           "version": 1,
+           *           "createdAt": 1767225600000,
+           *           "updatedAt": 1767225600000
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['PolicyPage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  setPolicy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "path": "/docs/",
+         *       "visibility": "protected",
+         *       "methods": [
+         *         "links"
+         *       ]
+         *     }
+         */
+        'application/json': components['schemas']['SetPolicyRequest'];
+      };
+    };
+    responses: {
+      /** @description The stored policy. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Policy'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  deletePolicy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The policy's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41
+         */
+        policyId: components['parameters']['PolicyId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
       default: components['responses']['Error'];
     };
   };

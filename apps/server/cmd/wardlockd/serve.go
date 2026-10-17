@@ -19,6 +19,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 
+	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/api"
 	"wardlock.nz/server/internal/dashboard"
 	"wardlock.nz/server/internal/deploys"
@@ -83,9 +84,24 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 
 	blobs := deploys.NewFSBlobStore(cfg.BlobDir)
 	notifier := deploys.NewLocalNotifier()
+	accessSvc, err := access.New(access.Config{
+		Sites:    db.Sites(),
+		Policies: db.Policies(),
+		Sessions: db.Sessions(),
+		Notifier: notifier,
+		Secret:   cfg.Secret,
+		Now:      time.Now,
+		Log:      log,
+	})
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
+	defer accessSvc.Close()
 	apiServer := &api.Server{
 		Version: platform.Version,
 		Owners:  ownerSvc,
+		Access:  accessSvc,
 		Logger:  log,
 		Sites: sites.NewService(sites.Config{
 			Sites:         db.Sites(),
@@ -113,7 +129,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	dash.Handle("/api/", apiServer.Handler())
 	dash.Handle("/", dashboard.Handler(cfg.DevDashboardURL))
 
-	handler := edge.New(edge.Config{
+	handler, err := edge.New(edge.Config{
 		DashboardHost: cfg.DashboardHost,
 		Dashboard:     dash,
 		Health:        platform.Healthz(),
@@ -125,8 +141,13 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		},
 		Blobs:       blobs,
 		Invalidator: notifier,
+		Access:      accessSvc,
 		Log:         log,
 	})
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
 	defer handler.Close()
 	// Every request first has its client address settled: X-Forwarded-*
 	// is believed only from a trusted proxy and removed otherwise.

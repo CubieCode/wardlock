@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/sites"
@@ -39,6 +40,8 @@ type Server struct {
 	// SiteURL returns the URL of the site at a base-domain hostname;
 	// https://<hostname>/ when nil.
 	SiteURL func(hostname string) string
+	// Access backs the policy operations (A2.1).
+	Access *access.Service
 	// Owners authenticates dashboard sessions and serves the owner
 	// operations (C1.1).
 	Owners *owners.Service

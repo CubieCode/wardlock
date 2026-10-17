@@ -8,6 +8,8 @@ import (
 	"errors"
 	"io"
 	"time"
+
+	"wardlock.nz/server/internal/access"
 )
 
 // ErrNoSite is returned by a SiteSource when no site is served at a host.
@@ -55,20 +57,11 @@ type Invalidator interface {
 	Subscribe(fn func(siteID string)) (unsubscribe func())
 }
 
-// Decision is the access hook's answer for one request.
-type Decision struct {
-	Allow bool
-	// Protected marks a site that is not public: responses are cached
-	// privately and carry the protected-site headers.
-	Protected bool
-}
-
-// AccessHook decides whether a request for path on site may be served.
-// Policies arrive in A2.1; until then every site is public (AllowAll).
-type AccessHook func(ctx context.Context, site ServedSite, path string) Decision
-
-// AllowAll is the access hook used until policies exist: every site is
-// public.
-func AllowAll(context.Context, ServedSite, string) Decision {
-	return Decision{Allow: true}
+// Access decides who may read a site. *access.Service satisfies it; nil in
+// Config means every site is public.
+type Access interface {
+	// Decide applies the policy governing r.Path on r.SiteID.
+	Decide(ctx context.Context, r access.Request) (access.Decision, error)
+	// EndSession revokes the site session a cookie value names, if any.
+	EndSession(ctx context.Context, siteID, cookie string) error
 }

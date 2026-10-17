@@ -1,0 +1,183 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 CubieCode -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!--
+  The site login page: /.wardlock/login, and every protected page a browser
+  may not see yet (answered 401 at the same URL). No scripts: the strict
+  Content-Security-Policy allows inline styles and same-origin form posts
+  only. Colours mirror packages/ui/styles/tokens.css.
+
+  Each sign-in method is one <section class="method"> inside .methods; CSS
+  draws an "or" divider between consecutive methods, so A2.3 (password),
+  A2.4 (email code) and A2.5 (OAuth) each add a field to edge.loginData and
+  one guarded section, with forms posting to /.wardlock/login. The notice
+  under the methods is written for a links-only policy; the first item to
+  add a method makes it say only "Ask the site's owner for access" whenever
+  any method is shown, and the else branch covers no method at all.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Private page · {{.Site}}</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --canvas: light-dark(#f6f6f3, #12171d);
+        --surface: light-dark(#ffffff, #1a2028);
+        --surface-muted: light-dark(#eeeeea, #222a33);
+        --text: light-dark(#1b2430, #e8ebee);
+        --muted: light-dark(#4f5a66, #a7b0ba);
+        --border: light-dark(#d9dad4, #2e3742);
+        --accent: light-dark(#a8741f, #d7a756);
+        --warning: light-dark(#7d5200, #e8c06d);
+        --warning-surface: light-dark(#fbf1dc, #2a2213);
+        --warning-border: light-dark(#e2c27c, #5e4a1d);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5rem;
+        padding: 1.5rem 1rem;
+        background: var(--canvas);
+        color: var(--text);
+        font:
+          1rem/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      main {
+        width: 100%;
+        max-width: 26rem;
+        padding: 2rem;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+      .site {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 1.5rem;
+        font-size: 0.875rem;
+        color: var(--muted);
+      }
+      .host {
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+      }
+      .status {
+        flex: none;
+        padding: 0.125rem 0.5rem;
+        border: 1px solid var(--warning-border);
+        border-radius: 999px;
+        background: var(--warning-surface);
+        color: var(--warning);
+        font-weight: 500;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.5rem;
+        line-height: 1.25;
+        font-weight: 650;
+      }
+      p {
+        margin: 0;
+      }
+      .lead {
+        color: var(--muted);
+      }
+      .methods {
+        margin-top: 1.5rem;
+      }
+      .method {
+        padding: 1rem;
+        border-radius: 6px;
+        background: var(--surface-muted);
+      }
+      .method h2 {
+        margin: 0 0 0.25rem;
+        font-size: 1rem;
+        font-weight: 650;
+      }
+      .method + .method::before {
+        content: 'or';
+        display: block;
+        margin: -1rem -1rem 1rem;
+        padding: 0.75rem 0 0;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 0.875rem;
+        text-align: center;
+      }
+      .method + .method {
+        margin-top: 0.75rem;
+      }
+      .notice {
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      footer {
+        font-size: 0.875rem;
+        color: var(--muted);
+      }
+      footer span {
+        color: var(--accent);
+      }
+      @media (max-width: 30rem) {
+        body {
+          justify-content: flex-start;
+          padding-top: 3rem;
+        }
+        main {
+          padding: 1.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="site">
+        <span class="host">{{.Site}}</span>
+        <span class="status">Protected</span>
+      </p>
+      <h1>This page is private</h1>
+      <p class="lead">Only people the site's owner has let in can open it.</p>
+      {{if .Links}}
+      <div class="methods">
+        <section class="method" aria-labelledby="method-links">
+          <h2 id="method-links">Share link</h2>
+          <p>
+            If you were sent a link to this site, open it: it lets you in on
+            this device.
+          </p>
+        </section>
+      </div>
+      <p class="notice">
+        No other way to sign in is available. Ask the site's owner for a share
+        link.
+      </p>
+      {{else}}
+      <p class="notice">
+        No way to sign in is available for this page. Ask the site's owner for
+        access.
+      </p>
+      {{end}}
+    </main>
+    <footer>Protected by <span>Wardlock</span></footer>
+  </body>
+</html>

@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/edge"
 )
 
@@ -189,6 +190,15 @@ func (n *fakeNotifier) Notify(siteID string) {
 	}
 }
 
+// publicAccess lets everything in, as a public default policy does.
+type publicAccess struct{}
+
+func (publicAccess) Decide(context.Context, access.Request) (access.Decision, error) {
+	return access.Decision{Outcome: access.Allow, Via: access.ViaPublic}, nil
+}
+
+func (publicAccess) EndSession(context.Context, string, string) error { return nil }
+
 type harness struct {
 	edge     *edge.Edge
 	fx       fixtures
@@ -202,7 +212,7 @@ type harness struct {
 //   - spa (fixtures/sites/spa, SPA deploy) and plain (the same files without
 //     SPA, so no 404.html);
 //   - empty, a site with nothing published.
-func newHarness(t testing.TB, access edge.AccessHook) *harness {
+func newHarness(t testing.TB, access edge.Access) *harness {
 	t.Helper()
 	fx := loadFixtures(t, "basic", "spa")
 	basic := append(fx.files["basic"],
@@ -224,7 +234,10 @@ func newHarness(t testing.TB, access edge.AccessHook) *harness {
 	src.set(edge.ServedSite{ID: "site-plain", Name: "plain", ActiveDeployID: "dep-plain-1", ActivatedAt: activated}, fx.files["spa"])
 	src.set(edge.ServedSite{ID: "site-empty", Name: "empty"}, nil)
 	n := &fakeNotifier{}
-	e := edge.New(edge.Config{
+	if access == nil {
+		access = publicAccess{}
+	}
+	e, err := edge.New(edge.Config{
 		DashboardHost: base,
 		Dashboard:     text("dashboard"),
 		Health:        text("healthy"),
@@ -233,6 +246,9 @@ func newHarness(t testing.TB, access edge.AccessHook) *harness {
 		Invalidator:   n,
 		Access:        access,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(e.Close)
 	return &harness{edge: e, fx: fx, src: src, notifier: n}
 }
@@ -499,62 +515,6 @@ func TestConditionalAndRange(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestAccessHook(t *testing.T) {
-	var gotPath string
-	var gotSite edge.ServedSite
-	hook := func(_ context.Context, site edge.ServedSite, p string) edge.Decision {
-		gotSite, gotPath = site, p
-		return edge.Decision{Allow: !strings.HasPrefix(p, "/about/"), Protected: true}
-	}
-	h := newHarness(t, hook)
-	tests := []struct {
-		name, target, wantPath string
-		status                 int
-		headers                map[string]string
-	}{
-		{"allowed on a protected site", "/assets/../guide", "/guide", 200, map[string]string{
-			"Cache-Control": "private, max-age=0, must-revalidate", "X-Robots-Tag": "noindex", "Referrer-Policy": "no-referrer",
-		}},
-		{"404.html on a protected site is private", "/missing", "/missing", 404, map[string]string{
-			"Cache-Control": "private, max-age=0, must-revalidate", "X-Robots-Tag": "noindex",
-		}},
-		{"denied", "/about/", "/about/", 404, map[string]string{
-			"Cache-Control": "no-store", "X-Robots-Tag": "noindex", "Referrer-Policy": "no-referrer",
-		}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rec := h.do(http.MethodGet, "basic."+base, tt.target, nil)
-			if rec.Code != tt.status {
-				t.Fatalf("status = %d, want %d", rec.Code, tt.status)
-			}
-			if gotPath != tt.wantPath || gotSite.ID != "site-basic" {
-				t.Errorf("hook saw %q on %q, want %q on site-basic", gotPath, gotSite.ID, tt.wantPath)
-			}
-			if tt.status == 404 && strings.Contains(rec.Body.String(), "About this report") {
-				t.Errorf("denied request served content")
-			}
-			for k, want := range tt.headers {
-				if got := rec.Header().Get(k); got != want {
-					t.Errorf("%s = %q, want %q", k, got, want)
-				}
-			}
-		})
-	}
-
-	gotPath = ""
-	h.do(http.MethodGet, "basic."+base, "/.wardlock/health", nil)
-	if gotPath != "" {
-		t.Errorf("reserved path went through the access hook (%q)", gotPath)
-	}
-}
-
-func TestDefaultAccessAllowsEverything(t *testing.T) {
-	if d := edge.AllowAll(t.Context(), edge.ServedSite{}, "/"); !d.Allow || d.Protected {
-		t.Fatalf("AllowAll = %+v", d)
 	}
 }
 

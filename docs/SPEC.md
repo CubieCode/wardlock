@@ -1,6 +1,6 @@
 # Product specification
 
-This is the intended v1 behaviour. Built so far: F0.1 (the server serves a dashboard placeholder, `/healthz`, `/.wardlock/health` and `GET /api/v0/health`; the CLI has `version` and `help`), C1.1 (owner bootstrap, email-code sign-in, invitations and dashboard sessions in the API and `wardlockd admin create`; the dashboard screens for them are D3.x), C1.2 (the deploy API: sites, manifests, blob upload, activation, rollback and teardown) and C1.3 (the edge serves each site's active deploy; see Serving). Each section names the roadmap item that delivers it. Where a rule is a proposal awaiting confirmation, it says so; items must not silently change these rules.
+This is the intended v1 behaviour. Built so far: F0.1 (the server serves a dashboard placeholder, `/healthz`, `/.wardlock/health` and `GET /api/v0/health`; the CLI has `version` and `help`), C1.1 (owner bootstrap, email-code sign-in, invitations and dashboard sessions in the API and `wardlockd admin create`; the dashboard screens for them are D3.x), C1.2 (the deploy API: sites, manifests, blob upload, activation, rollback and teardown), C1.3 (the edge serves each site's active deploy; see Serving) and A2.1 (policies, their enforcement at the edge and the policy API; see Policies). Sites are public unless their owner protects them; no sign-in method exists yet (share links arrive with A2.2), so a protected path cannot be opened until then. Each section names the roadmap item that delivers it. Where a rule is a proposal awaiting confirmation, it says so; items must not silently change these rules.
 
 ## Terms
 
@@ -68,12 +68,14 @@ The goal is that adding one DNS record is all an owner has to do. The record nam
 
 ## Policies (A2.1)
 
-- Each site has a **default policy**. Owners may add **path policies** for path prefixes (`/docs/`, `/internal/`).
-- The policy for a request is the one with the **longest matching prefix**, falling back to the site default. Policies do not stack: a public `/assets/` under a protected site is public.
+- Each site has a **default policy** (path `/`), which cannot be deleted. Owners may add **path policies** for directory prefixes (`/docs/`, `/internal/`): they start and end with `/`, have no empty, `.` or `..` segments, and can never cover `/.wardlock/`.
+- The policy for a request is the one with the **longest matching prefix**, falling back to the site default. Policies do not stack: a public `/assets/` under a protected site is public. A prefix also governs its directory's path without the slash (`/docs/` governs `/docs`), and matching is case-sensitive on the decoded, dot-resolved request path. This errs on the strict side: with a protected default and a public `/docs/`, the clean URL `/docs` (which may answer with `docs.html`) is allowed by `/docs/` but its file is checked against the default, so a visitor without a session gets a plain 404 there, while `/docs/` itself is public. Conversely, with a protected `/docs/` under a public default, `/docs` asks for sign-in even when it would answer with the public `docs.html`, which stays reachable at `/docs.html`. A file that answers a request from another path (`404.html`, the SPA `index.html`, a clean URL's `page.html`) must also be allowed by its own path's policy, or the request gets a plain 404 instead of its content.
 - A policy is either **Public** or **Protected**. A protected policy enables one or more **methods**: share links, password, email code, OAuth. A visitor is allowed if they satisfy **any** enabled method (methods are alternatives, not layers).
 - Share links are enabled on every protected policy by default and can be switched off per policy.
-- A new site defaults to Protected with share links only. Proposal awaiting confirmation: whether new sites default to Public instead.
-- Changing a policy takes effect on the next request; existing site sessions are re-checked against the current policy version.
+- **Decision (A2.1):** a new site's default policy is **Public** with no methods, and so is the default of a site created before A2.1 (it is stored on first use). Owners opt into protection per site or per path. The reason: deploys keep working as before, and protecting a site is only useful once a way in exists (share links from A2.2, then password, email code and OAuth), so protection is opt-in rather than something every new site starts behind.
+- Each policy has a **version**, starting at 1 and increased by every change to it (setting identical settings changes nothing). Changing a policy takes effect on the next request; a site session is bound to the policy and version it was created under, so a change ends every session of that policy, and deleting a path policy ends its sessions.
+- A request a protected policy does not allow gets `401`: browsers (requests that accept `text/html`) see the login page at the same URL, other clients a short plain-text body with `WWW-Authenticate: Bearer`. Neither says whether the path exists.
+- Owners read and set policies through the API (`listPolicies`, `setPolicy`, `deletePolicy`); `wardlock policy set` follows once the CLI can authenticate (C1.7).
 - Owners signed in to the dashboard are not automatically signed in to sites (they are on another domain). The dashboard's "Open site" action creates a short-lived (10 minute) share link for the owner.
 
 ## Share links (A2.2)
@@ -110,7 +112,8 @@ A share link is `https://<site host><path>?t=<token>`.
 ## Site sessions
 
 - Set by any successful method. Host-only `__Host-` cookie, `Secure`, `HttpOnly`, `SameSite=Lax`, signed and bound to the site, the method, the policy version and (for links) the link.
-- Default lifetime 7 days, capped by the link's expiry. `/.wardlock/logout` ends it.
+- Default lifetime 7 days, capped by the link's expiry. A `POST` to `/.wardlock/logout` ends it and clears the cookie; it must come from a page on the same host (`Origin` naming the host, or without `Origin`, `Sec-Fetch-Site: same-origin`), so another site, a sibling site included, cannot sign visitors out (`403` otherwise).
+- The cookie is `__Host-wardlock_site`, a value signed with an HMAC of the server key that names the site, the policy, its version and the expiry, plus a 256-bit session token whose HMAC is the only copy stored. A session satisfies only the policy it was created under, and only while that policy enables the session's method. A tampered, forged, expired, revoked or stale cookie, or one from another site, is ignored and cleared. One cookie per site host: signing in under another policy replaces it.
 
 ## AI-readable renditions (A2.6)
 
@@ -121,11 +124,11 @@ A share link is `https://<site host><path>?t=<token>`.
 
 ## Reserved path
 
-`/.wardlock/` (matched in any letter case, as deploy validation rejects it in any case) on every published site is served by Wardlock and can never be overridden by a deploy: `login`, `callback`, `logout`, `view` (the use-limited interstitial), `health` and `tls-ask` (C1.9: answered only in behind-a-proxy mode and only to requests from a trusted-proxy address, on any `Host`; 404 otherwise). F0.1 implements `health` only; since C1.3 it answers only on sites with an active deploy (a host with nothing published is an unknown host).
+`/.wardlock/` (matched in any letter case, as deploy validation rejects it in any case) on every published site is served by Wardlock and can never be overridden by a deploy: `login`, `callback`, `logout`, `view` (the use-limited interstitial), `health` and `tls-ask` (C1.9: answered only in behind-a-proxy mode and only to requests from a trusted-proxy address, on any `Host`; 404 otherwise). F0.1 implements `health`; since C1.3 it answers only on sites with an active deploy (a host with nothing published is an unknown host). A2.1 adds `login` (GET, the login page for the site default; it lists sign-in methods as A2.3 to A2.5 add them) and `logout` (POST). Policies never apply under `/.wardlock/`.
 
 ## Protected-site response headers
 
-`X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`, `Cache-Control: private` (and `no-store` on `/.wardlock/` pages). Wardlock never blocks AI fetchers in `robots.txt`; access is the policy's job.
+`X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`, `Cache-Control: private` and `Vary: Cookie` on every response a protected policy governs, including its 404s and redirects; the login page and 401 send `no-store` and also `Vary: Accept`, since browsers get the page and other clients the bare 401. Every `/.wardlock/` page sends all three headers with `Cache-Control: no-store` whatever the policy, and the login page also sends a restrictive `Content-Security-Policy` and `X-Frame-Options: DENY`. Wardlock never blocks AI fetchers in `robots.txt`; access is the policy's job.
 
 ## CLI (C1.5, C1.7, C1.9)
 

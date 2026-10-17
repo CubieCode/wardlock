@@ -36,6 +36,15 @@ WHERE owner_id = sqlc.arg(owner_id)
 ORDER BY last_seen_at DESC, id DESC
 LIMIT sqlc.arg(row_limit);
 
+-- Instance-wide: the edge verifies visitor cookies with it.
+-- name: GetSiteSessionByTokenHash :one
+SELECT id, site_id, token_hash, method, share_link_id, policy_id, policy_version, subject, created_at, expires_at, revoked_at
+FROM site_sessions WHERE token_hash = sqlc.arg(token_hash);
+
+-- name: RevokeSiteSession :execrows
+UPDATE site_sessions SET revoked_at = COALESCE(revoked_at, sqlc.arg(revoked_at))
+WHERE id = sqlc.arg(id) AND site_id = sqlc.arg(site_id);
+
 -- SPDX-FileCopyrightText: 2026 CubieCode
 -- SPDX-License-Identifier: AGPL-3.0-only
 -- (Licence header last: sqlc copies comments above a query into Go docs.)

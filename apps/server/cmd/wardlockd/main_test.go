@@ -6,17 +6,21 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/platform"
 )
@@ -109,9 +113,23 @@ func TestServe(t *testing.T) {
 		t.Errorf("/api/v0/sites = %d %q", code, body)
 	}
 
+	// A site session cookie never authenticates the dashboard API.
+	req, _ := http.NewRequest(http.MethodGet, "http://"+addr+"/api/v0/me", nil)
+	req.Host = "wardlock.localhost"
+	req.AddCookie(&http.Cookie{Name: access.SessionCookieName, Value: "djE.c2lnbmF0dXJl"})
+	if res, err := http.DefaultClient.Do(req); err != nil || res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("/api/v0/me with a site cookie = %v %v", res, err)
+	} else {
+		_ = res.Body.Close()
+	}
+
 	if !strings.Contains(logs.String(), "setup_url") || !strings.Contains(logs.String(), "/setup?code=") {
 		t.Errorf("serve with no owner did not log a setup URL:\n%s", logs)
 	}
+
+	// Production wiring enforces policies: sign in through setup, publish a
+	// site through the API, see it served publicly, protect it, see 401.
+	servePolicies(t, addr, logs.String())
 
 	cancel()
 	select {
@@ -217,4 +235,85 @@ func TestAdminCreate(t *testing.T) {
 	if err := run(t.Context(), []string{"admin", "create", "--email", "not an address"}, getenv, io.Discard, io.Discard); err == nil {
 		t.Error("admin create accepted an invalid address")
 	}
+}
+
+// servePolicies drives the real server: setup, a deploy through the API, and
+// a policy that protects the site.
+func servePolicies(t *testing.T, addr, logs string) {
+	t.Helper()
+	m := regexp.MustCompile(`/setup\?code=([A-Za-z0-9_-]+)`).FindStringSubmatch(logs)
+	if m == nil {
+		t.Fatalf("no setup code in the log:\n%s", logs)
+	}
+	_, port, _ := net.SplitHostPort(addr)
+	origin := "http://wardlock.localhost:" + port
+	var session *http.Cookie
+	call := func(method, host, path string, body any, wantStatus int) []byte {
+		t.Helper()
+		var r io.Reader
+		contentType := "application/json"
+		switch b := body.(type) {
+		case nil:
+		case string:
+			r, contentType = strings.NewReader(b), "application/octet-stream"
+		default:
+			raw, _ := json.Marshal(b)
+			r = bytes.NewReader(raw)
+		}
+		req, _ := http.NewRequest(method, "http://"+addr+path, r)
+		req.Host = host + ":" + port // as a browser sends it, matching Origin
+		if body != nil {
+			req.Header.Set("Content-Type", contentType)
+		}
+		if host == "wardlock.localhost" {
+			req.Header.Set("Origin", origin)
+			if session != nil {
+				req.AddCookie(session)
+			}
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = res.Body.Close() }()
+		out, _ := io.ReadAll(res.Body)
+		if res.StatusCode != wantStatus {
+			t.Fatalf("%s %s%s = %d %s, want %d", method, host, path, res.StatusCode, out, wantStatus)
+		}
+		for _, c := range res.Cookies() {
+			if c.Name == "__Host-wardlock_session" {
+				session = c
+			}
+		}
+		return out
+	}
+
+	call(http.MethodPost, "wardlock.localhost", "/api/v0/setup", map[string]string{"code": m[1], "email": "owner@example.test"}, http.StatusCreated)
+	call(http.MethodPost, "wardlock.localhost", "/api/v0/sites", map[string]string{"name": "docs"}, http.StatusCreated)
+	page := "<p>Served by the real server</p>"
+	sum := sha256.Sum256([]byte(page))
+	hash := hex.EncodeToString(sum[:])
+	var created struct {
+		Deploy struct {
+			ID string `json:"id"`
+		} `json:"deploy"`
+	}
+	raw := call(http.MethodPost, "wardlock.localhost", "/api/v0/sites/docs/deploys", map[string]any{
+		"files": []map[string]any{{"path": "index.html", "sha256": hash, "size": len(page)}},
+	}, http.StatusCreated)
+	if err := json.Unmarshal(raw, &created); err != nil {
+		t.Fatal(err)
+	}
+	call(http.MethodPut, "wardlock.localhost", "/api/v0/sites/docs/deploys/"+created.Deploy.ID+"/blobs/"+hash, page, http.StatusNoContent)
+	call(http.MethodPost, "wardlock.localhost", "/api/v0/sites/docs/deploys/"+created.Deploy.ID+"/activate", nil, http.StatusOK)
+
+	// No policy set: public.
+	if body := call(http.MethodGet, "docs.wardlock.localhost", "/", nil, http.StatusOK); !strings.Contains(string(body), "real server") {
+		t.Fatalf("public site body %q", body)
+	}
+	call(http.MethodPut, "wardlock.localhost", "/api/v0/sites/docs/policies", map[string]string{"path": "/", "visibility": "protected"}, http.StatusOK)
+	if body := call(http.MethodGet, "docs.wardlock.localhost", "/", nil, http.StatusUnauthorized); strings.Contains(string(body), "real server") {
+		t.Fatalf("protected site served its content: %q", body)
+	}
+	call(http.MethodGet, "docs.wardlock.localhost", "/.wardlock/health", nil, http.StatusOK)
 }

@@ -13,15 +13,17 @@ import (
 	"testing"
 	"time"
 
+	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/edge"
 	"wardlock.nz/server/internal/store"
 	"wardlock.nz/server/internal/store/storetest"
 )
 
-// TestEdgeServesStoreDeploys wires the edge to the store, BlobStore and
-// Notifier as serve does, then deploys, activates and rolls back through the
-// deploys service.
+// TestEdgeServesStoreDeploys wires the edge to the store, BlobStore,
+// Notifier and access service as serve does, then deploys, activates and
+// rolls back through the deploys service. The site never has a policy row
+// written for it, as for sites deployed before A2.1: it serves publicly.
 func TestEdgeServesStoreDeploys(t *testing.T) {
 	ctx := t.Context()
 	db := storetest.New(t)
@@ -33,14 +35,26 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 		Limits: deploys.DefaultLimits(),
 		Now:    func() time.Time { clock = clock.Add(time.Minute); return clock },
 	})
-	e := edge.New(edge.Config{
+	acc, err := access.New(access.Config{
+		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Notifier: notifier,
+		Secret: []byte(testSecret), Now: time.Now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(acc.Close)
+	e, err := edge.New(edge.Config{
 		DashboardHost: "wardlock.localhost",
 		Dashboard:     http.NotFoundHandler(),
 		Health:        http.NotFoundHandler(),
 		Sites:         siteSource{baseDomain: "wardlock.localhost", sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys()},
 		Blobs:         blobs,
 		Invalidator:   notifier,
+		Access:        acc,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(e.Close)
 
 	owner := store.Owner{ID: store.NewID(), Email: "owner@example.test", CreatedAt: clock}
@@ -81,6 +95,14 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	getHeaders := func(host, target string) (int, http.Header) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		return rec.Code, rec.Result().Header
+	}
 	get := func(host, target string) (int, string) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, target, nil)
@@ -103,6 +125,9 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 	expect(host, "/", 404, "No site") // nothing published: the unknown-host 404
 	activate(v1)
 	expect(host, "/", 200, "First deploy")
+	if _, h := getHeaders(host, "/"); h.Get("Cache-Control") != "public, max-age=0, must-revalidate" || h.Get("X-Robots-Tag") != "" {
+		t.Fatalf("a site with no policy row is not served publicly: %v", h)
+	}
 	expect(host, "/guide", 200, "Guide")
 	expect(host, "/app/route", 404, "404 page not found")
 

@@ -100,6 +100,31 @@ func (q *Queries) GetOwnerSessionByTokenHash(ctx context.Context, tokenHash stri
 	return i, err
 }
 
+const getSiteSessionByTokenHash = `-- name: GetSiteSessionByTokenHash :one
+SELECT id, site_id, token_hash, method, share_link_id, policy_id, policy_version, subject, created_at, expires_at, revoked_at
+FROM site_sessions WHERE token_hash = ?1
+`
+
+// Instance-wide: the edge verifies visitor cookies with it.
+func (q *Queries) GetSiteSessionByTokenHash(ctx context.Context, tokenHash string) (SiteSession, error) {
+	row := q.db.QueryRowContext(ctx, getSiteSessionByTokenHash, tokenHash)
+	var i SiteSession
+	err := row.Scan(
+		&i.ID,
+		&i.SiteID,
+		&i.TokenHash,
+		&i.Method,
+		&i.ShareLinkID,
+		&i.PolicyID,
+		&i.PolicyVersion,
+		&i.Subject,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const listOwnerSessions = `-- name: ListOwnerSessions :many
 SELECT id, owner_id, token_hash, created_at, last_seen_at, expires_at, revoked_at, user_agent
 FROM owner_sessions
@@ -180,6 +205,25 @@ type RevokeOwnerSessionParams struct {
 
 func (q *Queries) RevokeOwnerSession(ctx context.Context, arg RevokeOwnerSessionParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, revokeOwnerSession, arg.RevokedAt, arg.ID, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const revokeSiteSession = `-- name: RevokeSiteSession :execrows
+UPDATE site_sessions SET revoked_at = COALESCE(revoked_at, ?1)
+WHERE id = ?2 AND site_id = ?3
+`
+
+type RevokeSiteSessionParams struct {
+	RevokedAt sql.NullInt64
+	ID        string
+	SiteID    string
+}
+
+func (q *Queries) RevokeSiteSession(ctx context.Context, arg RevokeSiteSessionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeSiteSession, arg.RevokedAt, arg.ID, arg.SiteID)
 	if err != nil {
 		return 0, err
 	}

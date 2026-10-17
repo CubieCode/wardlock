@@ -70,6 +70,44 @@ func sessionsContract(t *testing.T, open Opener) {
 				{name: "expires at creation", mutate: func(_ *fixture, s *store.SiteSession) { s.ExpiresAt = s.CreatedAt }, want: store.ErrConstraint},
 			})
 	})
+	t.Run("GetSiteByTokenHash", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner().ID
+		s := f.site(o).ID
+		want := f.validSiteSession(s, f.policy(o, s))
+		want.Method, want.Subject = store.SessionEmail, "visitor@example.test"
+		f.must(f.r.Sessions.CreateSite(t.Context(), want))
+		got, err := f.r.Sessions.GetSiteByTokenHash(t.Context(), want.TokenHash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("GetSiteByTokenHash() = %+v, want %+v", got, want)
+		}
+		_, err = f.r.Sessions.GetSiteByTokenHash(t.Context(), f.hash())
+		wantErr(t, err, store.ErrNotFound)
+	})
+	t.Run("RevokeSite", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner().ID
+		s := f.site(o).ID
+		sess := f.validSiteSession(s, f.policy(o, s))
+		f.must(f.r.Sessions.CreateSite(t.Context(), sess))
+		wantErr(t, f.r.Sessions.RevokeSite(t.Context(), f.site(o).ID, sess.ID, now), store.ErrNotFound)
+		wantErr(t, f.r.Sessions.RevokeSite(t.Context(), s, store.NewID(), now), store.ErrNotFound)
+		first := now.Add(time.Minute)
+		f.must(f.r.Sessions.RevokeSite(t.Context(), s, sess.ID, first))
+		f.must(f.r.Sessions.RevokeSite(t.Context(), s, sess.ID, first.Add(time.Minute)))
+		got, err := f.r.Sessions.GetSiteByTokenHash(t.Context(), sess.TokenHash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.RevokedAt.Equal(first) {
+			t.Fatalf("RevokedAt = %v, want %v", got.RevokedAt, first)
+		}
+	})
 	t.Run("GetOwnerByTokenHash", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, open)
@@ -193,4 +231,13 @@ func (f *fixture) ownerSession(ownerID string, seen time.Time) store.OwnerSessio
 	s := f.validOwnerSession(ownerID, seen)
 	f.must(f.r.Sessions.CreateOwner(f.t.Context(), s))
 	return s
+}
+
+// validSiteSession returns a password session on siteID bound to p's
+// current version.
+func (f *fixture) validSiteSession(siteID string, p store.Policy) store.SiteSession {
+	return store.SiteSession{
+		ID: store.NewID(), SiteID: siteID, TokenHash: f.hash(), Method: store.SessionPassword,
+		PolicyID: p.ID, PolicyVersion: p.Version, CreatedAt: now, ExpiresAt: now.Add(7 * 24 * time.Hour),
+	}
 }

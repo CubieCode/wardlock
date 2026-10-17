@@ -154,6 +154,21 @@ func (Unimplemented) VerifyDomain(context.Context, VerifyDomainRequestObject) (V
 	return nil, ErrNotImplemented
 }
 
+// ListPolicies is not implemented yet.
+func (Unimplemented) ListPolicies(context.Context, ListPoliciesRequestObject) (ListPoliciesResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// SetPolicy is not implemented yet.
+func (Unimplemented) SetPolicy(context.Context, SetPolicyRequestObject) (SetPolicyResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeletePolicy is not implemented yet.
+func (Unimplemented) DeletePolicy(context.Context, DeletePolicyRequestObject) (DeletePolicyResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // RollbackSite is not implemented yet.
 func (Unimplemented) RollbackSite(context.Context, RollbackSiteRequestObject) (RollbackSiteResponseObject, error) {
 	return nil, ErrNotImplemented
