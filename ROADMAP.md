@@ -41,7 +41,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### F0.4: Mail delivery and dev mail sink
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/f0.4-mail-delivery`
 - PR: https://github.com/CubieCode/wardlock/pull/10
 - Depends on: F0.1
