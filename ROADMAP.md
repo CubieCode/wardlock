@@ -78,7 +78,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: feat/c1.3-edge-serving
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/21
 - Depends on: F0.3
 - Scope: Replace the built-in hello site with real serving: host to site lookup (base-domain names and verified custom domains), active manifest cache invalidated by `Notifier`, index and clean URLs, `404.html`, optional SPA fallback, `ETag`/`Last-Modified` and conditional requests, `Range`, precompressed `.br`/`.gz` siblings, cache headers, `/.wardlock/` reserved before deploy content. Policies are not enforced yet (all sites public until A2.1); the edge calls an access hook that allows everything.
 - Acceptance: Table-driven `httptest` suite over `fixtures/sites/` covering every rule in SPEC "Serving"; a deploy file named `.wardlock/health` is never served; cache invalidation test after activation; benchmark for a cached small file recorded in the PR; hello site removed from code and docs.
