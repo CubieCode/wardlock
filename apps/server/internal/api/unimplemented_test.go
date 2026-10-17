@@ -30,6 +30,17 @@ var implemented = map[string]bool{
 	"UploadDeployBlob": true,
 	"ActivateDeploy":   true,
 	"RollbackSite":     true,
+
+	// C1.1 owners.
+	"CompleteSetup":    true,
+	"RedeemSignInLink": true,
+	"SendEmailCode":    true,
+	"VerifyEmailCode":  true,
+	"SignOut":          true,
+	"GetMe":            true,
+	"InviteOwner":      true,
+	"ListSessions":     true,
+	"RevokeSession":    true,
 }
 
 // pathValues are valid values for every path parameter in the contract.

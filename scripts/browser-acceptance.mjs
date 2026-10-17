@@ -6,6 +6,7 @@
 // apps/web/test at desktop and mobile widths, then stops the server.
 // Install the browser once: pnpm --filter @wardlock/web exec playwright install chromium
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -32,6 +33,9 @@ const server = spawn('.local/bin/wardlockd', ['serve'], {
     WARDLOCK_DATA_DIR: dataDir,
     WARDLOCK_DEV_DASHBOARD_URL: '',
     WARDLOCK_LOG_LEVEL: 'warn',
+    // A fresh server key per run; nothing persists past the throwaway data
+    // directory.
+    WARDLOCK_SECRET: randomBytes(32).toString('base64url'),
   },
 });
 

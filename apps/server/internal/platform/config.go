@@ -6,6 +6,7 @@
 package platform
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -39,6 +40,24 @@ type Config struct {
 	MaxFileSize    int64
 	MaxDeployFiles int
 	MaxDeploySize  int64
+	// Secret is the decoded WARDLOCK_SECRET: the server key for token,
+	// code and session hashes. Empty when unset; commands that need it
+	// call RequireSecret.
+	Secret []byte
+}
+
+// MinSecretBytes is the shortest WARDLOCK_SECRET accepted, after decoding.
+const MinSecretBytes = 32
+
+// ErrNoSecret means WARDLOCK_SECRET is unset where it is required.
+var ErrNoSecret = fmt.Errorf("%w: WARDLOCK_SECRET is required: at least %d random bytes, base64url-encoded (for example `openssl rand -base64 32 | tr '+/' '-_'`)", ErrInvalidConfig, MinSecretBytes)
+
+// RequireSecret returns ErrNoSecret when WARDLOCK_SECRET is unset.
+func (c Config) RequireSecret() error {
+	if len(c.Secret) == 0 {
+		return ErrNoSecret
+	}
+	return nil
 }
 
 // ErrInvalidConfig wraps every configuration error.
@@ -104,6 +123,13 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		}
 		l.dst(v)
 	}
+	if raw := get("WARDLOCK_SECRET", ""); raw != "" {
+		key, err := decodeSecret(raw)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.Secret = key
+	}
 	return cfg, nil
 }
 
@@ -121,6 +147,23 @@ func positiveInt(s string, fallback int64) (int64, error) {
 		return 0, errors.New("below 1")
 	}
 	return v, nil
+}
+
+// decodeSecret accepts base64url or standard base64, padded or not. The
+// error never includes the value.
+func decodeSecret(raw string) ([]byte, error) {
+	raw = strings.TrimRight(raw, "=")
+	key, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		key, err = base64.RawStdEncoding.DecodeString(raw)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: WARDLOCK_SECRET is not base64url", ErrInvalidConfig)
+	}
+	if len(key) < MinSecretBytes {
+		return nil, fmt.Errorf("%w: WARDLOCK_SECRET must decode to at least %d bytes, got %d", ErrInvalidConfig, MinSecretBytes, len(key))
+	}
+	return key, nil
 }
 
 func normaliseHost(h string) string {

@@ -13,6 +13,35 @@ import (
 	"database/sql"
 )
 
+const addOwnerLoginCodeAttempt = `-- name: AddOwnerLoginCodeAttempt :one
+UPDATE owner_login_codes SET attempts = attempts + 1
+WHERE id = ?1 AND used_at IS NULL AND attempts < ?2
+RETURNING attempts
+`
+
+type AddOwnerLoginCodeAttemptParams struct {
+	ID          string
+	MaxAttempts int64
+}
+
+func (q *Queries) AddOwnerLoginCodeAttempt(ctx context.Context, arg AddOwnerLoginCodeAttemptParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, addOwnerLoginCodeAttempt, arg.ID, arg.MaxAttempts)
+	var attempts int64
+	err := row.Scan(&attempts)
+	return attempts, err
+}
+
+const countOwners = `-- name: CountOwners :one
+SELECT COUNT(*) FROM owners
+`
+
+func (q *Queries) CountOwners(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOwners)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createOwner = `-- name: CreateOwner :exec
 INSERT INTO owners (id, email, invited_by, created_at, accepted_at)
 VALUES (?1, ?2, ?3, ?4, ?5)
@@ -82,4 +111,135 @@ func (q *Queries) GetOwner(ctx context.Context, id string) (Owner, error) {
 		&i.AcceptedAt,
 	)
 	return i, err
+}
+
+const getOwnerByEmail = `-- name: GetOwnerByEmail :one
+SELECT id, email, invited_by, created_at, accepted_at FROM owners WHERE email = ?1
+`
+
+func (q *Queries) GetOwnerByEmail(ctx context.Context, email string) (Owner, error) {
+	row := q.db.QueryRowContext(ctx, getOwnerByEmail, email)
+	var i Owner
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.InvitedBy,
+		&i.CreatedAt,
+		&i.AcceptedAt,
+	)
+	return i, err
+}
+
+const getOwnerLoginCodeByHash = `-- name: GetOwnerLoginCodeByHash :one
+SELECT id, owner_id, purpose, code_hash, attempts, created_at, expires_at, used_at
+FROM owner_login_codes
+WHERE purpose = ?1 AND code_hash = ?2
+`
+
+type GetOwnerLoginCodeByHashParams struct {
+	Purpose  string
+	CodeHash string
+}
+
+func (q *Queries) GetOwnerLoginCodeByHash(ctx context.Context, arg GetOwnerLoginCodeByHashParams) (OwnerLoginCode, error) {
+	row := q.db.QueryRowContext(ctx, getOwnerLoginCodeByHash, arg.Purpose, arg.CodeHash)
+	var i OwnerLoginCode
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Purpose,
+		&i.CodeHash,
+		&i.Attempts,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.UsedAt,
+	)
+	return i, err
+}
+
+const latestOwnerLoginCode = `-- name: LatestOwnerLoginCode :one
+SELECT id, owner_id, purpose, code_hash, attempts, created_at, expires_at, used_at
+FROM owner_login_codes
+WHERE owner_id = ?1 AND purpose = ?2
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type LatestOwnerLoginCodeParams struct {
+	OwnerID sql.NullString
+	Purpose string
+}
+
+func (q *Queries) LatestOwnerLoginCode(ctx context.Context, arg LatestOwnerLoginCodeParams) (OwnerLoginCode, error) {
+	row := q.db.QueryRowContext(ctx, latestOwnerLoginCode, arg.OwnerID, arg.Purpose)
+	var i OwnerLoginCode
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Purpose,
+		&i.CodeHash,
+		&i.Attempts,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.UsedAt,
+	)
+	return i, err
+}
+
+const markOwnerAccepted = `-- name: MarkOwnerAccepted :exec
+UPDATE owners SET accepted_at = COALESCE(accepted_at, ?1) WHERE id = ?2
+`
+
+type MarkOwnerAcceptedParams struct {
+	AcceptedAt sql.NullInt64
+	ID         string
+}
+
+func (q *Queries) MarkOwnerAccepted(ctx context.Context, arg MarkOwnerAcceptedParams) error {
+	_, err := q.db.ExecContext(ctx, markOwnerAccepted, arg.AcceptedAt, arg.ID)
+	return err
+}
+
+const retireOwnerLoginCodes = `-- name: RetireOwnerLoginCodes :exec
+UPDATE owner_login_codes SET used_at = ?1
+WHERE owner_id = ?2 AND purpose = ?3 AND used_at IS NULL
+`
+
+type RetireOwnerLoginCodesParams struct {
+	UsedAt  sql.NullInt64
+	OwnerID sql.NullString
+	Purpose string
+}
+
+func (q *Queries) RetireOwnerLoginCodes(ctx context.Context, arg RetireOwnerLoginCodesParams) error {
+	_, err := q.db.ExecContext(ctx, retireOwnerLoginCodes, arg.UsedAt, arg.OwnerID, arg.Purpose)
+	return err
+}
+
+const retireSetupCodes = `-- name: RetireSetupCodes :exec
+UPDATE owner_login_codes SET used_at = ?1
+WHERE owner_id IS NULL AND purpose = 'setup' AND used_at IS NULL
+`
+
+func (q *Queries) RetireSetupCodes(ctx context.Context, usedAt sql.NullInt64) error {
+	_, err := q.db.ExecContext(ctx, retireSetupCodes, usedAt)
+	return err
+}
+
+const useOwnerLoginCode = `-- name: UseOwnerLoginCode :execrows
+UPDATE owner_login_codes SET used_at = ?1
+WHERE id = ?2 AND used_at IS NULL AND expires_at > ?1
+`
+
+type UseOwnerLoginCodeParams struct {
+	UsedAt sql.NullInt64
+	ID     string
+}
+
+func (q *Queries) UseOwnerLoginCode(ctx context.Context, arg UseOwnerLoginCodeParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, useOwnerLoginCode, arg.UsedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

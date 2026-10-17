@@ -76,7 +76,9 @@ for arch in amd64 arm64; do
 done
 
 ref=$image:$version-$host_arch
-container=$(docker run -d --rm -p 127.0.0.1::8080 "$ref")
+# wardlockd serve needs a server key; use a throwaway one for this run.
+secret=$(node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))")
+container=$(docker run -d --rm -p 127.0.0.1::8080 -e WARDLOCK_SECRET="$secret" "$ref")
 port=$(docker port "$container" 8080/tcp | head -n 1 | sed 's/.*://')
 for _ in $(seq 1 50); do
   body=$(curl -fsS "http://127.0.0.1:$port/healthz" 2>/dev/null) && break

@@ -4,6 +4,7 @@
 package storetest
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -69,4 +70,127 @@ func sessionsContract(t *testing.T, open Opener) {
 				{name: "expires at creation", mutate: func(_ *fixture, s *store.SiteSession) { s.ExpiresAt = s.CreatedAt }, want: store.ErrConstraint},
 			})
 	})
+	t.Run("GetOwnerByTokenHash", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		want := f.validOwnerSession(f.owner().ID, now)
+		want.UserAgent = "Mozilla/5.0 (X11; Linux x86_64)"
+		f.must(f.r.Sessions.CreateOwner(t.Context(), want))
+		got, err := f.r.Sessions.GetOwnerByTokenHash(t.Context(), want.TokenHash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("GetOwnerByTokenHash() = %+v, want %+v", got, want)
+		}
+		_, err = f.r.Sessions.GetOwnerByTokenHash(t.Context(), f.hash())
+		wantErr(t, err, store.ErrNotFound)
+	})
+	t.Run("TouchOwner", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		s := f.ownerSession(f.owner().ID, now)
+		later := now.Add(time.Hour)
+		f.must(f.r.Sessions.TouchOwner(t.Context(), s.ID, later))
+		f.must(f.r.Sessions.TouchOwner(t.Context(), s.ID, now.Add(time.Minute)))
+		got, err := f.r.Sessions.GetOwnerByTokenHash(t.Context(), s.TokenHash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.LastSeenAt.Equal(later) {
+			t.Fatalf("LastSeenAt = %v, want %v", got.LastSeenAt, later)
+		}
+	})
+	t.Run("RevokeOwner", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		a, b := f.owner(), f.owner()
+		s := f.ownerSession(a.ID, now)
+		wantErr(t, f.r.Sessions.RevokeOwner(t.Context(), b.ID, s.ID, now), store.ErrNotFound)
+		wantErr(t, f.r.Sessions.RevokeOwner(t.Context(), a.ID, store.NewID(), now), store.ErrNotFound)
+		first := now.Add(time.Minute)
+		f.must(f.r.Sessions.RevokeOwner(t.Context(), a.ID, s.ID, first))
+		f.must(f.r.Sessions.RevokeOwner(t.Context(), a.ID, s.ID, first.Add(time.Minute)))
+		got, err := f.r.Sessions.GetOwnerByTokenHash(t.Context(), s.TokenHash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.RevokedAt.Equal(first) {
+			t.Fatalf("RevokedAt = %v, want %v", got.RevokedAt, first)
+		}
+	})
+	t.Run("ListOwner", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		a, b := f.owner(), f.owner()
+		// Five active sessions seen a minute apart, newest last; two share
+		// a last-seen time so the ID breaks the tie.
+		var active []store.OwnerSession
+		for i := range 5 {
+			seen := now.Add(time.Duration(i) * time.Minute)
+			if i == 4 {
+				seen = active[3].LastSeenAt
+			}
+			active = append(active, f.ownerSession(a.ID, seen))
+		}
+		revoked := f.ownerSession(a.ID, now)
+		f.must(f.r.Sessions.RevokeOwner(t.Context(), a.ID, revoked.ID, now))
+		f.ownerSession(a.ID, now.Add(-15*24*time.Hour)) // idle
+		expired := f.validOwnerSession(a.ID, now.Add(-time.Hour))
+		expired.ExpiresAt = now.Add(time.Minute)
+		f.must(f.r.Sessions.CreateOwner(t.Context(), expired))
+		f.ownerSession(b.ID, now)
+
+		q := store.OwnerSessionQuery{
+			OwnerID: a.ID, Now: now.Add(10 * time.Minute), IdleSince: now.Add(-14 * 24 * time.Hour), Limit: 2,
+		}
+		want := []string{active[4].ID, active[3].ID, active[2].ID, active[1].ID, active[0].ID}
+		if active[3].ID > active[4].ID {
+			want[0], want[1] = active[3].ID, active[4].ID
+		}
+		var got []string
+		for range 4 {
+			page, err := f.r.Sessions.ListOwner(t.Context(), q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, s := range page {
+				got = append(got, s.ID)
+			}
+			if len(page) < q.Limit {
+				break
+			}
+			last := page[len(page)-1]
+			q.AfterSeen, q.AfterID = last.LastSeenAt, last.ID
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("ListOwner pages = %v, want %v", got, want)
+		}
+
+		page, err := f.r.Sessions.ListOwner(t.Context(), store.OwnerSessionQuery{
+			OwnerID: b.ID, Now: now, IdleSince: now.Add(-time.Hour), Limit: 10,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) != 1 || page[0].OwnerID != b.ID {
+			t.Fatalf("owner B sees %+v", page)
+		}
+	})
+}
+
+// validOwnerSession returns a session for ownerID created and last seen at
+// seen, with a 90-day absolute expiry.
+func (f *fixture) validOwnerSession(ownerID string, seen time.Time) store.OwnerSession {
+	return store.OwnerSession{
+		ID: store.NewID(), OwnerID: ownerID, TokenHash: f.hash(),
+		CreatedAt: seen, LastSeenAt: seen, ExpiresAt: seen.Add(90 * 24 * time.Hour),
+	}
+}
+
+func (f *fixture) ownerSession(ownerID string, seen time.Time) store.OwnerSession {
+	f.t.Helper()
+	s := f.validOwnerSession(ownerID, seen)
+	f.must(f.r.Sessions.CreateOwner(f.t.Context(), s))
+	return s
 }

@@ -54,9 +54,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.1: Owner bootstrap, email-code sign-in and dashboard sessions
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/c1.1-owner-sign-in`
+- PR: https://github.com/CubieCode/wardlock/pull/18
 - Depends on: F0.2, F0.3, F0.4
 - Scope: `internal/owners`: one-time setup URL printed on first start when no owners exist; `wardlockd admin create --email`; inviting further owners; email-code sign-in (6 digits, 10 minutes, 5 attempts, rate-limited); dashboard sessions as `__Host-` cookies with idle and absolute expiry; sign-out and session revocation; middleware deriving owner context from the session for `internal/api`; implement the C1.1 API operations.
 - Acceptance: Integration tests through the real HTTP handler cover setup URL single use and expiry, admin create, code expiry, wrong code, attempt and send rate limits, neutral responses, cookie attributes, sign-out, revoked session; no code or cookie value appears in logs (asserted); `wardlockd --help` lists `admin create`.

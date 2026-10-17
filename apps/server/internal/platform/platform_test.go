@@ -53,6 +53,17 @@ func TestLoadConfig(t *testing.T) {
 		{"bad log level", map[string]string{"WARDLOCK_LOG_LEVEL": "loud"}, true, nil},
 		{"bad log format", map[string]string{"WARDLOCK_LOG_FORMAT": "xml"}, true, nil},
 		{"bad dev URL", map[string]string{"WARDLOCK_DEV_DASHBOARD_URL": "ftp://x"}, true, nil},
+		{"no secret", nil, false, func(c platform.Config) bool {
+			return c.Secret == nil && errors.Is(c.RequireSecret(), platform.ErrNoSecret)
+		}},
+		{"base64url secret", map[string]string{"WARDLOCK_SECRET": strings.Repeat("A-_w", 11)}, false, func(c platform.Config) bool {
+			return len(c.Secret) == 33 && c.RequireSecret() == nil
+		}},
+		{"padded standard base64 secret", map[string]string{"WARDLOCK_SECRET": strings.Repeat("A+/w", 11) + "=="}, false, func(c platform.Config) bool {
+			return len(c.Secret) == 33
+		}},
+		{"short secret", map[string]string{"WARDLOCK_SECRET": "c2hvcnQ"}, true, nil},
+		{"secret not base64", map[string]string{"WARDLOCK_SECRET": strings.Repeat("!", 44)}, true, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

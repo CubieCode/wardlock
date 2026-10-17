@@ -12,9 +12,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 
 	"wardlock.nz/server/internal/deploys"
+	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/sites"
 )
 
@@ -36,19 +39,35 @@ type Server struct {
 	// SiteURL returns the URL of the site at a base-domain hostname;
 	// https://<hostname>/ when nil.
 	SiteURL func(hostname string) string
+	// Owners authenticates dashboard sessions and serves the owner
+	// operations (C1.1).
+	Owners *owners.Service
+	// Logger receives unmapped errors (500 internal); nil discards them.
+	Logger *slog.Logger
 }
 
 var _ StrictServerInterface = (*Server)(nil)
 
 // Handler returns the API routes, mounted under /api/ on the dashboard host.
 func (s *Server) Handler() http.Handler {
-	return newHandler(s)
+	return s.authenticate(newLoggedHandler(s, s.logger()))
+}
+
+func (s *Server) logger() *slog.Logger {
+	if s.Logger == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return s.Logger
 }
 
 func newHandler(ssi StrictServerInterface) http.Handler {
+	return newLoggedHandler(ssi, slog.New(slog.DiscardHandler))
+}
+
+func newLoggedHandler(ssi StrictServerInterface, log *slog.Logger) http.Handler {
 	strict := NewStrictHandlerWithOptions(ssi, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  badRequest,
-		ResponseErrorHandlerFunc: responseError,
+		ResponseErrorHandlerFunc: responseError(log),
 	})
 	return HandlerWithOptions(strict, StdHTTPServerOptions{ErrorHandlerFunc: badRequest})
 }
@@ -58,18 +77,38 @@ func (s *Server) GetHealth(context.Context, GetHealthRequestObject) (GetHealthRe
 	return GetHealth200JSONResponse{Status: HealthStatusOk, Version: s.Version}, nil
 }
 
-// badRequest answers a request whose parameters or body could not be decoded.
-func badRequest(w http.ResponseWriter, _ *http.Request, _ error) {
+// badRequest answers a request whose parameters or body could not be
+// decoded, or whose body exceeded the size cap.
+func badRequest(w http.ResponseWriter, _ *http.Request, err error) {
+	if tooLarge, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		writeError(w, http.StatusRequestEntityTooLarge, "limit_exceeded", fmt.Sprintf("The request body is larger than %d bytes.", tooLarge.Limit))
+		return
+	}
 	writeError(w, http.StatusBadRequest, "invalid_request", "The request is malformed.")
 }
 
-// responseError answers an error returned by an operation.
-func responseError(w http.ResponseWriter, _ *http.Request, err error) {
-	if errors.Is(err, ErrNotImplemented) {
-		writeError(w, http.StatusNotImplemented, "not_implemented", "This operation is not implemented yet.")
-		return
+// responseError answers an error returned by an operation. Unmapped errors
+// are logged with the request ID, method and route pattern only: never
+// bodies, tokens or cookies.
+func responseError(log *slog.Logger) func(http.ResponseWriter, *http.Request, error) {
+	return func(w http.ResponseWriter, r *http.Request, err error) {
+		if errors.Is(err, ErrNotImplemented) {
+			writeError(w, http.StatusNotImplemented, "not_implemented", "This operation is not implemented yet.")
+			return
+		}
+		logInternal(log, r, r.Pattern, err)
+		writeError(w, http.StatusInternalServerError, "internal", "Internal server error.")
 	}
-	writeError(w, http.StatusInternalServerError, "internal", "Internal server error.")
+}
+
+// logInternal records an error answered with 500 internal.
+func logInternal(log *slog.Logger, r *http.Request, route string, err error) {
+	log.LogAttrs(r.Context(), slog.LevelError, "internal error",
+		slog.String("request_id", info(r.Context()).requestID),
+		slog.String("method", r.Method),
+		slog.String("route", route),
+		slog.String("error", err.Error()),
+	)
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {

@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"wardlock.nz/server/internal/store/sqlcgen"
@@ -19,6 +20,7 @@ type OwnerSession struct {
 	LastSeenAt time.Time
 	ExpiresAt  time.Time // absolute expiry
 	RevokedAt  time.Time
+	UserAgent  string // as sent at sign-in; empty if none
 }
 
 // SessionMethod is the access method that created a site session.
@@ -47,10 +49,36 @@ type SiteSession struct {
 	RevokedAt     time.Time
 }
 
+// OwnerSessionQuery selects one page of an owner's active dashboard
+// sessions, most recently used first.
+type OwnerSessionQuery struct {
+	OwnerID string
+	// Now excludes sessions past their absolute expiry.
+	Now time.Time
+	// IdleSince excludes sessions not seen after it (the idle expiry).
+	IdleSince time.Time
+	// AfterSeen and AfterID are the last row of the previous page; zero
+	// values start at the first page.
+	AfterSeen time.Time
+	AfterID   string
+	Limit     int
+}
+
 // Sessions stores dashboard (owner) and visitor (site) sessions.
 type Sessions interface {
 	CreateOwner(ctx context.Context, s OwnerSession) error
 	CreateSite(ctx context.Context, s SiteSession) error
+	// GetOwnerByTokenHash finds a dashboard session by its cookie token
+	// hash, whatever its state; callers check expiry and revocation.
+	GetOwnerByTokenHash(ctx context.Context, hash string) (OwnerSession, error)
+	// TouchOwner moves the session's last use forward to at; an earlier at
+	// changes nothing.
+	TouchOwner(ctx context.Context, id string, at time.Time) error
+	// RevokeOwner revokes ownerID's session id. Another owner's or a
+	// missing session is ErrNotFound; revoking twice keeps the first time.
+	RevokeOwner(ctx context.Context, ownerID, id string, at time.Time) error
+	// ListOwner returns one page of active dashboard sessions.
+	ListOwner(ctx context.Context, q OwnerSessionQuery) ([]OwnerSession, error)
 }
 
 // Sessions returns the SQLite Sessions repository.
@@ -67,7 +95,61 @@ func (r sessionsRepo) CreateOwner(ctx context.Context, s OwnerSession) error {
 		LastSeenAt: ms(s.LastSeenAt),
 		ExpiresAt:  ms(s.ExpiresAt),
 		RevokedAt:  nullMs(s.RevokedAt),
+		UserAgent:  nullString(s.UserAgent),
 	}))
+}
+
+func ownerSessionFromRow(row sqlcgen.OwnerSession) OwnerSession {
+	return OwnerSession{
+		ID:         row.ID,
+		OwnerID:    row.OwnerID,
+		TokenHash:  row.TokenHash,
+		CreatedAt:  fromMs(row.CreatedAt),
+		LastSeenAt: fromMs(row.LastSeenAt),
+		ExpiresAt:  fromMs(row.ExpiresAt),
+		RevokedAt:  fromNullMs(row.RevokedAt),
+		UserAgent:  row.UserAgent.String,
+	}
+}
+
+func (r sessionsRepo) GetOwnerByTokenHash(ctx context.Context, hash string) (OwnerSession, error) {
+	row, err := r.db.q.GetOwnerSessionByTokenHash(ctx, hash)
+	if err != nil {
+		return OwnerSession{}, mapErr("get owner session", err)
+	}
+	return ownerSessionFromRow(row), nil
+}
+
+func (r sessionsRepo) TouchOwner(ctx context.Context, id string, at time.Time) error {
+	return mapErr("touch owner session", r.db.q.TouchOwnerSession(ctx, sqlcgen.TouchOwnerSessionParams{ID: id, LastSeenAt: ms(at)}))
+}
+
+func (r sessionsRepo) RevokeOwner(ctx context.Context, ownerID, id string, at time.Time) error {
+	n, err := r.db.q.RevokeOwnerSession(ctx, sqlcgen.RevokeOwnerSessionParams{ID: id, OwnerID: ownerID, RevokedAt: nullMs(at)})
+	return rowsAffected("revoke owner session", n, err)
+}
+
+func (r sessionsRepo) ListOwner(ctx context.Context, q OwnerSessionQuery) ([]OwnerSession, error) {
+	afterSeen := int64(math.MaxInt64)
+	if q.AfterID != "" {
+		afterSeen = ms(q.AfterSeen)
+	}
+	rows, err := r.db.q.ListOwnerSessions(ctx, sqlcgen.ListOwnerSessionsParams{
+		OwnerID:   q.OwnerID,
+		Now:       ms(q.Now),
+		IdleSince: ms(q.IdleSince),
+		AfterSeen: afterSeen,
+		AfterID:   q.AfterID,
+		RowLimit:  int64(q.Limit),
+	})
+	if err != nil {
+		return nil, mapErr("list owner sessions", err)
+	}
+	out := make([]OwnerSession, len(rows))
+	for i, row := range rows {
+		out[i] = ownerSessionFromRow(row)
+	}
+	return out, nil
 }
 
 func (r sessionsRepo) CreateSite(ctx context.Context, s SiteSession) error {

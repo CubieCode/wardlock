@@ -21,9 +21,10 @@ Usage:
   wardlockd <command>
 
 Commands:
-  serve     Start the server
-  version   Print the version
-  help      Show this help
+  serve                         Start the server
+  admin create --email ADDRESS  Create an owner and print a one-time sign-in URL
+  version                       Print the version
+  help                          Show this help
 
 Configuration is read from WARDLOCK_* environment variables;
 see .env.example in the source repository.
@@ -52,6 +53,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	switch args[0] {
 	case "serve":
 		return serve(ctx, getenv, stderr)
+	case "admin":
+		return admin(ctx, args[1:], getenv, stdout, stderr)
 	case "version", "--version":
 		fmt.Fprintln(stdout, "wardlockd", version())
 		return nil
