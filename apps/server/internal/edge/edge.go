@@ -13,7 +13,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"path"
 	"strings"
 )
@@ -93,20 +92,23 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A site with nothing published is indistinguishable from no site,
+	// whatever the method or path.
+	if s.site.ActiveDeployID == "" {
+		noSite(w)
+		return
+	}
+
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	// Clean before the reserved check so /x/../.wardlock/ cannot slip past.
 	clean := cleanPath(r.URL.Path)
-	if clean+"/" == ReservedPrefix || strings.HasPrefix(clean, ReservedPrefix) {
+	if reserved(strings.TrimPrefix(clean, "/")) {
 		serveReserved(w, r, clean)
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if s.site.ActiveDeployID == "" {
-		noSite(w)
 		return
 	}
 
@@ -128,8 +130,9 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", cacheControl(d))
 		http.NotFound(w, r)
 	case res.redirect != "":
-		// Relative to the request, so it can never leave the host.
-		target := "./" + url.PathEscape(res.redirect) + "/"
+		// An absolute path: cleaning leaves no empty first segment, so it
+		// cannot become a scheme-relative //host URL.
+		target := res.redirect
 		if r.URL.RawQuery != "" {
 			target += "?" + r.URL.RawQuery
 		}
@@ -151,6 +154,13 @@ func serveReserved(w http.ResponseWriter, r *http.Request, clean string) {
 		return
 	}
 	http.NotFound(w, r)
+}
+
+// reserved reports whether name, a cleaned path without its leading slash,
+// is under /.wardlock/ in any letter case, as deploy validation rejects.
+func reserved(name string) bool {
+	first, _, _ := strings.Cut(name, "/")
+	return strings.EqualFold(first, ReservedPrefix[1:len(ReservedPrefix)-1])
 }
 
 func noSite(w http.ResponseWriter) {

@@ -100,7 +100,7 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 	const host = "docs.wardlock.localhost"
 
 	v1 := deploy(false, map[string]string{"index.html": "<p>First deploy</p>", "guide.html": "<p>Guide</p>"})
-	expect(host, "/", 404, "No site") // nothing published yet; not cached
+	expect(host, "/", 404, "No site") // nothing published: the unknown-host 404
 	activate(v1)
 	expect(host, "/", 200, "First deploy")
 	expect(host, "/guide", 200, "Guide")

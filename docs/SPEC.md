@@ -59,11 +59,11 @@ The goal is that adding one DNS record is all an owner has to do. The record nam
 
 ## Serving (C1.3)
 
-- `/` and `/dir/` serve `index.html`; `/page` serves `page.html` when `page` does not exist (clean URLs); `/page.html` is served as is. `/dir` without its slash redirects (301, query kept) to `/dir/` when `dir/index.html` exists and neither `dir` nor `dir.html` does. Only `GET` and `HEAD` are served (405 otherwise).
+- `/` and `/dir/` serve `index.html`; `/page` serves `page.html` when `page` does not exist (clean URLs); `/page.html` is served as is. `/dir` without its slash redirects (301, to the absolute path, query kept) to `/dir/` when `dir/index.html` exists and neither `dir` nor `dir.html` does. Only `GET` and `HEAD` are served (405 otherwise).
 - A missing path serves the deploy's `404.html` with status 404 if present, otherwise a plain 404. With the **SPA fallback** option (recorded on each deploy from `--spa` or `wardlock.json`, so rollback restores it), missing paths without a file extension serve `/index.html` with status 200.
-- Responses carry `ETag` (content hash) and `Last-Modified` (activation time), honour conditional requests and byte `Range` requests, and serve precompressed `.br` or `.gz` siblings when the client accepts them (`br` preferred; `q=0` refuses a coding). A file with a sibling answers with `Vary: Accept-Encoding`, and a sibling has its own `ETag`. `404.html` is sent whole, without conditional or range handling.
+- Responses carry `ETag` (content hash) and `Last-Modified` (activation time), honour conditional requests and byte `Range` requests, and serve precompressed `.br` or `.gz` siblings when the client accepts them: the sibling with the highest `Accept-Encoding` q wins, `br` on a tie; `q=0`, or a q that does not parse or lies outside 0–1, refuses a coding. A file with a sibling answers with `Vary: Accept-Encoding`, and a sibling has its own `ETag`. A precompressed sibling honours a single byte range; a multi-range request for one is answered 200 with the whole sibling. `404.html` is sent whole, without conditional or range handling. A file whose extension has no known type is sent as `application/octet-stream`, never sniffed.
 - Cache headers: `Cache-Control: public, max-age=0, must-revalidate` for every deployed file; `private` replaces `public` on protected sites. Not built yet: `public, max-age=31536000, immutable` for files under `/assets/` with hashed names, which needs a per-site opt-in that a later roadmap item must add.
-- An unknown host, a nested subdomain, a pending or lapsed custom domain and a site with no active deploy all get the same plain 404. Deploy files under `.wardlock/` are never served, even as `404.html`.
+- An unknown host, a nested subdomain, a pending or lapsed custom domain and a site with no active deploy all get the same plain 404, for every method and path, `/.wardlock/` included. Deploy files under `.wardlock/` (in any letter case) are never served, even as `404.html`.
 - `/.wardlock/` is reserved on every site (see Reserved path).
 
 ## Policies (A2.1)
@@ -121,7 +121,7 @@ A share link is `https://<site host><path>?t=<token>`.
 
 ## Reserved path
 
-`/.wardlock/` on every site is served by Wardlock and can never be overridden by a deploy: `login`, `callback`, `logout`, `view` (the use-limited interstitial), `health` and `tls-ask` (C1.9: answered only in behind-a-proxy mode and only to requests from a trusted-proxy address, on any `Host`; 404 otherwise). F0.1 implements `health` only.
+`/.wardlock/` (matched in any letter case, as deploy validation rejects it in any case) on every published site is served by Wardlock and can never be overridden by a deploy: `login`, `callback`, `logout`, `view` (the use-limited interstitial), `health` and `tls-ask` (C1.9: answered only in behind-a-proxy mode and only to requests from a trusted-proxy address, on any `Host`; 404 otherwise). F0.1 implements `health` only; since C1.3 it answers only on sites with an active deploy (a host with nothing published is an unknown host).
 
 ## Protected-site response headers
 

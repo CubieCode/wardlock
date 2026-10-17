@@ -12,10 +12,12 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -207,6 +209,10 @@ func newHarness(t testing.TB, access edge.AccessHook) *harness {
 		fx.blobs.add(".wardlock/health", []byte("deployed health")),
 		fx.blobs.add(".wardlock/index.html", []byte("deployed reserved page")),
 		fx.blobs.add("docs/javascript:x/index.html", []byte("<p>Odd directory</p>")),
+		fx.blobs.add("docs/odd dir/index.html", []byte("<p>Spaced directory</p>")),
+		fx.blobs.add(".WARDLOCK/login", []byte("deployed upper-case reserved page")),
+		fx.blobs.add(".Wardlock", []byte("deployed reserved file")),
+		fx.blobs.add("docs/notes", []byte("plain notes without an extension")),
 	)
 	src := &fakeSource{
 		sites:   map[string]edge.ServedSite{},
@@ -291,13 +297,17 @@ func TestServing(t *testing.T) {
 		}},
 		{name: "index.html as is", host: basic, target: "/index.html", status: 200, body: report},
 		{name: "directory with slash serves its index.html", host: basic, target: "/about/", status: 200, body: about, headers: map[string]string{"ETag": etag("basic", "about/index.html")}},
-		{name: "directory without slash redirects", host: basic, target: "/about", status: 301, headers: map[string]string{"Location": "./about/", "Cache-Control": cache}},
-		{name: "redirect keeps the query", host: basic, target: "/about?ref=a%20b", status: 301, headers: map[string]string{"Location": "./about/?ref=a%20b"}},
-		{name: "redirect is relative and cannot look like a scheme", host: basic, target: "/docs/javascript:x", status: 301, headers: map[string]string{"Location": "./javascript:x/"}},
+		{name: "directory without slash redirects", host: basic, target: "/about", status: 301, headers: map[string]string{"Location": "/about/", "Cache-Control": cache}},
+		{name: "redirect keeps the query", host: basic, target: "/about?ref=a%20b", status: 301, headers: map[string]string{"Location": "/about/?ref=a%20b"}},
+		{name: "redirect is an absolute path", host: basic, target: "/docs/javascript:x", status: 301, headers: map[string]string{"Location": "/docs/javascript:x/"}},
+		{name: "redirect from a dot segment", host: basic, target: "/about/.", status: 301, headers: map[string]string{"Location": "/about/"}},
+		{name: "redirect from a doubled slash stays on the host", host: basic, target: "//about", status: 301, headers: map[string]string{"Location": "/about/"}},
+		{name: "redirect escapes segments", host: basic, target: "/docs/odd%20dir", status: 301, headers: map[string]string{"Location": "/docs/odd%20dir/"}},
 		{name: "clean URL serves page.html", host: basic, target: "/guide", status: 200, body: "Reading guide", headers: map[string]string{"ETag": etag("basic", "guide.html")}},
 		{name: "page.html as is", host: basic, target: "/guide.html", status: 200, body: "Reading guide"},
 		{name: "nested clean URL", host: basic, target: "/about/index", status: 200, body: about},
 		{name: "dot segments are resolved", host: basic, target: "/assets/../guide", status: 200, body: "Reading guide"},
+		{name: "unknown type is not sniffed", host: basic, target: "/docs/notes", status: 200, body: "plain notes", headers: map[string]string{"Content-Type": "application/octet-stream"}},
 		{name: "asset", host: basic, target: "/assets/site.css", status: 200, body: "font-family", headers: map[string]string{"Content-Type": css, "Cache-Control": cache}},
 
 		// 404.html and the plain 404.
@@ -335,6 +345,16 @@ func TestServing(t *testing.T) {
 			headers: map[string]string{"Content-Encoding": "br"}},
 		{name: "refused wildcard leaves named codings", host: basic, target: "/assets/app.js", header: http.Header{"Accept-Encoding": {"*;q=0, GZIP"}}, status: 200,
 			headers: map[string]string{"Content-Encoding": "gzip"}},
+		{name: "higher gzip q beats br", host: basic, target: "/assets/app.js", header: http.Header{"Accept-Encoding": {"br;q=0.5, gzip;q=0.8"}}, status: 200,
+			headers: map[string]string{"Content-Encoding": "gzip"}},
+		{name: "br wins a q tie", host: basic, target: "/assets/app.js", header: http.Header{"Accept-Encoding": {"gzip;q=0.5, br;q=0.5"}}, status: 200,
+			headers: map[string]string{"Content-Encoding": "br"}},
+		{name: "unparseable q counts as 0", host: basic, target: "/assets/app.js", header: http.Header{"Accept-Encoding": {"br;q=high, gzip;q=0.1"}}, status: 200,
+			headers: map[string]string{"Content-Encoding": "gzip"}},
+		{name: "out-of-range q counts as 0", host: basic, target: "/assets/app.js", header: http.Header{"Accept-Encoding": {"br;q=2, gzip;q=-1"}}, status: 200,
+			headers: map[string]string{"Content-Encoding": ""}},
+		{name: "explicit entry beats the wildcard", host: basic, target: "/assets/app.js", header: http.Header{"Accept-Encoding": {"*;q=0.9, br;q=0.1"}}, status: 200,
+			headers: map[string]string{"Content-Encoding": "gzip"}},
 		{name: "identity without Accept-Encoding", host: basic, target: "/assets/app.js", status: 200,
 			exactBody: h.blob(t, "basic", "assets/app.js"), headers: map[string]string{
 				"Content-Encoding": "", "Vary": "Accept-Encoding", "ETag": etag("basic", "assets/app.js"),
@@ -349,7 +369,13 @@ func TestServing(t *testing.T) {
 		// Reserved path.
 		{name: "reserved health", host: basic, target: "/.wardlock/health", status: 200, body: `{"status":"ok"}`, headers: map[string]string{"Cache-Control": "no-store", "Content-Type": "application/json"}},
 		{name: "reserved health on a custom domain", host: "docs.example.test", target: "/.wardlock/health", status: 200, body: `{"status":"ok"}`},
-		{name: "reserved health on a site with nothing published", host: "empty." + base, target: "/.wardlock/health", status: 200, body: `{"status":"ok"}`},
+		{name: "no health on a site with nothing published", host: "empty." + base, target: "/.wardlock/health", status: 404, body: "No site", headers: map[string]string{"Cache-Control": ""}},
+		{name: "POST on a site with nothing published", method: http.MethodPost, host: "empty." + base, target: "/", status: 404, body: "No site", headers: map[string]string{"Allow": ""}},
+		{name: "upper-case reserved path is reserved", host: basic, target: "/.WARDLOCK/health", status: 404, body: "404 page not found", headers: map[string]string{"Cache-Control": "no-store"}},
+		{name: "mixed-case deployed reserved file is never served", host: basic, target: "/.WARDLOCK/login", status: 404, body: "404 page not found"},
+		{name: "mixed-case reserved path is not SPA content", host: spa, target: "/.Wardlock/login", status: 404, body: "404 page not found", headers: map[string]string{"Cache-Control": "no-store"}},
+		{name: "a deployed .Wardlock file is never served", host: basic, target: "/.Wardlock", status: 404, body: "404 page not found"},
+		{name: "a lookalike prefix is not reserved", host: spa, target: "/.wardlocked/x", status: 200, body: tide},
 		{name: "deployed reserved file is never served", host: basic, target: "/.wardlock/index.html", status: 404, headers: map[string]string{"Cache-Control": "no-store"}},
 		{name: "reserved directory", host: basic, target: "/.wardlock/", status: 404},
 		{name: "reserved without slash", host: basic, target: "/.wardlock", status: 404},
@@ -443,6 +469,15 @@ func TestConditionalAndRange(t *testing.T) {
 		{"If-Range stale serves everything", "/assets/site.css", http.Header{"Range": {"bytes=0-3"}, "If-Range": {`"old"`}}, 200, string(css), nil},
 		{"Range over a sibling", "/assets/app.js", http.Header{"Range": {"bytes=0-1"}, "Accept-Encoding": {"gzip"}}, 206, "\x1f\x8b", map[string]string{
 			"Content-Encoding": "gzip", "Content-Range": "bytes 0-1/104",
+		}},
+		{"multiple ranges of identity", "/assets/site.css", http.Header{"Range": {"bytes=0-1,4-5"}}, 206, "Content-Range: bytes 4-5/88", map[string]string{
+			"Content-Encoding": "",
+		}},
+		{"one range of an encoded variant", "/assets/app.js", http.Header{"Range": {"bytes=2-3"}, "Accept-Encoding": {"br"}}, 206, "", map[string]string{
+			"Content-Encoding": "br", "Content-Length": "2",
+		}},
+		{"multiple ranges of an encoded variant serve it whole", "/assets/app.js", http.Header{"Range": {"bytes=0-1,4-5"}, "Accept-Encoding": {"gzip"}}, 200, "\x1f\x8b", map[string]string{
+			"Content-Encoding": "gzip", "Content-Range": "", "Content-Length": "104",
 		}},
 		{"404.html ignores Range", "/missing", http.Header{"Range": {"bytes=0-3"}}, 404, "Page not found", nil},
 	}
@@ -613,6 +648,46 @@ func TestConcurrentServingAndInvalidation(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+func TestUnpublishedSiteLooksUnknown(t *testing.T) {
+	h := newHarness(t, nil)
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodDelete} {
+		for _, target := range []string{"/", "/.wardlock/health", "/index.html"} {
+			unknown := h.do(method, "nope."+base, target, nil)
+			empty := h.do(method, "empty."+base, target, nil)
+			if empty.Code != unknown.Code || empty.Body.String() != unknown.Body.String() || !maps.EqualFunc(empty.Header(), unknown.Header(), slices.Equal) {
+				t.Errorf("%s %s: unpublished = %d %v %q, unknown = %d %v %q", method, target,
+					empty.Code, empty.Header(), empty.Body, unknown.Code, unknown.Header(), unknown.Body)
+			}
+		}
+	}
+}
+
+func TestConcurrentColdLoadsShareOneLoad(t *testing.T) {
+	h := newHarness(t, nil)
+	release := make(chan struct{})
+	h.src.mu.Lock()
+	h.src.during = func() { <-release }
+	h.src.mu.Unlock()
+
+	const n = 16
+	var started, done sync.WaitGroup
+	started.Add(n)
+	for range n {
+		done.Go(func() {
+			started.Done()
+			if rec := h.do(http.MethodGet, "basic."+base, "/guide", nil); rec.Code != 200 {
+				t.Errorf("status = %d", rec.Code)
+			}
+		})
+	}
+	started.Wait()
+	close(release)
+	done.Wait()
+	if calls := h.src.callCount(); calls != 1 {
+		t.Fatalf("%d concurrent cold requests made %d loads, want 1", n, calls)
+	}
 }
 
 func TestCloseUnsubscribes(t *testing.T) {
