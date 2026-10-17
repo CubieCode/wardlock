@@ -29,6 +29,12 @@ WARDLOCK_DASHBOARD_HOST=wardlock.example.com
 
 Wildcard certificates need the DNS-01 challenge, so Wardlock needs an API token for your DNS provider (C1.4; Cloudflare first, then one other `libdns` provider). Give the token the narrowest scope the provider allows (edit DNS records for this zone only). Custom domains for individual sites use on-demand TLS with HTTP-01/TLS-ALPN-01 after the domain is verified.
 
+### Custom domains (C1.9)
+
+Owners add their own hostnames to a site; the operator sets nothing up per domain. The owner creates a `CNAME` from their hostname to `<name>.<base domain>`, which reaches the server through the sites wildcard. Apex domains and CDN-proxied records use the TXT fallback described in [SPEC](SPEC.md#custom-domains-c19-d35) plus A/AAAA records (or ALIAS/flattening) pointing at the server, so publish the server's addresses to owners who need them. Ports 80 and 443 must be reachable from the internet for HTTP-01/TLS-ALPN-01.
+
+`WARDLOCK_DNS_RESOLVERS` (comma-separated `host:port`, default the system resolver) chooses where verification lookups go. Use public or authoritative-facing resolvers if the local one caches aggressively or answers split-horizon records.
+
 ## Single binary with systemd
 
 ```sh
@@ -58,6 +64,7 @@ If something else already terminates TLS on the machine, run Wardlock in plain-H
 - Pass `Host` unchanged and set `X-Forwarded-For` and `X-Forwarded-Proto`; Wardlock trusts these only from addresses in its trusted-proxy setting (C1.4).
 - Do not cache protected responses at the proxy, and do not log query strings (they carry share-link tokens), or redact the `t` parameter. The examples do this.
 - Allow request bodies of at least the per-file limit (25 MiB default) for blob uploads.
+- For custom domains, the proxy must obtain their certificates. With Caddy, use on-demand TLS with `ask` set to `http://127.0.0.1:8080/.wardlock/tls-ask`, so it only requests certificates for hostnames Wardlock has verified (C1.9 adds this to the example). nginx cannot issue certificates on demand; use Caddy, or manage custom-domain certificates yourself.
 
 ## SMTP
 

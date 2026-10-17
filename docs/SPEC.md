@@ -25,12 +25,27 @@ Share links and API tokens use one format: `wl_<public id>_<secret>`. The public
 - **API tokens** (C1.7) are scoped (`deploy`, `manage`), named, revocable, optionally expiring, and shown once. They use the same format and hashing as share-link tokens (see Tokens).
 - **CLI login** (C1.7): `wardlock login --server URL` starts a device-code style flow. The CLI shows a short user code and opens the browser at `https://<dashboard host>/cli-login`; the signed-in owner confirms the code and chooses scopes; the CLI polls until approved and receives an API token. The token is stored in the OS keychain where available (macOS Keychain, Windows Credential Manager, Secret Service on Linux), otherwise in `~/.config/wardlock/credentials.json` with mode 0600. `wardlock logout` deletes it locally and revokes it on the server.
 
-## Sites (C1.2, C1.4)
+## Sites (C1.2)
 
 - Site names are DNS labels: 1–63 characters of `a-z`, `0-9` and `-`, not starting or ending with `-`. Reserved names: `auth`, `www`, `api`, `admin`, `app`, `dashboard`, `mail`, `wardlock`, anything starting with `xn--`, and the dashboard host's first label when it sits under the base domain.
 - A site is created by its first deploy or from the dashboard. Names are unique per instance.
-- **Custom domains** (C1.4): an owner adds a domain to a site; Wardlock shows the DNS record to create (CNAME to `<name>.<base domain>`, or A/AAAA for apex domains) and verifies it before requesting a certificate. On-demand TLS only issues for verified domains.
-- **Teardown** deletes the site, its deploys, links and policies, and frees the name. Blobs no longer referenced are removed by garbage collection (C1.8).
+- **Custom domains** (C1.9): a site can also be served at domains its owner controls; see Custom domains.
+- **Teardown** deletes the site, its deploys, links, policies and custom domains, and frees the name. Blobs no longer referenced are removed by garbage collection (C1.8).
+
+## Custom domains (C1.9, D3.5)
+
+The goal is that adding one DNS record is all an owner has to do. The record names the site itself, so it works wherever Wardlock is hosted and proves which site the domain belongs to.
+
+- **Adding.** An owner adds a hostname to one of their sites from the dashboard (D3.5) or `wardlock domain add` (C1.9). Hostnames are stored lowercase, as A-labels (punycode), with no trailing dot or port, at most 253 characters. Rejected: IP addresses, wildcards, the base domain and anything under it, the dashboard host, and the auth origin. A hostname belongs to at most one site on the instance; adding one already attached to any site fails with `domain_taken`, without saying which site or owner holds it.
+- **Records shown.** Wardlock answers with the records to create:
+  - **Routing:** `CNAME <hostname> → <name>.<base domain>`. That target already points at the server through the sites wildcard, so it needs no knowledge of the server's address.
+  - **Verification fallback:** `TXT _wardlock.<hostname> → wardlock-verify=<token>`, a random token unique to this claim (a new claim after removal gets a new token). It is needed only when the CNAME cannot be seen: apex domains, which cannot have a CNAME and instead use A/AAAA records (or the provider's ALIAS/ANAME/flattening) pointing at the server; and CDN-proxied records such as Cloudflare's orange cloud, which hide the CNAME.
+- **Verification.** A hostname is verified when resolving it follows a CNAME chain that reaches `<name>.<base domain>`, or when `_wardlock.<hostname>` has the claim's TXT token. Lookups go to the resolvers in `WARDLOCK_DNS_RESOLVERS` (default: the system resolver) with caching disabled where the resolver allows it. A new hostname is checked straight away, then with backoff (1 minute growing to 1 hour) for 48 hours; after that it stays `pending` until the owner asks to verify again. The CLI and dashboard show the last check time and a plain reason when it fails (no record, CNAME points elsewhere, TXT token mismatch, DNS error).
+- **Statuses.** `pending` (added, not yet verified), `active` (verified: served and eligible for a certificate), `lapsed` (was active, has failed re-checks for 72 hours in a row: no longer served and no certificate issued or renewed). Active and lapsed hostnames are re-checked every 24 hours; a lapsed hostname that passes again becomes active without owner action.
+- **Serving** (C1.3). An active hostname serves its site exactly as `<name>.<base domain>` does, with the same policies. Site sessions are host-only, so a visitor signs in separately on each of a site's hostnames. Share links work on any of the site's active hostnames. Pending and lapsed hostnames get the same response as an unknown host.
+- **Certificates** (C1.4). In automatic TLS mode, on-demand TLS issues and renews only for active hostnames. Behind a proxy, the proxy issues certificates and asks Wardlock first through `/.wardlock/tls-ask?domain=<hostname>` (see Reserved path), which answers 200 for an active hostname and 404 otherwise.
+- **Removing.** Removing a hostname stops serving it immediately and deletes its certificate from Wardlock's storage. The owner should also delete the DNS record: a CNAME left pointing at `<name>.<base domain>` can be claimed by whoever later holds that site name (see SECURITY-MODEL).
+- Not in v1: redirecting between a site's hostnames (a "primary" domain), wildcard custom domains, and HTTPS for custom domains in local mode.
 
 ## Deploys and rollback (C1.2)
 
@@ -103,13 +118,13 @@ A share link is `https://<site host><path>?t=<token>`.
 
 ## Reserved path
 
-`/.wardlock/` on every site is served by Wardlock and can never be overridden by a deploy: `login`, `callback`, `logout`, `view` (the use-limited interstitial) and `health`. F0.1 implements `health` only.
+`/.wardlock/` on every site is served by Wardlock and can never be overridden by a deploy: `login`, `callback`, `logout`, `view` (the use-limited interstitial), `health` and `tls-ask` (C1.9: answered only in behind-a-proxy mode and only to requests from a trusted-proxy address, on any `Host`; 404 otherwise). F0.1 implements `health` only.
 
 ## Protected-site response headers
 
 `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`, `Cache-Control: private` (and `no-store` on `/.wardlock/` pages). Wardlock never blocks AI fetchers in `robots.txt`; access is the policy's job.
 
-## CLI (C1.5, C1.7)
+## CLI (C1.5, C1.7, C1.9)
 
 Global flags: `--server URL` (default from `wardlock.json`, then `WARDLOCK_SERVER`, then the server saved at login), `--json` (machine-readable output, no prompts, for CI), `--help`. Exit codes: 0 success, 1 failure, 2 usage error. Without a TTY or with `--json`, the CLI never prompts. `WARDLOCK_TOKEN` overrides stored credentials for CI.
 
@@ -126,6 +141,10 @@ Global flags: `--server URL` (default from `wardlock.json`, then `WARDLOCK_SERVE
 | `wardlock share revoke DOMAIN LINK_ID`                                                                                       | Revoke by public ID.                                                                                                                                                                                            |
 | `wardlock share rotate DOMAIN LINK_ID`                                                                                       | Rotate and print the new URL once.                                                                                                                                                                              |
 | `wardlock policy set DOMAIN [--path P] (--public \| --protected [--links] [--password] [--email ADDR,…] [--oauth PROVIDER])` | Set the default or a path policy. Passwords are read from a prompt or stdin, never a flag.                                                                                                                      |
+| `wardlock domain add DOMAIN HOST [--wait]`                                                                                   | Attach custom hostname HOST to the site DOMAIN and print the records to create. `--wait` re-checks until HOST is active or 10 minutes pass.                                                                     |
+| `wardlock domain list DOMAIN`                                                                                                | The site's custom hostnames with status, last check and failure reason.                                                                                                                                         |
+| `wardlock domain verify DOMAIN HOST`                                                                                         | Check HOST's DNS now and print the result.                                                                                                                                                                      |
+| `wardlock domain remove DOMAIN HOST [--yes]`                                                                                 | Detach HOST after confirmation (`--yes` required without a TTY) and remind the owner to delete the DNS record.                                                                                                  |
 | `wardlock version [--server URL]`                                                                                            | Built in F0.1.                                                                                                                                                                                                  |
 
 Only built commands appear in `--help`.

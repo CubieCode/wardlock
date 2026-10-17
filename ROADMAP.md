@@ -23,7 +23,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Owner:
 - PR:
 - Depends on: F0.1
-- Scope: Extend `packages/api-spec/openapi.yaml` with every C1 endpoint so C1 lanes can build in parallel against an agreed contract: shared error schema (`code`, `message`) and status conventions; security schemes (dashboard session cookie, `Bearer` API token); owner bootstrap and email-code sign-in, sessions, sign-out; API tokens and the CLI device-login flow; sites (create, list, get, delete); deploys (create with manifest returning missing hashes, upload blob, activate, list, rollback); custom domains (add, verify, remove). Pagination and ID conventions. Add an OpenAPI lint step (for example Redocly CLI or vacuum, pinned) to `pnpm check`. The server keeps returning 501 for operations not yet implemented, through a generated-interface stub, and `--help`/UI expose none of them.
+- Scope: Extend `packages/api-spec/openapi.yaml` with every C1 endpoint so C1 lanes can build in parallel against an agreed contract: shared error schema (`code`, `message`) and status conventions; security schemes (dashboard session cookie, `Bearer` API token); owner bootstrap and email-code sign-in, sessions, sign-out; API tokens and the CLI device-login flow; sites (create, list, get, delete); deploys (create with manifest returning missing hashes, upload blob, activate, list, rollback); custom domains (add, list, get, verify, remove; responses carry status, the routing and TXT records to create, last check time and failure reason, per SPEC "Custom domains"). Pagination and ID conventions. Add an OpenAPI lint step (for example Redocly CLI or vacuum, pinned) to `pnpm check`. The server keeps returning 501 for operations not yet implemented, through a generated-interface stub, and `--help`/UI expose none of them.
 - Acceptance: The spec validates and lints clean; Go server, Go client and TS client regenerate with no hand edits and compile; drift check passes; every operation has an `operationId`, error responses, examples and the security it needs; the 501 stub has a test proving every unimplemented operation answers 501 rather than 404; ARCHITECTURE's upload protocol and SPEC match the spec.
 - Skills: wardlock-item, wardlock-go-service
 - Parallel: Wave 1 with F0.3, F0.4 and O4.1. Sole owner of `packages/api-spec`, `internal/api` and the generated clients (gate). Lockfile owner only if it adds the spec linter.
@@ -34,7 +34,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Owner:
 - PR:
 - Depends on: F0.1
-- Scope: Migration `0002` onward for owners, owner sessions, API tokens, CLI login requests, sites, domains, deploys, blobs, deploy files (manifests), policies, share links, site sessions and the access log, following the portable-SQL rules. Declare the per-area repository interfaces in `internal/store` (`Owners`, `Sessions`, `APITokens`, `Sites`, `Domains`, `Deploys`, `Policies`, `Links`, `AccessLog`) with Go types that hide sqlc; an ID helper (UUIDv7). Implement only what contract tests need to exercise constraints; feature items implement the remaining methods in their own `queries/<area>.sql`. Contract-test harness that each interface's suite plugs into.
+- Scope: Migration `0002` onward for owners, owner sessions, API tokens, CLI login requests, sites, domains (hostname unique per instance, site, status `pending`/`active`/`lapsed`, verification token (shown again in the TXT record, so stored as is; it is public once published in DNS), last check, first consecutive failure, last failure reason), deploys, blobs, deploy files (manifests), policies, share links, site sessions and the access log, following the portable-SQL rules. Declare the per-area repository interfaces in `internal/store` (`Owners`, `Sessions`, `APITokens`, `Sites`, `Domains`, `Deploys`, `Policies`, `Links`, `AccessLog`) with Go types that hide sqlc; an ID helper (UUIDv7). Implement only what contract tests need to exercise constraints; feature items implement the remaining methods in their own `queries/<area>.sql`. Contract-test harness that each interface's suite plugs into.
 - Acceptance: Migrations apply to an empty database and are idempotent on restart; foreign keys, uniqueness (site name, domain, token public ID) and `CHECK` constraints are tested; no `AUTOINCREMENT`, `INSERT OR REPLACE` or SQLite-only functions (a test greps migrations and queries); timestamps are Unix ms and IDs are text; ARCHITECTURE's data model diagram matches the schema; contract test harness runs under `go test -race`.
 - Skills: wardlock-item, wardlock-go-service
 - Parallel: Wave 1 with F0.2, F0.4 and O4.1. Migration owner and lockfile owner (server `go.sum`) for the wave. Owns `apps/server/migrations/`, `internal/store/` (except `sqlcgen` output it regenerates).
@@ -139,6 +139,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Acceptance: Tests prove referenced blobs and blobs younger than the grace period survive, concurrent upload plus GC never loses a blob needed by activation, and history pruning keeps the active deploy.
 - Skills: wardlock-item, wardlock-go-service
 - Parallel: Wave 4 with C1.5, A2.2 and D3.2. Owns GC files in `internal/deploys/`.
+
+### C1.9: Custom domains
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: C1.3, C1.4, C1.5
+- Scope: Custom domains per SPEC "Custom domains": hostname normalisation and rejection rules in `internal/sites`; add, list, get, verify and remove behind the F0.2 operations; a `Resolver` interface (CNAME chain, TXT) with a `net.Resolver` implementation honouring `WARDLOCK_DNS_RESOLVERS` and an in-test fake; a verification worker (initial backoff, 24-hour re-checks, 72-hour lapse, automatic recovery) started from `cmd/wardlockd`; `Notifier` events so the edge and the on-demand TLS decision see status changes immediately; certificate removal on detach; `/.wardlock/tls-ask` for behind-a-proxy mode; `wardlock domain add|list|verify|remove`; the on-demand block in `deploy/Caddyfile.example`; DEPLOYMENT "Custom domains". Implement the `Domains` repository methods.
+- Acceptance: Table-driven tests over the fake resolver cover CNAME direct and chained, CNAME to another site or elsewhere, TXT fallback (apex, proxied), wrong and stale tokens, DNS errors and timeouts, backoff timing, lapse after 72 hours and recovery, all with an injected clock; normalisation tests (case, trailing dot, IDN to A-label, IPs, wildcards, base domain, dashboard and auth hosts); `domain_taken` reveals no site or owner; two-owner isolation (owner B cannot list, verify, remove or see owner A's domains: same 404); a re-claim after removal needs a new token; end-to-end `httptest` proving pending and lapsed hosts are not served and the on-demand decision denies them; `tls-ask` answers only trusted-proxy sources in proxy mode; CLI tests including `--json` and `--wait`; contract tests for every new repository method; verification tokens never logged.
+- Skills: wardlock-item, wardlock-go-service, wardlock-access
+- Parallel: Wave 5 with A2.3, A2.4 and A2.6. Owns domain files in `internal/sites/`, `queries/domains.sql`, the domain worker wiring and `WARDLOCK_DNS_RESOLVERS` config lines, `apps/cli` domain commands, `deploy/Caddyfile.example`. Touches `internal/edge` only for `tls-ask` (coordinate with A2.3's login template work in the briefs). Conflicts with O4.2 on `internal/platform` and `cmd/wardlockd`: run O4.2 after it. No migrations or API changes if F0.2 and F0.3 covered domains as scoped; otherwise it is the wave's migration owner and needs the API gate.
 
 ## A2: Access control
 
@@ -276,6 +287,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item, wardlock-web, wardlock-access
 - Parallel: Wave 6 with A2.5 and D3.3. Owns `apps/web/src/policies/`.
 
+### D3.5: Custom domains
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: D3.2, C1.9
+- Scope: A Domains section on the site detail screen: add a hostname, show the routing CNAME (and the TXT fallback with when to use it) with copy actions, live status with last check and the failure reason in plain words, "Check now", remove with a confirmation that reminds the owner to delete the DNS record.
+- Acceptance: Browser tests at 1440px and 390px in light and dark cover add, each status, a failure reason, "Check now", `domain_taken` and removal; foreign site IDs show the same not-found state; records are copyable exactly as shown. Mobbin references cited in the PR (start with: add custom domain with DNS records to configure; domain verification status pending and verified; copy DNS record value).
+- Skills: wardlock-item, wardlock-web
+- Parallel: Wave 6 with A2.5, D3.3 and D3.4. Owns `apps/web/src/domains/` and the Domains section's mount point in `apps/web/src/sites/`. Only one of D3.3, D3.4 and D3.5 changes `packages/ui`.
+
 ## O4: Operations and release
 
 ### O4.1: Release artefacts
@@ -330,8 +352,8 @@ Suggested batches, based on the file ownership above. Re-check overlap before la
 2. **Wave 2** (after F0.2 and F0.3): C1.1, C1.2, C1.3, C1.4. C1.4 is the lockfile owner; no migrations expected. Merge C1.2 before C1.3 (C1.3 consumes `BlobStore` and `Notifier`).
 3. **Wave 3:** C1.6, C1.7, A2.1, A2.8, with D3.1 as soon as a worker frees up (it is the only UI lane). C1.6 is the lockfile owner and, if needed, the migration owner. A2.1 owns the access cookie gate.
 4. **Wave 4:** C1.5, A2.2, D3.2, C1.8. API additions for A2.2 agreed before the wave; C1.5 merges before A2.2's CLI commands.
-5. **Wave 5:** A2.3, A2.4, A2.6 (and O4.2). A2.3 lands the shared login page template first.
-6. **Wave 6:** A2.5, D3.3, D3.4. Only one of D3.3 and D3.4 changes `packages/ui`.
+5. **Wave 5:** A2.3, A2.4, A2.6, C1.9 (O4.2 after C1.9). A2.3 lands the shared login page template first.
+6. **Wave 6:** A2.5, D3.3, D3.4, D3.5. Only one of D3.3, D3.4 and D3.5 changes `packages/ui`.
 7. **Then:** A2.7 alone; O4.3 when its dependencies are done; O4.4 last.
 
 ## Not planned yet
