@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"wardlock.nz/server/internal/platform"
 )
@@ -48,6 +49,22 @@ func TestLoadConfig(t *testing.T) {
 		{"negative file count", map[string]string{"WARDLOCK_MAX_DEPLOY_FILES": "-1"}, true, nil},
 		{"file count too large", map[string]string{"WARDLOCK_MAX_DEPLOY_FILES": "99999999999999999999"}, true, nil},
 		{"size with unit", map[string]string{"WARDLOCK_MAX_DEPLOY_SIZE": "1GiB"}, true, nil},
+		{"access log defaults", nil, false, func(c platform.Config) bool {
+			return c.AccessLogIPv4Prefix == 24 && c.AccessLogIPv6Prefix == 48 &&
+				c.AccessLogRetention == 90*24*time.Hour && c.AccessLogBuffer == 10_000
+		}},
+		{"access log settings", map[string]string{
+			"WARDLOCK_ACCESS_LOG_IPV4_PREFIX": "32", "WARDLOCK_ACCESS_LOG_IPV6_PREFIX": "0",
+			"WARDLOCK_ACCESS_LOG_RETENTION_DAYS": "0", "WARDLOCK_ACCESS_LOG_BUFFER": "50",
+		}, false, func(c platform.Config) bool {
+			return c.AccessLogIPv4Prefix == 32 && c.AccessLogIPv6Prefix == 0 && c.AccessLogRetention == 0 && c.AccessLogBuffer == 50
+		}},
+		{"IPv4 prefix too long", map[string]string{"WARDLOCK_ACCESS_LOG_IPV4_PREFIX": "33"}, true, nil},
+		{"IPv6 prefix too long", map[string]string{"WARDLOCK_ACCESS_LOG_IPV6_PREFIX": "129"}, true, nil},
+		{"negative prefix", map[string]string{"WARDLOCK_ACCESS_LOG_IPV4_PREFIX": "-1"}, true, nil},
+		{"retention with unit", map[string]string{"WARDLOCK_ACCESS_LOG_RETENTION_DAYS": "30d"}, true, nil},
+		{"zero buffer", map[string]string{"WARDLOCK_ACCESS_LOG_BUFFER": "0"}, true, nil},
+		{"buffer too large", map[string]string{"WARDLOCK_ACCESS_LOG_BUFFER": "1000001"}, true, nil},
 		{"bad address", map[string]string{"WARDLOCK_HTTP_ADDR": "8080"}, true, nil},
 		{"bad base domain", map[string]string{"WARDLOCK_BASE_DOMAIN": "under_score.example"}, true, nil},
 		{"bad log level", map[string]string{"WARDLOCK_LOG_LEVEL": "loud"}, true, nil},

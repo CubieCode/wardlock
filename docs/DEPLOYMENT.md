@@ -160,6 +160,21 @@ Deploy file bodies are stored once per content hash under `WARDLOCK_BLOB_DIR` (d
 
 Values are whole numbers of at least 1, without units. A deploy over a limit is rejected when it is created (`413 limit_exceeded`, naming the file where one is at fault), and an upload body longer than the per-file limit is rejected too. Raising the per-file limit means raising a reverse proxy's request body limit to match.
 
+## Access log
+
+Every request for a published site's content (A2.8) adds one entry to the access log in the database: time, site, host, path, status, how the visitor got in (`public`, `link`, `password`, `email`, `oauth`, or `none` when refused), the share link's public ID, a truncated client IP and the User-Agent. Health checks, `/.wardlock/` pages, the dashboard and hosts with nothing published are not logged.
+
+| Variable                             | Default | Meaning                                                          |
+| ------------------------------------ | ------- | ---------------------------------------------------------------- |
+| `WARDLOCK_ACCESS_LOG_IPV4_PREFIX`    | `24`    | leading bits of an IPv4 address kept, 0 to 32; 0 stores no IP    |
+| `WARDLOCK_ACCESS_LOG_IPV6_PREFIX`    | `48`    | leading bits of an IPv6 address kept, 0 to 128; 0 stores no IP   |
+| `WARDLOCK_ACCESS_LOG_RETENTION_DAYS` | `90`    | days to keep entries, 0 to 36500; 0 keeps them forever           |
+| `WARDLOCK_ACCESS_LOG_BUFFER`         | `10000` | entries that may wait for a write, 1 to 1000000, before dropping |
+
+The defaults keep enough of an address to tell networks apart, not individual households; set both prefixes to their maximum to keep full addresses, or to 0 to store none. IPv4-mapped IPv6 addresses count as IPv4. The IP is the client's address after trusted-proxy resolution: behind a reverse proxy listed in `WARDLOCK_TRUSTED_PROXIES` it is the client from `X-Forwarded-For`; without that setting every entry carries the proxy's address. Paths are stored without their query string, and any token in the path or User-Agent keeps only its public ID, so the access log never holds a share link.
+
+Entries are written in batches off the request path: serving never waits on the database. If the database falls behind and the buffer fills, new entries are dropped rather than slowing visitors; the server logs a warning (`access log entries dropped`, at most every 10 seconds) with the running total, and a failed batch write is logged and counted the same way. On shutdown the server writes what is buffered within the shutdown timeout. Retention runs at start and hourly beside the writer, deleting entries older than the retention period (including those of deleted sites) 1,000 at a time so the database is never locked for long.
+
 ## Backups
 
 Everything lives in `WARDLOCK_DATA_DIR`: `wardlock.db` and `blobs/` (or `WARDLOCK_BLOB_DIR` if set; and `certs/`, which can be re-issued).

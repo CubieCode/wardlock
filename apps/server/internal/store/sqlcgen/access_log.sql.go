@@ -46,3 +46,148 @@ func (q *Queries) InsertAccessLogEntry(ctx context.Context, arg InsertAccessLogE
 	)
 	return err
 }
+
+const listAccessLogByLink = `-- name: ListAccessLogByLink :many
+SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.host, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.ip, access_log.user_agent
+FROM access_log JOIN sites ON sites.id = access_log.site_id
+WHERE access_log.link_public_id = ?1 AND access_log.site_id = ?2
+  AND sites.owner_id = ?3
+  AND (access_log.occurred_at < ?4
+    OR (access_log.occurred_at = ?4 AND access_log.id < ?5))
+ORDER BY access_log.occurred_at DESC, access_log.id DESC
+LIMIT ?6
+`
+
+type ListAccessLogByLinkParams struct {
+	LinkPublicID     sql.NullString
+	SiteID           string
+	OwnerID          string
+	BeforeOccurredAt int64
+	BeforeID         string
+	RowLimit         int64
+}
+
+// One share link's entries on a site, paged like ListAccessLogBySite.
+func (q *Queries) ListAccessLogByLink(ctx context.Context, arg ListAccessLogByLinkParams) ([]AccessLog, error) {
+	rows, err := q.db.QueryContext(ctx, listAccessLogByLink,
+		arg.LinkPublicID,
+		arg.SiteID,
+		arg.OwnerID,
+		arg.BeforeOccurredAt,
+		arg.BeforeID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccessLog
+	for rows.Next() {
+		var i AccessLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.OccurredAt,
+			&i.SiteID,
+			&i.Host,
+			&i.Path,
+			&i.Status,
+			&i.Via,
+			&i.LinkPublicID,
+			&i.Ip,
+			&i.UserAgent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAccessLogBySite = `-- name: ListAccessLogBySite :many
+SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.host, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.ip, access_log.user_agent
+FROM access_log JOIN sites ON sites.id = access_log.site_id
+WHERE access_log.site_id = ?1 AND sites.owner_id = ?2
+  AND (access_log.occurred_at < ?3
+    OR (access_log.occurred_at = ?3 AND access_log.id < ?4))
+ORDER BY access_log.occurred_at DESC, access_log.id DESC
+LIMIT ?5
+`
+
+type ListAccessLogBySiteParams struct {
+	SiteID           string
+	OwnerID          string
+	BeforeOccurredAt int64
+	BeforeID         string
+	RowLimit         int64
+}
+
+// A site's entries, newest first, strictly before the cursor (occurred_at,
+// id), for the owner of a site that still exists. The first page passes the
+// largest occurred_at.
+func (q *Queries) ListAccessLogBySite(ctx context.Context, arg ListAccessLogBySiteParams) ([]AccessLog, error) {
+	rows, err := q.db.QueryContext(ctx, listAccessLogBySite,
+		arg.SiteID,
+		arg.OwnerID,
+		arg.BeforeOccurredAt,
+		arg.BeforeID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccessLog
+	for rows.Next() {
+		var i AccessLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.OccurredAt,
+			&i.SiteID,
+			&i.Host,
+			&i.Path,
+			&i.Status,
+			&i.Via,
+			&i.LinkPublicID,
+			&i.Ip,
+			&i.UserAgent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pruneAccessLog = `-- name: PruneAccessLog :execrows
+DELETE FROM access_log WHERE id IN (
+  SELECT old.id FROM access_log AS old WHERE old.occurred_at < ?1 LIMIT ?2
+)
+`
+
+type PruneAccessLogParams struct {
+	Before   int64
+	RowLimit int64
+}
+
+// Retention: up to row_limit entries of any site, including deleted ones,
+// older than the cutoff. Callers loop, so no one statement holds the write
+// lock for long.
+func (q *Queries) PruneAccessLog(ctx context.Context, arg PruneAccessLogParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneAccessLog, arg.Before, arg.RowLimit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

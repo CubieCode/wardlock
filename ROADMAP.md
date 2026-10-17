@@ -155,7 +155,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.1: Policy model and evaluation
 
-- Status: `review`
+- Status: `done`
 - Owner: feat/a2.1-policy-model
 - PR: https://github.com/CubieCode/wardlock/pull/26
 - Depends on: C1.3
@@ -232,9 +232,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.8: Access log pipeline
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/a2.8-access-log`
+- PR: https://github.com/CubieCode/wardlock/pull/24
 - Depends on: F0.3
 - Scope: Buffered, batched access-log writer off the request path (flush every second or 500 entries, drop-and-count when full, flush on shutdown); configurable IP truncation; retention pruning; `AccessLog` repository methods; query by site and link.
 - Acceptance: Tests prove the request path never blocks on the database (a slow fake store does not slow serving), counts dropped entries, flushes on shutdown, truncates IPv4 and IPv6 as configured and never stores raw tokens.

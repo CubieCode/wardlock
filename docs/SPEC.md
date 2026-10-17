@@ -122,6 +122,10 @@ A share link is `https://<site host><path>?t=<token>`.
 - HTML responses include `Link: <…?format=md>; rel="alternate"; type="text/markdown"`.
 - Non-HTML files ignore `format`. The exact conversion contract and its fixtures are part of A2.6.
 
+## Access log (A2.8)
+
+Every request for a published site's content (after the access decision, allowed or refused) records one entry: time, site, host, path without query string, status, how it got in (`public`, `link`, `password`, `email`, `oauth`, or `none` when refused), the share link's public ID when it came through a link, the client IP truncated to a configurable prefix (IPv4 /24 and IPv6 /48 by default, or not at all) and the User-Agent. Tokens are never stored: a token in the path or User-Agent is reduced to its public ID. `/.wardlock/` pages, health checks and the dashboard are not logged. Entries are kept for a configurable number of days (90 by default, or forever) and outlive the site they name. Owners query a site's entries, or one share link's, newest first; the dashboard and API views arrive with the screens that show them. Logging never slows serving: under database pressure entries are dropped and counted. Configuration: [DEPLOYMENT](DEPLOYMENT.md#access-log).
+
 ## Reserved path
 
 `/.wardlock/` (matched in any letter case, as deploy validation rejects it in any case) on every published site is served by Wardlock and can never be overridden by a deploy: `login`, `callback`, `logout`, `view` (the use-limited interstitial), `health` and `tls-ask` (C1.9: answered only in behind-a-proxy mode and only to requests from a trusted-proxy address, on any `Host`; 404 otherwise). F0.1 implements `health`; since C1.3 it answers only on sites with an active deploy (a host with nothing published is an unknown host). A2.1 adds `login` (GET, the login page for the site default; it lists sign-in methods as A2.3 to A2.5 add them) and `logout` (POST). Policies never apply under `/.wardlock/`.

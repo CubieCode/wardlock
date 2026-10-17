@@ -55,6 +55,8 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		return err
 	}
 	defer func() { _ = db.Close() }()
+	recorder, stopAccessLog := startAccessLog(ctx, cfg, log, db)
+	defer stopAccessLog()
 
 	ln, err := net.Listen("tcp", cfg.HTTPAddr)
 	if err != nil {
@@ -142,6 +144,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Blobs:       blobs,
 		Invalidator: notifier,
 		Access:      accessSvc,
+		Recorder:    recorder,
 		Log:         log,
 	})
 	if err != nil {
