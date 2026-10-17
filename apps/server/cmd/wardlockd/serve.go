@@ -129,7 +129,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	dash.Handle("/api/", apiServer.Handler())
 	dash.Handle("/", dashboard.Handler(cfg.DevDashboardURL))
 
-	handler := edge.New(edge.Config{
+	handler, err := edge.New(edge.Config{
 		DashboardHost: cfg.DashboardHost,
 		Dashboard:     dash,
 		Health:        platform.Healthz(),
@@ -144,6 +144,10 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Access:      accessSvc,
 		Log:         log,
 	})
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
 	defer handler.Close()
 	// Every request first has its client address settled: X-Forwarded-*
 	// is believed only from a trusted proxy and removed otherwise.

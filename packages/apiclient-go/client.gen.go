@@ -1359,7 +1359,7 @@ type ClientInterface interface {
 
 	// ListPolicies List a site's access policies.
 	//
-	// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is protected with share links only.
+	// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is public, so protection is opt-in per site or path.
 	//
 	// Corresponds with GET /api/v0/sites/{site}/policies (the `ListPolicies` operationId).
 	ListPolicies(ctx context.Context, site SiteName, params *ListPoliciesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2149,7 +2149,7 @@ func (c *Client) VerifyDomain(ctx context.Context, site SiteName, hostname Domai
 
 // ListPolicies List a site's access policies.
 //
-// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is protected with share links only.
+// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is public, so protection is opt-in per site or path.
 //
 // Corresponds with GET /api/v0/sites/{site}/policies (the `ListPolicies` operationId).
 func (c *Client) ListPolicies(ctx context.Context, site SiteName, params *ListPoliciesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4249,7 +4249,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListPoliciesWithResponse List a site's access policies.
 	//
-	// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is protected with share links only.
+	// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is public, so protection is opt-in per site or path.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -7335,7 +7335,7 @@ func (c *ClientWithResponses) VerifyDomainWithResponse(ctx context.Context, site
 
 // ListPoliciesWithResponse List a site's access policies.
 //
-// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is protected with share links only.
+// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is public, so protection is opt-in per site or path.
 //
 // Returns a wrapper object for the known response body format(s).
 //

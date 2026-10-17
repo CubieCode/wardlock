@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/edge"
 )
 
@@ -189,6 +190,15 @@ func (n *fakeNotifier) Notify(siteID string) {
 	}
 }
 
+// publicAccess lets everything in, as a public default policy does.
+type publicAccess struct{}
+
+func (publicAccess) Decide(context.Context, access.Request) (access.Decision, error) {
+	return access.Decision{Outcome: access.Allow, Via: access.ViaPublic}, nil
+}
+
+func (publicAccess) EndSession(context.Context, string, string) error { return nil }
+
 type harness struct {
 	edge     *edge.Edge
 	fx       fixtures
@@ -224,7 +234,10 @@ func newHarness(t testing.TB, access edge.Access) *harness {
 	src.set(edge.ServedSite{ID: "site-plain", Name: "plain", ActiveDeployID: "dep-plain-1", ActivatedAt: activated}, fx.files["spa"])
 	src.set(edge.ServedSite{ID: "site-empty", Name: "empty"}, nil)
 	n := &fakeNotifier{}
-	e := edge.New(edge.Config{
+	if access == nil {
+		access = publicAccess{}
+	}
+	e, err := edge.New(edge.Config{
 		DashboardHost: base,
 		Dashboard:     text("dashboard"),
 		Health:        text("healthy"),
@@ -233,6 +246,9 @@ func newHarness(t testing.TB, access edge.Access) *harness {
 		Invalidator:   n,
 		Access:        access,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(e.Close)
 	return &harness{edge: e, fx: fx, src: src, notifier: n}
 }

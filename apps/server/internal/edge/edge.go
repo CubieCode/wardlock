@@ -36,7 +36,8 @@ type Config struct {
 	Blobs BlobOpener
 	// Invalidator announces site changes, which drop cached manifests.
 	Invalidator Invalidator
-	// Access decides each request; nil means every site is public.
+	// Access decides each request. It is required: there is no implicit
+	// allow-all, so a wiring mistake cannot publish protected sites.
 	Access Access
 	Log    *slog.Logger
 }
@@ -51,8 +52,14 @@ type Edge struct {
 	unsubscribe func()
 }
 
+// ErrNoAccess is returned by New without an Access.
+var ErrNoAccess = errors.New("edge: Config.Access is required")
+
 // New returns the edge handler, subscribed to cfg.Invalidator until Close.
-func New(cfg Config) *Edge {
+func New(cfg Config) (*Edge, error) {
+	if cfg.Access == nil {
+		return nil, ErrNoAccess
+	}
 	e := &Edge{
 		cfg:    cfg,
 		blobs:  cfg.Blobs,
@@ -60,14 +67,11 @@ func New(cfg Config) *Edge {
 		log:    cfg.Log,
 		cache:  newCache(cfg.Sites),
 	}
-	if e.access == nil {
-		e.access = public{}
-	}
 	if e.log == nil {
 		e.log = slog.New(slog.DiscardHandler)
 	}
 	e.unsubscribe = cfg.Invalidator.Subscribe(e.cache.invalidate)
-	return e
+	return e, nil
 }
 
 // Close stops listening for invalidations.

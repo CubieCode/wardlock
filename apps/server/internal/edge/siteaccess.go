@@ -5,11 +5,12 @@ package edge
 
 import (
 	"bytes"
-	"context"
 	"embed"
 	"html/template"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -20,15 +21,6 @@ import (
 var templateFS embed.FS
 
 var pages = template.Must(template.ParseFS(templateFS, "templates/*.html"))
-
-// public is the Access used without a policy service: every site is public.
-type public struct{}
-
-func (public) Decide(_ context.Context, r access.Request) (access.Decision, error) {
-	return access.Decision{Outcome: access.Allow, Via: access.ViaPublic}, nil
-}
-
-func (public) EndSession(context.Context, string, string) error { return nil }
 
 // decide asks Access about r and sets the protected-site headers when the
 // governing policy is protected. ok is false when it has already answered
@@ -42,6 +34,9 @@ func (e *Edge) decide(w http.ResponseWriter, r *http.Request, req access.Request
 	}
 	if d.Protected {
 		protectedHeaders(w.Header())
+		// The answer depends on the session cookie, so no cache may hand
+		// one visitor's response to another.
+		addVary(w.Header(), "Cookie")
 	}
 	return d, true
 }
@@ -53,14 +48,28 @@ func protectedHeaders(h http.Header) {
 	h.Set("Referrer-Policy", "no-referrer")
 }
 
+// addVary adds field to Vary unless it is there already.
+func addVary(h http.Header, field string) {
+	for _, v := range h.Values("Vary") {
+		for f := range strings.SplitSeq(v, ",") {
+			if strings.EqualFold(strings.TrimSpace(f), field) {
+				return
+			}
+		}
+	}
+	h.Add("Vary", field)
+}
+
 // challenge answers a request the policy did not allow: the login page for
 // browsers, a bare 401 for everything else. Neither says whether the path
 // exists.
 func (e *Edge) challenge(w http.ResponseWriter, r *http.Request, site ServedSite, d access.Decision) {
 	h := w.Header()
 	h.Set("Cache-Control", "no-store")
+	// Browsers get the page, other clients the bare 401.
+	addVary(h, "Accept")
 	if d.Outcome == access.Login {
-		e.loginPage(w, r, site, d.Policy.LinksEnabled, http.StatusUnauthorized)
+		e.loginPage(w, r, d.Policy.LinksEnabled, http.StatusUnauthorized)
 		return
 	}
 	// Share-link tokens are also accepted as Bearer credentials (A2.2).
@@ -73,18 +82,19 @@ func (e *Edge) challenge(w http.ResponseWriter, r *http.Request, site ServedSite
 }
 
 // loginData is what the login page shows. A2.3, A2.4 and A2.5 add their
-// forms (password, email code, OAuth providers) as fields here and blocks
-// in templates/login.html.
+// methods (password, email code, OAuth providers) as fields here and one
+// <section class="method"> each in templates/login.html.
 type loginData struct {
+	// Site is the host the visitor asked for.
 	Site  string
 	Links bool
 }
 
 // loginPage renders the site's login page with status. It is Wardlock's
 // page, not the site's: never cached, never framed, no scripts.
-func (e *Edge) loginPage(w http.ResponseWriter, r *http.Request, site ServedSite, links bool, status int) {
+func (e *Edge) loginPage(w http.ResponseWriter, r *http.Request, links bool, status int) {
 	var body bytes.Buffer
-	if err := pages.ExecuteTemplate(&body, "login.html", loginData{Site: site.Name, Links: links}); err != nil {
+	if err := pages.ExecuteTemplate(&body, "login.html", loginData{Site: canonicalHost(r.Host), Links: links}); err != nil {
 		e.log.ErrorContext(r.Context(), "render login page", slog.Any("error", err))
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
@@ -121,7 +131,7 @@ func (e *Edge) serveReserved(w http.ResponseWriter, r *http.Request, site Served
 		if !ok {
 			return
 		}
-		e.loginPage(w, r, site, d.Policy.LinksEnabled, http.StatusOK)
+		e.loginPage(w, r, d.Policy.LinksEnabled, http.StatusOK)
 	case ReservedPrefix + "logout":
 		e.logout(w, r, site)
 	default:
@@ -130,11 +140,16 @@ func (e *Edge) serveReserved(w http.ResponseWriter, r *http.Request, site Served
 }
 
 // logout ends the visitor's site session and clears its cookie. POST only,
-// so a link or image elsewhere cannot sign visitors out.
+// and only from a page on the same host, so a link, image or form on
+// another site (a sibling site included) cannot sign visitors out.
 func (e *Edge) logout(w http.ResponseWriter, r *http.Request, site ServedSite) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !sameOrigin(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	if v := sessionCookieValue(r); v != "" {
@@ -167,6 +182,33 @@ func ClearSessionCookie() *http.Cookie {
 		Name: access.SessionCookieName, Path: "/", MaxAge: -1,
 		Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	}
+}
+
+// sameOrigin reports whether an unsafe request comes from a page on its own
+// host: Origin names the request's host, or without Origin, Sec-Fetch-Site
+// is same-origin. A request with neither is refused. The scheme is not
+// compared, since behind a proxy the edge may see plain HTTP.
+func sameOrigin(r *http.Request) bool {
+	if o := r.Header.Get("Origin"); o != "" {
+		u, err := url.Parse(o)
+		return err == nil && u.Host != "" && canonicalHost(u.Host) == canonicalHost(r.Host) && samePort(u, r.Host)
+	}
+	return r.Header.Get("Sec-Fetch-Site") == "same-origin"
+}
+
+// samePort reports whether origin's port matches the request host's. A
+// Host without a port (as a proxy forwards it) matches only the scheme's
+// default port.
+func samePort(origin *url.URL, reqHost string) bool {
+	op := origin.Port()
+	if op == "" {
+		op = map[string]string{"http": "80", "https": "443"}[origin.Scheme]
+	}
+	_, port, err := net.SplitHostPort(reqHost)
+	if err != nil {
+		return op == "80" || op == "443"
+	}
+	return op == port
 }
 
 // sessionCookieValue returns the site session cookie's value. Only the

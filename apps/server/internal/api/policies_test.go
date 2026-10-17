@@ -42,7 +42,7 @@ func TestPolicies(t *testing.T) {
 		t.Fatalf("new site policies %+v", page)
 	}
 	def := page.Items[0]
-	if def.Path != "/" || def.Visibility != api.PolicyVisibilityProtected || !slices.Equal(def.Methods, []api.PolicyMethod{api.PolicyMethodLinks}) || def.Version != 1 {
+	if def.Path != "/" || def.Visibility != api.PolicyVisibilityPublic || len(def.Methods) != 0 || def.Version != 1 {
 		t.Fatalf("default policy %+v", def)
 	}
 
@@ -56,14 +56,14 @@ func TestPolicies(t *testing.T) {
 		t.Fatalf("set /assets/ = %+v", assets)
 	}
 	before := len(hs.notifications())
-	pub := hs.setPolicy(hs.ownerA, "docs", api.SetPolicyRequest{Path: "/", Visibility: api.PolicyVisibilityPublic, Methods: &[]api.PolicyMethod{}})
-	if pub.Id != def.Id || pub.Version != 2 || pub.Visibility != api.PolicyVisibilityPublic || len(pub.Methods) != 0 {
-		t.Fatalf("set / public = %+v", pub)
+	prot := hs.setPolicy(hs.ownerA, "docs", api.SetPolicyRequest{Path: "/", Visibility: api.PolicyVisibilityProtected})
+	if prot.Id != def.Id || prot.Version != 2 || prot.Visibility != api.PolicyVisibilityProtected || !slices.Equal(prot.Methods, []api.PolicyMethod{api.PolicyMethodLinks}) {
+		t.Fatalf("set / protected = %+v", prot)
 	}
 	if len(hs.notifications()) == before {
 		t.Fatal("setting a policy notified nobody")
 	}
-	if again := hs.setPolicy(hs.ownerA, "docs", api.SetPolicyRequest{Path: "/", Visibility: api.PolicyVisibilityPublic}); again.Version != 2 {
+	if again := hs.setPolicy(hs.ownerA, "docs", api.SetPolicyRequest{Path: "/", Visibility: api.PolicyVisibilityProtected, Methods: &[]api.PolicyMethod{api.PolicyMethodLinks}}); again.Version != 2 {
 		t.Fatalf("identical set bumped the version: %+v", again)
 	}
 
@@ -138,7 +138,7 @@ func TestPoliciesOwnerIsolation(t *testing.T) {
 		})
 	}
 	page := hs.policies(hs.ownerA, "alpha", "")
-	if len(page.Items) != 2 || page.Items[0].Version != 1 || page.Items[0].Visibility != api.PolicyVisibilityProtected || page.Items[1].Id != docs.Id {
+	if len(page.Items) != 2 || page.Items[0].Version != 1 || page.Items[0].Visibility != api.PolicyVisibilityPublic || page.Items[1].Id != docs.Id {
 		t.Fatalf("owner B changed owner A's policies: %+v", page)
 	}
 }

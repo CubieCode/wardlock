@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -92,7 +93,7 @@ func TestProtectedResponses(t *testing.T) {
 		report  = "Harbour Lights quarterly report"
 		about   = "About this report"
 	)
-	protected := map[string]string{"X-Robots-Tag": "noindex", "Referrer-Policy": "no-referrer"}
+	protected := map[string]string{"X-Robots-Tag": "noindex", "Referrer-Policy": "no-referrer", "Vary": "Cookie"}
 	for _, tc := range []struct {
 		name         string
 		method       string
@@ -109,7 +110,8 @@ func TestProtectedResponses(t *testing.T) {
 			"Cache-Control": "no-store", "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY",
 			"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
 		}},
-		{name: "login page mentions share links when enabled", target: "/", header: browser, status: 401, body: "share link", hidden: report},
+		{name: "login page offers share links when enabled", target: "/", header: browser, status: 401, body: `<h2 id="method-links">Share link</h2>`, hidden: report},
+		{name: "login page names the host", target: "/", header: browser, status: 401, body: `<span class="host">basic.wardlock.localhost</span>`},
 		{name: "missing path looks like any other", target: "/no/such/page", header: browser, status: 401, body: "This page is private", hidden: "Page not found"},
 		{name: "HEAD login page has no body", method: http.MethodHead, target: "/", header: browser, status: 401, body: "", headers: map[string]string{"Cache-Control": "no-store"}},
 		{name: "other clients get a bare 401", target: "/about/", status: 401, body: "This site is protected.", hidden: about, headers: map[string]string{
@@ -117,7 +119,7 @@ func TestProtectedResponses(t *testing.T) {
 		}},
 		{name: "bad cookie is cleared", target: "/", header: http.Header{"Cookie": {access.SessionCookieName + "=stale"}}, status: 401, hidden: report, headers: map[string]string{"Set-Cookie": clearValue}},
 		{name: "public path on a protected site", target: "/assets/site.css", status: 200, body: "font-family", headers: map[string]string{
-			"Cache-Control": "public, max-age=0, must-revalidate", "X-Robots-Tag": "", "Referrer-Policy": "",
+			"Cache-Control": "public, max-age=0, must-revalidate", "X-Robots-Tag": "", "Referrer-Policy": "", "Vary": "",
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -153,6 +155,23 @@ func TestProtectedResponses(t *testing.T) {
 		})
 	}
 
+	// Responses to a challenge depend on the cookie and on Accept; a file
+	// with a precompressed sibling also varies by Accept-Encoding.
+	for _, tc := range []struct {
+		target string
+		header http.Header
+		want   []string
+	}{
+		{"/", browser, []string{"Cookie", "Accept"}},
+		{"/", nil, []string{"Cookie", "Accept"}},
+		{"/assets/app.js", withCookie, []string{"Cookie", "Accept-Encoding"}},
+	} {
+		rec := h.do(http.MethodGet, basic, tc.target, tc.header)
+		if got := rec.Header().Values("Vary"); !slices.Equal(got, tc.want) {
+			t.Errorf("%s Vary = %q, want %q", tc.target, got, tc.want)
+		}
+	}
+
 	a.requests()
 	h.do(http.MethodGet, "BASIC."+base, "/assets/../about/", http.Header{
 		"Accept": {"text/html"}, "Cookie": {"wardlock_site=tossed; " + access.SessionCookieName + "=good"},
@@ -181,7 +200,14 @@ func TestReservedPathIgnoresPolicies(t *testing.T) {
 		{name: "deployed reserved file", target: "/.wardlock/index.html", status: 404, body: "404 page not found"},
 		{name: "login page", target: "/.wardlock/login", header: browser, status: 200, body: "This page is private", headers: map[string]string{"X-Frame-Options": "DENY"}},
 		{name: "login is GET only", method: http.MethodPost, target: "/.wardlock/login", status: 405, headers: map[string]string{"Allow": "GET, HEAD"}},
-		{name: "logout", method: http.MethodPost, target: "/.wardlock/logout", header: withCookie, status: 303, headers: map[string]string{"Location": "/", "Set-Cookie": clearValue}},
+		{name: "logout", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Origin", "http://basic."+base), status: 303, headers: map[string]string{"Location": "/", "Set-Cookie": clearValue}},
+		{name: "logout by fetch metadata", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Sec-Fetch-Site", "same-origin"), status: 303, headers: map[string]string{"Set-Cookie": clearValue}},
+		{name: "logout from another site", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Origin", "https://evil.example"), status: 403, headers: map[string]string{"Set-Cookie": ""}},
+		{name: "logout from a sibling site", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Origin", "http://spa."+base), status: 403, headers: map[string]string{"Set-Cookie": ""}},
+		{name: "logout from another port", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Origin", "http://basic."+base+":8080"), status: 403},
+		{name: "logout cross-site by fetch metadata", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Sec-Fetch-Site", "same-site"), status: 403},
+		{name: "logout with no origin information", method: http.MethodPost, target: "/.wardlock/logout", header: withCookie, status: 403},
+		{name: "logout with a null origin", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Origin", "null"), status: 403},
 		{name: "logout is POST only", target: "/.wardlock/logout", header: withCookie, status: 405, headers: map[string]string{"Allow": "POST"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -211,9 +237,17 @@ func TestReservedPathIgnoresPolicies(t *testing.T) {
 			}
 		})
 	}
-	if len(a.ended) != 1 || a.ended[0] != "site-basic good" {
+	// Only the two same-origin logouts ended a session.
+	if len(a.ended) != 2 || a.ended[0] != "site-basic good" || a.ended[1] != "site-basic good" {
 		t.Fatalf("EndSession calls %v", a.ended)
 	}
+}
+
+// sameSite returns h plus one header.
+func sameSite(h http.Header, k, v string) http.Header {
+	out := h.Clone()
+	out.Set(k, v)
+	return out
 }
 
 func TestFallbackFilesNeedTheirOwnPolicy(t *testing.T) {
@@ -276,11 +310,10 @@ func TestAccessFailureIs500(t *testing.T) {
 	}
 }
 
-func TestNoAccessServiceMeansPublic(t *testing.T) {
-	h := newHarness(t, nil)
-	rec := h.do(http.MethodGet, "basic."+base, "/", nil)
-	if rec.Code != 200 || rec.Header().Get("X-Robots-Tag") != "" || rec.Header().Get("Cache-Control") != "public, max-age=0, must-revalidate" {
-		t.Fatalf("%d %v", rec.Code, rec.Header())
+func TestAccessIsRequired(t *testing.T) {
+	_, err := edge.New(edge.Config{Invalidator: &fakeNotifier{}})
+	if !errors.Is(err, edge.ErrNoAccess) {
+		t.Fatalf("New without Access = %v, want ErrNoAccess", err)
 	}
 }
 

@@ -137,6 +137,13 @@ func (h *harness) set(ownerID, site string, r access.Rule) store.Policy {
 	return p
 }
 
+// protect makes the site's default protected with share links, as an owner
+// opting in does.
+func (h *harness) protect(ownerID, site string) store.Policy {
+	h.t.Helper()
+	return h.set(ownerID, site, access.Rule{PathPrefix: "/", Visibility: store.Protected, Links: true})
+}
+
 func (h *harness) policyFor(siteID, reqPath string) store.Policy {
 	h.t.Helper()
 	d, err := h.svc.Decide(h.t.Context(), access.Request{SiteID: siteID, Path: reqPath})
@@ -251,20 +258,20 @@ func TestCheckPrefix(t *testing.T) {
 	}
 }
 
-func TestNewSiteDefaultsToProtectedLinks(t *testing.T) {
+func TestNewSiteDefaultsToPublic(t *testing.T) {
 	h := newHarness(t)
 	o := h.owner()
 	s := h.site(o, "docs")
-	for _, browser := range []bool{true, false} {
-		d := h.decide(access.Request{SiteID: s.ID, Path: "/", Browser: browser})
-		want := access.Unauthorized
-		if browser {
-			want = access.Login
+	for _, r := range []access.Request{
+		{SiteID: s.ID, Path: "/", Browser: true},
+		{SiteID: s.ID, Path: "/deep/page.html"},
+		{SiteID: s.ID, Path: "/", Cookie: "anything"},
+	} {
+		d := h.decide(r)
+		if d.Outcome != access.Allow || d.Protected || d.Via != access.ViaPublic || d.ClearCookie {
+			t.Fatalf("%+v: %+v", r, d)
 		}
-		if d.Outcome != want || !d.Protected || d.Via != access.ViaNone || d.ClearCookie {
-			t.Fatalf("browser %v: %+v", browser, d)
-		}
-		if p := d.Policy; p.PathPrefix != "/" || p.Visibility != store.Protected || !p.LinksEnabled ||
+		if p := d.Policy; p.PathPrefix != "/" || p.Visibility != store.Public || p.LinksEnabled ||
 			p.PasswordEnabled || p.EmailEnabled || p.OAuthEnabled || p.Version != 1 {
 			t.Fatalf("default policy %+v", p)
 		}
@@ -276,12 +283,21 @@ func TestNewSiteDefaultsToProtectedLinks(t *testing.T) {
 	if len(list) != 1 || list[0].ID != h.policyFor(s.ID, "/").ID {
 		t.Fatalf("List = %+v", list)
 	}
+	// Opting in protects the site on the next request.
+	h.protect(o, "docs")
+	if d := h.decide(access.Request{SiteID: s.ID, Path: "/", Browser: true}); d.Outcome != access.Login || !d.Protected {
+		t.Fatalf("after protecting: %+v", d)
+	}
+	if d := h.decide(access.Request{SiteID: s.ID, Path: "/"}); d.Outcome != access.Unauthorized {
+		t.Fatalf("after protecting, non-browser: %+v", d)
+	}
 }
 
 func TestPrecedence(t *testing.T) {
 	h := newHarness(t)
 	o := h.owner()
 	s := h.site(o, "docs")
+	h.protect(o, "docs")
 	h.set(o, "docs", access.Rule{PathPrefix: "/assets/", Visibility: store.Public})
 	h.set(o, "docs", access.Rule{PathPrefix: "/team/", Visibility: store.Public})
 	h.set(o, "docs", access.Rule{PathPrefix: "/team/private/", Visibility: store.Protected, Links: true})
@@ -380,7 +396,7 @@ func TestVersionBumpEndsSessions(t *testing.T) {
 	h := newHarness(t)
 	o := h.owner()
 	s := h.site(o, "docs")
-	def := h.policyFor(s.ID, "/")
+	def := h.protect(o, "docs") // version 2: the public default was version 1
 	docs := h.set(o, "docs", access.Rule{PathPrefix: "/docs/", Visibility: store.Protected, Links: true})
 	defCookie := h.session(s.ID, def, store.SessionLink)
 	docsCookie := h.session(s.ID, docs, store.SessionLink)
@@ -393,7 +409,7 @@ func TestVersionBumpEndsSessions(t *testing.T) {
 	}
 
 	// Identical settings: no new version, sessions survive.
-	if p := h.set(o, "docs", access.Rule{PathPrefix: "/", Visibility: store.Protected, Links: true}); p.Version != 1 {
+	if p := h.set(o, "docs", access.Rule{PathPrefix: "/", Visibility: store.Protected, Links: true}); p.Version != 2 {
 		t.Fatalf("version after identical set = %d", p.Version)
 	}
 	if d := allowed(defCookie, "/"); d.Outcome != access.Allow {
@@ -401,11 +417,11 @@ func TestVersionBumpEndsSessions(t *testing.T) {
 	}
 
 	// Public and back: two bumps; the old session is gone for good.
-	if p := h.set(o, "docs", access.Rule{PathPrefix: "/", Visibility: store.Public}); p.Version != 2 {
-		t.Fatalf("version = %d, want 2", p.Version)
-	}
-	if p := h.set(o, "docs", access.Rule{PathPrefix: "/", Visibility: store.Protected, Links: true}); p.Version != 3 {
+	if p := h.set(o, "docs", access.Rule{PathPrefix: "/", Visibility: store.Public}); p.Version != 3 {
 		t.Fatalf("version = %d, want 3", p.Version)
+	}
+	if p := h.set(o, "docs", access.Rule{PathPrefix: "/", Visibility: store.Protected, Links: true}); p.Version != 4 {
+		t.Fatalf("version = %d, want 4", p.Version)
 	}
 	if d := allowed(defCookie, "/"); d.Outcome == access.Allow || !d.ClearCookie {
 		t.Fatalf("after version bump: %+v", d)
@@ -430,13 +446,13 @@ func TestCookieRejections(t *testing.T) {
 	o := h.owner()
 	a := h.site(o, "alpha")
 	b := h.site(o, "beta")
-	pa := h.policyFor(a.ID, "/")
-	h.policyFor(b.ID, "/")
+	pa := h.protect(o, "alpha")
+	h.protect(o, "beta")
 	good := h.session(a.ID, pa, store.SessionLink)
 	// Same database, another server key: a cookie minted elsewhere.
 	other := newHarnessKey(t, h.db, []byte("another-server-key-0123456789abcdef-0123"))
 	os := other.site(o, "gamma")
-	forged := other.session(os.ID, other.policyFor(os.ID, "/"), store.SessionLink)
+	forged := other.session(os.ID, other.protect(o, "gamma"), store.SessionLink)
 
 	enc, sig, _ := strings.Cut(good, ".")
 	flip := func(s string, i int) string {
@@ -477,7 +493,7 @@ func TestSessionExpiryAndLogout(t *testing.T) {
 	h := newHarness(t)
 	o := h.owner()
 	s := h.site(o, "docs")
-	p := h.policyFor(s.ID, "/")
+	p := h.protect(o, "docs")
 	cookie := h.session(s.ID, p, store.SessionLink)
 	h.clock.advance(access.SessionLifetime - time.Millisecond)
 	if d := h.decide(access.Request{SiteID: s.ID, Path: "/", Cookie: cookie}); d.Outcome != access.Allow {

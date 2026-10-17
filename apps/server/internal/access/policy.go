@@ -30,14 +30,14 @@ type Rule struct {
 	Links bool
 }
 
-// newDefault is the policy a site has before its owner sets one: protected
-// with share links only (SPEC "Policies").
+// newDefault is the policy a site has before its owner sets one: public,
+// so deploys keep working and protection is opt-in (SPEC "Policies").
 func newDefault(siteID string, now timeFunc) store.Policy {
 	at := now()
 	return store.Policy{
 		ID: store.NewID(), SiteID: siteID, PathPrefix: DefaultPrefix,
-		Visibility: store.Protected, LinksEnabled: true,
-		Version: 1, CreatedAt: at, UpdatedAt: at,
+		Visibility: store.Public,
+		Version:    1, CreatedAt: at, UpdatedAt: at,
 	}
 }
 

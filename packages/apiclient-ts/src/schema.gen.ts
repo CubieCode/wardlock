@@ -622,7 +622,7 @@ export interface paths {
     };
     /**
      * List a site's access policies.
-     * @description Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is protected with share links only.
+     * @description Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is public, so protection is opt-in per site or path.
      */
     get: operations['listPolicies'];
     /**
