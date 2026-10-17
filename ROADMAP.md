@@ -155,7 +155,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.1: Policy model and evaluation
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: feat/a2.1-policy-model
 - PR:
 - Depends on: C1.3
