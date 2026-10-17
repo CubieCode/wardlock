@@ -256,8 +256,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.2: Sites and deploys
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: `feat/d3.2-sites-and-deploys`
 - PR:
 - Depends on: D3.1, C1.2
 - Scope: Site list with policy and last deploy, site detail with deploy history, rollback and teardown with clear confirmations, copyable site URL.
