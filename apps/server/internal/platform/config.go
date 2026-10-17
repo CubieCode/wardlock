@@ -304,6 +304,9 @@ func parseTLSConfig(get func(key, fallback string) string, base, dashboard strin
 }
 
 // parseTrustedProxies reads comma-separated IP addresses and CIDR ranges.
+// IPv4-mapped IPv6 forms become plain IPv4. A range covering every address
+// (0.0.0.0/0, ::/0) is refused: it would let any client choose its own
+// address.
 func parseTrustedProxies(raw string) ([]netip.Prefix, error) {
 	var out []netip.Prefix
 	for item := range strings.SplitSeq(raw, ",") {
@@ -311,16 +314,27 @@ func parseTrustedProxies(raw string) ([]netip.Prefix, error) {
 		if item == "" {
 			continue
 		}
-		if p, err := netip.ParsePrefix(item); err == nil {
-			out = append(out, p.Masked())
-			continue
-		}
-		addr, err := netip.ParseAddr(item)
+		p, err := netip.ParsePrefix(item)
 		if err != nil {
-			return nil, fmt.Errorf("%w: WARDLOCK_TRUSTED_PROXIES: %q is not an IP address or CIDR range", ErrInvalidConfig, item)
+			addr, aerr := netip.ParseAddr(item)
+			if aerr != nil {
+				return nil, fmt.Errorf("%w: WARDLOCK_TRUSTED_PROXIES: %q is not an IP address or CIDR range", ErrInvalidConfig, item)
+			}
+			if addr.Zone() != "" {
+				return nil, fmt.Errorf("%w: WARDLOCK_TRUSTED_PROXIES: %q has an IPv6 zone; list the address without it", ErrInvalidConfig, item)
+			}
+			p = netip.PrefixFrom(addr, addr.BitLen())
 		}
-		addr = addr.Unmap()
-		out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+		if p.Addr().Is4In6() {
+			if p.Bits() < 96 {
+				return nil, fmt.Errorf("%w: WARDLOCK_TRUSTED_PROXIES: %q mixes IPv4-mapped and IPv6 addresses; list the IPv4 range instead", ErrInvalidConfig, item)
+			}
+			p = netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96)
+		}
+		if p.Bits() == 0 {
+			return nil, fmt.Errorf("%w: WARDLOCK_TRUSTED_PROXIES: %q trusts every address, which lets any client choose its own; list only the proxy's addresses", ErrInvalidConfig, item)
+		}
+		out = append(out, p.Masked())
 	}
 	return out, nil
 }

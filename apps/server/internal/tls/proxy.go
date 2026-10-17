@@ -4,6 +4,7 @@
 package tls
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/netip"
@@ -29,29 +30,49 @@ func (t TrustedProxies) Contains(addr netip.Addr) bool {
 	return false
 }
 
+type peerKey struct{}
+
+// Peer is the connection's immediate peer, before any X-Forwarded-For
+// rewrite, and whether it is a trusted proxy.
+type Peer struct {
+	Addr    netip.Addr
+	Trusted bool
+}
+
+// PeerFrom returns the Peer that Handler recorded for a request; ok is
+// false when Handler did not run or the peer address was unparseable. Use
+// it where the proxy itself must be identified, such as
+// /.wardlock/tls-ask, since RemoteAddr is the client behind it.
+func PeerFrom(ctx context.Context) (p Peer, ok bool) {
+	p, ok = ctx.Value(peerKey{}).(Peer)
+	return p, ok
+}
+
 // Handler makes r.RemoteAddr the client's address for everything after it.
 // A request from a trusted proxy takes its client from X-Forwarded-For,
 // read right to left past every trusted hop, so a client cannot choose its
 // own address by sending the header; X-Forwarded-Proto is kept only when it
 // is http or https. A request from any other peer has every forwarding
 // header removed, so nothing downstream can mistake a client's claim for
-// the proxy's. RemoteAddr keeps port 0 when it is rewritten, since the
+// the proxy's. Either way the original peer stays available through
+// PeerFrom. RemoteAddr keeps port 0 when it is rewritten, since the
 // client's port is unknown.
 func (t TrustedProxies) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		peer, ok := peerAddr(r.RemoteAddr)
-		if !ok || !t.Contains(peer) {
+		trusted := ok && t.Contains(peer)
+		if ok {
+			r = r.WithContext(context.WithValue(r.Context(), peerKey{}, Peer{Addr: peer, Trusted: trusted}))
+		}
+		if !trusted {
 			for _, h := range forwardedHeaders {
 				r.Header.Del(h)
 			}
 			next.ServeHTTP(w, r)
 			return
 		}
-		client := t.clientAddr(peer, r.Header.Values("X-Forwarded-For"))
-		if client != peer {
-			r2 := *r
-			r2.RemoteAddr = net.JoinHostPort(client.String(), "0")
-			r = &r2
+		if client := t.clientAddr(peer, r.Header.Values("X-Forwarded-For")); client != peer {
+			r.RemoteAddr = net.JoinHostPort(client.String(), "0")
 		}
 		if proto := r.Header.Values("X-Forwarded-Proto"); len(proto) != 1 || (proto[0] != "http" && proto[0] != "https") {
 			r.Header.Del("X-Forwarded-Proto")

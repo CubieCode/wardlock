@@ -147,7 +147,11 @@ func TestTrustedProxies(t *testing.T) {
 			if got.Host != "docs.sites.example" {
 				t.Errorf("Host = %q; forwarding headers must never change it", got.Host)
 			}
-			if !tt.proxies.Contains(netip.MustParseAddrPort(tt.remote).Addr()) {
+			peer := netip.MustParseAddrPort(tt.remote).Addr().Unmap()
+			if p, ok := PeerFrom(got.Context()); !ok || p.Addr != peer || p.Trusted != tt.proxies.Contains(peer) {
+				t.Errorf("PeerFrom = %+v, %v; want the connecting peer %s, trusted %v", p, ok, peer, tt.proxies.Contains(peer))
+			}
+			if !tt.proxies.Contains(peer) {
 				for _, h := range forwardedHeaders {
 					if got.Header.Get(h) != "" {
 						t.Errorf("%s from an untrusted peer reached the handler", h)
@@ -155,5 +159,23 @@ func TestTrustedProxies(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPeerFromWithoutAddress(t *testing.T) {
+	var got *http.Request
+	h := TrustedProxies{netip.MustParsePrefix("127.0.0.1/32")}.Handler(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got = r }))
+	req := httptest.NewRequest(http.MethodGet, "http://docs.sites.example/", nil)
+	req.RemoteAddr = "@unix"
+	req.Header.Set("X-Forwarded-For", "198.51.100.1")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if _, ok := PeerFrom(got.Context()); ok {
+		t.Error("PeerFrom reported a peer for an unparseable address")
+	}
+	if got.Header.Get("X-Forwarded-For") != "" || got.RemoteAddr != "@unix" {
+		t.Errorf("unparseable peer was trusted: RemoteAddr %q, X-Forwarded-For %q", got.RemoteAddr, got.Header.Get("X-Forwarded-For"))
+	}
+	if _, ok := PeerFrom(req.Context()); ok {
+		t.Error("PeerFrom found a peer on a request Handler never saw")
 	}
 }

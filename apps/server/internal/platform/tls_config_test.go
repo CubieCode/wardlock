@@ -89,6 +89,17 @@ func TestLoadTLSConfig(t *testing.T) {
 		{"DNS provider without auto", with(public, "WARDLOCK_DNS_PROVIDER", "cloudflare"), "WARDLOCK_DNS_PROVIDER is only used when WARDLOCK_TLS_MODE=auto", nil},
 		{"ACME email in local mode", with(nil, "WARDLOCK_ACME_EMAIL", "ops@example.com"), "WARDLOCK_ACME_EMAIL is only used when WARDLOCK_TLS_MODE=auto", nil},
 		{"trusted proxies in local mode", with(nil, "WARDLOCK_TRUSTED_PROXIES", "127.0.0.1"), "only used when WARDLOCK_TLS_MODE=proxy", nil},
+		{"IPv4-mapped proxies become IPv4", with(public, "WARDLOCK_TRUSTED_PROXIES", "::ffff:10.1.2.3,::ffff:192.168.0.0/112"), "", func(c platform.Config) bool {
+			return slices.Equal(c.TLS.TrustedProxies, []netip.Prefix{
+				netip.MustParsePrefix("10.1.2.3/32"),
+				netip.MustParsePrefix("192.168.0.0/16"),
+			})
+		}},
+		{"every IPv4 address", with(public, "WARDLOCK_TRUSTED_PROXIES", "127.0.0.1,0.0.0.0/0"), `"0.0.0.0/0" trusts every address`, nil},
+		{"every IPv6 address", with(public, "WARDLOCK_TRUSTED_PROXIES", "::/0"), `"::/0" trusts every address`, nil},
+		{"every IPv4-mapped address", with(public, "WARDLOCK_TRUSTED_PROXIES", "::ffff:0:0/96"), "trusts every address", nil},
+		{"IPv4-mapped range wider than IPv4", with(public, "WARDLOCK_TRUSTED_PROXIES", "::ffff:0:0/80"), "mixes IPv4-mapped and IPv6", nil},
+		{"zoned address", with(public, "WARDLOCK_TRUSTED_PROXIES", "fe80::1%eth0"), "IPv6 zone", nil},
 		{"bad trusted proxy", with(public, "WARDLOCK_TRUSTED_PROXIES", "127.0.0.1,proxy.internal"), `"proxy.internal" is not an IP address or CIDR range`, nil},
 	}
 	for _, tt := range tests {

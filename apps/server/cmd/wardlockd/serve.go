@@ -131,8 +131,13 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	// Every request first has its client address settled: X-Forwarded-*
 	// is believed only from a trusted proxy and removed otherwise.
 	site := platform.LogRequests(log, wltls.TrustedProxies(cfg.TLS.TrustedProxies).Handler(handler))
-	servers := []platform.Listener{{Server: newHTTPServer(log, site), Listener: ln}}
-	if autoTLS != nil {
+	if cfg.TLS.Mode == platform.TLSProxy && len(cfg.TLS.TrustedProxies) == 0 {
+		log.Warn("proxy mode without WARDLOCK_TRUSTED_PROXIES: every client appears as the proxy's address, so per-IP limits apply to all clients together; see docs/DEPLOYMENT.md")
+	}
+	var servers []platform.Listener
+	if autoTLS == nil {
+		servers = []platform.Listener{{Server: newHTTPServer(log, site), Listener: ln}}
+	} else {
 		autoTLS.Domains = db.Domains()
 		autoTLS.Logger = log
 		autoTLS.HTTPPort = port
@@ -148,12 +153,13 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		plain := http.NewServeMux()
 		plain.Handle("/healthz", platform.Healthz())
 		plain.Handle("/", wltls.Redirect(443))
+		// Nothing on it reads a body, so it gets whole-request limits.
+		plainSrv := newHTTPServer(log, platform.LogRequests(log, certs.HTTPChallenge(plain)))
+		plainSrv.ReadTimeout = 30 * time.Second
+		plainSrv.WriteTimeout = 30 * time.Second
 		httpsSrv := newHTTPServer(log, site)
 		httpsSrv.TLSConfig = certs.TLSConfig()
-		servers = []platform.Listener{
-			{Server: newHTTPServer(log, platform.LogRequests(log, certs.HTTPChallenge(plain))), Listener: ln},
-			{Server: httpsSrv, Listener: tlsLn},
-		}
+		servers = []platform.Listener{{Server: plainSrv, Listener: ln}, {Server: httpsSrv, Listener: tlsLn}}
 		if err := certs.Manage(ctx); err != nil {
 			return err
 		}
@@ -176,10 +182,15 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	return platform.Serve(ctx, log, servers...)
 }
 
+// newHTTPServer bounds slow headers and idle keep-alive connections. It sets
+// no ReadTimeout or WriteTimeout: those cover the whole body, and a blob
+// upload (up to WARDLOCK_MAX_FILE_SIZE) or a large file download on a slow
+// link can legitimately take minutes.
 func newHTTPServer(log *slog.Logger, h http.Handler) *http.Server {
 	return &http.Server{
 		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
 }

@@ -125,3 +125,44 @@ func TestServeTLSConfigErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestServeProxyWarnsWithoutTrustedProxies checks the one startup warning
+// for proxy mode without WARDLOCK_TRUSTED_PROXIES, and its absence when
+// proxies are configured.
+func TestServeProxyWarnsWithoutTrustedProxies(t *testing.T) {
+	for _, proxies := range []string{"", "127.0.0.1"} {
+		t.Run("proxies="+proxies, func(t *testing.T) {
+			addr := freeAddr(t)
+			env := map[string]string{
+				"WARDLOCK_HTTP_ADDR":       addr,
+				"WARDLOCK_DATA_DIR":        t.TempDir(),
+				"WARDLOCK_BASE_DOMAIN":     "sites.test",
+				"WARDLOCK_SECRET":          testSecret,
+				"WARDLOCK_TRUSTED_PROXIES": proxies,
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			done := make(chan error, 1)
+			logs := &syncBuffer{}
+			go func() {
+				done <- run(ctx, []string{"serve"}, func(k string) string { return env[k] }, io.Discard, logs)
+			}()
+			var lastErr error
+			for range 50 {
+				res, err := http.Get("http://" + addr + "/healthz")
+				if lastErr = err; err == nil {
+					_ = res.Body.Close()
+					break
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			cancel()
+			if err := <-done; err != nil || lastErr != nil {
+				t.Fatalf("serve = %v, health = %v", err, lastErr)
+			}
+			warned := strings.Count(logs.String(), "proxy mode without WARDLOCK_TRUSTED_PROXIES")
+			if want := map[string]int{"": 1, "127.0.0.1": 0}[proxies]; warned != want {
+				t.Fatalf("warning logged %d times, want %d:\n%s", warned, want, logs)
+			}
+		})
+	}
+}

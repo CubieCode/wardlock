@@ -126,8 +126,8 @@ func sameOrigin(r *http.Request, hasCookie bool) bool {
 	return strings.EqualFold(u.Host, r.Host)
 }
 
-// remoteIP is the peer address. Trusted-proxy handling of X-Forwarded-For
-// arrives with C1.4.
+// remoteIP is the client address. Behind a trusted proxy, the tls
+// package's middleware has already set RemoteAddr from X-Forwarded-For.
 func remoteIP(r *http.Request) string {
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		return host
