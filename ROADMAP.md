@@ -87,7 +87,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.4: TLS
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/c1.4-tls`
 - PR: https://github.com/CubieCode/wardlock/pull/27
 - Depends on: F0.1
