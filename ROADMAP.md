@@ -87,8 +87,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.4: TLS
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: `feat/c1.4-tls`
 - PR:
 - Depends on: F0.1
 - Scope: `internal/tls` with certmagic: wildcard certificate for `*.<base domain>` plus dashboard and auth hosts through DNS-01 with Cloudflare and one more `libdns` provider; on-demand TLS restricted to verified custom domains (decision function backed by `Domains`); plain-HTTP mode behind a proxy with trusted-proxy configuration for `X-Forwarded-*`; local `*.localhost` mode (today's behaviour); HTTP to HTTPS redirect; certmagic storage under the data directory, passed in as `Storage`.
