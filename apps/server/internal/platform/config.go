@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/mail"
+	"net/netip"
 	"net/url"
 	"path/filepath"
 	"strconv"
@@ -22,8 +24,11 @@ import (
 type Config struct {
 	// DataDir holds the SQLite database and, later, blobs and certificates.
 	DataDir string
-	// HTTPAddr is the listen address for plain HTTP (edge and API).
+	// HTTPAddr is the listen address for plain HTTP: the edge and API, or
+	// in auto TLS mode ACME HTTP-01 answers and the redirect to HTTPS.
 	HTTPAddr string
+	// TLS is the TLS mode and its settings.
+	TLS TLSConfig
 	// BaseDomain is the domain sites are published under: <site>.<BaseDomain>.
 	BaseDomain string
 	// DashboardHost serves the dashboard and the owner API.
@@ -74,20 +79,29 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	}
 	cfg := Config{
 		DataDir:    get("WARDLOCK_DATA_DIR", "wardlock-data"),
-		HTTPAddr:   get("WARDLOCK_HTTP_ADDR", "127.0.0.1:8080"),
 		BaseDomain: normaliseHost(get("WARDLOCK_BASE_DOMAIN", "wardlock.localhost")),
 		LogFormat:  get("WARDLOCK_LOG_FORMAT", "json"),
 	}
 	cfg.DashboardHost = normaliseHost(get("WARDLOCK_DASHBOARD_HOST", cfg.BaseDomain))
 
-	if _, _, err := net.SplitHostPort(cfg.HTTPAddr); err != nil {
-		return Config{}, fmt.Errorf("%w: WARDLOCK_HTTP_ADDR %q: %w", ErrInvalidConfig, cfg.HTTPAddr, err)
-	}
 	if !validHost(cfg.BaseDomain) {
 		return Config{}, fmt.Errorf("%w: WARDLOCK_BASE_DOMAIN %q is not a hostname", ErrInvalidConfig, cfg.BaseDomain)
 	}
 	if !validHost(cfg.DashboardHost) {
 		return Config{}, fmt.Errorf("%w: WARDLOCK_DASHBOARD_HOST %q is not a hostname", ErrInvalidConfig, cfg.DashboardHost)
+	}
+	tlsCfg, err := parseTLSConfig(get, cfg.BaseDomain, cfg.DashboardHost)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.TLS = tlsCfg
+	httpDefault := "127.0.0.1:8080"
+	if cfg.TLS.Mode == TLSAuto {
+		httpDefault = ":80"
+	}
+	cfg.HTTPAddr = get("WARDLOCK_HTTP_ADDR", httpDefault)
+	if _, _, err := net.SplitHostPort(cfg.HTTPAddr); err != nil {
+		return Config{}, fmt.Errorf("%w: WARDLOCK_HTTP_ADDR %q: %w", ErrInvalidConfig, cfg.HTTPAddr, err)
 	}
 	if err := cfg.LogLevel.UnmarshalText([]byte(get("WARDLOCK_LOG_LEVEL", "info"))); err != nil {
 		return Config{}, fmt.Errorf("%w: WARDLOCK_LOG_LEVEL: %w", ErrInvalidConfig, err)
@@ -185,4 +199,137 @@ func validHost(h string) bool {
 		}
 	}
 	return true
+}
+
+// TLS modes (WARDLOCK_TLS_MODE; docs/ARCHITECTURE.md "TLS modes").
+const (
+	// TLSLocal serves plain HTTP for localhost and *.localhost hosts.
+	TLSLocal = "local"
+	// TLSProxy serves plain HTTP behind a proxy that terminates TLS.
+	TLSProxy = "proxy"
+	// TLSAuto obtains certificates itself and serves HTTPS.
+	TLSAuto = "auto"
+)
+
+// LetsEncrypt is the default ACME directory.
+const LetsEncrypt = "https://acme-v02.api.letsencrypt.org/directory"
+
+// TLSConfig is the TLS mode and the settings that belong to it.
+type TLSConfig struct {
+	// Mode is TLSLocal, TLSProxy or TLSAuto.
+	Mode string
+	// The remaining fields apply to TLSAuto only.
+	HTTPSAddr string
+	// ACMECA is the ACME directory URL; ACMEEmail the optional account
+	// contact; ACMECARoot an optional PEM bundle trusted for the CA.
+	ACMECA     string
+	ACMEEmail  string
+	ACMECARoot string
+	// DNSProvider names the libdns provider for DNS-01; DNSAPIToken is
+	// its credential.
+	DNSProvider string
+	DNSAPIToken Secret
+	// TrustedProxies (TLSProxy only) are the peers whose X-Forwarded-*
+	// headers are believed.
+	TrustedProxies []netip.Prefix
+}
+
+// autoOnly are the variables that only automatic TLS reads; setting one in
+// another mode is almost certainly a missing WARDLOCK_TLS_MODE=auto.
+var autoOnly = []string{"WARDLOCK_ACME_CA", "WARDLOCK_ACME_EMAIL", "WARDLOCK_ACME_CA_ROOT", "WARDLOCK_DNS_PROVIDER", "WARDLOCK_DNS_API_TOKEN"}
+
+func parseTLSConfig(get func(key, fallback string) string, base, dashboard string) (TLSConfig, error) {
+	local := isLocalHost(base) && isLocalHost(dashboard)
+	mode := TLSProxy
+	if local {
+		mode = TLSLocal
+	}
+	t := TLSConfig{Mode: get("WARDLOCK_TLS_MODE", mode)}
+	switch t.Mode {
+	case TLSLocal:
+		if !local {
+			return TLSConfig{}, fmt.Errorf("%w: WARDLOCK_TLS_MODE=local needs localhost or *.localhost base domain and dashboard host; use proxy or auto for %q", ErrInvalidConfig, base)
+		}
+	case TLSProxy, TLSAuto:
+		if t.Mode == TLSAuto && (isLocalHost(base) || isLocalHost(dashboard) || isIPHost(base) || isIPHost(dashboard)) {
+			return TLSConfig{}, fmt.Errorf("%w: WARDLOCK_TLS_MODE=auto needs public DNS names for WARDLOCK_BASE_DOMAIN and WARDLOCK_DASHBOARD_HOST, not localhost or IP addresses", ErrInvalidConfig)
+		}
+	default:
+		return TLSConfig{}, fmt.Errorf("%w: WARDLOCK_TLS_MODE must be local, proxy or auto", ErrInvalidConfig)
+	}
+
+	if raw := get("WARDLOCK_TRUSTED_PROXIES", ""); raw != "" {
+		if t.Mode != TLSProxy {
+			return TLSConfig{}, fmt.Errorf("%w: WARDLOCK_TRUSTED_PROXIES is only used when WARDLOCK_TLS_MODE=proxy (the mode is %s)", ErrInvalidConfig, t.Mode)
+		}
+		proxies, err := parseTrustedProxies(raw)
+		if err != nil {
+			return TLSConfig{}, err
+		}
+		t.TrustedProxies = proxies
+	}
+	if t.Mode != TLSAuto {
+		for _, key := range autoOnly {
+			if get(key, "") != "" {
+				return TLSConfig{}, fmt.Errorf("%w: %s is only used when WARDLOCK_TLS_MODE=auto (the mode is %s)", ErrInvalidConfig, key, t.Mode)
+			}
+		}
+		return t, nil
+	}
+
+	t.HTTPSAddr = get("WARDLOCK_HTTPS_ADDR", ":443")
+	if _, _, err := net.SplitHostPort(t.HTTPSAddr); err != nil {
+		return TLSConfig{}, fmt.Errorf("%w: WARDLOCK_HTTPS_ADDR %q: %w", ErrInvalidConfig, t.HTTPSAddr, err)
+	}
+	t.ACMECA = get("WARDLOCK_ACME_CA", LetsEncrypt)
+	if u, err := url.Parse(t.ACMECA); err != nil || u.Scheme != "https" || u.Host == "" {
+		return TLSConfig{}, fmt.Errorf("%w: WARDLOCK_ACME_CA must be an https:// ACME directory URL", ErrInvalidConfig)
+	}
+	t.ACMEEmail = get("WARDLOCK_ACME_EMAIL", "")
+	if t.ACMEEmail != "" {
+		if _, err := mail.ParseAddress(t.ACMEEmail); err != nil {
+			return TLSConfig{}, fmt.Errorf("%w: WARDLOCK_ACME_EMAIL is not an email address", ErrInvalidConfig)
+		}
+	}
+	t.ACMECARoot = get("WARDLOCK_ACME_CA_ROOT", "")
+	t.DNSProvider = strings.ToLower(get("WARDLOCK_DNS_PROVIDER", ""))
+	if t.DNSProvider == "" {
+		return TLSConfig{}, fmt.Errorf("%w: WARDLOCK_DNS_PROVIDER is required when WARDLOCK_TLS_MODE=auto: the wildcard certificate for *.%s needs the DNS-01 challenge", ErrInvalidConfig, base)
+	}
+	t.DNSAPIToken = Secret(get("WARDLOCK_DNS_API_TOKEN", ""))
+	if t.DNSAPIToken == "" {
+		return TLSConfig{}, fmt.Errorf("%w: WARDLOCK_DNS_API_TOKEN is required when WARDLOCK_TLS_MODE=auto", ErrInvalidConfig)
+	}
+	return t, nil
+}
+
+// parseTrustedProxies reads comma-separated IP addresses and CIDR ranges.
+func parseTrustedProxies(raw string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for item := range strings.SplitSeq(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(item); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		addr, err := netip.ParseAddr(item)
+		if err != nil {
+			return nil, fmt.Errorf("%w: WARDLOCK_TRUSTED_PROXIES: %q is not an IP address or CIDR range", ErrInvalidConfig, item)
+		}
+		addr = addr.Unmap()
+		out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+	return out, nil
+}
+
+func isLocalHost(h string) bool {
+	return h == "localhost" || strings.HasSuffix(h, ".localhost")
+}
+
+func isIPHost(h string) bool {
+	_, err := netip.ParseAddr(h)
+	return err == nil
 }

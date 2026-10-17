@@ -35,7 +35,7 @@ flowchart LR
 
 ## Processes and binaries
 
-- `wardlockd serve` runs everything: the edge on `WARDLOCK_HTTP_ADDR` (and `WARDLOCK_HTTPS_ADDR` from C1.4), the owner API and the dashboard. Configuration is environment variables only (`.env.example` lists every one).
+- `wardlockd serve` runs everything: the edge on `WARDLOCK_HTTP_ADDR` (and `WARDLOCK_HTTPS_ADDR` in automatic TLS mode), the owner API and the dashboard. Configuration is environment variables only (`.env.example` lists every one).
 - `wardlock` (CLI) is a separate Go module with no server code; it uses `wardlock.nz/apiclient`.
 - `cmd/wardlockd/serve.go` is the only place that wires packages together. It mounts the API under `/api/` on the dashboard host and hands the edge the resulting `http.Handler`, so the edge never imports the API.
 
@@ -317,13 +317,15 @@ Access-log writes are the only per-request writes. They go into an in-memory buf
 
 ## TLS modes (C1.4)
 
-| Mode           | When                                           | Behaviour                                                                                                                                                                                                                             |
-| -------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Automatic      | Public server with ports 80/443                | certmagic obtains a wildcard `*.<base domain>` certificate through DNS-01 (Cloudflare first, then one more `libdns` provider) plus dashboard and auth hosts; on-demand TLS for verified custom domains only. HTTP redirects to HTTPS. |
-| Behind a proxy | Caddy, nginx or a load balancer terminates TLS | Plain HTTP only; trusts `X-Forwarded-*` from configured proxy addresses. The proxy asks `/.wardlock/tls-ask` before issuing a custom-domain certificate (C1.9).                                                                       |
-| Local          | `*.localhost` development                      | Plain HTTP. Browsers treat `http://*.localhost` as a secure context, so `Secure` and `__Host-` cookies still work.                                                                                                                    |
+`WARDLOCK_TLS_MODE` selects the mode; unset, it is `local` when the base domain and dashboard host are `localhost` or `*.localhost` and `proxy` otherwise, so `auto` is always an explicit choice. DEPLOYMENT "TLS" lists the variables.
 
-F0.1 runs the local mode only.
+| Mode                     | When                                           | Behaviour                                                                                                                                                                                                                                                                                                              |
+| ------------------------ | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Automatic (`auto`)       | Public server with ports 80/443                | certmagic obtains a wildcard `*.<base domain>` certificate through DNS-01 (Cloudflare or deSEC through `libdns`), which covers the auth origin, plus the dashboard host (DNS-01 inside the base domain's zone, HTTP-01/TLS-ALPN-01 outside it); on-demand TLS for active custom domains only. HTTP redirects to HTTPS. |
+| Behind a proxy (`proxy`) | Caddy, nginx or a load balancer terminates TLS | Plain HTTP only; trusts `X-Forwarded-*` from `WARDLOCK_TRUSTED_PROXIES` only. The proxy asks `/.wardlock/tls-ask` before issuing a custom-domain certificate (C1.9).                                                                                                                                                   |
+| Local (`local`)          | `*.localhost` development                      | Plain HTTP. Browsers treat `http://*.localhost` as a secure context, so `Secure` and `__Host-` cookies still work.                                                                                                                                                                                                     |
+
+`internal/tls` holds the certmagic `Manager`, the on-demand decision (`OnDemand`, backed by the `Domains` repository's active-hostname lookup through a one-method interface), the redirect and the trusted-proxy middleware. Two certmagic configurations share one certificate cache: one solves DNS-01 for names in the base domain's zone, the other solves HTTP-01/TLS-ALPN-01 for a dashboard elsewhere and on-demand names and answers every handshake. Storage is a certmagic `Storage` passed in by `cmd/wardlockd` (file storage in `<data dir>/certs` in v1). The trusted-proxy middleware runs before everything in every mode: from a trusted peer it rewrites `RemoteAddr` to the client from `X-Forwarded-For` (right to left, skipping trusted hops); from any other peer it strips the forwarding headers. The edge, API and rate limits therefore read the client from `RemoteAddr` and need no knowledge of proxies.
 
 ## Auth origin (A2.5)
 
