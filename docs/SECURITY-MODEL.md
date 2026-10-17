@@ -1,0 +1,57 @@
+# Security model
+
+Wardlock protects static content with secrets that travel in URLs. That is a deliberate trade-off: a share link must open instantly for people, `curl`, AI fetch tools and link-preview bots that keep no cookies. This document lists what we defend against, how, and what we accept. Implementation rules live in [wardlock-access](../.agents/skills/wardlock-access/SKILL.md); A2.7 checks the implementation against this document.
+
+## Assets and actors
+
+- **Assets:** site content behind non-public policies; share-link tokens, API tokens, passwords and email codes; owner accounts; the server key (`WARDLOCK_SECRET`); the instance's reputation and domain.
+- **Actors:** owners; intended visitors; unintended recipients of a forwarded link; automated fetchers (AI tools, preview bots, email scanners); an attacker on the internet; a malicious site owner on a shared instance; anyone running a public instance.
+
+## Threats and mitigations
+
+### Token leakage
+
+| Path                                                      | Mitigation                                                                                                                                                                                                       | Residual risk                                                                                                       |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `Referer` header to third parties                         | `Referrer-Policy: no-referrer` on protected sites; the token is stripped from the address bar on HTML pages                                                                                                      | A site's own JavaScript can still read and send `location` before the strip runs; site owners control their scripts |
+| Browser history and bookmarks                             | `history.replaceState` removes `t` after load; the session cookie keeps navigation working                                                                                                                       | Clients without JavaScript keep the full URL                                                                        |
+| Server and proxy logs                                     | Wardlock never logs raw tokens (`platform.RedactURL`, `platform.Secret`); docs tell operators to redact `t` in reverse-proxy logs                                                                                | Third-party proxies the operator does not configure                                                                 |
+| AI providers and preview services caching fetched content | Accepted: sharing a link with a tool is sharing the content. Use expiring or use-limited links, and revoke when done. `X-Robots-Tag: noindex` and `Cache-Control: private` discourage indexing and shared caches | Providers may retain content under their own policies                                                               |
+| Shoulder-surfing, screenshots                             | Dashboard shows the token once; afterwards only the label and public ID                                                                                                                                          | None beyond normal care                                                                                             |
+| Database theft                                            | Only HMAC-SHA-256 of tokens (keyed by `WARDLOCK_SECRET`) and Argon2id password hashes are stored                                                                                                                 | Stolen database plus stolen key allows offline token checks, not recovery                                           |
+
+Rotation and revocation take effect on the next request, including for sessions created from the link.
+
+### Cookie tossing and cross-site session abuse
+
+All sites share one parent domain, so a page on `evil.<base>` could set a cookie with `Domain=<base>` that the browser then sends to `docs.<base>`. Wardlock's site cookies use the `__Host-` prefix, which browsers only accept when the cookie is host-only, `Secure` and `Path=/`, so a sibling cannot forge or overwrite them, and Wardlock ignores any session cookie without the prefix. Cookies are signed and bound to one site, so a cookie copied from one site fails on another.
+
+Production deployments should serve sites from a **different registrable domain** from the dashboard (for example sites on `example-sites.net`, dashboard on `wardlock.example.com`). Hosted sites run arbitrary JavaScript; keeping them off the dashboard's registrable domain means they are cross-site to it, so `SameSite` protections apply and no site can toss cookies at the dashboard. The single-domain layout is fine for local development and trusted single-owner instances. The [Public Suffix List](https://publicsuffix.org) is an additional option for large public instances.
+
+### XSS from hosted sites
+
+Wardlock serves owner-supplied HTML and JavaScript as is; it does not sanitise sites. Containment comes from isolation, not filtering: every site is its own origin; site cookies are `HttpOnly` and host-only; the dashboard and API live on a different host (ideally a different registrable domain) with a strict Content Security Policy and `X-Frame-Options: DENY`; `/.wardlock/` pages are rendered by Wardlock, not by the site, and send `Cache-Control: no-store`. A deploy can never place files under `/.wardlock/`.
+
+### Preview bots and email scanners
+
+Chat apps, email security scanners and link unfurlers fetch URLs automatically. For ordinary links that is intended (AI-readability is a feature). For use-limited links it would spend uses, so those links show an interstitial on GET and count a use only on POST. Bots do not press buttons.
+
+### Brute force and enumeration
+
+Tokens carry 256 bits of secret, so guessing is infeasible; even so, failed token checks are rate-limited per IP and per site, as are password attempts and email-code sends and verifications. Responses do not distinguish "no such link" from "wrong token", and the email-code form answers the same for allowed and disallowed addresses. Owner sign-in codes are 6 digits with 5 attempts and a 10-minute lifetime.
+
+### OAuth-specific risks
+
+PKCE and `state` on every flow; OIDC `nonce` checked; allowlists match only verified emails; the auth origin hands sites a single-use, 60-second, site-bound code rather than a cookie, so a code stolen for one site is useless on another or after use.
+
+### Supply chain and the server itself
+
+Pinned tool versions (`tools/go.mod`, lockfiles), `govulncheck` in every check run, a minimum package release age enforced by pnpm, no CGO, and a small dependency set. Releases are built by GoReleaser in CI with checksums (O4.1).
+
+## Public instances and abuse
+
+Wardlock defaults to **invite-only**: there is no open sign-up in v1, the first owner is created by the operator, and further owners are invited by existing owners. Anyone who runs an instance others can deploy to inherits the usual hosting abuse problems: phishing pages, malware and illegal content served from their domain, and the domain being blocklisted as a result. Operators of such instances should use a dedicated sites domain, monitor new sites, keep contact details for every owner, and be ready to tear sites down. Abuse tooling (reporting, automated scanning, quotas per owner) is out of scope for v1 and listed under "Not planned yet" in the roadmap.
+
+## Out of scope for v1
+
+Protection against a malicious operator; hiding the existence of a site (site names travel in DNS lookups and TLS SNI, and custom domains appear in certificate transparency logs; do not put secrets in site names); DRM or copy prevention once a visitor has access; end-to-end encryption of content at rest.

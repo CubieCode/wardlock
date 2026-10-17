@@ -1,0 +1,11 @@
+node_modules
+dist
+pnpm-lock.yaml
+.turbo
+.local
+.claude/skills
+.agents/skills
+coverage
+apps/server/internal/dashboard/ui/dist
+# Verbatim licence texts
+**/LICENSE

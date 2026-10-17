@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 CubieCode
+# SPDX-License-Identifier: MIT
+# Client and models generated from packages/api-spec/openapi.yaml.
+package: apiclient
+output: client.gen.go
+generate:
+  client: true
+  models: true
+compatibility:
+  always-prefix-enum-values: true

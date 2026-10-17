@@ -1,0 +1,6 @@
+/* SPDX-FileCopyrightText: 2026 CubieCode */
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* Entry point: import once from the dashboard. */
+@import './tokens.css';
+@import './base.css';
+@import './components.css';

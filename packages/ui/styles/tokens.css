@@ -1,0 +1,86 @@
+/* SPDX-FileCopyrightText: 2026 CubieCode */
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/*
+ * Wardlock design tokens. Components and the dashboard use the semantic
+ * layer (--color-*, --text-*, --space-*, ...). Colour literals belong only
+ * in this file (packages/ui/src/tokens.test.ts enforces it).
+ *
+ * Themes: every colour role is light-dark(<light>, <dark>). The page follows
+ * the system preference; data-theme="light" or "dark" on <html> forces one.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces */
+  --color-canvas: light-dark(#f6f6f3, #12171d);
+  --color-surface: light-dark(#ffffff, #1a2028);
+  --color-surface-muted: light-dark(#eeeeea, #222a33);
+
+  /* Text */
+  --color-text: light-dark(#1b2430, #e8ebee);
+  --color-text-muted: light-dark(#4f5a66, #a7b0ba);
+  --color-text-on-primary: light-dark(#ffffff, #0f1a1f);
+
+  /* Borders */
+  --color-border: light-dark(#d9dad4, #2e3742);
+  --color-border-strong: light-dark(#7d858e, #6b7682);
+
+  /* Actions */
+  --color-primary: light-dark(#1f4f5c, #7fc1cf);
+  --color-primary-hover: light-dark(#183f4a, #9fd2dc);
+  --color-accent: light-dark(#a8741f, #d7a756);
+  --color-focus: light-dark(#2f6fb0, #8fbfff);
+
+  /* Status: text, surface and border are used together */
+  --color-success: light-dark(#1e6b3a, #8fd3a5);
+  --color-success-surface: light-dark(#e6f2ea, #16271d);
+  --color-success-border: light-dark(#9ccaa9, #2f5a3d);
+  --color-warning: light-dark(#7d5200, #e8c06d);
+  --color-warning-surface: light-dark(#fbf1dc, #2a2213);
+  --color-warning-border: light-dark(#e2c27c, #5e4a1d);
+  --color-danger: light-dark(#a3302a, #f0a39c);
+  --color-danger-surface: light-dark(#fbe9e7, #2d1816);
+  --color-danger-border: light-dark(#e6a29c, #6a2f2a);
+
+  /* Typography: system fonts, so the dashboard makes no third-party requests */
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-mono:
+    ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Menlo, Consolas, monospace;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 650;
+  --line-height: 1.5;
+
+  /* Spacing: 4px grid */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+
+  /* Shape and size */
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-pill: 999px;
+  --focus-ring: 3px solid var(--color-focus);
+  --touch-target: 44px;
+  --content-width: 64rem;
+  --duration-short: 120ms;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}

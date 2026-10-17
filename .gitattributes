@@ -1,0 +1,12 @@
+* text=auto eol=lf
+*.png binary
+
+# Generated code: collapsed in diffs, still reviewed by the drift check.
+*.gen.go linguist-generated=true
+*.gen.ts linguist-generated=true
+apps/server/internal/store/sqlcgen/** linguist-generated=true
+pnpm-lock.yaml linguist-generated=true
+
+# Vendored skills stay byte-identical to upstream (skills-lock.json hashes),
+# so whitespace checks do not apply to them.
+.agents/skills/vercel-react-best-practices/** -whitespace linguist-vendored=true

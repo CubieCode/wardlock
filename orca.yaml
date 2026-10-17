@@ -1,0 +1,7 @@
+# Orca worktree hooks. Setup creates an isolated lane (own .env, ports and
+# SQLite data) and runs checks; nothing is copied from the root checkout.
+scripts:
+  setup: |
+    bash "$ORCA_WORKTREE_PATH/scripts/worktree-setup.sh" "$ORCA_ROOT_PATH" "$ORCA_WORKTREE_PATH"
+  archive: |
+    true

@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 CubieCode
+# SPDX-License-Identifier: MIT
+#
+# Caddy terminating TLS in front of wardlockd in plain-HTTP mode (C1.4).
+# Replace the domains. Wildcard certificates need a Caddy DNS plugin.
+{
+	# Query strings carry share-link tokens; keep them out of access logs.
+	log default {
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					replace t REDACTED
+				}
+			}
+		}
+	}
+}
+
+wardlock.example.com, *.example-sites.net {
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	}
+	request_body {
+		max_size 32MB
+	}
+	reverse_proxy 127.0.0.1:8080
+}
