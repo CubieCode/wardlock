@@ -14,7 +14,9 @@ import (
 )
 
 // implemented lists the operations Server declares itself. Add an operation
-// here when its handler lands.
+// here when its handler lands. Once auth middleware lands (C1.1), request
+// will need to attach a credential so protected operations reach the stub
+// rather than answering 401.
 var implemented = map[string]bool{
 	"GetHealth": true,
 }
@@ -115,6 +117,15 @@ func assertNotImplemented(t *testing.T, h http.Handler, op operation) {
 	}
 	if body.Code != "not_implemented" || body.Message == "" {
 		t.Errorf("body = %+v, want code not_implemented with a message", body)
+	}
+}
+
+func TestRollbackWithoutBodyReachesOperation(t *testing.T) {
+	h := (&Server{}).Handler()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v0/sites/docs/rollback", nil))
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status %d, want 501; body %s", rec.Code, rec.Body)
 	}
 }
 

@@ -5457,10 +5457,13 @@ func (sh *strictHandler) RollbackSite(w http.ResponseWriter, r *http.Request, si
 
 	var body RollbackSiteJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
 	}
-	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.RollbackSite(ctx, request.(RollbackSiteRequestObject))

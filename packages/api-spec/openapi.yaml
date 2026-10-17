@@ -20,8 +20,11 @@ info:
     - `sessionCookie`: the dashboard's owner session, a `__Host-` cookie set
       by setup, sign-in-link and email-code sign-in (C1.1). Cookie-authenticated
       requests with an unsafe method (`POST`, `PUT`, `DELETE`) must come from
-      the dashboard origin: the server rejects any whose `Origin` header names
-      another origin with `403 forbidden`.
+      the dashboard origin (C1.1 enforces this). The server checks `Origin`;
+      without it, `Sec-Fetch-Site`, which must be `same-origin`. A request with
+      the session cookie is rejected with `403 forbidden` when either header
+      names another origin or neither is present. Only a request with neither
+      header and no session cookie is outside this check.
     - `apiToken`: `Authorization: Bearer wl_<public id>_<secret>` (C1.7). A
       token carries one or both scopes. `deploy` covers creating sites and
       deploys, uploading blobs, activation and rollback. `manage` covers
@@ -130,7 +133,7 @@ paths:
             schema:
               $ref: '#/components/schemas/SetupRequest'
             example:
-              code: Xq3vT9mPz7LcR2wKj5HnBd
+              code: EXAMPLEsetupCodeEXAMPLE
               email: owner@example.com
       responses:
         '201':
@@ -170,7 +173,7 @@ paths:
             schema:
               $ref: '#/components/schemas/SignInLinkRequest'
             example:
-              code: Nf8sKq2LmV4xT7cWz9RbPd
+              code: EXAMPLEsignInCodeEXAMPLE
       responses:
         '200':
           description: Signed in.
@@ -514,7 +517,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/CliLogin'
               example:
-                deviceCode: dc_7RkPq2Vx9LmT4wZc8NbJ5sHf3GdY6aEu1KoQ0iXv
+                deviceCode: dc_EXAMPLEonlyEXAMPLEonlyEXAMPLEonlyEXAMPLE
                 userCode: BDFH-KMPR
                 verificationUrl: https://wardlock.example.com/cli-login
                 verificationUrlComplete: https://wardlock.example.com/cli-login?code=BDFH-KMPR
@@ -546,7 +549,7 @@ paths:
             schema:
               $ref: '#/components/schemas/PollCliLoginRequest'
             example:
-              deviceCode: dc_7RkPq2Vx9LmT4wZc8NbJ5sHf3GdY6aEu1KoQ0iXv
+              deviceCode: dc_EXAMPLEonlyEXAMPLEonlyEXAMPLEonlyEXAMPLE
       responses:
         '200':
           description: Approved. The response carries the new API token.
@@ -703,7 +706,6 @@ paths:
       security:
         - sessionCookie: []
         - apiToken: [deploy]
-        - apiToken: [manage]
       requestBody:
         required: true
         content:
@@ -1004,7 +1006,7 @@ paths:
         - sessionCookie: []
         - apiToken: [deploy]
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:

@@ -1179,7 +1179,7 @@ export interface operations {
       content: {
         /**
          * @example {
-         *       "code": "Xq3vT9mPz7LcR2wKj5HnBd",
+         *       "code": "EXAMPLEsetupCodeEXAMPLE",
          *       "email": "owner@example.com"
          *     }
          */
@@ -1213,7 +1213,7 @@ export interface operations {
       content: {
         /**
          * @example {
-         *       "code": "Nf8sKq2LmV4xT7cWz9RbPd"
+         *       "code": "EXAMPLEsignInCodeEXAMPLE"
          *     }
          */
         'application/json': components['schemas']['SignInLinkRequest'];
@@ -1593,7 +1593,7 @@ export interface operations {
         content: {
           /**
            * @example {
-           *       "deviceCode": "dc_7RkPq2Vx9LmT4wZc8NbJ5sHf3GdY6aEu1KoQ0iXv",
+           *       "deviceCode": "dc_EXAMPLEonlyEXAMPLEonlyEXAMPLEonlyEXAMPLE",
            *       "userCode": "BDFH-KMPR",
            *       "verificationUrl": "https://wardlock.example.com/cli-login",
            *       "verificationUrlComplete": "https://wardlock.example.com/cli-login?code=BDFH-KMPR",
@@ -1620,7 +1620,7 @@ export interface operations {
       content: {
         /**
          * @example {
-         *       "deviceCode": "dc_7RkPq2Vx9LmT4wZc8NbJ5sHf3GdY6aEu1KoQ0iXv"
+         *       "deviceCode": "dc_EXAMPLEonlyEXAMPLEonlyEXAMPLEonlyEXAMPLE"
          *     }
          */
         'application/json': components['schemas']['PollCliLoginRequest'];
@@ -2113,7 +2113,7 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody: {
+    requestBody?: {
       content: {
         /**
          * @example {
