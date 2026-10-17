@@ -47,8 +47,16 @@ linters:
               desc: access never imports the HTTP layer
             - pkg: wardlock.nz/server/internal/edge
               desc: access never imports the HTTP layer
+        mail:
+          files: ['**/apps/server/internal/mail/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/api
+              desc: mail is called by domain packages, never the reverse
+            - pkg: wardlock.nz/server/internal/edge
+              desc: mail is called by domain packages, never the reverse
         domain-storage:
           files:
+            - '**/apps/server/internal/mail/**'
             - '**/apps/server/internal/access/**'
             - '**/apps/server/internal/deploys/**'
             - '**/apps/server/internal/sites/**'

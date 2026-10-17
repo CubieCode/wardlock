@@ -23,6 +23,7 @@ MIT modules never import AGPL code: depguard denies `wardlock.nz/server` in `app
 | `deploys`   | Upload sessions, manifests, `BlobStore`, activation, rollback, garbage collection, rendition generation                  | `api`, `edge`, `database/sql`, `sqlcgen`             |
 | `sites`     | Sites, names, custom domains and verification                                                                            | `api`, `edge`, `database/sql`, `sqlcgen`             |
 | `owners`    | Owner accounts, dashboard sessions, email-code and passkey sign-in, API tokens, CLI login                                | `edge`, `database/sql`, `sqlcgen`                    |
+| `mail`      | `Mailer` interface, SMTP delivery (STARTTLS or implicit TLS), the `dev://` sink, sign-in and email-code templates        | `api`, `edge`, `database/sql`, `sqlcgen`             |
 | `tls`       | certmagic configuration and modes                                                                                        | `api`, `edge`                                        |
 | `api`       | Generated OpenAPI interface, handlers that translate HTTP to domain calls, error-to-status mapping                       | `edge`                                               |
 | `dashboard` | Embedded dashboard files, SPA fallback, dev proxy                                                                        | domain packages                                      |

@@ -68,7 +68,13 @@ If something else already terminates TLS on the machine, run Wardlock in plain-H
 
 ## SMTP
 
-`WARDLOCK_SMTP_URL` (F0.4): `smtp://user:pass@host:587` (STARTTLS required), `smtps://user:pass@host:465`, or `dev://` for development, which logs each message to the console and writes it to `.local/mail/`. Configure SPF, DKIM and DMARC for the sending domain or codes will land in spam.
+`WARDLOCK_SMTP_URL` (F0.4) chooses how mail leaves the server:
+
+- `smtp://user:pass@host:587` connects in plain text and upgrades with STARTTLS before authenticating. A server that does not offer STARTTLS is refused; there is no option to send in plain text. The port defaults to 587.
+- `smtps://user:pass@host:465` uses TLS from the first byte. The port defaults to 465.
+- `dev://` (the default) delivers nothing. It writes each message to `.local/mail/` (relative to the working directory) as a readable `.eml` file and logs only the recipient, subject and file name, never the body or code. Use it for development only.
+
+The server certificate is always verified against the system roots. Percent-encode special characters in the user name and password (`@` is `%40`). Credentials never appear in logs or errors, which show the server as `smtp://[redacted]@host:port`. `WARDLOCK_SMTP_FROM` sets the sender (`Wardlock <no-reply@example.com>`); it defaults to `Wardlock <wardlock@<dashboard host>>`. Configure SPF, DKIM and DMARC for the sending domain or codes will land in spam.
 
 ## Backups
 

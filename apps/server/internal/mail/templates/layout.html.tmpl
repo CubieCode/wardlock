@@ -1,0 +1,20 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{.Title}}</title>
+</head>
+<body style="margin:0;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;margin:0 auto;">
+<tr><td>
+<p style="margin:0 0 16px;">{{.Lead}}</p>
+<p style="margin:0 0 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:32px;font-weight:600;letter-spacing:6px;">{{.Code}}</p>
+<p style="margin:0 0 16px;">It expires in {{.Minutes}} minutes and works once. {{.Where}}</p>
+<p style="margin:0;font-size:14px;opacity:0.7;">{{.Ignore}}</p>
+</td></tr>
+</table>
+</body>
+</html>
+{{end}}
