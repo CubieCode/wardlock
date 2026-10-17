@@ -5,6 +5,11 @@ name: Release (snapshot)
 # .goreleaser.yaml and the image is never pushed. Artefacts are kept as
 # workflow artifacts for inspection. Publishing is roadmap O4.1/O4.4 and
 # needs explicit authorisation.
+#
+# Runners: vars.RUNNER as in ci.yml (unset means ubuntu-latest). Only pushes
+# to main and manual runs trigger this workflow, never pull requests. A
+# self-hosted runner needs Docker with buildx and QEMU/binfmt for the arm64
+# image.
 on:
   workflow_dispatch:
   push:
@@ -16,20 +21,23 @@ concurrency:
   cancel-in-progress: true
 jobs:
   snapshot:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          dest: ${{ runner.environment == 'github-hosted' && '~/setup-pnpm' || format('{0}/setup-pnpm', runner.temp) }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+          cache: ${{ runner.environment == 'github-hosted' && 'pnpm' || '' }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.work
+          cache: ${{ runner.environment == 'github-hosted' }}
           cache-dependency-path: |
             apps/*/go.sum
             packages/*/go.sum

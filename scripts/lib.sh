@@ -4,15 +4,17 @@
 # Shared helpers for repository scripts. Source it; do not run it.
 # Sets repo_root and puts the pinned Go tools (tools/go.mod) on PATH,
 # building them into .local/bin the first time and whenever the pins change.
+# WARDLOCK_TOOLS_DIR overrides that directory (CI keeps it in $HOME so it
+# survives checkout cleaning the workspace).
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ensure_go_tools() {
-  local bin="$repo_root/.local/bin" stamp want
+  local bin="${WARDLOCK_TOOLS_DIR:-$repo_root/.local/bin}" stamp want
   stamp="$bin/.tools-stamp"
   want="$(cat "$repo_root/tools/go.mod" "$repo_root/tools/go.sum" | cksum)"
   if [[ ! -f "$stamp" || "$(cat "$stamp")" != "$want" ]]; then
-    echo "Building pinned Go tools into .local/bin (the first build takes a few minutes)..." >&2
+    echo "Building pinned Go tools into $bin (the first build takes a few minutes)..." >&2
     mkdir -p "$bin"
     GOWORK=off GOBIN="$bin" go -C "$repo_root/tools" install tool
     printf '%s' "$want" >"$stamp"
