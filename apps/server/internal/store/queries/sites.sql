@@ -18,6 +18,12 @@ SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.creat
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.name = sqlc.arg(name);
 
+-- Instance-wide: edge routing only, never owner API handlers.
+-- name: GetSiteByID :one
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+WHERE sites.id = sqlc.arg(id);
+
 -- Any status: the owner API resolves pending and lapsed hostnames too.
 -- name: GetSiteByOwnerDomain :one
 SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at

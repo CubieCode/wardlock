@@ -38,6 +38,10 @@ linters:
           deny:
             - pkg: wardlock.nz/server/internal/api
               desc: the edge never imports the API; receive handlers through edge.Config
+            - pkg: wardlock.nz/server/internal/store
+              desc: the edge reads sites through edge.SiteSource, adapted in cmd/wardlockd
+            - pkg: wardlock.nz/server/internal/deploys
+              desc: the edge takes BlobOpener and Invalidator, satisfied by deploys types in cmd/wardlockd
         access:
           files: ['**/apps/server/internal/access/**']
           deny:

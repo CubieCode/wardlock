@@ -46,7 +46,7 @@ const host =
   'wardlock.localhost';
 const port = (env.WARDLOCK_HTTP_ADDR || '127.0.0.1:8080').split(':').at(-1);
 console.log(
-  `\nDashboard: http://${host}:${port}  Hello site: http://hello.${env.WARDLOCK_BASE_DOMAIN || 'wardlock.localhost'}:${port}\n`,
+  `\nDashboard: http://${host}:${port}  Sites: http://<name>.${env.WARDLOCK_BASE_DOMAIN || 'wardlock.localhost'}:${port}\n`,
 );
 
 let stopping = false;

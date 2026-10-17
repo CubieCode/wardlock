@@ -86,6 +86,36 @@ func (q *Queries) GetSite(ctx context.Context, arg GetSiteParams) (GetSiteRow, e
 	return i, err
 }
 
+const getSiteByID = `-- name: GetSiteByID :one
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+WHERE sites.id = ?1
+`
+
+type GetSiteByIDRow struct {
+	ID             string
+	OwnerID        string
+	Name           string
+	ActiveDeployID sql.NullString
+	CreatedAt      int64
+	ActivatedAt    sql.NullInt64
+}
+
+// Instance-wide: edge routing only, never owner API handlers.
+func (q *Queries) GetSiteByID(ctx context.Context, id string) (GetSiteByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getSiteByID, id)
+	var i GetSiteByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.ActiveDeployID,
+		&i.CreatedAt,
+		&i.ActivatedAt,
+	)
+	return i, err
+}
+
 const getSiteByName = `-- name: GetSiteByName :one
 SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id

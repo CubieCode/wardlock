@@ -49,8 +49,9 @@ func TestCommands(t *testing.T) {
 	}
 }
 
-// TestServe boots the real server on a free port and checks the three
-// F0.1 endpoints, then shuts it down through context cancellation.
+// TestServe boots the real server on a free port, checks health, the API,
+// the dashboard and an unknown site, then shuts it down through context
+// cancellation.
 func TestServe(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -100,8 +101,8 @@ func TestServe(t *testing.T) {
 	if code, body := get("wardlock.localhost", "/"); code != 200 || !strings.Contains(body, "<html") {
 		t.Errorf("dashboard = %d %q", code, body)
 	}
-	if code, body := get("hello.wardlock.localhost", "/"); code != 200 || !strings.Contains(body, "Hello from Wardlock") {
-		t.Errorf("hello site = %d %q", code, body)
+	if code, body := get("nothing.wardlock.localhost", "/"); code != 404 || !strings.Contains(body, "No site") {
+		t.Errorf("unknown site = %d %q", code, body)
 	}
 	// The sites API is wired; without a credential it answers 401.
 	if code, body := get("wardlock.localhost", "/api/v0/sites"); code != 401 || !strings.Contains(body, "unauthenticated") {
