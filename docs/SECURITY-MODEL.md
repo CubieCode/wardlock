@@ -44,6 +44,10 @@ Tokens carry 256 bits of secret, so guessing is infeasible; even so, failed toke
 
 PKCE and `state` on every flow; OIDC `nonce` checked; allowlists match only verified emails; the auth origin hands sites a single-use, 60-second, site-bound code rather than a cookie, so a code stolen for one site is useless on another or after use.
 
+### Custom domain takeover
+
+A hostname is only served once DNS proves it: a CNAME to the claiming site's own `<name>.<base domain>`, or a TXT record holding a token unique to that claim. A hostname belongs to one site per instance, and the claim conflict error does not reveal who holds it. Re-checks every 24 hours stop serving a hostname whose record has been gone for 72 hours, and on-demand TLS only issues for hostnames verified at that moment, so a stray record cannot be used to mint certificates. The remaining risk is a dangling record: if an owner removes a hostname or tears down a site but leaves the CNAME in place, whoever later holds that site name on the instance can claim the hostname. The CLI and dashboard tell owners to delete the record when they remove a domain.
+
 ### Supply chain and the server itself
 
 Pinned tool versions (`tools/go.mod`, lockfiles), `govulncheck` in every check run, a minimum package release age enforced by pnpm, no CGO, and a small dependency set. Releases are built by GoReleaser in CI with checksums (O4.1).
