@@ -596,6 +596,25 @@ func TestInvalidationDuringLoadIsNotCached(t *testing.T) {
 	}
 }
 
+func TestConcurrentServingAndInvalidation(t *testing.T) {
+	h := newHarness(t, nil)
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			for range 200 {
+				if rec := h.do(http.MethodGet, "basic."+base, "/guide", nil); rec.Code != 200 {
+					t.Errorf("status = %d", rec.Code)
+					return
+				}
+				if i == 0 {
+					h.notifier.Notify("site-basic")
+				}
+			}
+		})
+	}
+	wg.Wait()
+}
+
 func TestCloseUnsubscribes(t *testing.T) {
 	h := newHarness(t, nil)
 	h.edge.Close()
