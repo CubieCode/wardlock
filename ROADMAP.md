@@ -30,7 +30,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### F0.3: Data model and migrations v0
 
-- Status: `review`
+- Status: `done`
 - Owner: feat/f0.3-data-model-migrations
 - PR: https://github.com/CubieCode/wardlock/pull/12
 - Depends on: F0.1
