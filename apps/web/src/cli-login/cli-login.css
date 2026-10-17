@@ -1,0 +1,101 @@
+/* SPDX-FileCopyrightText: 2026 CubieCode */
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The CLI login approval page. Visual language comes from @wardlock/ui. */
+
+.cli-command {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.cli-code-box {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-card);
+  text-align: center;
+}
+
+.cli-code-label {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.cli-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.15em;
+  color: var(--color-text);
+}
+
+.cli-scopes {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.cli-scopes-legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-weight: var(--font-weight-medium);
+}
+
+.cli-scope {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-height: var(--touch-target);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.cli-scope:has(.cli-scope-input:checked) {
+  border-color: var(--color-primary);
+}
+
+.cli-scope:has(.cli-scope-input:focus-visible) {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.cli-scope-input {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0.125rem 0 0;
+  accent-color: var(--color-primary);
+}
+
+.cli-scope-input:focus-visible {
+  outline: none;
+}
+
+.cli-scope-text {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.cli-scope-label {
+  font-weight: var(--font-weight-medium);
+}
+
+.cli-scope-description,
+.cli-note {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.cli-scopes-error {
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+.cli-home {
+  justify-self: start;
+}

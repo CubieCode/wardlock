@@ -49,38 +49,128 @@ func (q *Queries) CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) 
 	return err
 }
 
-const createCLILoginRequest = `-- name: CreateCLILoginRequest :exec
-INSERT INTO cli_login_requests (id, device_code_hash, user_code, status, owner_id, scope_deploy, scope_manage, api_token_id, created_at, expires_at, decided_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+const getAPITokenByPublicID = `-- name: GetAPITokenByPublicID :one
+SELECT id, owner_id, public_id, token_hash, name, scope_deploy, scope_manage, created_at, expires_at, last_used_at, revoked_at
+FROM api_tokens WHERE public_id = ?1
 `
 
-type CreateCLILoginRequestParams struct {
-	ID             string
-	DeviceCodeHash string
-	UserCode       string
-	Status         string
-	OwnerID        sql.NullString
-	ScopeDeploy    int64
-	ScopeManage    int64
-	ApiTokenID     sql.NullString
-	CreatedAt      int64
-	ExpiresAt      int64
-	DecidedAt      sql.NullInt64
+// Instance-wide: Bearer authentication looks a token up by its public ID
+// before comparing the HMAC.
+func (q *Queries) GetAPITokenByPublicID(ctx context.Context, publicID string) (ApiToken, error) {
+	row := q.db.QueryRowContext(ctx, getAPITokenByPublicID, publicID)
+	var i ApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.PublicID,
+		&i.TokenHash,
+		&i.Name,
+		&i.ScopeDeploy,
+		&i.ScopeManage,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.LastUsedAt,
+		&i.RevokedAt,
+	)
+	return i, err
 }
 
-func (q *Queries) CreateCLILoginRequest(ctx context.Context, arg CreateCLILoginRequestParams) error {
-	_, err := q.db.ExecContext(ctx, createCLILoginRequest,
-		arg.ID,
-		arg.DeviceCodeHash,
-		arg.UserCode,
-		arg.Status,
+const listAPITokens = `-- name: ListAPITokens :many
+SELECT id, owner_id, public_id, token_hash, name, scope_deploy, scope_manage, created_at, expires_at, last_used_at, revoked_at
+FROM api_tokens
+WHERE owner_id = ?1
+  AND revoked_at IS NULL
+  AND (expires_at IS NULL OR expires_at > ?2)
+  AND (
+    created_at < ?3
+    OR (created_at = ?3 AND id < ?4)
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT ?5
+`
+
+type ListAPITokensParams struct {
+	OwnerID       string
+	Now           sql.NullInt64
+	BeforeCreated int64
+	BeforeID      string
+	RowLimit      int64
+}
+
+// Usable tokens only: not revoked and not expired at now. Newest first; the
+// cursor is the (created_at, id) of the previous page's last row; the first
+// page passes the largest before_created.
+func (q *Queries) ListAPITokens(ctx context.Context, arg ListAPITokensParams) ([]ApiToken, error) {
+	rows, err := q.db.QueryContext(ctx, listAPITokens,
 		arg.OwnerID,
-		arg.ScopeDeploy,
-		arg.ScopeManage,
-		arg.ApiTokenID,
-		arg.CreatedAt,
-		arg.ExpiresAt,
-		arg.DecidedAt,
+		arg.Now,
+		arg.BeforeCreated,
+		arg.BeforeID,
+		arg.RowLimit,
 	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ApiToken
+	for rows.Next() {
+		var i ApiToken
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.PublicID,
+			&i.TokenHash,
+			&i.Name,
+			&i.ScopeDeploy,
+			&i.ScopeManage,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.LastUsedAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const revokeAPIToken = `-- name: RevokeAPIToken :execrows
+UPDATE api_tokens SET revoked_at = COALESCE(revoked_at, ?1)
+WHERE id = ?2 AND owner_id = ?3
+`
+
+type RevokeAPITokenParams struct {
+	RevokedAt sql.NullInt64
+	ID        string
+	OwnerID   string
+}
+
+func (q *Queries) RevokeAPIToken(ctx context.Context, arg RevokeAPITokenParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeAPIToken, arg.RevokedAt, arg.ID, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const touchAPIToken = `-- name: TouchAPIToken :exec
+UPDATE api_tokens SET last_used_at = ?1
+WHERE id = ?2 AND (last_used_at IS NULL OR last_used_at < ?1)
+`
+
+type TouchAPITokenParams struct {
+	LastUsedAt sql.NullInt64
+	ID         string
+}
+
+func (q *Queries) TouchAPIToken(ctx context.Context, arg TouchAPITokenParams) error {
+	_, err := q.db.ExecContext(ctx, touchAPIToken, arg.LastUsedAt, arg.ID)
 	return err
 }

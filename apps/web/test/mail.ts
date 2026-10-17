@@ -76,5 +76,9 @@ export const ownerFor = (project: string, scheme: string) =>
 export const passkeyOwnerFor = (project: string, scheme: string) =>
   `${project}-${scheme}-passkeys@example.test`;
 
+/** The synthetic owner the CLI login spec signs in as. */
+export const cliOwnerFor = (project: string, scheme: string) =>
+  `${project}-${scheme}-cli@example.test`;
+
 export const projects = ['desktop', 'mobile'] as const;
 export const schemes = ['light', 'dark'] as const;

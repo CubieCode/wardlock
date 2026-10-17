@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,10 @@ type requestInfo struct {
 	clientIP  string
 	userAgent string
 	sessionID string // the dashboard session that authenticated it, if any
+	// tokenID and scopes describe the API token that authenticated it, if
+	// any.
+	tokenID string
+	scopes  owners.Scopes
 }
 
 func info(ctx context.Context) requestInfo {
@@ -70,7 +75,28 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			writeError(w, http.StatusForbidden, "forbidden", "Cross-origin requests are refused.")
 			return
 		}
-		if hasCookie && s.Owners != nil {
+		if bearer, ok := bearerToken(r); ok {
+			// A bearer request is authenticated by its token alone, even
+			// when the browser also sent the session cookie.
+			if s.Tokens != nil {
+				auth, err := s.Tokens.Authenticate(ctx, owners.Client{IP: ri.clientIP, UserAgent: ri.userAgent}, bearer)
+				switch {
+				case err == nil:
+					ctx = WithOwner(ctx, auth.OwnerID)
+					ri.tokenID, ri.scopes = auth.TokenID, auth.Scopes
+				case errors.Is(err, owners.ErrUnauthenticated):
+				case errors.Is(err, owners.ErrRateLimited):
+					rl, _ := errors.AsType[*owners.RateLimitError](err)
+					w.Header().Set("Retry-After", strconv.Itoa(int(*retryAfter(rl.RetryAfter))))
+					writeError(w, http.StatusTooManyRequests, "rate_limited", "Too many failed attempts. Try again later.")
+					return
+				default:
+					logInternal(s.logger(), r.WithContext(context.WithValue(ctx, requestInfoKey{}, ri)), "token middleware", err)
+					writeError(w, http.StatusInternalServerError, "internal", "Internal server error.")
+					return
+				}
+			}
+		} else if hasCookie && s.Owners != nil {
 			sess, err := s.Owners.Authenticate(ctx, c.Value)
 			switch {
 			case err == nil:
@@ -284,15 +310,21 @@ func (s *Server) VerifyEmailCode(ctx context.Context, req VerifyEmailCodeRequest
 	return nil, err
 }
 
-// SignOut ends the current dashboard session. Revoking an API token
-// (bearer sign-out) arrives with C1.7.
+// SignOut ends the current dashboard session, or with an API token
+// revokes that token (`wardlock logout`).
 func (s *Server) SignOut(ctx context.Context, _ SignOutRequestObject) (SignOutResponseObject, error) {
 	ownerID, ok := OwnerID(ctx)
-	sessionID := info(ctx).sessionID
-	if !ok || sessionID == "" {
+	ri := info(ctx)
+	if ok && ri.tokenID != "" {
+		if err := s.Tokens.Revoke(ctx, ownerID, ri.tokenID); err != nil && !errors.Is(err, owners.ErrNotFound) {
+			return nil, err
+		}
+		return SignOut204Response{}, nil
+	}
+	if !ok || ri.sessionID == "" {
 		return SignOut401JSONResponse{UnauthenticatedJSONResponse(unauthenticatedError())}, nil
 	}
-	if err := s.Owners.SignOut(ctx, ownerID, sessionID); err != nil && !errors.Is(err, owners.ErrNotFound) {
+	if err := s.Owners.SignOut(ctx, ownerID, ri.sessionID); err != nil && !errors.Is(err, owners.ErrNotFound) {
 		return nil, err
 	}
 	cookie := clearSessionCookie()
@@ -312,7 +344,11 @@ func (s *Server) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeResponse
 	if err != nil {
 		return nil, err
 	}
-	return GetMe200JSONResponse(meBody(o)), nil
+	me := meBody(o)
+	if ri := info(ctx); ri.tokenID != "" {
+		me.Credential, me.Scopes = MeCredentialApiToken, scopesBody(ri.scopes)
+	}
+	return GetMe200JSONResponse(me), nil
 }
 
 // InviteOwner invites another owner by email.

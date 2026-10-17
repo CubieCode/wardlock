@@ -6,11 +6,15 @@ type operation struct {
 	id, method, path string
 	// jsonBody is set when the operation takes a JSON request body.
 	jsonBody bool
+	// security lists the credentials the operation accepts, any one of
+	// them enough: "sessionCookie", or "apiToken" followed by ":<scope>"
+	// for each scope that requirement needs. Empty: no credentials.
+	security []string
 }
 
 // operations lists every operation in packages/api-spec/openapi.yaml.
 var operations = []operation{
 {{- range .}}{{if not .IsAlias}}
-	{id: {{printf "%q" .OperationId}}, method: {{printf "%q" .Method}}, path: {{printf "%q" .Path}}, jsonBody: {{range .Bodies}}{{if .IsJSON}}true{{else}}false{{end}}{{else}}false{{end}}},
+	{id: {{printf "%q" .OperationId}}, method: {{printf "%q" .Method}}, path: {{printf "%q" .Path}}, jsonBody: {{range .Bodies}}{{if .IsJSON}}true{{else}}false{{end}}{{else}}false{{end}}, security: []string{ {{- range $i, $s := .SecurityDefinitions}}{{if $i}}, {{end}}"{{$s.ProviderName}}{{range $s.Scopes}}:{{.}}{{end}}"{{end -}} }},
 {{- end}}{{end}}
 }
