@@ -304,7 +304,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: feat/o4.1-release-artefacts
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/13
 - Depends on: F0.1
 - Scope: Finish `.goreleaser.yaml` (server and CLI for linux/darwin/windows on amd64/arm64, checksums, SBOMs, multi-arch image for `ghcr.io/cubiecode/wardlock`), an install script, the systemd unit and compose example, and the Go module tag scheme for vanity paths (see DEPLOYMENT). Publishing stays disabled until a release is explicitly authorised.
 - Acceptance: Snapshot release builds every artefact in CI; the image runs as non-root and passes `/healthz`; the install script verifies checksums; a test tag proves the module tag scheme with `go install`; nothing is published.
