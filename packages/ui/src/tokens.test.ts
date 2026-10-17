@@ -48,6 +48,8 @@ const pairs: [string, string, number][] = [
   ['--color-success', '--color-success-surface', 4.5],
   ['--color-warning', '--color-warning-surface', 4.5],
   ['--color-danger', '--color-danger-surface', 4.5],
+  ['--color-danger', '--color-surface', 4.5],
+  ['--color-primary', '--color-surface-muted', 3],
   ['--color-border-strong', '--color-surface', 3],
   ['--color-focus', '--color-surface', 3],
   ['--color-focus', '--color-canvas', 3],
@@ -71,7 +73,7 @@ describe('design tokens', () => {
   it('keeps colour literals in tokens.css', () => {
     const root = fileURLToPath(new URL('../../../', import.meta.url));
     const literal =
-      /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab)\(|\b(?:white|black)\b/;
+      /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab)\(|\b(?:white|black)\b(?!-)/;
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const entry of readdirSync(dir)) {
