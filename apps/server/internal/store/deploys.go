@@ -98,9 +98,10 @@ type Deploys interface {
 	// Rollback reactivates an earlier activated deploy in one transaction:
 	// deployID, or with "" the most recently activated deploy other than the
 	// current one. It fails with ErrDeployNotActivated for a deploy never
-	// activated and ErrNoPreviousDeploy when there is none. Rolling back to
-	// the active deploy changes nothing.
-	Rollback(ctx context.Context, ownerID, siteID, deployID string, at time.Time) (Deploy, error)
+	// activated and ErrNoPreviousDeploy when there is none. changed reports
+	// whether the transaction moved the active deploy: rolling back to the
+	// deploy that is active when it runs changes nothing.
+	Rollback(ctx context.Context, ownerID, siteID, deployID string, at time.Time) (d Deploy, changed bool, err error)
 	// Delete removes an inactive deploy; the active one is ErrConstraint.
 	Delete(ctx context.Context, ownerID, id string) error
 	// PutBlob records a blob; recording one that exists is a no-op.
@@ -263,8 +264,9 @@ func (r deploysRepo) Activate(ctx context.Context, ownerID, siteID, deployID str
 	return d, err
 }
 
-func (r deploysRepo) Rollback(ctx context.Context, ownerID, siteID, deployID string, at time.Time) (Deploy, error) {
+func (r deploysRepo) Rollback(ctx context.Context, ownerID, siteID, deployID string, at time.Time) (Deploy, bool, error) {
 	var d Deploy
+	changed := false
 	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		site, err := q.GetSite(ctx, sqlcgen.GetSiteParams{ID: siteID, OwnerID: ownerID})
 		if err != nil {
@@ -288,9 +290,16 @@ func (r deploysRepo) Rollback(ctx context.Context, ownerID, siteID, deployID str
 		if d.ID == site.ActiveDeployID.String {
 			return nil
 		}
-		return setActive(ctx, q, ownerID, &d, at)
+		if err := setActive(ctx, q, ownerID, &d, at); err != nil {
+			return err
+		}
+		changed = true
+		return nil
 	})
-	return d, err
+	if err != nil {
+		return Deploy{}, false, err
+	}
+	return d, changed, nil
 }
 
 // setActive stamps d as activated at and points its site at it.

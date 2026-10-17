@@ -33,11 +33,16 @@ func NewLocalNotifier() *LocalNotifier {
 	return &LocalNotifier{subs: map[int]func(string){}}
 }
 
-// Notify calls every subscriber with siteID before returning.
+// Notify calls every subscriber with siteID before returning. Subscribers
+// run without the lock held, so they may subscribe or unsubscribe.
 func (n *LocalNotifier) Notify(_ context.Context, siteID string) {
 	n.mu.RLock()
-	defer n.mu.RUnlock()
+	subs := make([]func(string), 0, len(n.subs))
 	for _, fn := range n.subs {
+		subs = append(subs, fn)
+	}
+	n.mu.RUnlock()
+	for _, fn := range subs {
 		fn(siteID)
 	}
 }

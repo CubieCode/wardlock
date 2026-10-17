@@ -227,7 +227,9 @@ func TestDeployProtocol(t *testing.T) {
 	}
 
 	c := hs.createDeploy(a, "docs", manifest(index, app, file{"copy.html", index.content}))
-	if c.Deploy.Status != "pending" || c.Deploy.FileCount != 3 || c.Deploy.ActivatedAt != nil {
+	// Counts and sizes are per path, so the duplicated content counts twice.
+	wantTotal := int64(2*len(index.content) + len(app.content))
+	if c.Deploy.Status != "pending" || c.Deploy.FileCount != 3 || c.Deploy.TotalSize != wantTotal || c.Deploy.ActivatedAt != nil {
 		t.Fatalf("created deploy = %+v", c.Deploy)
 	}
 	want := []string{index.hash(), app.hash()}
@@ -519,6 +521,7 @@ func TestRejectedPaths(t *testing.T) {
 		"", "/index.html", "index.html/", "a//b", "../secret", "a/../../b", "a/..", "./a", "a/./b", ".",
 		`a\..\b`, `\index.html`, "a\x00b", "a\x1fb", "a\tb", "a\nb", "a\x7fb", "a\u0085b",
 		".wardlock/health", ".wardlock", ".Wardlock/login", `.wardlock\health`,
+		"a\u200bb", "evil\u202Elmth.js", "\ufeffindex.html",
 		strings.Repeat("a", 1025),
 	} {
 		t.Run(fmt.Sprintf("%q", p), func(t *testing.T) {
@@ -541,6 +544,16 @@ func TestRejectedPaths(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			hs.do(a, http.MethodPost, "/sites/docs/deploys", req).want(t, http.StatusBadRequest, "invalid_manifest")
 		})
+	}
+	// One hash with two sizes is rejected, naming the later path.
+	conflict := api.CreateDeployRequest{Files: []api.ManifestFile{
+		{Path: "a.html", Sha256: index.hash(), Size: 1},
+		{Path: "b.html", Sha256: index.hash(), Size: 2},
+	}}
+	res := hs.do(a, http.MethodPost, "/sites/docs/deploys", conflict)
+	res.want(t, http.StatusBadRequest, "invalid_manifest")
+	if e := res.err(t); e.Target == nil || *e.Target != "b.html" {
+		t.Fatalf("conflicting sizes: target = %v, want b.html", e.Target)
 	}
 	// Accepted forms, with backslashes normalised.
 	c := hs.createDeploy(a, "docs", manifest(

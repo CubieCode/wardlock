@@ -38,13 +38,19 @@ type BlobStore interface {
 
 // FSBlobStore keeps blobs as files under dir/sha256/ab/cdef…, so a blob is
 // either complete or absent.
-type FSBlobStore struct{ dir string }
+type FSBlobStore struct {
+	dir string
+	// sync makes a file or directory durable; tests observe it.
+	sync func(*os.File) error
+}
 
 var _ BlobStore = (*FSBlobStore)(nil)
 
 // NewFSBlobStore returns a BlobStore rooted at dir (normally
 // <data dir>/blobs), created on first Put.
-func NewFSBlobStore(dir string) *FSBlobStore { return &FSBlobStore{dir: dir} }
+func NewFSBlobStore(dir string) *FSBlobStore {
+	return &FSBlobStore{dir: dir, sync: (*os.File).Sync}
+}
 
 // ValidHash reports whether h is a SHA-256 as 64 lowercase hex characters.
 func ValidHash(h string) bool {
@@ -85,6 +91,12 @@ func (s *FSBlobStore) Has(_ context.Context, h string) (bool, error) {
 
 // Put stores r as blob h. An existing blob is not rewritten, but r is still
 // read and verified, so success always means the caller sent the content.
+//
+// Put does the same work whether or not the blob exists: write a temp file,
+// fsync it, then rename it into place or remove it, and fsync the
+// directory. Skipping the write and syncs for an existing blob would make
+// that upload measurably faster, telling one owner from the timing that
+// another owner already stored the same content.
 func (s *FSBlobStore) Put(ctx context.Context, h string, size int64, r io.Reader) error {
 	p, err := s.path(h)
 	if err != nil {
@@ -93,14 +105,6 @@ func (s *FSBlobStore) Put(ctx context.Context, h string, size int64, r io.Reader
 	if size < 0 {
 		return ErrHashMismatch
 	}
-	exists, err := s.Has(ctx, h)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return verify(h, size, r, io.Discard)
-	}
-
 	dir := filepath.Dir(p)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create blob directory: %w", err)
@@ -109,27 +113,38 @@ func (s *FSBlobStore) Put(ctx context.Context, h string, size int64, r io.Reader
 	if err != nil {
 		return fmt.Errorf("create temp blob: %w", err)
 	}
-	keep := false
+	renamed := false
 	defer func() {
-		if !keep {
-			_ = tmp.Close()
+		_ = tmp.Close()
+		if !renamed {
 			_ = os.Remove(tmp.Name())
 		}
 	}()
 	if err := verify(h, size, r, tmp); err != nil {
 		return err
 	}
-	if err := tmp.Sync(); err != nil {
+	if err := s.sync(tmp); err != nil {
 		return fmt.Errorf("sync blob: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close blob: %w", err)
 	}
-	if err := os.Rename(tmp.Name(), p); err != nil {
-		return fmt.Errorf("rename blob: %w", err)
+	exists, err := s.Has(ctx, h)
+	if err != nil {
+		return err
 	}
-	keep = true
-	return syncDir(dir)
+	if exists {
+		// Keep the stored file; the deferred remove drops the copy.
+		if err := os.Remove(tmp.Name()); err != nil {
+			return fmt.Errorf("remove temp blob: %w", err)
+		}
+	} else {
+		if err := os.Rename(tmp.Name(), p); err != nil {
+			return fmt.Errorf("rename blob: %w", err)
+		}
+		renamed = true
+	}
+	return s.syncDir(dir)
 }
 
 // verify copies r to w, failing with ErrHashMismatch unless r holds exactly
@@ -146,14 +161,14 @@ func verify(h string, size int64, r io.Reader, w io.Writer) error {
 	return nil
 }
 
-// syncDir makes a rename in dir durable.
-func syncDir(dir string) error {
+// syncDir makes a rename or remove in dir durable.
+func (s *FSBlobStore) syncDir(dir string) error {
 	d, err := os.Open(filepath.Clean(dir))
 	if err != nil {
 		return fmt.Errorf("open blob directory: %w", err)
 	}
 	defer func() { _ = d.Close() }()
-	if err := d.Sync(); err != nil && !errors.Is(err, errors.ErrUnsupported) {
+	if err := s.sync(d); err != nil && !errors.Is(err, errors.ErrUnsupported) {
 		return fmt.Errorf("sync blob directory: %w", err)
 	}
 	return nil

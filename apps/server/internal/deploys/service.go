@@ -241,11 +241,14 @@ func (s *Service) Rollback(ctx context.Context, ownerID, siteName, deployID stri
 	if err != nil {
 		return store.Site{}, store.Deploy{}, err
 	}
-	d, err := s.c.Deploys.Rollback(ctx, ownerID, site.ID, deployID, s.now())
+	d, changed, err := s.c.Deploys.Rollback(ctx, ownerID, site.ID, deployID, s.now())
 	if err != nil {
 		return store.Site{}, store.Deploy{}, storeErr("rollback", err)
 	}
-	if d.ID == site.ActiveDeployID {
+	if !changed {
+		// Already active when the transaction ran: nothing to tell the edge.
+		site.ActiveDeployID = d.ID
+		site.ActivatedAt = d.ActivatedAt
 		return site, d, nil
 	}
 	return s.served(ctx, site, d), d, nil

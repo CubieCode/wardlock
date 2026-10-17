@@ -34,6 +34,7 @@ func TestNormalisePath(t *testing.T) {
 	for _, in := range []string{
 		"", "/", "/index.html", "index.html/", "a//b", "..", "../a", "a/..", "a/../b", ".", "./a", "a/./b",
 		`a\..\b`, `\a`, `a\`, "a\x00b", "a\x01", "a\tb", "a\rb", "a\nb", "a\x1b", "a\x7f", "a\u0080", "a\u009f",
+		"a\u200bb", "a\u200d", "evil\u202Elmth.js", "\ufeffindex.html", "a\u2066b", "a\u00adb", // Cf format characters
 		"\xff", "a\xc3", "ok/\xed\xa0\x80", // invalid UTF-8, including a surrogate
 		".wardlock", ".wardlock/health", ".WARDLOCK/x", ".WardLock/login", `.wardlock\x`,
 		strings.Repeat("a", 1025),

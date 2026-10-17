@@ -41,8 +41,11 @@ type Manifest struct {
 // NormalisePath turns backslashes into forward slashes and checks the
 // result against SPEC "Deploys and rollback": valid UTF-8, at most 1024
 // bytes, no empty, "." or ".." segments (so no leading or trailing slash),
-// no control characters, and not under the reserved .wardlock/ path (in any
-// letter case, and including a file named .wardlock itself).
+// no control (Cc) or format (Cf: zero-width, bidi overrides, BOM)
+// characters, and not under the reserved .wardlock/ path (in any
+// letter case, and including a file named .wardlock itself). Paths are
+// otherwise kept byte for byte, with no Unicode normalisation; the CLI
+// (C1.5) sends them in NFC.
 func NormalisePath(p string) (string, error) {
 	orig := p
 	invalid := func(why string) (string, error) {
@@ -55,8 +58,8 @@ func NormalisePath(p string) (string, error) {
 	if p == "" || len(p) > maxPathBytes {
 		return invalid(fmt.Sprintf("must be 1 to %d bytes", maxPathBytes))
 	}
-	if strings.ContainsFunc(p, unicode.IsControl) {
-		return invalid("contains a control character")
+	if strings.ContainsFunc(p, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) {
+		return invalid("contains a control or invisible format character")
 	}
 	segments := strings.Split(p, "/")
 	for _, seg := range segments {
@@ -85,6 +88,7 @@ func (l Limits) validate(m *Manifest) error {
 		return &TargetError{Err: ErrLimitExceeded, Target: "files", Message: fmt.Sprintf("The deploy has %d files; the limit is %d.", len(m.Files), l.MaxFiles)}
 	}
 	seen := make(map[string]bool, len(m.Files))
+	sizes := make(map[string]int64, len(m.Files)) // one size per hash
 	var total int64
 	for i := range m.Files {
 		f := &m.Files[i]
@@ -103,6 +107,10 @@ func (l Limits) validate(m *Manifest) error {
 		if f.Size < 0 {
 			return &TargetError{Err: ErrInvalidManifest, Target: p, Message: fmt.Sprintf("The size of %q must not be negative.", p)}
 		}
+		if size, ok := sizes[f.SHA256]; ok && size != f.Size {
+			return &TargetError{Err: ErrInvalidManifest, Target: p, Message: fmt.Sprintf("%q gives size %d for a hash listed elsewhere with size %d.", p, f.Size, size)}
+		}
+		sizes[f.SHA256] = f.Size
 		if f.Size > l.MaxFileSize {
 			return &TargetError{Err: ErrLimitExceeded, Target: p, Message: fmt.Sprintf("%s is %d bytes; the limit is %d.", p, f.Size, l.MaxFileSize)}
 		}

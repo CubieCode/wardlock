@@ -27,7 +27,7 @@ Share links and API tokens use one format: `wl_<public id>_<secret>`. The public
 
 ## Sites (C1.2)
 
-- Site names are DNS labels: 1–63 characters of `a-z`, `0-9` and `-`, not starting or ending with `-`. Reserved names: `auth`, `www`, `api`, `admin`, `app`, `dashboard`, `mail`, `wardlock`, anything starting with `xn--`, and the dashboard host's first label when it sits under the base domain.
+- Site names are DNS labels: 1–63 characters of `a-z`, `0-9` and `-`, not starting or ending with `-`. Reserved names: `auth`, `www`, `api`, `admin`, `app`, `dashboard`, `mail`, `wardlock`, anything starting with `xn--`, and, when the dashboard host sits under the base domain, the label directly under the base domain on the way to the dashboard host (`dash` for `dash.<base domain>` or `a.dash.<base domain>`).
 - A site is created by its first deploy (the CLI creates it before uploading) or from the dashboard. Names are unique per instance; a name held by another owner's site is reported as taken (site names are public through DNS).
 - **Custom domains** (C1.9): a site can also be served at domains its owner controls; see Custom domains.
 - **Teardown** deletes the site, its deploys, links, policies and custom domains, and frees the name. Blobs no longer referenced are removed by garbage collection (C1.8).
@@ -53,7 +53,7 @@ The goal is that adding one DNS record is all an owner has to do. The record nam
 - Activation is atomic: a visitor sees either the previous deploy or the new one, never a mix.
 - Every deploy stays in history with its time, file count, total size and an optional message. **Rollback** reactivates any earlier deploy instantly, with no upload.
 - Default limits (configurable): 25 MiB per file, 20,000 files and 1 GiB per deploy, 50 deploys of history per site (older ones are pruned, never the active one).
-- Paths are normalised to forward slashes, must be valid UTF-8, must not contain `..`, empty segments or control characters, and must not start with `.wardlock/`. Such deploys are rejected with the offending path named.
+- Paths are normalised to forward slashes, must be valid UTF-8, must not contain `..`, empty segments, control characters or invisible format characters (Unicode Cf, such as zero-width spaces and bidi overrides), and must not start with `.wardlock/`. Such deploys are rejected with the offending path named. The server keeps paths byte for byte without Unicode normalisation; the CLI (C1.5) sends them in NFC.
 
 ## Serving (C1.3)
 

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"wardlock.nz/server/internal/deploys"
 )
@@ -206,6 +207,110 @@ func TestLocalNotifier(t *testing.T) {
 	for range 10 {
 		wg.Go(func() { n.Notify(t.Context(), "s3") })
 		wg.Go(func() { sub("c")() })
+	}
+	wg.Wait()
+}
+
+// TestFSBlobStoreExistingBlobDoesTheSameWork: putting a blob that exists
+// writes and fsyncs a temp file and the directory exactly as a new blob
+// does, so upload timing does not reveal that someone stored it before.
+func TestFSBlobStoreExistingBlobDoesTheSameWork(t *testing.T) {
+	dir := t.TempDir()
+	bs := deploys.NewFSBlobStore(dir)
+	var synced []string
+	bs.SetSyncForTest(func(f *os.File) error {
+		synced = append(synced, f.Name())
+		return f.Sync()
+	})
+	content := "stored once"
+	h := hashOf(content)
+	shard := filepath.Join(dir, "sha256", h[:2])
+	put := func() []string {
+		t.Helper()
+		synced = nil
+		if err := bs.Put(t.Context(), h, int64(len(content)), strings.NewReader(content)); err != nil {
+			t.Fatal(err)
+		}
+		return synced
+	}
+	// What each sync touched: a temp upload file in the shard, then the shard.
+	shape := func(names []string) string {
+		var out []string
+		for _, n := range names {
+			switch {
+			case n == shard:
+				out = append(out, "dir")
+			case filepath.Dir(n) == shard && strings.HasPrefix(filepath.Base(n), ".upload-"):
+				out = append(out, "temp")
+			default:
+				out = append(out, n)
+			}
+		}
+		return strings.Join(out, ",")
+	}
+	first := shape(put())
+	before, err := os.Stat(filepath.Join(shard, h[2:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := shape(put())
+	if first != "temp,dir" || second != first {
+		t.Fatalf("syncs for a new blob %q, for an existing one %q; want temp,dir both times", first, second)
+	}
+	after, err := os.Stat(filepath.Join(shard, h[2:]))
+	if err != nil || !os.SameFile(before, after) {
+		t.Fatalf("existing blob was replaced (%v)", err)
+	}
+	if got := files(t, dir); len(got) != 1 {
+		t.Fatalf("files = %v, want only the blob", got)
+	}
+}
+
+func TestLocalNotifierReentrant(t *testing.T) {
+	n := deploys.NewLocalNotifier()
+	var mu sync.Mutex
+	var calls []string
+	record := func(s string) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls = append(calls, s)
+	}
+	// A subscriber that unsubscribes itself and subscribes another from
+	// inside its callback must not deadlock.
+	var unsub func()
+	unsub = n.Subscribe(func(siteID string) {
+		record("once:" + siteID)
+		unsub()
+		n.Subscribe(func(siteID string) { record("later:" + siteID) })
+	})
+	done := make(chan struct{})
+	go func() {
+		n.Notify(t.Context(), "s1")
+		n.Notify(t.Context(), "s2")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Notify deadlocked on a subscriber that (un)subscribes")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got := strings.Join(calls, ","); got != "once:s1,later:s2" {
+		t.Fatalf("calls = %s", got)
+	}
+}
+
+func TestLocalNotifierConcurrent(t *testing.T) {
+	n := deploys.NewLocalNotifier()
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Go(func() { n.Notify(t.Context(), "s") })
+		wg.Go(func() {
+			unsub := n.Subscribe(func(string) {})
+			n.Notify(t.Context(), "s")
+			unsub()
+		})
 	}
 	wg.Wait()
 }

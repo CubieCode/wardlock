@@ -372,45 +372,45 @@ func deploysContract(t *testing.T, open Opener) {
 			}
 			return site.ActiveDeployID
 		}
-		_, err := f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, "", now)
+		_, _, err := f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, "", now)
 		wantErr(t, err, store.ErrNoPreviousDeploy)
 		d1 := f.activated(o.ID, s.ID, now.Add(1*time.Minute))
-		_, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, "", now)
+		_, _, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, "", now)
 		wantErr(t, err, store.ErrNoPreviousDeploy)
 		d2 := f.activated(o.ID, s.ID, now.Add(2*time.Minute))
 		d3 := f.activated(o.ID, s.ID, now.Add(3*time.Minute))
 		pending := f.deploy(o.ID, s.ID)
 
 		// Without an ID: the deploy active before the current one.
-		got, err := f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, "", now.Add(4*time.Minute))
+		got, changed, err := f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, "", now.Add(4*time.Minute))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.ID != d2.ID || active() != d2.ID || !got.ActivatedAt.Equal(now.Add(4*time.Minute)) {
+		if !changed || got.ID != d2.ID || active() != d2.ID || !got.ActivatedAt.Equal(now.Add(4*time.Minute)) {
 			t.Fatalf("Rollback() = %+v, active %s; want %s", got, active(), d2.ID)
 		}
 		// Again: back to d3, which was active before d2.
-		got, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, "", now.Add(5*time.Minute))
-		if err != nil || got.ID != d3.ID {
+		got, changed, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, "", now.Add(5*time.Minute))
+		if err != nil || !changed || got.ID != d3.ID {
 			t.Fatalf("second Rollback() = %+v, %v; want %s", got, err, d3.ID)
 		}
 		// Any earlier deploy by ID.
-		got, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, d1.ID, now.Add(6*time.Minute))
-		if err != nil || got.ID != d1.ID || active() != d1.ID {
+		got, changed, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, d1.ID, now.Add(6*time.Minute))
+		if err != nil || !changed || got.ID != d1.ID || active() != d1.ID {
 			t.Fatalf("Rollback(d1) = %+v, %v; active %s", got, err, active())
 		}
 		// The active deploy: no change.
-		got, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, d1.ID, now.Add(7*time.Minute))
-		if err != nil || got.ID != d1.ID || !got.ActivatedAt.Equal(now.Add(6*time.Minute)) {
+		got, changed, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, d1.ID, now.Add(7*time.Minute))
+		if err != nil || changed || got.ID != d1.ID || !got.ActivatedAt.Equal(now.Add(6*time.Minute)) {
 			t.Fatalf("Rollback(active) = %+v, %v; want unchanged", got, err)
 		}
-		_, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, pending.ID, now)
+		_, _, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, pending.ID, now)
 		wantErr(t, err, store.ErrDeployNotActivated)
-		_, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, store.NewID(), now)
+		_, _, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, store.NewID(), now)
 		wantErr(t, err, store.ErrNotFound)
-		_, err = f.r.Deploys.Rollback(t.Context(), f.owner().ID, s.ID, d2.ID, now)
+		_, _, err = f.r.Deploys.Rollback(t.Context(), f.owner().ID, s.ID, d2.ID, now)
 		wantErr(t, err, store.ErrNotFound)
-		_, err = f.r.Deploys.Rollback(t.Context(), f.owner().ID, s.ID, "", now)
+		_, _, err = f.r.Deploys.Rollback(t.Context(), f.owner().ID, s.ID, "", now)
 		wantErr(t, err, store.ErrNotFound)
 		if active() != d1.ID {
 			t.Fatalf("failed rollbacks changed the active deploy to %s", active())
