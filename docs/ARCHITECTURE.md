@@ -106,23 +106,180 @@ Blobs are written to a temporary file in the same directory, fsynced, then renam
 
 ### Data model (F0.3)
 
+Migration `0002_core_schema.sql` creates every table below. `internal/store/schema_test.go` checks that this diagram lists exactly the schema's tables, columns, types, primary keys and foreign keys, so update both together. Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
+
 ```mermaid
 erDiagram
-  owners ||--o{ owner_sessions : has
-  owners ||--o{ api_tokens : has
-  owners ||--o{ sites : owns
-  sites ||--o{ domains : "custom domains"
-  sites ||--o{ deploys : has
-  sites ||--o| deploys : "active_deploy_id"
-  deploys ||--o{ deploy_files : manifest
-  blobs ||--o{ deploy_files : "sha256"
-  sites ||--o{ policies : "default + path prefixes"
-  sites ||--o{ share_links : has
-  share_links ||--o{ site_sessions : creates
-  sites ||--o{ access_log : records
+  owners ||--o{ owners : "invited_by"
+  owners ||--o{ owner_login_codes : "owner_id"
+  owners ||--o{ owner_sessions : "owner_id"
+  owners ||--o{ api_tokens : "owner_id"
+  owners ||--o{ cli_login_requests : "owner_id"
+  api_tokens |o--o| cli_login_requests : "api_token_id"
+  owners ||--o{ sites : "owner_id"
+  sites ||--o{ domains : "site_id"
+  sites ||--o{ deploys : "site_id"
+  sites |o--o| deploys : "active_deploy_id"
+  deploys ||--o{ deploy_files : "deploy_id"
+  blobs |o..o{ deploy_files : "sha256, no FK"
+  sites ||--o{ policies : "site_id"
+  sites ||--o{ share_links : "site_id"
+  sites ||--o{ site_sessions : "site_id"
+  share_links |o--o{ site_sessions : "(site_id, share_link_id)"
+  policies ||--o{ site_sessions : "(site_id, policy_id)"
+
+  owners {
+    TEXT id PK
+    TEXT email UK "lowercase"
+    TEXT invited_by FK
+    INTEGER created_at
+    INTEGER accepted_at "first sign-in"
+  }
+  owner_login_codes {
+    TEXT id PK
+    TEXT owner_id FK "NULL for setup"
+    TEXT purpose "setup, signin_url, email_code"
+    TEXT code_hash
+    INTEGER attempts
+    INTEGER created_at
+    INTEGER expires_at
+    INTEGER used_at
+  }
+  owner_sessions {
+    TEXT id PK
+    TEXT owner_id FK
+    TEXT token_hash UK
+    INTEGER created_at
+    INTEGER last_seen_at
+    INTEGER expires_at "absolute"
+    INTEGER revoked_at
+  }
+  api_tokens {
+    TEXT id PK
+    TEXT owner_id FK
+    TEXT public_id UK
+    TEXT token_hash
+    TEXT name
+    INTEGER scope_deploy
+    INTEGER scope_manage
+    INTEGER created_at
+    INTEGER expires_at
+    INTEGER last_used_at
+    INTEGER revoked_at
+  }
+  cli_login_requests {
+    TEXT id PK
+    TEXT device_code_hash UK
+    TEXT user_code UK
+    TEXT status "pending, approved, denied, redeemed"
+    TEXT owner_id FK
+    INTEGER scope_deploy
+    INTEGER scope_manage
+    TEXT api_token_id FK
+    INTEGER created_at
+    INTEGER expires_at
+    INTEGER decided_at
+  }
+  sites {
+    TEXT id PK
+    TEXT owner_id FK
+    TEXT name UK
+    INTEGER spa_fallback
+    INTEGER created_at
+    TEXT active_deploy_id FK
+  }
+  domains {
+    TEXT id PK
+    TEXT site_id FK
+    TEXT hostname UK
+    TEXT status "pending, active, lapsed"
+    TEXT verification_token UK "public, stored as is"
+    INTEGER created_at
+    INTEGER last_checked_at
+    INTEGER failing_since "first consecutive failure"
+    TEXT last_failure_reason
+  }
+  deploys {
+    TEXT id PK
+    TEXT site_id FK
+    TEXT message
+    INTEGER file_count
+    INTEGER total_size
+    INTEGER created_at
+    INTEGER activated_at
+  }
+  blobs {
+    TEXT sha256 PK
+    INTEGER size
+    INTEGER created_at
+  }
+  deploy_files {
+    TEXT deploy_id PK, FK
+    TEXT path PK
+    TEXT sha256
+    INTEGER size
+  }
+  policies {
+    TEXT id PK
+    TEXT site_id FK "UK with path_prefix"
+    TEXT path_prefix "/ is the site default"
+    TEXT visibility "public, protected"
+    INTEGER links_enabled
+    INTEGER password_enabled
+    INTEGER email_enabled
+    INTEGER oauth_enabled
+    TEXT password_hash "Argon2id"
+    INTEGER version
+    INTEGER created_at
+    INTEGER updated_at
+  }
+  share_links {
+    TEXT id PK
+    TEXT site_id FK
+    TEXT public_id UK
+    TEXT token_hash
+    TEXT label
+    TEXT path_prefix
+    INTEGER created_at
+    INTEGER expires_at
+    INTEGER max_uses
+    INTEGER use_count
+    INTEGER last_accessed_at
+    INTEGER rotated_at
+    INTEGER revoked_at
+  }
+  site_sessions {
+    TEXT id PK
+    TEXT site_id FK
+    TEXT token_hash UK
+    TEXT method "link, password, email, oauth"
+    TEXT share_link_id FK
+    TEXT policy_id FK
+    INTEGER policy_version
+    TEXT subject
+    INTEGER created_at
+    INTEGER expires_at
+    INTEGER revoked_at
+  }
+  access_log {
+    TEXT id PK
+    INTEGER occurred_at
+    TEXT site_id "no FK"
+    TEXT host
+    TEXT path
+    INTEGER status
+    TEXT via "public, link, password, email, oauth, none"
+    TEXT link_public_id
+    TEXT ip
+    TEXT user_agent
+  }
 ```
 
-Columns follow the portable-SQL rules: text IDs (UUIDv7) generated in Go, timestamps as UTC Unix milliseconds in `INTEGER` (Postgres `BIGINT`), booleans as `INTEGER` with `CHECK (x IN (0, 1))`, upserts with `ON CONFLICT … DO UPDATE`. Token and password columns hold only hashes. `access_log` has its own table with no foreign keys out of it, so it can later move to a separate store.
+Columns follow the portable-SQL rules: text IDs (UUIDv7, `store.NewID`) generated in Go, timestamps as UTC Unix milliseconds in `INTEGER` (Postgres `BIGINT`), booleans as `INTEGER` with `CHECK (x IN (0, 1))`, upserts with `ON CONFLICT … DO UPDATE` (or `DO NOTHING`). Token, session and code columns hold only HMAC hashes, and the policy password only an Argon2id hash; the domain verification token is stored as is because it is published in DNS. `access_log` has no foreign keys, so it can later move to a separate store and outlive the sites it mentions. A site session's link and policy are composite foreign keys `(site_id, share_link_id)` and `(site_id, policy_id)` onto `UNIQUE (site_id, id)` in `share_links` and `policies`, so a session can never name another site's link or policy. Deleting a site cascades to its domains, deploys and their manifests, policies, share links and site sessions; the active deploy cannot be deleted on its own.
+
+Names chosen for C1.1: one-time owner credentials live in `owner_login_codes` (`purpose` is `setup` for the first-start setup URL with no owner, `signin_url` for the `admin create` or invite sign-in URL, `email_code` for the 6-digit code). An invite is an `owners` row with `invited_by` set and `accepted_at` NULL plus a `signin_url` code; `accepted_at` is set on first sign-in. CLI login (C1.7) is `cli_login_requests`: the CLI polls with a hashed device code and the API token is minted only when an approved request is redeemed.
+
+**Contract tests.** `storetest.RunContract(t, open)` runs one suite per repository interface; each case gets a fresh database from `open`. SQLite runs it in `internal/store/contract_test.go`; a future backend passes its own opener. Every new repository method adds cases to its interface's suite in `internal/store/storetest/<area>_contract.go`. F0.3 implements only the methods those suites need to exercise the constraints; feature items add the rest in their own `queries/<area>.sql`.
 
 ### Storage seam
 
