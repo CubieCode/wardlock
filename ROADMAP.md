@@ -76,7 +76,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.3: Edge static serving
 
-- Status: `review`
+- Status: `done`
 - Owner: feat/c1.3-edge-serving
 - PR: https://github.com/CubieCode/wardlock/pull/21
 - Depends on: F0.3
