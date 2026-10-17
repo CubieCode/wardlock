@@ -26,7 +26,8 @@ var forbiddenSQL = []struct {
 	{"AUTOINCREMENT", regexp.MustCompile(`(?i)\bAUTOINCREMENT\b`)},
 	{"INSERT OR …", regexp.MustCompile(`(?i)\bINSERT\s+OR\s+\w+`)},
 	{"REPLACE statement", regexp.MustCompile(`(?i)(^|;)\s*REPLACE\b|\bREPLACE\s+INTO\b`)},
-	{"SQLite-only function", regexp.MustCompile(`(?i)\b(datetime|date|time|julianday|strftime|unixepoch|ifnull|iif|glob|printf|instr|group_concat|last_insert_rowid|changes|total_changes|randomblob|typeof|json_\w+)\s*\(`)},
+	{"SQLite-only function", regexp.MustCompile(`(?i)\b(datetime|date|time|julianday|strftime|unixepoch|ifnull|iif|glob|printf|instr|group_concat|last_insert_rowid|changes|total_changes|randomblob|zeroblob|hex|char|total|likely|unlikely|typeof|json_\w+|sqlite_\w+)\s*\(`)},
+	{"LIMIT -1", regexp.MustCompile(`(?i)\bLIMIT\s+-\s*1\b`)},
 	{"GLOB operator", regexp.MustCompile(`(?i)\bGLOB\b`)},
 	{"rowid", regexp.MustCompile(`(?i)\b(_?rowid_?|oid)\b`)},
 	{"WITHOUT ROWID or STRICT table", regexp.MustCompile(`(?i)\bWITHOUT\s+ROWID\b|\)\s*STRICT\b`)},
@@ -34,22 +35,55 @@ var forbiddenSQL = []struct {
 	{"positional or SQLite-style parameter", regexp.MustCompile(`\?\d*|\$\d+|[:@]\w+`)},
 }
 
-var (
-	sqlComment = regexp.MustCompile(`--[^\n]*`)
-	sqlString  = regexp.MustCompile(`'(?:[^']|'')*'`)
-)
+// sqlLiteralOrComment matches whichever starts first, a string literal or a
+// line comment, so "--" inside a literal and an apostrophe inside a comment
+// are both read correctly.
+var sqlLiteralOrComment = regexp.MustCompile(`'(?:[^']|'')*'|--[^\n]*`)
+
+// minMaxCall finds min( and max( calls; scalarMinMax decides which take more
+// than one argument (SQLite's scalar form; Postgres spells it LEAST/GREATEST).
+var minMaxCall = regexp.MustCompile(`(?i)\b(min|max)\s*\(`)
 
 // unportable returns the forbidden constructs in src, ignoring comments and
 // string literals.
 func unportable(src string) []string {
-	code := sqlString.ReplaceAllString(sqlComment.ReplaceAllString(src, ""), "''")
+	code := sqlLiteralOrComment.ReplaceAllStringFunc(src, func(m string) string {
+		if strings.HasPrefix(m, "--") {
+			return ""
+		}
+		return "''"
+	})
 	var found []string
 	for _, f := range forbiddenSQL {
 		if m := f.re.FindString(code); m != "" {
 			found = append(found, fmt.Sprintf("%s (%q)", f.what, strings.TrimSpace(m)))
 		}
 	}
+	if m := scalarMinMax(code); m != "" {
+		found = append(found, fmt.Sprintf("scalar min/max (%q)", m))
+	}
 	return found
+}
+
+// scalarMinMax returns the first min( or max( call in code with a top-level
+// comma in its arguments, or "" if every call is the one-argument aggregate.
+func scalarMinMax(code string) string {
+	for _, loc := range minMaxCall.FindAllStringIndex(code, -1) {
+		depth := 1
+		for i := loc[1]; i < len(code) && depth > 0; i++ {
+			switch code[i] {
+			case '(':
+				depth++
+			case ')':
+				depth--
+			case ',':
+				if depth == 1 {
+					return code[loc[0]:loc[1]]
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func TestUnportableCatchesForbiddenSQL(t *testing.T) {
@@ -74,6 +108,18 @@ func TestUnportableCatchesForbiddenSQL(t *testing.T) {
 		"SELECT * FROM t WHERE id = :id;",
 		"SELECT * FROM t WHERE id = @id;",
 		"SELECT last_insert_rowid();",
+		"SELECT max(a, b) FROM t;",
+		"SELECT MIN(length(a), 3) FROM t;",
+		"SELECT max(x) AS m, min(a, b) FROM t;",
+		"SELECT sqlite_version();",
+		"SELECT zeroblob(4);",
+		"SELECT hex(id) FROM t;",
+		"SELECT char(65);",
+		"SELECT total(size) FROM t;",
+		"SELECT * FROM t WHERE likely(a = 1);",
+		"SELECT * FROM t WHERE unlikely(a = 1);",
+		"SELECT * FROM t LIMIT -1 OFFSET 5;",
+		"SELECT '--', datetime('now');",
 	} {
 		if len(unportable(bad)) == 0 {
 			t.Errorf("unportable(%q) found nothing", bad)
@@ -84,6 +130,9 @@ func TestUnportableCatchesForbiddenSQL(t *testing.T) {
 		"SELECT * FROM t WHERE status IN ('replace', 'datetime(x)', '?');",
 		"INSERT INTO blobs (sha256) VALUES (sqlc.arg(sha256)) ON CONFLICT (sha256) DO NOTHING;",
 		"SELECT updated_at, created_at FROM t WHERE length(name) > 1 AND name = lower(name);",
+		"SELECT max(created_at), min(length(name)) FROM t GROUP BY site_id;",
+		"-- the site's default policy\nSELECT 1;",
+		"SELECT * FROM t LIMIT sqlc.arg(n);",
 	} {
 		if got := unportable(ok); len(got) != 0 {
 			t.Errorf("unportable(%q) = %v, want none", ok, got)
@@ -175,17 +224,22 @@ func schemaOf(t *testing.T, db *DB) (map[string][]column, []fkPair) {
 	var pairs []fkPair
 	for _, table := range tables {
 		fkCols := map[string]bool{}
-		fks, err := db.sql.QueryContext(ctx, `SELECT "table", "from" FROM pragma_foreign_key_list(?)`, table)
+		fks, err := db.sql.QueryContext(ctx, `SELECT id, "table", "from" FROM pragma_foreign_key_list(?)`, table)
 		if err != nil {
 			t.Fatal(err)
 		}
+		seen := map[int]bool{} // a composite key has one row per column
 		for fks.Next() {
+			var id int
 			var parent, from string
-			if err := fks.Scan(&parent, &from); err != nil {
+			if err := fks.Scan(&id, &parent, &from); err != nil {
 				t.Fatal(err)
 			}
 			fkCols[from] = true
-			pairs = append(pairs, newPair(table, parent))
+			if !seen[id] {
+				seen[id] = true
+				pairs = append(pairs, newPair(table, parent))
+			}
 		}
 		if err := fks.Err(); err != nil {
 			t.Fatal(err)

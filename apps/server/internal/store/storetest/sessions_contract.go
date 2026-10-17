@@ -56,6 +56,14 @@ func sessionsContract(t *testing.T, open Opener) {
 				{name: "password method with link", mutate: func(_ *fixture, s *store.SiteSession) { s.Method = store.SessionPassword }, want: store.ErrConstraint},
 				{name: "unknown method", mutate: func(_ *fixture, s *store.SiteSession) { s.Method = "owner" }, want: store.ErrConstraint},
 				{name: "unknown policy", mutate: func(_ *fixture, s *store.SiteSession) { s.PolicyID = store.NewID() }, want: store.ErrConstraint},
+				{name: "another site's link", mutate: func(f *fixture, s *store.SiteSession) {
+					o := f.owner().ID
+					s.ShareLinkID = f.link(o, f.site(o).ID).ID
+				}, want: store.ErrConstraint},
+				{name: "another site's policy", mutate: func(f *fixture, s *store.SiteSession) {
+					o := f.owner().ID
+					s.PolicyID = f.policy(o, f.site(o).ID).ID
+				}, want: store.ErrConstraint},
 				{name: "unknown link", mutate: func(_ *fixture, s *store.SiteSession) { s.ShareLinkID = store.NewID() }, want: store.ErrConstraint},
 				{name: "policy version zero", mutate: func(_ *fixture, s *store.SiteSession) { s.PolicyVersion = 0 }, want: store.ErrConstraint},
 				{name: "expires at creation", mutate: func(_ *fixture, s *store.SiteSession) { s.ExpiresAt = s.CreatedAt }, want: store.ErrConstraint},

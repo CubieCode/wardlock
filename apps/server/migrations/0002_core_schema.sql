@@ -1,9 +1,10 @@
 -- SPDX-FileCopyrightText: 2026 CubieCode
 -- SPDX-License-Identifier: AGPL-3.0-only
 --
--- Core data model v0 (F0.3). Portable SQL: the same statements must run on
--- Postgres, so there is no AUTOINCREMENT, INSERT OR REPLACE or SQLite-only
--- function, and only length(), lower() and LIKE appear in CHECKs.
+-- Core data model v0 (F0.3). Portable apart from the noted type mappings
+-- (INTEGER timestamps are BIGINT on Postgres): there is no AUTOINCREMENT,
+-- INSERT OR REPLACE or SQLite-only function, and only length(), lower() and
+-- LIKE appear in CHECKs.
 --
 -- Conventions (docs/ARCHITECTURE.md, Data model):
 -- - IDs are TEXT (UUIDv7) generated in Go.
@@ -17,6 +18,10 @@
 
 CREATE TABLE owners (
   id TEXT NOT NULL PRIMARY KEY,
+  -- Go normalises addresses before insert (ASCII lower-casing only). SQLite's
+  -- lower() also folds only ASCII, so this CHECK agrees with Go; Postgres's
+  -- lower() folds Unicode too, which is stricter but never rejects a value Go
+  -- produced from an ASCII address.
   email TEXT NOT NULL UNIQUE CHECK (email = lower(email) AND length(email) BETWEEN 3 AND 254 AND email LIKE '%_@_%'),
   -- The owner who sent the invite; NULL for owners created by setup or
   -- `wardlockd admin create`.
@@ -38,6 +43,9 @@ CREATE TABLE owner_login_codes (
   id TEXT NOT NULL PRIMARY KEY,
   owner_id TEXT REFERENCES owners (id) ON DELETE CASCADE,
   purpose TEXT NOT NULL CHECK (purpose IN ('setup', 'signin_url', 'email_code')),
+  -- Not unique: 6-digit email codes can collide, so they are looked up by
+  -- owner_id and purpose and their hash compared. Only the high-entropy setup
+  -- and sign-in URL codes are looked up by hash.
   code_hash TEXT NOT NULL,
   attempts INTEGER NOT NULL CHECK (attempts >= 0),
   created_at INTEGER NOT NULL,
@@ -204,6 +212,9 @@ CREATE TABLE policies (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE (site_id, path_prefix),
+  -- Target of site_sessions' composite key, so a session cannot name another
+  -- site's policy.
+  UNIQUE (site_id, id),
   CHECK (visibility = 'protected' OR (links_enabled = 0 AND password_enabled = 0 AND email_enabled = 0 AND oauth_enabled = 0)),
   CHECK (password_enabled = 0 OR password_hash IS NOT NULL)
 );
@@ -224,7 +235,10 @@ CREATE TABLE share_links (
   rotated_at INTEGER,
   revoked_at INTEGER,
   CHECK (max_uses IS NULL OR use_count <= max_uses),
-  CHECK (expires_at IS NULL OR expires_at > created_at)
+  CHECK (expires_at IS NULL OR expires_at > created_at),
+  -- Target of site_sessions' composite key, so a session cannot name another
+  -- site's link.
+  UNIQUE (site_id, id)
 );
 
 CREATE INDEX share_links_site_id ON share_links (site_id);
@@ -236,8 +250,8 @@ CREATE TABLE site_sessions (
   site_id TEXT NOT NULL REFERENCES sites (id) ON DELETE CASCADE,
   token_hash TEXT NOT NULL UNIQUE,
   method TEXT NOT NULL CHECK (method IN ('link', 'password', 'email', 'oauth')),
-  share_link_id TEXT REFERENCES share_links (id) ON DELETE CASCADE,
-  policy_id TEXT NOT NULL REFERENCES policies (id) ON DELETE CASCADE,
+  share_link_id TEXT,
+  policy_id TEXT NOT NULL,
   policy_version INTEGER NOT NULL CHECK (policy_version >= 1),
   -- Verified email for email-code and OAuth sessions.
   subject TEXT,
@@ -245,7 +259,12 @@ CREATE TABLE site_sessions (
   expires_at INTEGER NOT NULL,
   revoked_at INTEGER,
   CHECK ((method = 'link') = (share_link_id IS NOT NULL)),
-  CHECK (expires_at > created_at)
+  CHECK (expires_at > created_at),
+  -- Composite keys tie the link and policy to the session's own site. With
+  -- share_link_id NULL the link key is not checked (MATCH SIMPLE on both
+  -- engines).
+  FOREIGN KEY (site_id, share_link_id) REFERENCES share_links (site_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (site_id, policy_id) REFERENCES policies (site_id, id) ON DELETE CASCADE
 );
 
 CREATE INDEX site_sessions_site_id ON site_sessions (site_id);
