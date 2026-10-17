@@ -232,7 +232,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.8: Access log pipeline
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/a2.8-access-log`
 - PR: https://github.com/CubieCode/wardlock/pull/24
 - Depends on: F0.3
