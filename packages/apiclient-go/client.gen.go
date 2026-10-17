@@ -7,6 +7,7 @@
 package apiclient
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,109 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for CliLoginPendingStatus.
+const (
+	CliLoginPendingStatusPending CliLoginPendingStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the CliLoginPendingStatus enum.
+func (e CliLoginPendingStatus) Valid() bool {
+	switch e {
+	case CliLoginPendingStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeployStatus.
+const (
+	DeployStatusActive   DeployStatus = "active"
+	DeployStatusInactive DeployStatus = "inactive"
+	DeployStatusPending  DeployStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the DeployStatus enum.
+func (e DeployStatus) Valid() bool {
+	switch e {
+	case DeployStatusActive:
+		return true
+	case DeployStatusInactive:
+		return true
+	case DeployStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DnsRecordType.
+const (
+	DnsRecordTypeCNAME DnsRecordType = "CNAME"
+	DnsRecordTypeTXT   DnsRecordType = "TXT"
+)
+
+// Valid indicates whether the value is a known member of the DnsRecordType enum.
+func (e DnsRecordType) Valid() bool {
+	switch e {
+	case DnsRecordTypeCNAME:
+		return true
+	case DnsRecordTypeTXT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainFailureReason.
+const (
+	DomainFailureReasonCnameElsewhere DomainFailureReason = "cname_elsewhere"
+	DomainFailureReasonDnsError       DomainFailureReason = "dns_error"
+	DomainFailureReasonNoRecord       DomainFailureReason = "no_record"
+	DomainFailureReasonTxtMismatch    DomainFailureReason = "txt_mismatch"
+)
+
+// Valid indicates whether the value is a known member of the DomainFailureReason enum.
+func (e DomainFailureReason) Valid() bool {
+	switch e {
+	case DomainFailureReasonCnameElsewhere:
+		return true
+	case DomainFailureReasonDnsError:
+		return true
+	case DomainFailureReasonNoRecord:
+		return true
+	case DomainFailureReasonTxtMismatch:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainStatus.
+const (
+	DomainStatusActive  DomainStatus = "active"
+	DomainStatusLapsed  DomainStatus = "lapsed"
+	DomainStatusPending DomainStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the DomainStatus enum.
+func (e DomainStatus) Valid() bool {
+	switch e {
+	case DomainStatusActive:
+		return true
+	case DomainStatusLapsed:
+		return true
+	case DomainStatusPending:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for HealthStatus.
 const (
@@ -31,6 +134,363 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for MeCredential.
+const (
+	MeCredentialApiToken MeCredential = "apiToken"
+	MeCredentialSession  MeCredential = "session"
+)
+
+// Valid indicates whether the value is a known member of the MeCredential enum.
+func (e MeCredential) Valid() bool {
+	switch e {
+	case MeCredentialApiToken:
+		return true
+	case MeCredentialSession:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for Scope.
+const (
+	ScopeDeploy Scope = "deploy"
+	ScopeManage Scope = "manage"
+)
+
+// Valid indicates whether the value is a known member of the Scope enum.
+func (e Scope) Valid() bool {
+	switch e {
+	case ScopeDeploy:
+		return true
+	case ScopeManage:
+		return true
+	default:
+		return false
+	}
+}
+
+// Activation defines model for Activation.
+type Activation struct {
+	Deploy Deploy `json:"deploy"`
+	Site   Site   `json:"site"`
+}
+
+// AddDomainRequest defines model for AddDomainRequest.
+type AddDomainRequest struct {
+	// Hostname The hostname as typed; the server normalises it.
+	Hostname string `json:"hostname"`
+}
+
+// ApiToken defines model for ApiToken.
+type ApiToken struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// ExpiresAt Absent when the token never expires.
+	//
+	// Examples: 1767225600000
+	ExpiresAt *Timestamp `json:"expiresAt,omitempty"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// LastUsedAt Absent until the token is first used.
+	//
+	// Examples: 1767225600000
+	LastUsedAt *Timestamp `json:"lastUsedAt,omitempty"`
+	Name       string     `json:"name"`
+
+	// PublicId The token's public ID, shown in the dashboard and logs.
+	//
+	// Examples: k7m2q6xw4a
+	PublicId string `json:"publicId"`
+
+	// Scopes Examples: ["deploy","manage"]
+	Scopes Scopes `json:"scopes"`
+}
+
+// ApiTokenPage defines model for ApiTokenPage.
+type ApiTokenPage struct {
+	Items []ApiToken `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// ApproveCliLoginRequest defines model for ApproveCliLoginRequest.
+type ApproveCliLoginRequest struct {
+	// Name The new token's name; defaults to the CLI's `clientName`.
+	Name *string `json:"name,omitempty"`
+
+	// Scopes Examples: ["deploy","manage"]
+	Scopes Scopes `json:"scopes"`
+
+	// UserCode Eight letters from an alphabet without vowels or look-alikes, in two groups of four.
+	//
+	// Examples: BDFH-KMPR
+	UserCode UserCode `json:"userCode"`
+}
+
+// CliLogin defines model for CliLogin.
+type CliLogin struct {
+	// DeviceCode Secret the CLI polls with. Never log it.
+	DeviceCode string `json:"deviceCode"`
+
+	// ExpiresAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	ExpiresAt Timestamp `json:"expiresAt"`
+
+	// Interval Minimum seconds between polls.
+	Interval int32 `json:"interval"`
+
+	// UserCode Eight letters from an alphabet without vowels or look-alikes, in two groups of four.
+	//
+	// Examples: BDFH-KMPR
+	UserCode UserCode `json:"userCode"`
+
+	// VerificationUrl The dashboard page where the owner approves the login.
+	VerificationUrl string `json:"verificationUrl"`
+
+	// VerificationUrlComplete `verificationUrl` with the user code filled in.
+	VerificationUrlComplete string `json:"verificationUrlComplete"`
+}
+
+// CliLoginPending defines model for CliLoginPending.
+type CliLoginPending struct {
+	Status CliLoginPendingStatus `json:"status"`
+}
+
+// CliLoginPendingStatus defines model for CliLoginPending.Status.
+type CliLoginPendingStatus string
+
+// CreateApiTokenRequest defines model for CreateApiTokenRequest.
+type CreateApiTokenRequest struct {
+	// ExpiresAt Omit for a token that never expires.
+	//
+	// Examples: 1767225600000
+	ExpiresAt *Timestamp `json:"expiresAt,omitempty"`
+	Name      string     `json:"name"`
+
+	// Scopes Examples: ["deploy","manage"]
+	Scopes Scopes `json:"scopes"`
+}
+
+// CreateDeployRequest defines model for CreateDeployRequest.
+type CreateDeployRequest struct {
+	Files   []ManifestFile `json:"files"`
+	Message *string        `json:"message,omitempty"`
+
+	// Spa Serve `/index.html` for missing extensionless paths.
+	Spa *bool `json:"spa,omitempty"`
+}
+
+// CreateSiteRequest defines model for CreateSiteRequest.
+type CreateSiteRequest struct {
+	// Name A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Name SiteName `json:"name"`
+}
+
+// CreatedApiToken defines model for CreatedApiToken.
+type CreatedApiToken struct {
+	ApiToken ApiToken `json:"apiToken"`
+
+	// Token The secret token. Shown only in this response.
+	Token string `json:"token"`
+}
+
+// CreatedDeploy defines model for CreatedDeploy.
+type CreatedDeploy struct {
+	Deploy Deploy `json:"deploy"`
+
+	// Missing Hashes to upload before activating, each once.
+	Missing []Sha256 `json:"missing"`
+}
+
+// Cursor Opaque pagination cursor.
+//
+// Examples: c2l0ZTpkb2Nz
+type Cursor = string
+
+// DenyCliLoginRequest defines model for DenyCliLoginRequest.
+type DenyCliLoginRequest struct {
+	// UserCode Eight letters from an alphabet without vowels or look-alikes, in two groups of four.
+	//
+	// Examples: BDFH-KMPR
+	UserCode UserCode `json:"userCode"`
+}
+
+// Deploy defines model for Deploy.
+type Deploy struct {
+	// ActivatedAt When it was last activated. Absent while pending.
+	//
+	// Examples: 1767225600000
+	ActivatedAt *Timestamp `json:"activatedAt,omitempty"`
+
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+	FileCount int32     `json:"fileCount"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id      Id      `json:"id"`
+	Message *string `json:"message,omitempty"`
+
+	// Spa Whether missing paths without a file extension serve `/index.html` while this deploy is active.
+	Spa bool `json:"spa"`
+
+	// Status `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from.
+	Status DeployStatus `json:"status"`
+
+	// TotalSize Sum of file sizes in bytes.
+	TotalSize int64 `json:"totalSize"`
+}
+
+// DeployStatus `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from.
+type DeployStatus string
+
+// DeployPage defines model for DeployPage.
+type DeployPage struct {
+	Items []Deploy `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// DnsRecord defines model for DnsRecord.
+type DnsRecord struct {
+	// Name A hostname. Stored and returned lowercase, as A-labels, with no trailing dot or port.
+	//
+	// Examples: docs.example.com
+	Name Hostname      `json:"name"`
+	Type DnsRecordType `json:"type"`
+
+	// Value Examples: docs.wardlock.example.net
+	Value string `json:"value"`
+}
+
+// DnsRecordType defines model for DnsRecord.Type.
+type DnsRecordType string
+
+// Domain defines model for Domain.
+type Domain struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// FailingSince Start of the current run of failed checks. Absent after a pass.
+	//
+	// Examples: 1767225600000
+	FailingSince *Timestamp `json:"failingSince,omitempty"`
+
+	// FailureDetail Plain-language detail for the last failure.
+	FailureDetail *string `json:"failureDetail,omitempty"`
+
+	// FailureReason Why the last check failed. Absent after a pass. `no_record`: no matching CNAME or TXT; `cname_elsewhere`: the CNAME chain leads somewhere else; `txt_mismatch`: the TXT record holds another token; `dns_error`: the lookup failed or timed out.
+	FailureReason *DomainFailureReason `json:"failureReason,omitempty"`
+
+	// Hostname A hostname. Stored and returned lowercase, as A-labels, with no trailing dot or port.
+	//
+	// Examples: docs.example.com
+	Hostname Hostname `json:"hostname"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// LastCheckedAt When DNS was last checked.
+	//
+	// Examples: 1767225600000
+	LastCheckedAt *Timestamp `json:"lastCheckedAt,omitempty"`
+
+	// NextCheckAt When the next automatic check is due. Absent for a pending domain past its 48-hour window, which is checked only on request.
+	//
+	// Examples: 1767225600000
+	NextCheckAt *Timestamp `json:"nextCheckAt,omitempty"`
+
+	// RoutingRecord `CNAME <hostname> → <name>.<base domain>`.
+	RoutingRecord DnsRecord `json:"routingRecord"`
+
+	// Status `pending`: added, not yet verified, not served. `active`: verified, served and eligible for a certificate. `lapsed`: was active but has failed re-checks for 72 hours; not served until it passes again.
+	Status DomainStatus `json:"status"`
+
+	// VerificationRecord `TXT _wardlock.<hostname> → wardlock-verify=<token>`, needed only where the CNAME cannot be seen (apex or CDN-proxied records).
+	VerificationRecord DnsRecord `json:"verificationRecord"`
+
+	// VerifiedAt When the domain last became active.
+	//
+	// Examples: 1767225600000
+	VerifiedAt *Timestamp `json:"verifiedAt,omitempty"`
+}
+
+// DomainFailureReason Why the last check failed. Absent after a pass. `no_record`: no matching CNAME or TXT; `cname_elsewhere`: the CNAME chain leads somewhere else; `txt_mismatch`: the TXT record holds another token; `dns_error`: the lookup failed or timed out.
+type DomainFailureReason string
+
+// DomainStatus `pending`: added, not yet verified, not served. `active`: verified, served and eligible for a certificate. `lapsed`: was active but has failed re-checks for 72 hours; not served until it passes again.
+type DomainStatus string
+
+// DomainPage defines model for DomainPage.
+type DomainPage struct {
+	Items []Domain `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// Email Examples: owner@example.com
+type Email = openapi_types.Email
+
+// EmailCodeRequest defines model for EmailCodeRequest.
+type EmailCodeRequest struct {
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+}
+
+// EmailCodeVerifyRequest defines model for EmailCodeVerifyRequest.
+type EmailCodeVerifyRequest struct {
+	// Code The 6-digit code from the email.
+	Code string `json:"code"`
+
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+}
+
+// Error The body of every error response.
+type Error struct {
+	// Code Stable machine-readable error code; see the table in the API description. New codes may be added.
+	//
+	// Examples: not_found
+	Code string `json:"code"`
+
+	// Message Human-readable explanation. Never contains secrets.
+	//
+	// Examples: Not found.
+	Message string `json:"message"`
+
+	// Target The field, manifest path or hostname the error is about.
+	//
+	// Examples: assets/../secret.txt
+	Target *string `json:"target,omitempty"`
+}
+
 // Health defines model for Health.
 type Health struct {
 	Status HealthStatus `json:"status"`
@@ -43,6 +503,351 @@ type Health struct {
 
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
+
+// Hostname A hostname. Stored and returned lowercase, as A-labels, with no trailing dot or port.
+//
+// Examples: docs.example.com
+type Hostname = string
+
+// Id A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type Id = string
+
+// InviteOwnerRequest defines model for InviteOwnerRequest.
+type InviteOwnerRequest struct {
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+}
+
+// ManifestFile defines model for ManifestFile.
+type ManifestFile struct {
+	// Path Path relative to the deployed directory, with forward slashes.
+	//
+	// Examples: docs/install.html
+	Path string `json:"path"`
+
+	// Sha256 A SHA-256 digest as 64 lowercase hex characters.
+	//
+	// Examples: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+	Sha256 Sha256 `json:"sha256"`
+
+	// Size File size in bytes.
+	Size int64 `json:"size"`
+}
+
+// Me defines model for Me.
+type Me struct {
+	// Credential How this request was authenticated.
+	Credential MeCredential `json:"credential"`
+	Owner      Owner        `json:"owner"`
+
+	// Scopes What the credential may do. A session has every scope.
+	//
+	// Examples: ["deploy","manage"]
+	Scopes Scopes `json:"scopes"`
+}
+
+// MeCredential How this request was authenticated.
+type MeCredential string
+
+// Owner defines model for Owner.
+type Owner struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+}
+
+// OwnerSession defines model for OwnerSession.
+type OwnerSession struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Current Whether this is the session making the request.
+	Current bool `json:"current"`
+
+	// ExpiresAt When the session ends if not used again: the earlier of the idle and absolute expiry.
+	//
+	// Examples: 1767225600000
+	ExpiresAt Timestamp `json:"expiresAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// LastUsedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	LastUsedAt Timestamp `json:"lastUsedAt"`
+
+	// UserAgent The User-Agent that signed in, truncated to 200 characters.
+	UserAgent *string `json:"userAgent,omitempty"`
+}
+
+// PollCliLoginRequest defines model for PollCliLoginRequest.
+type PollCliLoginRequest struct {
+	DeviceCode string `json:"deviceCode"`
+}
+
+// RollbackRequest defines model for RollbackRequest.
+type RollbackRequest struct {
+	// DeployId Omit to return to the deploy active before the current one.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	DeployId *Id `json:"deployId,omitempty"`
+}
+
+// Scope An API token scope. `deploy` creates sites and deploys, uploads, activates and rolls back; `manage` deletes sites and manages custom domains. Both read.
+type Scope string
+
+// Scopes Examples: ["deploy","manage"]
+type Scopes = []Scope
+
+// SessionPage defines model for SessionPage.
+type SessionPage struct {
+	Items []OwnerSession `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// SetupRequest defines model for SetupRequest.
+type SetupRequest struct {
+	// Code The `code` query parameter of the setup URL.
+	Code string `json:"code"`
+
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+}
+
+// Sha256 A SHA-256 digest as 64 lowercase hex characters.
+//
+// Examples: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+type Sha256 = string
+
+// SignInLinkRequest defines model for SignInLinkRequest.
+type SignInLinkRequest struct {
+	// Code The `code` query parameter of the sign-in URL.
+	Code string `json:"code"`
+}
+
+// Site defines model for Site.
+type Site struct {
+	// ActivatedAt When the active deploy was last activated.
+	//
+	// Examples: 1767225600000
+	ActivatedAt *Timestamp `json:"activatedAt,omitempty"`
+
+	// ActiveDeployId Absent until the first activation.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	ActiveDeployId *Id `json:"activeDeployId,omitempty"`
+
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Hostname `<name>.<base domain>`.
+	//
+	// Examples: docs.example.com
+	Hostname Hostname `json:"hostname"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Name A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Name SiteName `json:"name"`
+
+	// Url The site's URL on the base domain.
+	Url string `json:"url"`
+}
+
+// SiteName A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+//
+// Examples: docs
+type SiteName = string
+
+// SitePage defines model for SitePage.
+type SitePage struct {
+	Items []Site `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// StartCliLoginRequest defines model for StartCliLoginRequest.
+type StartCliLoginRequest struct {
+	// ClientName Shown to the owner on the approval page.
+	ClientName *string `json:"clientName,omitempty"`
+}
+
+// Timestamp UTC milliseconds since the Unix epoch.
+//
+// Examples: 1767225600000
+type Timestamp = int64
+
+// UserCode Eight letters from an alphabet without vowels or look-alikes, in two groups of four.
+//
+// Examples: BDFH-KMPR
+type UserCode = string
+
+// DeployId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type DeployId = Id
+
+// DomainHostname A hostname. Stored and returned lowercase, as A-labels, with no trailing dot or port.
+//
+// Examples: docs.example.com
+type DomainHostname = Hostname
+
+// Limit defines model for Limit.
+type Limit = int32
+
+// SessionId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type SessionId = Id
+
+// TokenId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type TokenId = Id
+
+// BadRequest The body of every error response.
+type BadRequest = Error
+
+// Conflict The body of every error response.
+type Conflict = Error
+
+// Forbidden The body of every error response.
+type Forbidden = Error
+
+// Gone The body of every error response.
+type Gone = Error
+
+// NotFound The body of every error response.
+type NotFound = Error
+
+// RateLimited The body of every error response.
+type RateLimited = Error
+
+// TooLarge The body of every error response.
+type TooLarge = Error
+
+// Unauthenticated The body of every error response.
+type Unauthenticated = Error
+
+// ListSessionsParams defines parameters for ListSessions.
+type ListSessionsParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListSitesParams defines parameters for ListSites.
+type ListSitesParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Hostname Only the site served at this hostname.
+	Hostname *Hostname `form:"hostname,omitempty" json:"hostname,omitempty"`
+}
+
+// ListDeploysParams defines parameters for ListDeploys.
+type ListDeploysParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListDomainsParams defines parameters for ListDomains.
+type ListDomainsParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListApiTokensParams defines parameters for ListApiTokens.
+type ListApiTokensParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// SendEmailCodeJSONRequestBody defines body for SendEmailCode for application/json ContentType.
+type SendEmailCodeJSONRequestBody = EmailCodeRequest
+
+// VerifyEmailCodeJSONRequestBody defines body for VerifyEmailCode for application/json ContentType.
+type VerifyEmailCodeJSONRequestBody = EmailCodeVerifyRequest
+
+// RedeemSignInLinkJSONRequestBody defines body for RedeemSignInLink for application/json ContentType.
+type RedeemSignInLinkJSONRequestBody = SignInLinkRequest
+
+// StartCliLoginJSONRequestBody defines body for StartCliLogin for application/json ContentType.
+type StartCliLoginJSONRequestBody = StartCliLoginRequest
+
+// ApproveCliLoginJSONRequestBody defines body for ApproveCliLogin for application/json ContentType.
+type ApproveCliLoginJSONRequestBody = ApproveCliLoginRequest
+
+// DenyCliLoginJSONRequestBody defines body for DenyCliLogin for application/json ContentType.
+type DenyCliLoginJSONRequestBody = DenyCliLoginRequest
+
+// PollCliLoginJSONRequestBody defines body for PollCliLogin for application/json ContentType.
+type PollCliLoginJSONRequestBody = PollCliLoginRequest
+
+// InviteOwnerJSONRequestBody defines body for InviteOwner for application/json ContentType.
+type InviteOwnerJSONRequestBody = InviteOwnerRequest
+
+// CompleteSetupJSONRequestBody defines body for CompleteSetup for application/json ContentType.
+type CompleteSetupJSONRequestBody = SetupRequest
+
+// CreateSiteJSONRequestBody defines body for CreateSite for application/json ContentType.
+type CreateSiteJSONRequestBody = CreateSiteRequest
+
+// CreateDeployJSONRequestBody defines body for CreateDeploy for application/json ContentType.
+type CreateDeployJSONRequestBody = CreateDeployRequest
+
+// AddDomainJSONRequestBody defines body for AddDomain for application/json ContentType.
+type AddDomainJSONRequestBody = AddDomainRequest
+
+// RollbackSiteJSONRequestBody defines body for RollbackSite for application/json ContentType.
+type RollbackSiteJSONRequestBody = RollbackRequest
+
+// CreateApiTokenJSONRequestBody defines body for CreateApiToken for application/json ContentType.
+type CreateApiTokenJSONRequestBody = CreateApiTokenRequest
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -118,17 +923,660 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 // The interface specification for the client above.
 type ClientInterface interface {
 
+	// SendEmailCodeWithBody Email a sign-in code.
+	//
+	// Sends a 6-digit code valid for 10 minutes if the address belongs to an owner. The response is the same whether or not it does. Sends are rate-limited per IP and per address.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/auth/email-code (the `SendEmailCode` operationId).
+	SendEmailCodeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SendEmailCode Email a sign-in code.
+	//
+	// Sends a 6-digit code valid for 10 minutes if the address belongs to an owner. The response is the same whether or not it does. Sends are rate-limited per IP and per address.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/auth/email-code (the `SendEmailCode` operationId).
+	SendEmailCode(ctx context.Context, body SendEmailCodeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// VerifyEmailCodeWithBody Sign in with an emailed code.
+	//
+	// Checks the code sent to the address and starts a dashboard session. A code allows 5 attempts. A wrong, expired or exhausted code, and an address that is not an owner's, all answer `400 invalid_code`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/auth/email-code/verify (the `VerifyEmailCode` operationId).
+	VerifyEmailCodeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// VerifyEmailCode Sign in with an emailed code.
+	//
+	// Checks the code sent to the address and starts a dashboard session. A code allows 5 attempts. A wrong, expired or exhausted code, and an address that is not an owner's, all answer `400 invalid_code`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/auth/email-code/verify (the `VerifyEmailCode` operationId).
+	VerifyEmailCode(ctx context.Context, body VerifyEmailCodeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RedeemSignInLinkWithBody Sign in with a one-time sign-in link code.
+	//
+	// Redeems the code from a one-time sign-in URL, such as the one printed by `wardlockd admin create` or sent with an invitation, and starts a dashboard session. A wrong, used or expired code answers `400 invalid_code`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/auth/sign-in-link (the `RedeemSignInLink` operationId).
+	RedeemSignInLinkWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RedeemSignInLink Sign in with a one-time sign-in link code.
+	//
+	// Redeems the code from a one-time sign-in URL, such as the one printed by `wardlockd admin create` or sent with an invitation, and starts a dashboard session. A wrong, used or expired code answers `400 invalid_code`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/auth/sign-in-link (the `RedeemSignInLink` operationId).
+	RedeemSignInLink(ctx context.Context, body RedeemSignInLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SignOut End the current session or revoke the current API token.
+	//
+	// With a session cookie, ends that session and clears the cookie. With an API token, revokes that token (`wardlock logout`).
+	//
+	// Corresponds with POST /api/v0/auth/sign-out (the `SignOut` operationId).
+	SignOut(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StartCliLoginWithBody Start a CLI device login.
+	//
+	// Called by `wardlock login`. The CLI shows `userCode`, opens `verificationUrlComplete` in a browser and polls `pollCliLogin` with `deviceCode` no more often than every `interval` seconds until a signed-in owner approves or denies it on the dashboard, or it expires. `deviceCode` is a secret: keep it out of logs.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/cli-login (the `StartCliLogin` operationId).
+	StartCliLoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StartCliLogin Start a CLI device login.
+	//
+	// Called by `wardlock login`. The CLI shows `userCode`, opens `verificationUrlComplete` in a browser and polls `pollCliLogin` with `deviceCode` no more often than every `interval` seconds until a signed-in owner approves or denies it on the dashboard, or it expires. `deviceCode` is a secret: keep it out of logs.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/cli-login (the `StartCliLogin` operationId).
+	StartCliLogin(ctx context.Context, body StartCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ApproveCliLoginWithBody Approve a CLI device login.
+	//
+	// Called by the dashboard's `/cli-login` page once the owner confirms the code matches their terminal. Creates an API token with the chosen scopes for the waiting CLI. An unknown, expired or already decided code answers `400 invalid_code`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/cli-login/approve (the `ApproveCliLogin` operationId).
+	ApproveCliLoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ApproveCliLogin Approve a CLI device login.
+	//
+	// Called by the dashboard's `/cli-login` page once the owner confirms the code matches their terminal. Creates an API token with the chosen scopes for the waiting CLI. An unknown, expired or already decided code answers `400 invalid_code`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/cli-login/approve (the `ApproveCliLogin` operationId).
+	ApproveCliLogin(ctx context.Context, body ApproveCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DenyCliLoginWithBody Deny a CLI device login.
+	//
+	// An unknown, expired or already decided code answers `400 invalid_code`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/cli-login/deny (the `DenyCliLogin` operationId).
+	DenyCliLoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DenyCliLogin Deny a CLI device login.
+	//
+	// An unknown, expired or already decided code answers `400 invalid_code`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/cli-login/deny (the `DenyCliLogin` operationId).
+	DenyCliLogin(ctx context.Context, body DenyCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PollCliLoginWithBody Poll a CLI device login for its token.
+	//
+	// Answers `202` while the login waits for approval and `200` with a new API token once approved; the token is delivered once. A denied, expired, already delivered or unknown login answers `410 login_expired`. Polling faster than `interval` answers `429 slow_down`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
+	PollCliLoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PollCliLogin Poll a CLI device login for its token.
+	//
+	// Answers `202` while the login waits for approval and `200` with a new API token once approved; the token is delivered once. A denied, expired, already delivered or unknown login answers `410 login_expired`. Polling faster than `interval` answers `429 slow_down`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
+	PollCliLogin(ctx context.Context, body PollCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetHealth Report that the API is serving requests.
 	//
-	// Unauthenticated. Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
+	// Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
 	//
 	// Corresponds with GET /api/v0/health (the `GetHealth` operationId).
 	GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMe Describe the signed-in owner and the credential used.
+	//
+	// Corresponds with GET /api/v0/me (the `GetMe` operationId).
+	GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// InviteOwnerWithBody Invite another owner by email.
+	//
+	// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/owners (the `InviteOwner` operationId).
+	InviteOwnerWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// InviteOwner Invite another owner by email.
+	//
+	// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/owners (the `InviteOwner` operationId).
+	InviteOwner(ctx context.Context, body InviteOwnerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListSessions List the signed-in owner's dashboard sessions.
+	//
+	// Most recently used first.
+	//
+	// Corresponds with GET /api/v0/sessions (the `ListSessions` operationId).
+	ListSessions(ctx context.Context, params *ListSessionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevokeSession Revoke one of the signed-in owner's sessions.
+	//
+	// Takes effect on the session's next request.
+	//
+	// Corresponds with DELETE /api/v0/sessions/{sessionId} (the `RevokeSession` operationId).
+	RevokeSession(ctx context.Context, sessionId SessionId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CompleteSetupWithBody Create the first owner from the one-time setup code.
+	//
+	// Redeems the code from the setup URL that `wardlockd serve` prints while no owner exists, creates the owner with the given email address and signs them in. The code is single use and valid for 60 minutes. A wrong, used or expired code, or an instance that already has an owner, all answer `400 invalid_code`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/setup (the `CompleteSetup` operationId).
+	CompleteSetupWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CompleteSetup Create the first owner from the one-time setup code.
+	//
+	// Redeems the code from the setup URL that `wardlockd serve` prints while no owner exists, creates the owner with the given email address and signs them in. The code is single use and valid for 60 minutes. A wrong, used or expired code, or an instance that already has an owner, all answer `400 invalid_code`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/setup (the `CompleteSetup` operationId).
+	CompleteSetup(ctx context.Context, body CompleteSetupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListSites List the owner's sites.
+	//
+	// Ordered by name. With `hostname`, answers the owner's site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
+	//
+	// Corresponds with GET /api/v0/sites (the `ListSites` operationId).
+	ListSites(ctx context.Context, params *ListSitesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateSiteWithBody Create an empty site.
+	//
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/sites (the `CreateSite` operationId).
+	CreateSiteWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateSite Create an empty site.
+	//
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/sites (the `CreateSite` operationId).
+	CreateSite(ctx context.Context, body CreateSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteSite Tear down a site.
+	//
+	// Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8).
+	//
+	// Corresponds with DELETE /api/v0/sites/{site} (the `DeleteSite` operationId).
+	DeleteSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSite Get one of the owner's sites.
+	//
+	// Corresponds with GET /api/v0/sites/{site} (the `GetSite` operationId).
+	GetSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListDeploys List a site's deploys.
+	//
+	// Newest first.
+	//
+	// Corresponds with GET /api/v0/sites/{site}/deploys (the `ListDeploys` operationId).
+	ListDeploys(ctx context.Context, site SiteName, params *ListDeploysParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateDeployWithBody Create a deploy from a manifest.
+	//
+	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/deploys (the `CreateDeploy` operationId).
+	CreateDeployWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateDeploy Create a deploy from a manifest.
+	//
+	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/deploys (the `CreateDeploy` operationId).
+	CreateDeploy(ctx context.Context, site SiteName, body CreateDeployJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ActivateDeploy Make a pending deploy the site's active deploy.
+	//
+	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
+	ActivateDeploy(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UploadDeployBlobWithBody Upload one file body for a pending deploy.
+	//
+	// The body is the file's raw bytes. The server verifies the SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in this deploy's manifest (`400 unexpected_blob`). Uploading a blob the server already holds succeeds without storing it again, so retries are safe. Bodies over the per-file limit answer `413 limit_exceeded`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256} (the `UploadDeployBlob` operationId).
+	UploadDeployBlobWithBody(ctx context.Context, site SiteName, deployId DeployId, sha256 Sha256, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListDomains List a site's custom domains.
+	//
+	// Ordered by hostname.
+	//
+	// Corresponds with GET /api/v0/sites/{site}/domains (the `ListDomains` operationId).
+	ListDomains(ctx context.Context, site SiteName, params *ListDomainsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AddDomainWithBody Attach a custom domain to a site.
+	//
+	// Normalises the hostname (lowercase, IDN to A-label, no trailing dot or port) and answers with the records to create. The domain starts `pending` and is checked straight away. IP addresses, wildcards, the base domain and names under it, the dashboard host and the auth origin answer `400 invalid_hostname`. A hostname attached to any site answers `409 domain_taken` without saying which.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/domains (the `AddDomain` operationId).
+	AddDomainWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AddDomain Attach a custom domain to a site.
+	//
+	// Normalises the hostname (lowercase, IDN to A-label, no trailing dot or port) and answers with the records to create. The domain starts `pending` and is checked straight away. IP addresses, wildcards, the base domain and names under it, the dashboard host and the auth origin answer `400 invalid_hostname`. A hostname attached to any site answers `409 domain_taken` without saying which.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/domains (the `AddDomain` operationId).
+	AddDomain(ctx context.Context, site SiteName, body AddDomainJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveDomain Detach a custom domain from its site.
+	//
+	// Serving stops immediately and the domain's certificate is deleted. The owner should also delete the DNS record, or whoever later holds the site name could claim the hostname.
+	//
+	// Corresponds with DELETE /api/v0/sites/{site}/domains/{hostname} (the `RemoveDomain` operationId).
+	RemoveDomain(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetDomain Get one of a site's custom domains.
+	//
+	// Corresponds with GET /api/v0/sites/{site}/domains/{hostname} (the `GetDomain` operationId).
+	GetDomain(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// VerifyDomain Check a custom domain's DNS now.
+	//
+	// Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/domains/{hostname}/verify (the `VerifyDomain` operationId).
+	VerifyDomain(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RollbackSiteWithBody Reactivate an earlier deploy.
+	//
+	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
+	RollbackSiteWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RollbackSite Reactivate an earlier deploy.
+	//
+	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
+	RollbackSite(ctx context.Context, site SiteName, body RollbackSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListApiTokens List the signed-in owner's API tokens.
+	//
+	// Newest first. Token secrets are never returned.
+	//
+	// Corresponds with GET /api/v0/tokens (the `ListApiTokens` operationId).
+	ListApiTokens(ctx context.Context, params *ListApiTokensParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateApiTokenWithBody Create an API token.
+	//
+	// The response is the only time the token is shown.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/tokens (the `CreateApiToken` operationId).
+	CreateApiTokenWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateApiToken Create an API token.
+	//
+	// The response is the only time the token is shown.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/tokens (the `CreateApiToken` operationId).
+	CreateApiToken(ctx context.Context, body CreateApiTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevokeApiToken Revoke an API token.
+	//
+	// Takes effect on the token's next request.
+	//
+	// Corresponds with DELETE /api/v0/tokens/{tokenId} (the `RevokeApiToken` operationId).
+	RevokeApiToken(ctx context.Context, tokenId TokenId, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+// SendEmailCodeWithBody Email a sign-in code.
+//
+// Sends a 6-digit code valid for 10 minutes if the address belongs to an owner. The response is the same whether or not it does. Sends are rate-limited per IP and per address.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/auth/email-code (the `SendEmailCode` operationId).
+func (c *Client) SendEmailCodeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSendEmailCodeRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SendEmailCode Email a sign-in code.
+//
+// Sends a 6-digit code valid for 10 minutes if the address belongs to an owner. The response is the same whether or not it does. Sends are rate-limited per IP and per address.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/auth/email-code (the `SendEmailCode` operationId).
+func (c *Client) SendEmailCode(ctx context.Context, body SendEmailCodeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSendEmailCodeRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// VerifyEmailCodeWithBody Sign in with an emailed code.
+//
+// Checks the code sent to the address and starts a dashboard session. A code allows 5 attempts. A wrong, expired or exhausted code, and an address that is not an owner's, all answer `400 invalid_code`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/auth/email-code/verify (the `VerifyEmailCode` operationId).
+func (c *Client) VerifyEmailCodeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVerifyEmailCodeRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// VerifyEmailCode Sign in with an emailed code.
+//
+// Checks the code sent to the address and starts a dashboard session. A code allows 5 attempts. A wrong, expired or exhausted code, and an address that is not an owner's, all answer `400 invalid_code`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/auth/email-code/verify (the `VerifyEmailCode` operationId).
+func (c *Client) VerifyEmailCode(ctx context.Context, body VerifyEmailCodeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVerifyEmailCodeRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RedeemSignInLinkWithBody Sign in with a one-time sign-in link code.
+//
+// Redeems the code from a one-time sign-in URL, such as the one printed by `wardlockd admin create` or sent with an invitation, and starts a dashboard session. A wrong, used or expired code answers `400 invalid_code`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/auth/sign-in-link (the `RedeemSignInLink` operationId).
+func (c *Client) RedeemSignInLinkWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRedeemSignInLinkRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RedeemSignInLink Sign in with a one-time sign-in link code.
+//
+// Redeems the code from a one-time sign-in URL, such as the one printed by `wardlockd admin create` or sent with an invitation, and starts a dashboard session. A wrong, used or expired code answers `400 invalid_code`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/auth/sign-in-link (the `RedeemSignInLink` operationId).
+func (c *Client) RedeemSignInLink(ctx context.Context, body RedeemSignInLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRedeemSignInLinkRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SignOut End the current session or revoke the current API token.
+//
+// With a session cookie, ends that session and clears the cookie. With an API token, revokes that token (`wardlock logout`).
+//
+// Corresponds with POST /api/v0/auth/sign-out (the `SignOut` operationId).
+func (c *Client) SignOut(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSignOutRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// StartCliLoginWithBody Start a CLI device login.
+//
+// Called by `wardlock login`. The CLI shows `userCode`, opens `verificationUrlComplete` in a browser and polls `pollCliLogin` with `deviceCode` no more often than every `interval` seconds until a signed-in owner approves or denies it on the dashboard, or it expires. `deviceCode` is a secret: keep it out of logs.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/cli-login (the `StartCliLogin` operationId).
+func (c *Client) StartCliLoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStartCliLoginRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// StartCliLogin Start a CLI device login.
+//
+// Called by `wardlock login`. The CLI shows `userCode`, opens `verificationUrlComplete` in a browser and polls `pollCliLogin` with `deviceCode` no more often than every `interval` seconds until a signed-in owner approves or denies it on the dashboard, or it expires. `deviceCode` is a secret: keep it out of logs.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/cli-login (the `StartCliLogin` operationId).
+func (c *Client) StartCliLogin(ctx context.Context, body StartCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStartCliLoginRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ApproveCliLoginWithBody Approve a CLI device login.
+//
+// Called by the dashboard's `/cli-login` page once the owner confirms the code matches their terminal. Creates an API token with the chosen scopes for the waiting CLI. An unknown, expired or already decided code answers `400 invalid_code`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/cli-login/approve (the `ApproveCliLogin` operationId).
+func (c *Client) ApproveCliLoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApproveCliLoginRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ApproveCliLogin Approve a CLI device login.
+//
+// Called by the dashboard's `/cli-login` page once the owner confirms the code matches their terminal. Creates an API token with the chosen scopes for the waiting CLI. An unknown, expired or already decided code answers `400 invalid_code`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/cli-login/approve (the `ApproveCliLogin` operationId).
+func (c *Client) ApproveCliLogin(ctx context.Context, body ApproveCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApproveCliLoginRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DenyCliLoginWithBody Deny a CLI device login.
+//
+// An unknown, expired or already decided code answers `400 invalid_code`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/cli-login/deny (the `DenyCliLogin` operationId).
+func (c *Client) DenyCliLoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDenyCliLoginRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DenyCliLogin Deny a CLI device login.
+//
+// An unknown, expired or already decided code answers `400 invalid_code`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/cli-login/deny (the `DenyCliLogin` operationId).
+func (c *Client) DenyCliLogin(ctx context.Context, body DenyCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDenyCliLoginRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PollCliLoginWithBody Poll a CLI device login for its token.
+//
+// Answers `202` while the login waits for approval and `200` with a new API token once approved; the token is delivered once. A denied, expired, already delivered or unknown login answers `410 login_expired`. Polling faster than `interval` answers `429 slow_down`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
+func (c *Client) PollCliLoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPollCliLoginRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PollCliLogin Poll a CLI device login for its token.
+//
+// Answers `202` while the login waits for approval and `200` with a new API token once approved; the token is delivered once. A denied, expired, already delivered or unknown login answers `410 login_expired`. Polling faster than `interval` answers `429 slow_down`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
+func (c *Client) PollCliLogin(ctx context.Context, body PollCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPollCliLoginRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 // GetHealth Report that the API is serving requests.
 //
-// Unauthenticated. Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
+// Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
 //
 // Corresponds with GET /api/v0/health (the `GetHealth` operationId).
 func (c *Client) GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -141,6 +1589,830 @@ func (c *Client) GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// GetMe Describe the signed-in owner and the credential used.
+//
+// Corresponds with GET /api/v0/me (the `GetMe` operationId).
+func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMeRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// InviteOwnerWithBody Invite another owner by email.
+//
+// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/owners (the `InviteOwner` operationId).
+func (c *Client) InviteOwnerWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInviteOwnerRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// InviteOwner Invite another owner by email.
+//
+// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/owners (the `InviteOwner` operationId).
+func (c *Client) InviteOwner(ctx context.Context, body InviteOwnerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInviteOwnerRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListSessions List the signed-in owner's dashboard sessions.
+//
+// Most recently used first.
+//
+// Corresponds with GET /api/v0/sessions (the `ListSessions` operationId).
+func (c *Client) ListSessions(ctx context.Context, params *ListSessionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSessionsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RevokeSession Revoke one of the signed-in owner's sessions.
+//
+// Takes effect on the session's next request.
+//
+// Corresponds with DELETE /api/v0/sessions/{sessionId} (the `RevokeSession` operationId).
+func (c *Client) RevokeSession(ctx context.Context, sessionId SessionId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeSessionRequest(c.Server, sessionId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CompleteSetupWithBody Create the first owner from the one-time setup code.
+//
+// Redeems the code from the setup URL that `wardlockd serve` prints while no owner exists, creates the owner with the given email address and signs them in. The code is single use and valid for 60 minutes. A wrong, used or expired code, or an instance that already has an owner, all answer `400 invalid_code`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/setup (the `CompleteSetup` operationId).
+func (c *Client) CompleteSetupWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCompleteSetupRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CompleteSetup Create the first owner from the one-time setup code.
+//
+// Redeems the code from the setup URL that `wardlockd serve` prints while no owner exists, creates the owner with the given email address and signs them in. The code is single use and valid for 60 minutes. A wrong, used or expired code, or an instance that already has an owner, all answer `400 invalid_code`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/setup (the `CompleteSetup` operationId).
+func (c *Client) CompleteSetup(ctx context.Context, body CompleteSetupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCompleteSetupRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListSites List the owner's sites.
+//
+// Ordered by name. With `hostname`, answers the owner's site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
+//
+// Corresponds with GET /api/v0/sites (the `ListSites` operationId).
+func (c *Client) ListSites(ctx context.Context, params *ListSitesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSitesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateSiteWithBody Create an empty site.
+//
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/sites (the `CreateSite` operationId).
+func (c *Client) CreateSiteWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateSiteRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateSite Create an empty site.
+//
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/sites (the `CreateSite` operationId).
+func (c *Client) CreateSite(ctx context.Context, body CreateSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateSiteRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteSite Tear down a site.
+//
+// Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8).
+//
+// Corresponds with DELETE /api/v0/sites/{site} (the `DeleteSite` operationId).
+func (c *Client) DeleteSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteSiteRequest(c.Server, site)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSite Get one of the owner's sites.
+//
+// Corresponds with GET /api/v0/sites/{site} (the `GetSite` operationId).
+func (c *Client) GetSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSiteRequest(c.Server, site)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListDeploys List a site's deploys.
+//
+// Newest first.
+//
+// Corresponds with GET /api/v0/sites/{site}/deploys (the `ListDeploys` operationId).
+func (c *Client) ListDeploys(ctx context.Context, site SiteName, params *ListDeploysParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListDeploysRequest(c.Server, site, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateDeployWithBody Create a deploy from a manifest.
+//
+// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/sites/{site}/deploys (the `CreateDeploy` operationId).
+func (c *Client) CreateDeployWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDeployRequestWithBody(c.Server, site, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateDeploy Create a deploy from a manifest.
+//
+// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/sites/{site}/deploys (the `CreateDeploy` operationId).
+func (c *Client) CreateDeploy(ctx context.Context, site SiteName, body CreateDeployJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDeployRequest(c.Server, site, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ActivateDeploy Make a pending deploy the site's active deploy.
+//
+// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy).
+//
+// Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
+func (c *Client) ActivateDeploy(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewActivateDeployRequest(c.Server, site, deployId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UploadDeployBlobWithBody Upload one file body for a pending deploy.
+//
+// The body is the file's raw bytes. The server verifies the SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in this deploy's manifest (`400 unexpected_blob`). Uploading a blob the server already holds succeeds without storing it again, so retries are safe. Bodies over the per-file limit answer `413 limit_exceeded`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256} (the `UploadDeployBlob` operationId).
+func (c *Client) UploadDeployBlobWithBody(ctx context.Context, site SiteName, deployId DeployId, sha256 Sha256, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUploadDeployBlobRequestWithBody(c.Server, site, deployId, sha256, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListDomains List a site's custom domains.
+//
+// Ordered by hostname.
+//
+// Corresponds with GET /api/v0/sites/{site}/domains (the `ListDomains` operationId).
+func (c *Client) ListDomains(ctx context.Context, site SiteName, params *ListDomainsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListDomainsRequest(c.Server, site, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AddDomainWithBody Attach a custom domain to a site.
+//
+// Normalises the hostname (lowercase, IDN to A-label, no trailing dot or port) and answers with the records to create. The domain starts `pending` and is checked straight away. IP addresses, wildcards, the base domain and names under it, the dashboard host and the auth origin answer `400 invalid_hostname`. A hostname attached to any site answers `409 domain_taken` without saying which.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/sites/{site}/domains (the `AddDomain` operationId).
+func (c *Client) AddDomainWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddDomainRequestWithBody(c.Server, site, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AddDomain Attach a custom domain to a site.
+//
+// Normalises the hostname (lowercase, IDN to A-label, no trailing dot or port) and answers with the records to create. The domain starts `pending` and is checked straight away. IP addresses, wildcards, the base domain and names under it, the dashboard host and the auth origin answer `400 invalid_hostname`. A hostname attached to any site answers `409 domain_taken` without saying which.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/sites/{site}/domains (the `AddDomain` operationId).
+func (c *Client) AddDomain(ctx context.Context, site SiteName, body AddDomainJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddDomainRequest(c.Server, site, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RemoveDomain Detach a custom domain from its site.
+//
+// Serving stops immediately and the domain's certificate is deleted. The owner should also delete the DNS record, or whoever later holds the site name could claim the hostname.
+//
+// Corresponds with DELETE /api/v0/sites/{site}/domains/{hostname} (the `RemoveDomain` operationId).
+func (c *Client) RemoveDomain(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveDomainRequest(c.Server, site, hostname)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetDomain Get one of a site's custom domains.
+//
+// Corresponds with GET /api/v0/sites/{site}/domains/{hostname} (the `GetDomain` operationId).
+func (c *Client) GetDomain(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDomainRequest(c.Server, site, hostname)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// VerifyDomain Check a custom domain's DNS now.
+//
+// Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain.
+//
+// Corresponds with POST /api/v0/sites/{site}/domains/{hostname}/verify (the `VerifyDomain` operationId).
+func (c *Client) VerifyDomain(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewVerifyDomainRequest(c.Server, site, hostname)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RollbackSiteWithBody Reactivate an earlier deploy.
+//
+// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
+func (c *Client) RollbackSiteWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRollbackSiteRequestWithBody(c.Server, site, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RollbackSite Reactivate an earlier deploy.
+//
+// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
+func (c *Client) RollbackSite(ctx context.Context, site SiteName, body RollbackSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRollbackSiteRequest(c.Server, site, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListApiTokens List the signed-in owner's API tokens.
+//
+// Newest first. Token secrets are never returned.
+//
+// Corresponds with GET /api/v0/tokens (the `ListApiTokens` operationId).
+func (c *Client) ListApiTokens(ctx context.Context, params *ListApiTokensParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListApiTokensRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateApiTokenWithBody Create an API token.
+//
+// The response is the only time the token is shown.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/tokens (the `CreateApiToken` operationId).
+func (c *Client) CreateApiTokenWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateApiTokenRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateApiToken Create an API token.
+//
+// The response is the only time the token is shown.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/tokens (the `CreateApiToken` operationId).
+func (c *Client) CreateApiToken(ctx context.Context, body CreateApiTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateApiTokenRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RevokeApiToken Revoke an API token.
+//
+// Takes effect on the token's next request.
+//
+// Corresponds with DELETE /api/v0/tokens/{tokenId} (the `RevokeApiToken` operationId).
+func (c *Client) RevokeApiToken(ctx context.Context, tokenId TokenId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeApiTokenRequest(c.Server, tokenId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewSendEmailCodeRequest calls the generic SendEmailCode builder with application/json body
+func NewSendEmailCodeRequest(server string, body SendEmailCodeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSendEmailCodeRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSendEmailCodeRequestWithBody constructs an http.Request for the SendEmailCode method, with any body, and a specified content type
+func NewSendEmailCodeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/auth/email-code")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewVerifyEmailCodeRequest calls the generic VerifyEmailCode builder with application/json body
+func NewVerifyEmailCodeRequest(server string, body VerifyEmailCodeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewVerifyEmailCodeRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewVerifyEmailCodeRequestWithBody constructs an http.Request for the VerifyEmailCode method, with any body, and a specified content type
+func NewVerifyEmailCodeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/auth/email-code/verify")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRedeemSignInLinkRequest calls the generic RedeemSignInLink builder with application/json body
+func NewRedeemSignInLinkRequest(server string, body RedeemSignInLinkJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRedeemSignInLinkRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRedeemSignInLinkRequestWithBody constructs an http.Request for the RedeemSignInLink method, with any body, and a specified content type
+func NewRedeemSignInLinkRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/auth/sign-in-link")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSignOutRequest constructs an http.Request for the SignOut method
+func NewSignOutRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/auth/sign-out")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewStartCliLoginRequest calls the generic StartCliLogin builder with application/json body
+func NewStartCliLoginRequest(server string, body StartCliLoginJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewStartCliLoginRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewStartCliLoginRequestWithBody constructs an http.Request for the StartCliLogin method, with any body, and a specified content type
+func NewStartCliLoginRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/cli-login")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewApproveCliLoginRequest calls the generic ApproveCliLogin builder with application/json body
+func NewApproveCliLoginRequest(server string, body ApproveCliLoginJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewApproveCliLoginRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewApproveCliLoginRequestWithBody constructs an http.Request for the ApproveCliLogin method, with any body, and a specified content type
+func NewApproveCliLoginRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/cli-login/approve")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDenyCliLoginRequest calls the generic DenyCliLogin builder with application/json body
+func NewDenyCliLoginRequest(server string, body DenyCliLoginJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDenyCliLoginRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewDenyCliLoginRequestWithBody constructs an http.Request for the DenyCliLogin method, with any body, and a specified content type
+func NewDenyCliLoginRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/cli-login/deny")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPollCliLoginRequest calls the generic PollCliLogin builder with application/json body
+func NewPollCliLoginRequest(server string, body PollCliLoginJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPollCliLoginRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPollCliLoginRequestWithBody constructs an http.Request for the PollCliLogin method, with any body, and a specified content type
+func NewPollCliLoginRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/cli-login/poll")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
 }
 
 // NewGetHealthRequest constructs an http.Request for the GetHealth method
@@ -163,6 +2435,1040 @@ func NewGetHealthRequest(server string) (*http.Request, error) {
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetMeRequest constructs an http.Request for the GetMe method
+func NewGetMeRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/me")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewInviteOwnerRequest calls the generic InviteOwner builder with application/json body
+func NewInviteOwnerRequest(server string, body InviteOwnerJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewInviteOwnerRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewInviteOwnerRequestWithBody constructs an http.Request for the InviteOwner method, with any body, and a specified content type
+func NewInviteOwnerRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/owners")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListSessionsRequest constructs an http.Request for the ListSessions method
+func NewListSessionsRequest(server string, params *ListSessionsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sessions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRevokeSessionRequest constructs an http.Request for the RevokeSession method
+func NewRevokeSessionRequest(server string, sessionId SessionId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "sessionId", sessionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sessions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCompleteSetupRequest calls the generic CompleteSetup builder with application/json body
+func NewCompleteSetupRequest(server string, body CompleteSetupJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCompleteSetupRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCompleteSetupRequestWithBody constructs an http.Request for the CompleteSetup method, with any body, and a specified content type
+func NewCompleteSetupRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/setup")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListSitesRequest constructs an http.Request for the ListSites method
+func NewListSitesRequest(server string, params *ListSitesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Hostname != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "hostname", *params.Hostname, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateSiteRequest calls the generic CreateSite builder with application/json body
+func NewCreateSiteRequest(server string, body CreateSiteJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateSiteRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateSiteRequestWithBody constructs an http.Request for the CreateSite method, with any body, and a specified content type
+func NewCreateSiteRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteSiteRequest constructs an http.Request for the DeleteSite method
+func NewDeleteSiteRequest(server string, site SiteName) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSiteRequest constructs an http.Request for the GetSite method
+func NewGetSiteRequest(server string, site SiteName) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListDeploysRequest constructs an http.Request for the ListDeploys method
+func NewListDeploysRequest(server string, site SiteName, params *ListDeploysParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/deploys", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateDeployRequest calls the generic CreateDeploy builder with application/json body
+func NewCreateDeployRequest(server string, site SiteName, body CreateDeployJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateDeployRequestWithBody(server, site, "application/json", bodyReader)
+}
+
+// NewCreateDeployRequestWithBody constructs an http.Request for the CreateDeploy method, with any body, and a specified content type
+func NewCreateDeployRequestWithBody(server string, site SiteName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/deploys", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewActivateDeployRequest constructs an http.Request for the ActivateDeploy method
+func NewActivateDeployRequest(server string, site SiteName, deployId DeployId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "deployId", deployId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/deploys/%s/activate", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUploadDeployBlobRequestWithBody constructs an http.Request for the UploadDeployBlob method, with any body, and a specified content type
+func NewUploadDeployBlobRequestWithBody(server string, site SiteName, deployId DeployId, sha256 Sha256, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "deployId", deployId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "sha256", sha256, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/deploys/%s/blobs/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListDomainsRequest constructs an http.Request for the ListDomains method
+func NewListDomainsRequest(server string, site SiteName, params *ListDomainsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/domains", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAddDomainRequest calls the generic AddDomain builder with application/json body
+func NewAddDomainRequest(server string, site SiteName, body AddDomainJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAddDomainRequestWithBody(server, site, "application/json", bodyReader)
+}
+
+// NewAddDomainRequestWithBody constructs an http.Request for the AddDomain method, with any body, and a specified content type
+func NewAddDomainRequestWithBody(server string, site SiteName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/domains", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRemoveDomainRequest constructs an http.Request for the RemoveDomain method
+func NewRemoveDomainRequest(server string, site SiteName, hostname DomainHostname) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "hostname", hostname, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/domains/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetDomainRequest constructs an http.Request for the GetDomain method
+func NewGetDomainRequest(server string, site SiteName, hostname DomainHostname) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "hostname", hostname, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/domains/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewVerifyDomainRequest constructs an http.Request for the VerifyDomain method
+func NewVerifyDomainRequest(server string, site SiteName, hostname DomainHostname) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "hostname", hostname, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/domains/%s/verify", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRollbackSiteRequest calls the generic RollbackSite builder with application/json body
+func NewRollbackSiteRequest(server string, site SiteName, body RollbackSiteJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRollbackSiteRequestWithBody(server, site, "application/json", bodyReader)
+}
+
+// NewRollbackSiteRequestWithBody constructs an http.Request for the RollbackSite method, with any body, and a specified content type
+func NewRollbackSiteRequestWithBody(server string, site SiteName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/rollback", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListApiTokensRequest constructs an http.Request for the ListApiTokens method
+func NewListApiTokensRequest(server string, params *ListApiTokensParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/tokens")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateApiTokenRequest calls the generic CreateApiToken builder with application/json body
+func NewCreateApiTokenRequest(server string, body CreateApiTokenJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateApiTokenRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateApiTokenRequestWithBody constructs an http.Request for the CreateApiToken method, with any body, and a specified content type
+func NewCreateApiTokenRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/tokens")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRevokeApiTokenRequest constructs an http.Request for the RevokeApiToken method
+func NewRevokeApiTokenRequest(server string, tokenId TokenId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "tokenId", tokenId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/tokens/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -214,14 +3520,984 @@ func WithBaseURL(baseURL string) ClientOption {
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
 
+	// SendEmailCodeWithBodyWithResponse Email a sign-in code.
+	//
+	// Sends a 6-digit code valid for 10 minutes if the address belongs to an owner. The response is the same whether or not it does. Sends are rate-limited per IP and per address.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/auth/email-code (the `SendEmailCode` operationId).
+	SendEmailCodeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SendEmailCodeResponse, error)
+
+	// SendEmailCodeWithResponse Email a sign-in code.
+	//
+	// Sends a 6-digit code valid for 10 minutes if the address belongs to an owner. The response is the same whether or not it does. Sends are rate-limited per IP and per address.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/auth/email-code (the `SendEmailCode` operationId).
+	SendEmailCodeWithResponse(ctx context.Context, body SendEmailCodeJSONRequestBody, reqEditors ...RequestEditorFn) (*SendEmailCodeResponse, error)
+
+	// VerifyEmailCodeWithBodyWithResponse Sign in with an emailed code.
+	//
+	// Checks the code sent to the address and starts a dashboard session. A code allows 5 attempts. A wrong, expired or exhausted code, and an address that is not an owner's, all answer `400 invalid_code`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/auth/email-code/verify (the `VerifyEmailCode` operationId).
+	VerifyEmailCodeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VerifyEmailCodeResponse, error)
+
+	// VerifyEmailCodeWithResponse Sign in with an emailed code.
+	//
+	// Checks the code sent to the address and starts a dashboard session. A code allows 5 attempts. A wrong, expired or exhausted code, and an address that is not an owner's, all answer `400 invalid_code`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/auth/email-code/verify (the `VerifyEmailCode` operationId).
+	VerifyEmailCodeWithResponse(ctx context.Context, body VerifyEmailCodeJSONRequestBody, reqEditors ...RequestEditorFn) (*VerifyEmailCodeResponse, error)
+
+	// RedeemSignInLinkWithBodyWithResponse Sign in with a one-time sign-in link code.
+	//
+	// Redeems the code from a one-time sign-in URL, such as the one printed by `wardlockd admin create` or sent with an invitation, and starts a dashboard session. A wrong, used or expired code answers `400 invalid_code`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/auth/sign-in-link (the `RedeemSignInLink` operationId).
+	RedeemSignInLinkWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RedeemSignInLinkResponse, error)
+
+	// RedeemSignInLinkWithResponse Sign in with a one-time sign-in link code.
+	//
+	// Redeems the code from a one-time sign-in URL, such as the one printed by `wardlockd admin create` or sent with an invitation, and starts a dashboard session. A wrong, used or expired code answers `400 invalid_code`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/auth/sign-in-link (the `RedeemSignInLink` operationId).
+	RedeemSignInLinkWithResponse(ctx context.Context, body RedeemSignInLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*RedeemSignInLinkResponse, error)
+
+	// SignOutWithResponse End the current session or revoke the current API token.
+	//
+	// With a session cookie, ends that session and clears the cookie. With an API token, revokes that token (`wardlock logout`).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/auth/sign-out (the `SignOut` operationId).
+	SignOutWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*SignOutResponse, error)
+
+	// StartCliLoginWithBodyWithResponse Start a CLI device login.
+	//
+	// Called by `wardlock login`. The CLI shows `userCode`, opens `verificationUrlComplete` in a browser and polls `pollCliLogin` with `deviceCode` no more often than every `interval` seconds until a signed-in owner approves or denies it on the dashboard, or it expires. `deviceCode` is a secret: keep it out of logs.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/cli-login (the `StartCliLogin` operationId).
+	StartCliLoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StartCliLoginResponse, error)
+
+	// StartCliLoginWithResponse Start a CLI device login.
+	//
+	// Called by `wardlock login`. The CLI shows `userCode`, opens `verificationUrlComplete` in a browser and polls `pollCliLogin` with `deviceCode` no more often than every `interval` seconds until a signed-in owner approves or denies it on the dashboard, or it expires. `deviceCode` is a secret: keep it out of logs.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/cli-login (the `StartCliLogin` operationId).
+	StartCliLoginWithResponse(ctx context.Context, body StartCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*StartCliLoginResponse, error)
+
+	// ApproveCliLoginWithBodyWithResponse Approve a CLI device login.
+	//
+	// Called by the dashboard's `/cli-login` page once the owner confirms the code matches their terminal. Creates an API token with the chosen scopes for the waiting CLI. An unknown, expired or already decided code answers `400 invalid_code`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/cli-login/approve (the `ApproveCliLogin` operationId).
+	ApproveCliLoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApproveCliLoginResponse, error)
+
+	// ApproveCliLoginWithResponse Approve a CLI device login.
+	//
+	// Called by the dashboard's `/cli-login` page once the owner confirms the code matches their terminal. Creates an API token with the chosen scopes for the waiting CLI. An unknown, expired or already decided code answers `400 invalid_code`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/cli-login/approve (the `ApproveCliLogin` operationId).
+	ApproveCliLoginWithResponse(ctx context.Context, body ApproveCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*ApproveCliLoginResponse, error)
+
+	// DenyCliLoginWithBodyWithResponse Deny a CLI device login.
+	//
+	// An unknown, expired or already decided code answers `400 invalid_code`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/cli-login/deny (the `DenyCliLogin` operationId).
+	DenyCliLoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DenyCliLoginResponse, error)
+
+	// DenyCliLoginWithResponse Deny a CLI device login.
+	//
+	// An unknown, expired or already decided code answers `400 invalid_code`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/cli-login/deny (the `DenyCliLogin` operationId).
+	DenyCliLoginWithResponse(ctx context.Context, body DenyCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*DenyCliLoginResponse, error)
+
+	// PollCliLoginWithBodyWithResponse Poll a CLI device login for its token.
+	//
+	// Answers `202` while the login waits for approval and `200` with a new API token once approved; the token is delivered once. A denied, expired, already delivered or unknown login answers `410 login_expired`. Polling faster than `interval` answers `429 slow_down`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
+	PollCliLoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PollCliLoginResponse, error)
+
+	// PollCliLoginWithResponse Poll a CLI device login for its token.
+	//
+	// Answers `202` while the login waits for approval and `200` with a new API token once approved; the token is delivered once. A denied, expired, already delivered or unknown login answers `410 login_expired`. Polling faster than `interval` answers `429 slow_down`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
+	PollCliLoginWithResponse(ctx context.Context, body PollCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*PollCliLoginResponse, error)
+
 	// GetHealthWithResponse Report that the API is serving requests.
 	//
-	// Unauthenticated. Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
+	// Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /api/v0/health (the `GetHealth` operationId).
 	GetHealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthResponse, error)
+
+	// GetMeWithResponse Describe the signed-in owner and the credential used.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/me (the `GetMe` operationId).
+	GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
+
+	// InviteOwnerWithBodyWithResponse Invite another owner by email.
+	//
+	// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/owners (the `InviteOwner` operationId).
+	InviteOwnerWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InviteOwnerResponse, error)
+
+	// InviteOwnerWithResponse Invite another owner by email.
+	//
+	// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/owners (the `InviteOwner` operationId).
+	InviteOwnerWithResponse(ctx context.Context, body InviteOwnerJSONRequestBody, reqEditors ...RequestEditorFn) (*InviteOwnerResponse, error)
+
+	// ListSessionsWithResponse List the signed-in owner's dashboard sessions.
+	//
+	// Most recently used first.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sessions (the `ListSessions` operationId).
+	ListSessionsWithResponse(ctx context.Context, params *ListSessionsParams, reqEditors ...RequestEditorFn) (*ListSessionsResponse, error)
+
+	// RevokeSessionWithResponse Revoke one of the signed-in owner's sessions.
+	//
+	// Takes effect on the session's next request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/sessions/{sessionId} (the `RevokeSession` operationId).
+	RevokeSessionWithResponse(ctx context.Context, sessionId SessionId, reqEditors ...RequestEditorFn) (*RevokeSessionResponse, error)
+
+	// CompleteSetupWithBodyWithResponse Create the first owner from the one-time setup code.
+	//
+	// Redeems the code from the setup URL that `wardlockd serve` prints while no owner exists, creates the owner with the given email address and signs them in. The code is single use and valid for 60 minutes. A wrong, used or expired code, or an instance that already has an owner, all answer `400 invalid_code`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/setup (the `CompleteSetup` operationId).
+	CompleteSetupWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CompleteSetupResponse, error)
+
+	// CompleteSetupWithResponse Create the first owner from the one-time setup code.
+	//
+	// Redeems the code from the setup URL that `wardlockd serve` prints while no owner exists, creates the owner with the given email address and signs them in. The code is single use and valid for 60 minutes. A wrong, used or expired code, or an instance that already has an owner, all answer `400 invalid_code`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/setup (the `CompleteSetup` operationId).
+	CompleteSetupWithResponse(ctx context.Context, body CompleteSetupJSONRequestBody, reqEditors ...RequestEditorFn) (*CompleteSetupResponse, error)
+
+	// ListSitesWithResponse List the owner's sites.
+	//
+	// Ordered by name. With `hostname`, answers the owner's site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sites (the `ListSites` operationId).
+	ListSitesWithResponse(ctx context.Context, params *ListSitesParams, reqEditors ...RequestEditorFn) (*ListSitesResponse, error)
+
+	// CreateSiteWithBodyWithResponse Create an empty site.
+	//
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites (the `CreateSite` operationId).
+	CreateSiteWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSiteResponse, error)
+
+	// CreateSiteWithResponse Create an empty site.
+	//
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites (the `CreateSite` operationId).
+	CreateSiteWithResponse(ctx context.Context, body CreateSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSiteResponse, error)
+
+	// DeleteSiteWithResponse Tear down a site.
+	//
+	// Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/sites/{site} (the `DeleteSite` operationId).
+	DeleteSiteWithResponse(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*DeleteSiteResponse, error)
+
+	// GetSiteWithResponse Get one of the owner's sites.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sites/{site} (the `GetSite` operationId).
+	GetSiteWithResponse(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*GetSiteResponse, error)
+
+	// ListDeploysWithResponse List a site's deploys.
+	//
+	// Newest first.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sites/{site}/deploys (the `ListDeploys` operationId).
+	ListDeploysWithResponse(ctx context.Context, site SiteName, params *ListDeploysParams, reqEditors ...RequestEditorFn) (*ListDeploysResponse, error)
+
+	// CreateDeployWithBodyWithResponse Create a deploy from a manifest.
+	//
+	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/deploys (the `CreateDeploy` operationId).
+	CreateDeployWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDeployResponse, error)
+
+	// CreateDeployWithResponse Create a deploy from a manifest.
+	//
+	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/deploys (the `CreateDeploy` operationId).
+	CreateDeployWithResponse(ctx context.Context, site SiteName, body CreateDeployJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDeployResponse, error)
+
+	// ActivateDeployWithResponse Make a pending deploy the site's active deploy.
+	//
+	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
+	ActivateDeployWithResponse(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*ActivateDeployResponse, error)
+
+	// UploadDeployBlobWithBodyWithResponse Upload one file body for a pending deploy.
+	//
+	// The body is the file's raw bytes. The server verifies the SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in this deploy's manifest (`400 unexpected_blob`). Uploading a blob the server already holds succeeds without storing it again, so retries are safe. Bodies over the per-file limit answer `413 limit_exceeded`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256} (the `UploadDeployBlob` operationId).
+	UploadDeployBlobWithBodyWithResponse(ctx context.Context, site SiteName, deployId DeployId, sha256 Sha256, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UploadDeployBlobResponse, error)
+
+	// ListDomainsWithResponse List a site's custom domains.
+	//
+	// Ordered by hostname.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sites/{site}/domains (the `ListDomains` operationId).
+	ListDomainsWithResponse(ctx context.Context, site SiteName, params *ListDomainsParams, reqEditors ...RequestEditorFn) (*ListDomainsResponse, error)
+
+	// AddDomainWithBodyWithResponse Attach a custom domain to a site.
+	//
+	// Normalises the hostname (lowercase, IDN to A-label, no trailing dot or port) and answers with the records to create. The domain starts `pending` and is checked straight away. IP addresses, wildcards, the base domain and names under it, the dashboard host and the auth origin answer `400 invalid_hostname`. A hostname attached to any site answers `409 domain_taken` without saying which.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/domains (the `AddDomain` operationId).
+	AddDomainWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddDomainResponse, error)
+
+	// AddDomainWithResponse Attach a custom domain to a site.
+	//
+	// Normalises the hostname (lowercase, IDN to A-label, no trailing dot or port) and answers with the records to create. The domain starts `pending` and is checked straight away. IP addresses, wildcards, the base domain and names under it, the dashboard host and the auth origin answer `400 invalid_hostname`. A hostname attached to any site answers `409 domain_taken` without saying which.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/domains (the `AddDomain` operationId).
+	AddDomainWithResponse(ctx context.Context, site SiteName, body AddDomainJSONRequestBody, reqEditors ...RequestEditorFn) (*AddDomainResponse, error)
+
+	// RemoveDomainWithResponse Detach a custom domain from its site.
+	//
+	// Serving stops immediately and the domain's certificate is deleted. The owner should also delete the DNS record, or whoever later holds the site name could claim the hostname.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/sites/{site}/domains/{hostname} (the `RemoveDomain` operationId).
+	RemoveDomainWithResponse(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*RemoveDomainResponse, error)
+
+	// GetDomainWithResponse Get one of a site's custom domains.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sites/{site}/domains/{hostname} (the `GetDomain` operationId).
+	GetDomainWithResponse(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*GetDomainResponse, error)
+
+	// VerifyDomainWithResponse Check a custom domain's DNS now.
+	//
+	// Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/domains/{hostname}/verify (the `VerifyDomain` operationId).
+	VerifyDomainWithResponse(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*VerifyDomainResponse, error)
+
+	// RollbackSiteWithBodyWithResponse Reactivate an earlier deploy.
+	//
+	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
+	RollbackSiteWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RollbackSiteResponse, error)
+
+	// RollbackSiteWithResponse Reactivate an earlier deploy.
+	//
+	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
+	RollbackSiteWithResponse(ctx context.Context, site SiteName, body RollbackSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*RollbackSiteResponse, error)
+
+	// ListApiTokensWithResponse List the signed-in owner's API tokens.
+	//
+	// Newest first. Token secrets are never returned.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/tokens (the `ListApiTokens` operationId).
+	ListApiTokensWithResponse(ctx context.Context, params *ListApiTokensParams, reqEditors ...RequestEditorFn) (*ListApiTokensResponse, error)
+
+	// CreateApiTokenWithBodyWithResponse Create an API token.
+	//
+	// The response is the only time the token is shown.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/tokens (the `CreateApiToken` operationId).
+	CreateApiTokenWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateApiTokenResponse, error)
+
+	// CreateApiTokenWithResponse Create an API token.
+	//
+	// The response is the only time the token is shown.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/tokens (the `CreateApiToken` operationId).
+	CreateApiTokenWithResponse(ctx context.Context, body CreateApiTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateApiTokenResponse, error)
+
+	// RevokeApiTokenWithResponse Revoke an API token.
+	//
+	// Takes effect on the token's next request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/tokens/{tokenId} (the `RevokeApiToken` operationId).
+	RevokeApiTokenWithResponse(ctx context.Context, tokenId TokenId, reqEditors ...RequestEditorFn) (*RevokeApiTokenResponse, error)
+}
+
+// SendEmailCodeResponse429Headers the declared response headers of an HTTP 429 response for SendEmailCode
+type SendEmailCodeResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type SendEmailCodeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *SendEmailCodeResponse429Headers
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SendEmailCodeResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r SendEmailCodeResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SendEmailCodeResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SendEmailCodeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SendEmailCodeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SendEmailCodeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SendEmailCodeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// VerifyEmailCodeResponse200Headers the declared response headers of an HTTP 200 response for VerifyEmailCode
+type VerifyEmailCodeResponse200Headers struct {
+	SetCookie *string
+}
+
+// VerifyEmailCodeResponse429Headers the declared response headers of an HTTP 429 response for VerifyEmailCode
+type VerifyEmailCodeResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type VerifyEmailCodeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Me
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *VerifyEmailCodeResponse200Headers
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *VerifyEmailCodeResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r VerifyEmailCodeResponse) GetJSON200() *Me {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r VerifyEmailCodeResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r VerifyEmailCodeResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r VerifyEmailCodeResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r VerifyEmailCodeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r VerifyEmailCodeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r VerifyEmailCodeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r VerifyEmailCodeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// RedeemSignInLinkResponse200Headers the declared response headers of an HTTP 200 response for RedeemSignInLink
+type RedeemSignInLinkResponse200Headers struct {
+	SetCookie *string
+}
+
+// RedeemSignInLinkResponse429Headers the declared response headers of an HTTP 429 response for RedeemSignInLink
+type RedeemSignInLinkResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type RedeemSignInLinkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Me
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *RedeemSignInLinkResponse200Headers
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *RedeemSignInLinkResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RedeemSignInLinkResponse) GetJSON200() *Me {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RedeemSignInLinkResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r RedeemSignInLinkResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RedeemSignInLinkResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RedeemSignInLinkResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RedeemSignInLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RedeemSignInLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RedeemSignInLinkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// SignOutResponse204Headers the declared response headers of an HTTP 204 response for SignOut
+type SignOutResponse204Headers struct {
+	SetCookie *string
+}
+
+type SignOutResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers204 the parsed response headers for an HTTP 204 response
+	Headers204 *SignOutResponse204Headers
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r SignOutResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r SignOutResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SignOutResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SignOutResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SignOutResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SignOutResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SignOutResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// StartCliLoginResponse429Headers the declared response headers of an HTTP 429 response for StartCliLogin
+type StartCliLoginResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type StartCliLoginResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *CliLogin
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *StartCliLoginResponse429Headers
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r StartCliLoginResponse) GetJSON201() *CliLogin {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r StartCliLoginResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r StartCliLoginResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r StartCliLoginResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r StartCliLoginResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r StartCliLoginResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StartCliLoginResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r StartCliLoginResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// ApproveCliLoginResponse429Headers the declared response headers of an HTTP 429 response for ApproveCliLogin
+type ApproveCliLoginResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type ApproveCliLoginResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *ApproveCliLoginResponse429Headers
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ApproveCliLoginResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ApproveCliLoginResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ApproveCliLoginResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r ApproveCliLoginResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ApproveCliLoginResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ApproveCliLoginResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ApproveCliLoginResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ApproveCliLoginResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ApproveCliLoginResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// DenyCliLoginResponse429Headers the declared response headers of an HTTP 429 response for DenyCliLogin
+type DenyCliLoginResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type DenyCliLoginResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *DenyCliLoginResponse429Headers
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DenyCliLoginResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DenyCliLoginResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DenyCliLoginResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r DenyCliLoginResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DenyCliLoginResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DenyCliLoginResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DenyCliLoginResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DenyCliLoginResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DenyCliLoginResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PollCliLoginResponse429Headers the declared response headers of an HTTP 429 response for PollCliLogin
+type PollCliLoginResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type PollCliLoginResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *CreatedApiToken
+	// JSON202 the response for an HTTP 202 `application/json` response
+	JSON202 *CliLoginPending
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON410 the response for an HTTP 410 `application/json` response
+	JSON410 *Gone
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *PollCliLoginResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PollCliLoginResponse) GetJSON200() *CreatedApiToken {
+	return r.JSON200
+}
+
+// GetJSON202 returns the response for an HTTP 202 `application/json` response
+func (r PollCliLoginResponse) GetJSON202() *CliLoginPending {
+	return r.JSON202
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PollCliLoginResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON410 returns the response for an HTTP 410 `application/json` response
+func (r PollCliLoginResponse) GetJSON410() *Gone {
+	return r.JSON410
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r PollCliLoginResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PollCliLoginResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PollCliLoginResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PollCliLoginResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PollCliLoginResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PollCliLoginResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
 }
 
 type GetHealthResponse struct {
@@ -229,11 +4505,18 @@ type GetHealthResponse struct {
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *Health
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
 func (r GetHealthResponse) GetJSON200() *Health {
 	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetHealthResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
 }
 
 // GetBody returns the raw response body bytes
@@ -265,9 +4548,1801 @@ func (r GetHealthResponse) ContentType() string {
 	return ""
 }
 
+type GetMeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Me
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetMeResponse) GetJSON200() *Me {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetMeResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetMeResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetMeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetMeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// InviteOwnerResponse429Headers the declared response headers of an HTTP 429 response for InviteOwner
+type InviteOwnerResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type InviteOwnerResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *InviteOwnerResponse429Headers
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r InviteOwnerResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r InviteOwnerResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r InviteOwnerResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r InviteOwnerResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r InviteOwnerResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r InviteOwnerResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r InviteOwnerResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r InviteOwnerResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r InviteOwnerResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListSessionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SessionPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListSessionsResponse) GetJSON200() *SessionPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListSessionsResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListSessionsResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListSessionsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListSessionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListSessionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListSessionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListSessionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RevokeSessionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RevokeSessionResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RevokeSessionResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RevokeSessionResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RevokeSessionResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RevokeSessionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RevokeSessionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// CompleteSetupResponse201Headers the declared response headers of an HTTP 201 response for CompleteSetup
+type CompleteSetupResponse201Headers struct {
+	SetCookie *string
+}
+
+// CompleteSetupResponse429Headers the declared response headers of an HTTP 429 response for CompleteSetup
+type CompleteSetupResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type CompleteSetupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Me
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers201 the parsed response headers for an HTTP 201 response
+	Headers201 *CompleteSetupResponse201Headers
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *CompleteSetupResponse429Headers
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CompleteSetupResponse) GetJSON201() *Me {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CompleteSetupResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r CompleteSetupResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CompleteSetupResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CompleteSetupResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CompleteSetupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CompleteSetupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CompleteSetupResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListSitesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SitePage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListSitesResponse) GetJSON200() *SitePage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListSitesResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListSitesResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListSitesResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListSitesResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListSitesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListSitesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListSitesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListSitesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateSiteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Site
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateSiteResponse) GetJSON201() *Site {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateSiteResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateSiteResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateSiteResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateSiteResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateSiteResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateSiteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateSiteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateSiteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateSiteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteSiteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteSiteResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteSiteResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteSiteResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteSiteResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteSiteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteSiteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteSiteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteSiteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetSiteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Site
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSiteResponse) GetJSON200() *Site {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetSiteResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetSiteResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetSiteResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetSiteResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSiteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSiteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSiteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSiteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListDeploysResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DeployPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListDeploysResponse) GetJSON200() *DeployPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListDeploysResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListDeploysResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListDeploysResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListDeploysResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListDeploysResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListDeploysResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListDeploysResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListDeploysResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListDeploysResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateDeployResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *CreatedDeploy
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON413 the response for an HTTP 413 `application/json` response
+	JSON413 *TooLarge
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateDeployResponse) GetJSON201() *CreatedDeploy {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateDeployResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateDeployResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateDeployResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r CreateDeployResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON413 returns the response for an HTTP 413 `application/json` response
+func (r CreateDeployResponse) GetJSON413() *TooLarge {
+	return r.JSON413
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateDeployResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateDeployResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateDeployResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateDeployResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateDeployResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ActivateDeployResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Activation
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ActivateDeployResponse) GetJSON200() *Activation {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ActivateDeployResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ActivateDeployResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ActivateDeployResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ActivateDeployResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ActivateDeployResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ActivateDeployResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ActivateDeployResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ActivateDeployResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ActivateDeployResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UploadDeployBlobResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON413 the response for an HTTP 413 `application/json` response
+	JSON413 *TooLarge
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UploadDeployBlobResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r UploadDeployBlobResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r UploadDeployBlobResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UploadDeployBlobResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON413 returns the response for an HTTP 413 `application/json` response
+func (r UploadDeployBlobResponse) GetJSON413() *TooLarge {
+	return r.JSON413
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r UploadDeployBlobResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UploadDeployBlobResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UploadDeployBlobResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UploadDeployBlobResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UploadDeployBlobResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListDomainsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DomainPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListDomainsResponse) GetJSON200() *DomainPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListDomainsResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListDomainsResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListDomainsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListDomainsResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListDomainsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListDomainsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListDomainsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListDomainsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListDomainsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AddDomainResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Domain
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r AddDomainResponse) GetJSON201() *Domain {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r AddDomainResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r AddDomainResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r AddDomainResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r AddDomainResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r AddDomainResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r AddDomainResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AddDomainResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AddDomainResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AddDomainResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AddDomainResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RemoveDomainResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RemoveDomainResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RemoveDomainResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RemoveDomainResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RemoveDomainResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RemoveDomainResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveDomainResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveDomainResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RemoveDomainResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetDomainResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Domain
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDomainResponse) GetJSON200() *Domain {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetDomainResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetDomainResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetDomainResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetDomainResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetDomainResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetDomainResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetDomainResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetDomainResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// VerifyDomainResponse429Headers the declared response headers of an HTTP 429 response for VerifyDomain
+type VerifyDomainResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type VerifyDomainResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Domain
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *VerifyDomainResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r VerifyDomainResponse) GetJSON200() *Domain {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r VerifyDomainResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r VerifyDomainResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r VerifyDomainResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r VerifyDomainResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r VerifyDomainResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r VerifyDomainResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r VerifyDomainResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r VerifyDomainResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r VerifyDomainResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RollbackSiteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Activation
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RollbackSiteResponse) GetJSON200() *Activation {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RollbackSiteResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RollbackSiteResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RollbackSiteResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RollbackSiteResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RollbackSiteResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RollbackSiteResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RollbackSiteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RollbackSiteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RollbackSiteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RollbackSiteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListApiTokensResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ApiTokenPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListApiTokensResponse) GetJSON200() *ApiTokenPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListApiTokensResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListApiTokensResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListApiTokensResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListApiTokensResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListApiTokensResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListApiTokensResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListApiTokensResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateApiTokenResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *CreatedApiToken
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateApiTokenResponse) GetJSON201() *CreatedApiToken {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateApiTokenResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateApiTokenResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateApiTokenResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateApiTokenResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateApiTokenResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateApiTokenResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateApiTokenResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateApiTokenResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RevokeApiTokenResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RevokeApiTokenResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RevokeApiTokenResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RevokeApiTokenResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RevokeApiTokenResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RevokeApiTokenResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeApiTokenResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeApiTokenResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RevokeApiTokenResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// SendEmailCodeWithBodyWithResponse Email a sign-in code.
+//
+// Sends a 6-digit code valid for 10 minutes if the address belongs to an owner. The response is the same whether or not it does. Sends are rate-limited per IP and per address.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/auth/email-code (the `SendEmailCode` operationId).
+func (c *ClientWithResponses) SendEmailCodeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SendEmailCodeResponse, error) {
+	rsp, err := c.SendEmailCodeWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSendEmailCodeResponse(rsp)
+}
+
+// SendEmailCodeWithResponse Email a sign-in code.
+//
+// Sends a 6-digit code valid for 10 minutes if the address belongs to an owner. The response is the same whether or not it does. Sends are rate-limited per IP and per address.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/auth/email-code (the `SendEmailCode` operationId).
+func (c *ClientWithResponses) SendEmailCodeWithResponse(ctx context.Context, body SendEmailCodeJSONRequestBody, reqEditors ...RequestEditorFn) (*SendEmailCodeResponse, error) {
+	rsp, err := c.SendEmailCode(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSendEmailCodeResponse(rsp)
+}
+
+// VerifyEmailCodeWithBodyWithResponse Sign in with an emailed code.
+//
+// Checks the code sent to the address and starts a dashboard session. A code allows 5 attempts. A wrong, expired or exhausted code, and an address that is not an owner's, all answer `400 invalid_code`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/auth/email-code/verify (the `VerifyEmailCode` operationId).
+func (c *ClientWithResponses) VerifyEmailCodeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*VerifyEmailCodeResponse, error) {
+	rsp, err := c.VerifyEmailCodeWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseVerifyEmailCodeResponse(rsp)
+}
+
+// VerifyEmailCodeWithResponse Sign in with an emailed code.
+//
+// Checks the code sent to the address and starts a dashboard session. A code allows 5 attempts. A wrong, expired or exhausted code, and an address that is not an owner's, all answer `400 invalid_code`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/auth/email-code/verify (the `VerifyEmailCode` operationId).
+func (c *ClientWithResponses) VerifyEmailCodeWithResponse(ctx context.Context, body VerifyEmailCodeJSONRequestBody, reqEditors ...RequestEditorFn) (*VerifyEmailCodeResponse, error) {
+	rsp, err := c.VerifyEmailCode(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseVerifyEmailCodeResponse(rsp)
+}
+
+// RedeemSignInLinkWithBodyWithResponse Sign in with a one-time sign-in link code.
+//
+// Redeems the code from a one-time sign-in URL, such as the one printed by `wardlockd admin create` or sent with an invitation, and starts a dashboard session. A wrong, used or expired code answers `400 invalid_code`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/auth/sign-in-link (the `RedeemSignInLink` operationId).
+func (c *ClientWithResponses) RedeemSignInLinkWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RedeemSignInLinkResponse, error) {
+	rsp, err := c.RedeemSignInLinkWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRedeemSignInLinkResponse(rsp)
+}
+
+// RedeemSignInLinkWithResponse Sign in with a one-time sign-in link code.
+//
+// Redeems the code from a one-time sign-in URL, such as the one printed by `wardlockd admin create` or sent with an invitation, and starts a dashboard session. A wrong, used or expired code answers `400 invalid_code`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/auth/sign-in-link (the `RedeemSignInLink` operationId).
+func (c *ClientWithResponses) RedeemSignInLinkWithResponse(ctx context.Context, body RedeemSignInLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*RedeemSignInLinkResponse, error) {
+	rsp, err := c.RedeemSignInLink(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRedeemSignInLinkResponse(rsp)
+}
+
+// SignOutWithResponse End the current session or revoke the current API token.
+//
+// With a session cookie, ends that session and clears the cookie. With an API token, revokes that token (`wardlock logout`).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/auth/sign-out (the `SignOut` operationId).
+func (c *ClientWithResponses) SignOutWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*SignOutResponse, error) {
+	rsp, err := c.SignOut(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSignOutResponse(rsp)
+}
+
+// StartCliLoginWithBodyWithResponse Start a CLI device login.
+//
+// Called by `wardlock login`. The CLI shows `userCode`, opens `verificationUrlComplete` in a browser and polls `pollCliLogin` with `deviceCode` no more often than every `interval` seconds until a signed-in owner approves or denies it on the dashboard, or it expires. `deviceCode` is a secret: keep it out of logs.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/cli-login (the `StartCliLogin` operationId).
+func (c *ClientWithResponses) StartCliLoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StartCliLoginResponse, error) {
+	rsp, err := c.StartCliLoginWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStartCliLoginResponse(rsp)
+}
+
+// StartCliLoginWithResponse Start a CLI device login.
+//
+// Called by `wardlock login`. The CLI shows `userCode`, opens `verificationUrlComplete` in a browser and polls `pollCliLogin` with `deviceCode` no more often than every `interval` seconds until a signed-in owner approves or denies it on the dashboard, or it expires. `deviceCode` is a secret: keep it out of logs.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/cli-login (the `StartCliLogin` operationId).
+func (c *ClientWithResponses) StartCliLoginWithResponse(ctx context.Context, body StartCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*StartCliLoginResponse, error) {
+	rsp, err := c.StartCliLogin(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStartCliLoginResponse(rsp)
+}
+
+// ApproveCliLoginWithBodyWithResponse Approve a CLI device login.
+//
+// Called by the dashboard's `/cli-login` page once the owner confirms the code matches their terminal. Creates an API token with the chosen scopes for the waiting CLI. An unknown, expired or already decided code answers `400 invalid_code`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/cli-login/approve (the `ApproveCliLogin` operationId).
+func (c *ClientWithResponses) ApproveCliLoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApproveCliLoginResponse, error) {
+	rsp, err := c.ApproveCliLoginWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseApproveCliLoginResponse(rsp)
+}
+
+// ApproveCliLoginWithResponse Approve a CLI device login.
+//
+// Called by the dashboard's `/cli-login` page once the owner confirms the code matches their terminal. Creates an API token with the chosen scopes for the waiting CLI. An unknown, expired or already decided code answers `400 invalid_code`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/cli-login/approve (the `ApproveCliLogin` operationId).
+func (c *ClientWithResponses) ApproveCliLoginWithResponse(ctx context.Context, body ApproveCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*ApproveCliLoginResponse, error) {
+	rsp, err := c.ApproveCliLogin(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseApproveCliLoginResponse(rsp)
+}
+
+// DenyCliLoginWithBodyWithResponse Deny a CLI device login.
+//
+// An unknown, expired or already decided code answers `400 invalid_code`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/cli-login/deny (the `DenyCliLogin` operationId).
+func (c *ClientWithResponses) DenyCliLoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DenyCliLoginResponse, error) {
+	rsp, err := c.DenyCliLoginWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDenyCliLoginResponse(rsp)
+}
+
+// DenyCliLoginWithResponse Deny a CLI device login.
+//
+// An unknown, expired or already decided code answers `400 invalid_code`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/cli-login/deny (the `DenyCliLogin` operationId).
+func (c *ClientWithResponses) DenyCliLoginWithResponse(ctx context.Context, body DenyCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*DenyCliLoginResponse, error) {
+	rsp, err := c.DenyCliLogin(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDenyCliLoginResponse(rsp)
+}
+
+// PollCliLoginWithBodyWithResponse Poll a CLI device login for its token.
+//
+// Answers `202` while the login waits for approval and `200` with a new API token once approved; the token is delivered once. A denied, expired, already delivered or unknown login answers `410 login_expired`. Polling faster than `interval` answers `429 slow_down`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
+func (c *ClientWithResponses) PollCliLoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PollCliLoginResponse, error) {
+	rsp, err := c.PollCliLoginWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePollCliLoginResponse(rsp)
+}
+
+// PollCliLoginWithResponse Poll a CLI device login for its token.
+//
+// Answers `202` while the login waits for approval and `200` with a new API token once approved; the token is delivered once. A denied, expired, already delivered or unknown login answers `410 login_expired`. Polling faster than `interval` answers `429 slow_down`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
+func (c *ClientWithResponses) PollCliLoginWithResponse(ctx context.Context, body PollCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*PollCliLoginResponse, error) {
+	rsp, err := c.PollCliLogin(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePollCliLoginResponse(rsp)
+}
+
 // GetHealthWithResponse Report that the API is serving requests.
 //
-// Unauthenticated. Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
+// Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -278,6 +6353,961 @@ func (c *ClientWithResponses) GetHealthWithResponse(ctx context.Context, reqEdit
 		return nil, err
 	}
 	return ParseGetHealthResponse(rsp)
+}
+
+// GetMeWithResponse Describe the signed-in owner and the credential used.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/me (the `GetMe` operationId).
+func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error) {
+	rsp, err := c.GetMe(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMeResponse(rsp)
+}
+
+// InviteOwnerWithBodyWithResponse Invite another owner by email.
+//
+// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/owners (the `InviteOwner` operationId).
+func (c *ClientWithResponses) InviteOwnerWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InviteOwnerResponse, error) {
+	rsp, err := c.InviteOwnerWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseInviteOwnerResponse(rsp)
+}
+
+// InviteOwnerWithResponse Invite another owner by email.
+//
+// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/owners (the `InviteOwner` operationId).
+func (c *ClientWithResponses) InviteOwnerWithResponse(ctx context.Context, body InviteOwnerJSONRequestBody, reqEditors ...RequestEditorFn) (*InviteOwnerResponse, error) {
+	rsp, err := c.InviteOwner(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseInviteOwnerResponse(rsp)
+}
+
+// ListSessionsWithResponse List the signed-in owner's dashboard sessions.
+//
+// Most recently used first.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sessions (the `ListSessions` operationId).
+func (c *ClientWithResponses) ListSessionsWithResponse(ctx context.Context, params *ListSessionsParams, reqEditors ...RequestEditorFn) (*ListSessionsResponse, error) {
+	rsp, err := c.ListSessions(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListSessionsResponse(rsp)
+}
+
+// RevokeSessionWithResponse Revoke one of the signed-in owner's sessions.
+//
+// Takes effect on the session's next request.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/sessions/{sessionId} (the `RevokeSession` operationId).
+func (c *ClientWithResponses) RevokeSessionWithResponse(ctx context.Context, sessionId SessionId, reqEditors ...RequestEditorFn) (*RevokeSessionResponse, error) {
+	rsp, err := c.RevokeSession(ctx, sessionId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeSessionResponse(rsp)
+}
+
+// CompleteSetupWithBodyWithResponse Create the first owner from the one-time setup code.
+//
+// Redeems the code from the setup URL that `wardlockd serve` prints while no owner exists, creates the owner with the given email address and signs them in. The code is single use and valid for 60 minutes. A wrong, used or expired code, or an instance that already has an owner, all answer `400 invalid_code`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/setup (the `CompleteSetup` operationId).
+func (c *ClientWithResponses) CompleteSetupWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CompleteSetupResponse, error) {
+	rsp, err := c.CompleteSetupWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCompleteSetupResponse(rsp)
+}
+
+// CompleteSetupWithResponse Create the first owner from the one-time setup code.
+//
+// Redeems the code from the setup URL that `wardlockd serve` prints while no owner exists, creates the owner with the given email address and signs them in. The code is single use and valid for 60 minutes. A wrong, used or expired code, or an instance that already has an owner, all answer `400 invalid_code`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/setup (the `CompleteSetup` operationId).
+func (c *ClientWithResponses) CompleteSetupWithResponse(ctx context.Context, body CompleteSetupJSONRequestBody, reqEditors ...RequestEditorFn) (*CompleteSetupResponse, error) {
+	rsp, err := c.CompleteSetup(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCompleteSetupResponse(rsp)
+}
+
+// ListSitesWithResponse List the owner's sites.
+//
+// Ordered by name. With `hostname`, answers the owner's site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sites (the `ListSites` operationId).
+func (c *ClientWithResponses) ListSitesWithResponse(ctx context.Context, params *ListSitesParams, reqEditors ...RequestEditorFn) (*ListSitesResponse, error) {
+	rsp, err := c.ListSites(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListSitesResponse(rsp)
+}
+
+// CreateSiteWithBodyWithResponse Create an empty site.
+//
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites (the `CreateSite` operationId).
+func (c *ClientWithResponses) CreateSiteWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateSiteResponse, error) {
+	rsp, err := c.CreateSiteWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateSiteResponse(rsp)
+}
+
+// CreateSiteWithResponse Create an empty site.
+//
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites (the `CreateSite` operationId).
+func (c *ClientWithResponses) CreateSiteWithResponse(ctx context.Context, body CreateSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateSiteResponse, error) {
+	rsp, err := c.CreateSite(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateSiteResponse(rsp)
+}
+
+// DeleteSiteWithResponse Tear down a site.
+//
+// Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/sites/{site} (the `DeleteSite` operationId).
+func (c *ClientWithResponses) DeleteSiteWithResponse(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*DeleteSiteResponse, error) {
+	rsp, err := c.DeleteSite(ctx, site, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteSiteResponse(rsp)
+}
+
+// GetSiteWithResponse Get one of the owner's sites.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sites/{site} (the `GetSite` operationId).
+func (c *ClientWithResponses) GetSiteWithResponse(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*GetSiteResponse, error) {
+	rsp, err := c.GetSite(ctx, site, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSiteResponse(rsp)
+}
+
+// ListDeploysWithResponse List a site's deploys.
+//
+// Newest first.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sites/{site}/deploys (the `ListDeploys` operationId).
+func (c *ClientWithResponses) ListDeploysWithResponse(ctx context.Context, site SiteName, params *ListDeploysParams, reqEditors ...RequestEditorFn) (*ListDeploysResponse, error) {
+	rsp, err := c.ListDeploys(ctx, site, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListDeploysResponse(rsp)
+}
+
+// CreateDeployWithBodyWithResponse Create a deploy from a manifest.
+//
+// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/deploys (the `CreateDeploy` operationId).
+func (c *ClientWithResponses) CreateDeployWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDeployResponse, error) {
+	rsp, err := c.CreateDeployWithBody(ctx, site, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDeployResponse(rsp)
+}
+
+// CreateDeployWithResponse Create a deploy from a manifest.
+//
+// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/deploys (the `CreateDeploy` operationId).
+func (c *ClientWithResponses) CreateDeployWithResponse(ctx context.Context, site SiteName, body CreateDeployJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDeployResponse, error) {
+	rsp, err := c.CreateDeploy(ctx, site, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDeployResponse(rsp)
+}
+
+// ActivateDeployWithResponse Make a pending deploy the site's active deploy.
+//
+// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy).
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
+func (c *ClientWithResponses) ActivateDeployWithResponse(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*ActivateDeployResponse, error) {
+	rsp, err := c.ActivateDeploy(ctx, site, deployId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseActivateDeployResponse(rsp)
+}
+
+// UploadDeployBlobWithBodyWithResponse Upload one file body for a pending deploy.
+//
+// The body is the file's raw bytes. The server verifies the SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in this deploy's manifest (`400 unexpected_blob`). Uploading a blob the server already holds succeeds without storing it again, so retries are safe. Bodies over the per-file limit answer `413 limit_exceeded`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256} (the `UploadDeployBlob` operationId).
+func (c *ClientWithResponses) UploadDeployBlobWithBodyWithResponse(ctx context.Context, site SiteName, deployId DeployId, sha256 Sha256, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UploadDeployBlobResponse, error) {
+	rsp, err := c.UploadDeployBlobWithBody(ctx, site, deployId, sha256, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUploadDeployBlobResponse(rsp)
+}
+
+// ListDomainsWithResponse List a site's custom domains.
+//
+// Ordered by hostname.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sites/{site}/domains (the `ListDomains` operationId).
+func (c *ClientWithResponses) ListDomainsWithResponse(ctx context.Context, site SiteName, params *ListDomainsParams, reqEditors ...RequestEditorFn) (*ListDomainsResponse, error) {
+	rsp, err := c.ListDomains(ctx, site, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListDomainsResponse(rsp)
+}
+
+// AddDomainWithBodyWithResponse Attach a custom domain to a site.
+//
+// Normalises the hostname (lowercase, IDN to A-label, no trailing dot or port) and answers with the records to create. The domain starts `pending` and is checked straight away. IP addresses, wildcards, the base domain and names under it, the dashboard host and the auth origin answer `400 invalid_hostname`. A hostname attached to any site answers `409 domain_taken` without saying which.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/domains (the `AddDomain` operationId).
+func (c *ClientWithResponses) AddDomainWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AddDomainResponse, error) {
+	rsp, err := c.AddDomainWithBody(ctx, site, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddDomainResponse(rsp)
+}
+
+// AddDomainWithResponse Attach a custom domain to a site.
+//
+// Normalises the hostname (lowercase, IDN to A-label, no trailing dot or port) and answers with the records to create. The domain starts `pending` and is checked straight away. IP addresses, wildcards, the base domain and names under it, the dashboard host and the auth origin answer `400 invalid_hostname`. A hostname attached to any site answers `409 domain_taken` without saying which.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/domains (the `AddDomain` operationId).
+func (c *ClientWithResponses) AddDomainWithResponse(ctx context.Context, site SiteName, body AddDomainJSONRequestBody, reqEditors ...RequestEditorFn) (*AddDomainResponse, error) {
+	rsp, err := c.AddDomain(ctx, site, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddDomainResponse(rsp)
+}
+
+// RemoveDomainWithResponse Detach a custom domain from its site.
+//
+// Serving stops immediately and the domain's certificate is deleted. The owner should also delete the DNS record, or whoever later holds the site name could claim the hostname.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/sites/{site}/domains/{hostname} (the `RemoveDomain` operationId).
+func (c *ClientWithResponses) RemoveDomainWithResponse(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*RemoveDomainResponse, error) {
+	rsp, err := c.RemoveDomain(ctx, site, hostname, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveDomainResponse(rsp)
+}
+
+// GetDomainWithResponse Get one of a site's custom domains.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sites/{site}/domains/{hostname} (the `GetDomain` operationId).
+func (c *ClientWithResponses) GetDomainWithResponse(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*GetDomainResponse, error) {
+	rsp, err := c.GetDomain(ctx, site, hostname, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetDomainResponse(rsp)
+}
+
+// VerifyDomainWithResponse Check a custom domain's DNS now.
+//
+// Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/domains/{hostname}/verify (the `VerifyDomain` operationId).
+func (c *ClientWithResponses) VerifyDomainWithResponse(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*VerifyDomainResponse, error) {
+	rsp, err := c.VerifyDomain(ctx, site, hostname, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseVerifyDomainResponse(rsp)
+}
+
+// RollbackSiteWithBodyWithResponse Reactivate an earlier deploy.
+//
+// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
+func (c *ClientWithResponses) RollbackSiteWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RollbackSiteResponse, error) {
+	rsp, err := c.RollbackSiteWithBody(ctx, site, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRollbackSiteResponse(rsp)
+}
+
+// RollbackSiteWithResponse Reactivate an earlier deploy.
+//
+// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
+func (c *ClientWithResponses) RollbackSiteWithResponse(ctx context.Context, site SiteName, body RollbackSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*RollbackSiteResponse, error) {
+	rsp, err := c.RollbackSite(ctx, site, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRollbackSiteResponse(rsp)
+}
+
+// ListApiTokensWithResponse List the signed-in owner's API tokens.
+//
+// Newest first. Token secrets are never returned.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/tokens (the `ListApiTokens` operationId).
+func (c *ClientWithResponses) ListApiTokensWithResponse(ctx context.Context, params *ListApiTokensParams, reqEditors ...RequestEditorFn) (*ListApiTokensResponse, error) {
+	rsp, err := c.ListApiTokens(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListApiTokensResponse(rsp)
+}
+
+// CreateApiTokenWithBodyWithResponse Create an API token.
+//
+// The response is the only time the token is shown.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/tokens (the `CreateApiToken` operationId).
+func (c *ClientWithResponses) CreateApiTokenWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateApiTokenResponse, error) {
+	rsp, err := c.CreateApiTokenWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateApiTokenResponse(rsp)
+}
+
+// CreateApiTokenWithResponse Create an API token.
+//
+// The response is the only time the token is shown.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/tokens (the `CreateApiToken` operationId).
+func (c *ClientWithResponses) CreateApiTokenWithResponse(ctx context.Context, body CreateApiTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateApiTokenResponse, error) {
+	rsp, err := c.CreateApiToken(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateApiTokenResponse(rsp)
+}
+
+// RevokeApiTokenWithResponse Revoke an API token.
+//
+// Takes effect on the token's next request.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/tokens/{tokenId} (the `RevokeApiToken` operationId).
+func (c *ClientWithResponses) RevokeApiTokenWithResponse(ctx context.Context, tokenId TokenId, reqEditors ...RequestEditorFn) (*RevokeApiTokenResponse, error) {
+	rsp, err := c.RevokeApiToken(ctx, tokenId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeApiTokenResponse(rsp)
+}
+
+// ParseSendEmailCodeResponse parses an HTTP response from a SendEmailCodeWithResponse call
+func ParseSendEmailCodeResponse(rsp *http.Response) (*SendEmailCodeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SendEmailCodeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 202:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers SendEmailCodeResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseVerifyEmailCodeResponse parses an HTTP response from a VerifyEmailCodeWithResponse call
+func ParseVerifyEmailCodeResponse(rsp *http.Response) (*VerifyEmailCodeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &VerifyEmailCodeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Me
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers VerifyEmailCodeResponse200Headers
+		if values := rsp.Header.Values("Set-Cookie"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Set-Cookie", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.SetCookie = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 429:
+		var headers VerifyEmailCodeResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseRedeemSignInLinkResponse parses an HTTP response from a RedeemSignInLinkWithResponse call
+func ParseRedeemSignInLinkResponse(rsp *http.Response) (*RedeemSignInLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RedeemSignInLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Me
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers RedeemSignInLinkResponse200Headers
+		if values := rsp.Header.Values("Set-Cookie"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Set-Cookie", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.SetCookie = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 429:
+		var headers RedeemSignInLinkResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseSignOutResponse parses an HTTP response from a SignOutWithResponse call
+func ParseSignOutResponse(rsp *http.Response) (*SignOutResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SignOutResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		var headers SignOutResponse204Headers
+		if values := rsp.Header.Values("Set-Cookie"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Set-Cookie", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.SetCookie = &value
+		}
+		response.Headers204 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseStartCliLoginResponse parses an HTTP response from a StartCliLoginWithResponse call
+func ParseStartCliLoginResponse(rsp *http.Response) (*StartCliLoginResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StartCliLoginResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest CliLogin
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers StartCliLoginResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseApproveCliLoginResponse parses an HTTP response from a ApproveCliLoginWithResponse call
+func ParseApproveCliLoginResponse(rsp *http.Response) (*ApproveCliLoginResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ApproveCliLoginResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers ApproveCliLoginResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseDenyCliLoginResponse parses an HTTP response from a DenyCliLoginWithResponse call
+func ParseDenyCliLoginResponse(rsp *http.Response) (*DenyCliLoginResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DenyCliLoginResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers DenyCliLoginResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePollCliLoginResponse parses an HTTP response from a PollCliLoginWithResponse call
+func ParsePollCliLoginResponse(rsp *http.Response) (*PollCliLoginResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PollCliLoginResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CreatedApiToken
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest CliLoginPending
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 410:
+		var dest Gone
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON410 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers PollCliLoginResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
 }
 
 // ParseGetHealthResponse parses an HTTP response from a GetHealthWithResponse call
@@ -300,6 +7330,1289 @@ func ParseGetHealthResponse(rsp *http.Response) (*GetHealthResponse, error) {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMeResponse parses an HTTP response from a GetMeWithResponse call
+func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Me
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseInviteOwnerResponse parses an HTTP response from a InviteOwnerWithResponse call
+func ParseInviteOwnerResponse(rsp *http.Response) (*InviteOwnerResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &InviteOwnerResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 202:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers InviteOwnerResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListSessionsResponse parses an HTTP response from a ListSessionsWithResponse call
+func ParseListSessionsResponse(rsp *http.Response) (*ListSessionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSessionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SessionPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRevokeSessionResponse parses an HTTP response from a RevokeSessionWithResponse call
+func ParseRevokeSessionResponse(rsp *http.Response) (*RevokeSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCompleteSetupResponse parses an HTTP response from a CompleteSetupWithResponse call
+func ParseCompleteSetupResponse(rsp *http.Response) (*CompleteSetupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CompleteSetupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Me
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 201:
+		var headers CompleteSetupResponse201Headers
+		if values := rsp.Header.Values("Set-Cookie"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Set-Cookie", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.SetCookie = &value
+		}
+		response.Headers201 = &headers
+	case rsp.StatusCode == 429:
+		var headers CompleteSetupResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListSitesResponse parses an HTTP response from a ListSitesWithResponse call
+func ParseListSitesResponse(rsp *http.Response) (*ListSitesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSitesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SitePage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateSiteResponse parses an HTTP response from a CreateSiteWithResponse call
+func ParseCreateSiteResponse(rsp *http.Response) (*CreateSiteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateSiteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Site
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteSiteResponse parses an HTTP response from a DeleteSiteWithResponse call
+func ParseDeleteSiteResponse(rsp *http.Response) (*DeleteSiteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteSiteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSiteResponse parses an HTTP response from a GetSiteWithResponse call
+func ParseGetSiteResponse(rsp *http.Response) (*GetSiteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSiteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Site
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListDeploysResponse parses an HTTP response from a ListDeploysWithResponse call
+func ParseListDeploysResponse(rsp *http.Response) (*ListDeploysResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListDeploysResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DeployPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateDeployResponse parses an HTTP response from a CreateDeployWithResponse call
+func ParseCreateDeployResponse(rsp *http.Response) (*CreateDeployResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateDeployResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest CreatedDeploy
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest TooLarge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON413 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseActivateDeployResponse parses an HTTP response from a ActivateDeployWithResponse call
+func ParseActivateDeployResponse(rsp *http.Response) (*ActivateDeployResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ActivateDeployResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Activation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUploadDeployBlobResponse parses an HTTP response from a UploadDeployBlobWithResponse call
+func ParseUploadDeployBlobResponse(rsp *http.Response) (*UploadDeployBlobResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UploadDeployBlobResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest TooLarge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON413 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListDomainsResponse parses an HTTP response from a ListDomainsWithResponse call
+func ParseListDomainsResponse(rsp *http.Response) (*ListDomainsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListDomainsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DomainPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAddDomainResponse parses an HTTP response from a AddDomainWithResponse call
+func ParseAddDomainResponse(rsp *http.Response) (*AddDomainResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AddDomainResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Domain
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRemoveDomainResponse parses an HTTP response from a RemoveDomainWithResponse call
+func ParseRemoveDomainResponse(rsp *http.Response) (*RemoveDomainResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveDomainResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetDomainResponse parses an HTTP response from a GetDomainWithResponse call
+func ParseGetDomainResponse(rsp *http.Response) (*GetDomainResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetDomainResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Domain
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseVerifyDomainResponse parses an HTTP response from a VerifyDomainWithResponse call
+func ParseVerifyDomainResponse(rsp *http.Response) (*VerifyDomainResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &VerifyDomainResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Domain
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers VerifyDomainResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseRollbackSiteResponse parses an HTTP response from a RollbackSiteWithResponse call
+func ParseRollbackSiteResponse(rsp *http.Response) (*RollbackSiteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RollbackSiteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Activation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListApiTokensResponse parses an HTTP response from a ListApiTokensWithResponse call
+func ParseListApiTokensResponse(rsp *http.Response) (*ListApiTokensResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListApiTokensResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ApiTokenPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateApiTokenResponse parses an HTTP response from a CreateApiTokenWithResponse call
+func ParseCreateApiTokenResponse(rsp *http.Response) (*CreateApiTokenResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateApiTokenResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest CreatedApiToken
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRevokeApiTokenResponse parses an HTTP response from a RevokeApiTokenWithResponse call
+func ParseRevokeApiTokenResponse(rsp *http.Response) (*RevokeApiTokenResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeApiTokenResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
 
 	}
 

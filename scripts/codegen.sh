@@ -13,6 +13,8 @@ cd "$repo_root"
 
 generated=(
   apps/server/internal/api/api.gen.go
+  apps/server/internal/api/unimplemented.gen.go
+  apps/server/internal/api/operations.gen_test.go
   apps/server/internal/store/sqlcgen
   packages/apiclient-go/client.gen.go
   packages/apiclient-ts/src/schema.gen.ts

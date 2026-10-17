@@ -48,12 +48,13 @@ The dashboard calls the server only through `@wardlock/apiclient-ts`: ESLint for
 
 ## Generated code
 
-| File                                      | Generator                            | Source                                               |
-| ----------------------------------------- | ------------------------------------ | ---------------------------------------------------- |
-| `apps/server/internal/api/api.gen.go`     | oapi-codegen (strict server, models) | `packages/api-spec/openapi.yaml`                     |
-| `packages/apiclient-go/client.gen.go`     | oapi-codegen (client, models)        | `packages/api-spec/openapi.yaml`                     |
-| `packages/apiclient-ts/src/schema.gen.ts` | openapi-typescript                   | `packages/api-spec/openapi.yaml`                     |
-| `apps/server/internal/store/sqlcgen/*.go` | sqlc                                 | `apps/server/migrations/`, `internal/store/queries/` |
+| File                                                                      | Generator                                   | Source                                               |
+| ------------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------- |
+| `apps/server/internal/api/api.gen.go`                                     | oapi-codegen (strict server, models)        | `packages/api-spec/openapi.yaml`                     |
+| `apps/server/internal/api/unimplemented.gen.go`, `operations.gen_test.go` | oapi-codegen with `internal/api/templates/` | `packages/api-spec/openapi.yaml`                     |
+| `packages/apiclient-go/client.gen.go`                                     | oapi-codegen (client, models)               | `packages/api-spec/openapi.yaml`                     |
+| `packages/apiclient-ts/src/schema.gen.ts`                                 | openapi-typescript                          | `packages/api-spec/openapi.yaml`                     |
+| `apps/server/internal/store/sqlcgen/*.go`                                 | sqlc                                        | `apps/server/migrations/`, `internal/store/queries/` |
 
 Generated files are committed, start with a "Code generated … DO NOT EDIT" or equivalent notice, and are never edited by hand. Change the source and run `pnpm codegen`.
 

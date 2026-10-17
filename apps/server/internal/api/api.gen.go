@@ -12,9 +12,113 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
+
+	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for CliLoginPendingStatus.
+const (
+	CliLoginPendingStatusPending CliLoginPendingStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the CliLoginPendingStatus enum.
+func (e CliLoginPendingStatus) Valid() bool {
+	switch e {
+	case CliLoginPendingStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeployStatus.
+const (
+	DeployStatusActive   DeployStatus = "active"
+	DeployStatusInactive DeployStatus = "inactive"
+	DeployStatusPending  DeployStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the DeployStatus enum.
+func (e DeployStatus) Valid() bool {
+	switch e {
+	case DeployStatusActive:
+		return true
+	case DeployStatusInactive:
+		return true
+	case DeployStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DnsRecordType.
+const (
+	DnsRecordTypeCNAME DnsRecordType = "CNAME"
+	DnsRecordTypeTXT   DnsRecordType = "TXT"
+)
+
+// Valid indicates whether the value is a known member of the DnsRecordType enum.
+func (e DnsRecordType) Valid() bool {
+	switch e {
+	case DnsRecordTypeCNAME:
+		return true
+	case DnsRecordTypeTXT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainFailureReason.
+const (
+	DomainFailureReasonCnameElsewhere DomainFailureReason = "cname_elsewhere"
+	DomainFailureReasonDnsError       DomainFailureReason = "dns_error"
+	DomainFailureReasonNoRecord       DomainFailureReason = "no_record"
+	DomainFailureReasonTxtMismatch    DomainFailureReason = "txt_mismatch"
+)
+
+// Valid indicates whether the value is a known member of the DomainFailureReason enum.
+func (e DomainFailureReason) Valid() bool {
+	switch e {
+	case DomainFailureReasonCnameElsewhere:
+		return true
+	case DomainFailureReasonDnsError:
+		return true
+	case DomainFailureReasonNoRecord:
+		return true
+	case DomainFailureReasonTxtMismatch:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainStatus.
+const (
+	DomainStatusActive  DomainStatus = "active"
+	DomainStatusLapsed  DomainStatus = "lapsed"
+	DomainStatusPending DomainStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the DomainStatus enum.
+func (e DomainStatus) Valid() bool {
+	switch e {
+	case DomainStatusActive:
+		return true
+	case DomainStatusLapsed:
+		return true
+	case DomainStatusPending:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for HealthStatus.
 const (
@@ -31,6 +135,363 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for MeCredential.
+const (
+	MeCredentialApiToken MeCredential = "apiToken"
+	MeCredentialSession  MeCredential = "session"
+)
+
+// Valid indicates whether the value is a known member of the MeCredential enum.
+func (e MeCredential) Valid() bool {
+	switch e {
+	case MeCredentialApiToken:
+		return true
+	case MeCredentialSession:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for Scope.
+const (
+	ScopeDeploy Scope = "deploy"
+	ScopeManage Scope = "manage"
+)
+
+// Valid indicates whether the value is a known member of the Scope enum.
+func (e Scope) Valid() bool {
+	switch e {
+	case ScopeDeploy:
+		return true
+	case ScopeManage:
+		return true
+	default:
+		return false
+	}
+}
+
+// Activation defines model for Activation.
+type Activation struct {
+	Deploy Deploy `json:"deploy"`
+	Site   Site   `json:"site"`
+}
+
+// AddDomainRequest defines model for AddDomainRequest.
+type AddDomainRequest struct {
+	// Hostname The hostname as typed; the server normalises it.
+	Hostname string `json:"hostname"`
+}
+
+// ApiToken defines model for ApiToken.
+type ApiToken struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// ExpiresAt Absent when the token never expires.
+	//
+	// Examples: 1767225600000
+	ExpiresAt *Timestamp `json:"expiresAt,omitempty"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// LastUsedAt Absent until the token is first used.
+	//
+	// Examples: 1767225600000
+	LastUsedAt *Timestamp `json:"lastUsedAt,omitempty"`
+	Name       string     `json:"name"`
+
+	// PublicId The token's public ID, shown in the dashboard and logs.
+	//
+	// Examples: k7m2q6xw4a
+	PublicId string `json:"publicId"`
+
+	// Scopes Examples: ["deploy","manage"]
+	Scopes Scopes `json:"scopes"`
+}
+
+// ApiTokenPage defines model for ApiTokenPage.
+type ApiTokenPage struct {
+	Items []ApiToken `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// ApproveCliLoginRequest defines model for ApproveCliLoginRequest.
+type ApproveCliLoginRequest struct {
+	// Name The new token's name; defaults to the CLI's `clientName`.
+	Name *string `json:"name,omitempty"`
+
+	// Scopes Examples: ["deploy","manage"]
+	Scopes Scopes `json:"scopes"`
+
+	// UserCode Eight letters from an alphabet without vowels or look-alikes, in two groups of four.
+	//
+	// Examples: BDFH-KMPR
+	UserCode UserCode `json:"userCode"`
+}
+
+// CliLogin defines model for CliLogin.
+type CliLogin struct {
+	// DeviceCode Secret the CLI polls with. Never log it.
+	DeviceCode string `json:"deviceCode"`
+
+	// ExpiresAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	ExpiresAt Timestamp `json:"expiresAt"`
+
+	// Interval Minimum seconds between polls.
+	Interval int32 `json:"interval"`
+
+	// UserCode Eight letters from an alphabet without vowels or look-alikes, in two groups of four.
+	//
+	// Examples: BDFH-KMPR
+	UserCode UserCode `json:"userCode"`
+
+	// VerificationUrl The dashboard page where the owner approves the login.
+	VerificationUrl string `json:"verificationUrl"`
+
+	// VerificationUrlComplete `verificationUrl` with the user code filled in.
+	VerificationUrlComplete string `json:"verificationUrlComplete"`
+}
+
+// CliLoginPending defines model for CliLoginPending.
+type CliLoginPending struct {
+	Status CliLoginPendingStatus `json:"status"`
+}
+
+// CliLoginPendingStatus defines model for CliLoginPending.Status.
+type CliLoginPendingStatus string
+
+// CreateApiTokenRequest defines model for CreateApiTokenRequest.
+type CreateApiTokenRequest struct {
+	// ExpiresAt Omit for a token that never expires.
+	//
+	// Examples: 1767225600000
+	ExpiresAt *Timestamp `json:"expiresAt,omitempty"`
+	Name      string     `json:"name"`
+
+	// Scopes Examples: ["deploy","manage"]
+	Scopes Scopes `json:"scopes"`
+}
+
+// CreateDeployRequest defines model for CreateDeployRequest.
+type CreateDeployRequest struct {
+	Files   []ManifestFile `json:"files"`
+	Message *string        `json:"message,omitempty"`
+
+	// Spa Serve `/index.html` for missing extensionless paths.
+	Spa *bool `json:"spa,omitempty"`
+}
+
+// CreateSiteRequest defines model for CreateSiteRequest.
+type CreateSiteRequest struct {
+	// Name A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Name SiteName `json:"name"`
+}
+
+// CreatedApiToken defines model for CreatedApiToken.
+type CreatedApiToken struct {
+	ApiToken ApiToken `json:"apiToken"`
+
+	// Token The secret token. Shown only in this response.
+	Token string `json:"token"`
+}
+
+// CreatedDeploy defines model for CreatedDeploy.
+type CreatedDeploy struct {
+	Deploy Deploy `json:"deploy"`
+
+	// Missing Hashes to upload before activating, each once.
+	Missing []Sha256 `json:"missing"`
+}
+
+// Cursor Opaque pagination cursor.
+//
+// Examples: c2l0ZTpkb2Nz
+type Cursor = string
+
+// DenyCliLoginRequest defines model for DenyCliLoginRequest.
+type DenyCliLoginRequest struct {
+	// UserCode Eight letters from an alphabet without vowels or look-alikes, in two groups of four.
+	//
+	// Examples: BDFH-KMPR
+	UserCode UserCode `json:"userCode"`
+}
+
+// Deploy defines model for Deploy.
+type Deploy struct {
+	// ActivatedAt When it was last activated. Absent while pending.
+	//
+	// Examples: 1767225600000
+	ActivatedAt *Timestamp `json:"activatedAt,omitempty"`
+
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+	FileCount int32     `json:"fileCount"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id      Id      `json:"id"`
+	Message *string `json:"message,omitempty"`
+
+	// Spa Whether missing paths without a file extension serve `/index.html` while this deploy is active.
+	Spa bool `json:"spa"`
+
+	// Status `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from.
+	Status DeployStatus `json:"status"`
+
+	// TotalSize Sum of file sizes in bytes.
+	TotalSize int64 `json:"totalSize"`
+}
+
+// DeployStatus `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from.
+type DeployStatus string
+
+// DeployPage defines model for DeployPage.
+type DeployPage struct {
+	Items []Deploy `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// DnsRecord defines model for DnsRecord.
+type DnsRecord struct {
+	// Name A hostname. Stored and returned lowercase, as A-labels, with no trailing dot or port.
+	//
+	// Examples: docs.example.com
+	Name Hostname      `json:"name"`
+	Type DnsRecordType `json:"type"`
+
+	// Value Examples: docs.wardlock.example.net
+	Value string `json:"value"`
+}
+
+// DnsRecordType defines model for DnsRecord.Type.
+type DnsRecordType string
+
+// Domain defines model for Domain.
+type Domain struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// FailingSince Start of the current run of failed checks. Absent after a pass.
+	//
+	// Examples: 1767225600000
+	FailingSince *Timestamp `json:"failingSince,omitempty"`
+
+	// FailureDetail Plain-language detail for the last failure.
+	FailureDetail *string `json:"failureDetail,omitempty"`
+
+	// FailureReason Why the last check failed. Absent after a pass. `no_record`: no matching CNAME or TXT; `cname_elsewhere`: the CNAME chain leads somewhere else; `txt_mismatch`: the TXT record holds another token; `dns_error`: the lookup failed or timed out.
+	FailureReason *DomainFailureReason `json:"failureReason,omitempty"`
+
+	// Hostname A hostname. Stored and returned lowercase, as A-labels, with no trailing dot or port.
+	//
+	// Examples: docs.example.com
+	Hostname Hostname `json:"hostname"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// LastCheckedAt When DNS was last checked.
+	//
+	// Examples: 1767225600000
+	LastCheckedAt *Timestamp `json:"lastCheckedAt,omitempty"`
+
+	// NextCheckAt When the next automatic check is due. Absent for a pending domain past its 48-hour window, which is checked only on request.
+	//
+	// Examples: 1767225600000
+	NextCheckAt *Timestamp `json:"nextCheckAt,omitempty"`
+
+	// RoutingRecord `CNAME <hostname> → <name>.<base domain>`.
+	RoutingRecord DnsRecord `json:"routingRecord"`
+
+	// Status `pending`: added, not yet verified, not served. `active`: verified, served and eligible for a certificate. `lapsed`: was active but has failed re-checks for 72 hours; not served until it passes again.
+	Status DomainStatus `json:"status"`
+
+	// VerificationRecord `TXT _wardlock.<hostname> → wardlock-verify=<token>`, needed only where the CNAME cannot be seen (apex or CDN-proxied records).
+	VerificationRecord DnsRecord `json:"verificationRecord"`
+
+	// VerifiedAt When the domain last became active.
+	//
+	// Examples: 1767225600000
+	VerifiedAt *Timestamp `json:"verifiedAt,omitempty"`
+}
+
+// DomainFailureReason Why the last check failed. Absent after a pass. `no_record`: no matching CNAME or TXT; `cname_elsewhere`: the CNAME chain leads somewhere else; `txt_mismatch`: the TXT record holds another token; `dns_error`: the lookup failed or timed out.
+type DomainFailureReason string
+
+// DomainStatus `pending`: added, not yet verified, not served. `active`: verified, served and eligible for a certificate. `lapsed`: was active but has failed re-checks for 72 hours; not served until it passes again.
+type DomainStatus string
+
+// DomainPage defines model for DomainPage.
+type DomainPage struct {
+	Items []Domain `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// Email Examples: owner@example.com
+type Email = openapi_types.Email
+
+// EmailCodeRequest defines model for EmailCodeRequest.
+type EmailCodeRequest struct {
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+}
+
+// EmailCodeVerifyRequest defines model for EmailCodeVerifyRequest.
+type EmailCodeVerifyRequest struct {
+	// Code The 6-digit code from the email.
+	Code string `json:"code"`
+
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+}
+
+// Error The body of every error response.
+type Error struct {
+	// Code Stable machine-readable error code; see the table in the API description. New codes may be added.
+	//
+	// Examples: not_found
+	Code string `json:"code"`
+
+	// Message Human-readable explanation. Never contains secrets.
+	//
+	// Examples: Not found.
+	Message string `json:"message"`
+
+	// Target The field, manifest path or hostname the error is about.
+	//
+	// Examples: assets/../secret.txt
+	Target *string `json:"target,omitempty"`
+}
+
 // Health defines model for Health.
 type Health struct {
 	Status HealthStatus `json:"status"`
@@ -44,11 +505,446 @@ type Health struct {
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
 
+// Hostname A hostname. Stored and returned lowercase, as A-labels, with no trailing dot or port.
+//
+// Examples: docs.example.com
+type Hostname = string
+
+// Id A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type Id = string
+
+// InviteOwnerRequest defines model for InviteOwnerRequest.
+type InviteOwnerRequest struct {
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+}
+
+// ManifestFile defines model for ManifestFile.
+type ManifestFile struct {
+	// Path Path relative to the deployed directory, with forward slashes.
+	//
+	// Examples: docs/install.html
+	Path string `json:"path"`
+
+	// Sha256 A SHA-256 digest as 64 lowercase hex characters.
+	//
+	// Examples: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+	Sha256 Sha256 `json:"sha256"`
+
+	// Size File size in bytes.
+	Size int64 `json:"size"`
+}
+
+// Me defines model for Me.
+type Me struct {
+	// Credential How this request was authenticated.
+	Credential MeCredential `json:"credential"`
+	Owner      Owner        `json:"owner"`
+
+	// Scopes What the credential may do. A session has every scope.
+	//
+	// Examples: ["deploy","manage"]
+	Scopes Scopes `json:"scopes"`
+}
+
+// MeCredential How this request was authenticated.
+type MeCredential string
+
+// Owner defines model for Owner.
+type Owner struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+}
+
+// OwnerSession defines model for OwnerSession.
+type OwnerSession struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Current Whether this is the session making the request.
+	Current bool `json:"current"`
+
+	// ExpiresAt When the session ends if not used again: the earlier of the idle and absolute expiry.
+	//
+	// Examples: 1767225600000
+	ExpiresAt Timestamp `json:"expiresAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// LastUsedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	LastUsedAt Timestamp `json:"lastUsedAt"`
+
+	// UserAgent The User-Agent that signed in, truncated to 200 characters.
+	UserAgent *string `json:"userAgent,omitempty"`
+}
+
+// PollCliLoginRequest defines model for PollCliLoginRequest.
+type PollCliLoginRequest struct {
+	DeviceCode string `json:"deviceCode"`
+}
+
+// RollbackRequest defines model for RollbackRequest.
+type RollbackRequest struct {
+	// DeployId Omit to return to the deploy active before the current one.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	DeployId *Id `json:"deployId,omitempty"`
+}
+
+// Scope An API token scope. `deploy` creates sites and deploys, uploads, activates and rolls back; `manage` deletes sites and manages custom domains. Both read.
+type Scope string
+
+// Scopes Examples: ["deploy","manage"]
+type Scopes = []Scope
+
+// SessionPage defines model for SessionPage.
+type SessionPage struct {
+	Items []OwnerSession `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// SetupRequest defines model for SetupRequest.
+type SetupRequest struct {
+	// Code The `code` query parameter of the setup URL.
+	Code string `json:"code"`
+
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+}
+
+// Sha256 A SHA-256 digest as 64 lowercase hex characters.
+//
+// Examples: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+type Sha256 = string
+
+// SignInLinkRequest defines model for SignInLinkRequest.
+type SignInLinkRequest struct {
+	// Code The `code` query parameter of the sign-in URL.
+	Code string `json:"code"`
+}
+
+// Site defines model for Site.
+type Site struct {
+	// ActivatedAt When the active deploy was last activated.
+	//
+	// Examples: 1767225600000
+	ActivatedAt *Timestamp `json:"activatedAt,omitempty"`
+
+	// ActiveDeployId Absent until the first activation.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	ActiveDeployId *Id `json:"activeDeployId,omitempty"`
+
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Hostname `<name>.<base domain>`.
+	//
+	// Examples: docs.example.com
+	Hostname Hostname `json:"hostname"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Name A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Name SiteName `json:"name"`
+
+	// Url The site's URL on the base domain.
+	Url string `json:"url"`
+}
+
+// SiteName A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+//
+// Examples: docs
+type SiteName = string
+
+// SitePage defines model for SitePage.
+type SitePage struct {
+	Items []Site `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// StartCliLoginRequest defines model for StartCliLoginRequest.
+type StartCliLoginRequest struct {
+	// ClientName Shown to the owner on the approval page.
+	ClientName *string `json:"clientName,omitempty"`
+}
+
+// Timestamp UTC milliseconds since the Unix epoch.
+//
+// Examples: 1767225600000
+type Timestamp = int64
+
+// UserCode Eight letters from an alphabet without vowels or look-alikes, in two groups of four.
+//
+// Examples: BDFH-KMPR
+type UserCode = string
+
+// DeployId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type DeployId = Id
+
+// DomainHostname A hostname. Stored and returned lowercase, as A-labels, with no trailing dot or port.
+//
+// Examples: docs.example.com
+type DomainHostname = Hostname
+
+// Limit defines model for Limit.
+type Limit = int32
+
+// SessionId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type SessionId = Id
+
+// TokenId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type TokenId = Id
+
+// BadRequest The body of every error response.
+type BadRequest = Error
+
+// Conflict The body of every error response.
+type Conflict = Error
+
+// Forbidden The body of every error response.
+type Forbidden = Error
+
+// Gone The body of every error response.
+type Gone = Error
+
+// NotFound The body of every error response.
+type NotFound = Error
+
+// RateLimited The body of every error response.
+type RateLimited = Error
+
+// TooLarge The body of every error response.
+type TooLarge = Error
+
+// Unauthenticated The body of every error response.
+type Unauthenticated = Error
+
+// ListSessionsParams defines parameters for ListSessions.
+type ListSessionsParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListSitesParams defines parameters for ListSites.
+type ListSitesParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Hostname Only the site served at this hostname.
+	Hostname *Hostname `form:"hostname,omitempty" json:"hostname,omitempty"`
+}
+
+// ListDeploysParams defines parameters for ListDeploys.
+type ListDeploysParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListDomainsParams defines parameters for ListDomains.
+type ListDomainsParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListApiTokensParams defines parameters for ListApiTokens.
+type ListApiTokensParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// SendEmailCodeJSONRequestBody defines body for SendEmailCode for application/json ContentType.
+type SendEmailCodeJSONRequestBody = EmailCodeRequest
+
+// VerifyEmailCodeJSONRequestBody defines body for VerifyEmailCode for application/json ContentType.
+type VerifyEmailCodeJSONRequestBody = EmailCodeVerifyRequest
+
+// RedeemSignInLinkJSONRequestBody defines body for RedeemSignInLink for application/json ContentType.
+type RedeemSignInLinkJSONRequestBody = SignInLinkRequest
+
+// StartCliLoginJSONRequestBody defines body for StartCliLogin for application/json ContentType.
+type StartCliLoginJSONRequestBody = StartCliLoginRequest
+
+// ApproveCliLoginJSONRequestBody defines body for ApproveCliLogin for application/json ContentType.
+type ApproveCliLoginJSONRequestBody = ApproveCliLoginRequest
+
+// DenyCliLoginJSONRequestBody defines body for DenyCliLogin for application/json ContentType.
+type DenyCliLoginJSONRequestBody = DenyCliLoginRequest
+
+// PollCliLoginJSONRequestBody defines body for PollCliLogin for application/json ContentType.
+type PollCliLoginJSONRequestBody = PollCliLoginRequest
+
+// InviteOwnerJSONRequestBody defines body for InviteOwner for application/json ContentType.
+type InviteOwnerJSONRequestBody = InviteOwnerRequest
+
+// CompleteSetupJSONRequestBody defines body for CompleteSetup for application/json ContentType.
+type CompleteSetupJSONRequestBody = SetupRequest
+
+// CreateSiteJSONRequestBody defines body for CreateSite for application/json ContentType.
+type CreateSiteJSONRequestBody = CreateSiteRequest
+
+// CreateDeployJSONRequestBody defines body for CreateDeploy for application/json ContentType.
+type CreateDeployJSONRequestBody = CreateDeployRequest
+
+// AddDomainJSONRequestBody defines body for AddDomain for application/json ContentType.
+type AddDomainJSONRequestBody = AddDomainRequest
+
+// RollbackSiteJSONRequestBody defines body for RollbackSite for application/json ContentType.
+type RollbackSiteJSONRequestBody = RollbackRequest
+
+// CreateApiTokenJSONRequestBody defines body for CreateApiToken for application/json ContentType.
+type CreateApiTokenJSONRequestBody = CreateApiTokenRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// SendEmailCode Email a sign-in code.
+	// (POST /api/v0/auth/email-code)
+	SendEmailCode(w http.ResponseWriter, r *http.Request)
+	// VerifyEmailCode Sign in with an emailed code.
+	// (POST /api/v0/auth/email-code/verify)
+	VerifyEmailCode(w http.ResponseWriter, r *http.Request)
+	// RedeemSignInLink Sign in with a one-time sign-in link code.
+	// (POST /api/v0/auth/sign-in-link)
+	RedeemSignInLink(w http.ResponseWriter, r *http.Request)
+	// SignOut End the current session or revoke the current API token.
+	// (POST /api/v0/auth/sign-out)
+	SignOut(w http.ResponseWriter, r *http.Request)
+	// StartCliLogin Start a CLI device login.
+	// (POST /api/v0/cli-login)
+	StartCliLogin(w http.ResponseWriter, r *http.Request)
+	// ApproveCliLogin Approve a CLI device login.
+	// (POST /api/v0/cli-login/approve)
+	ApproveCliLogin(w http.ResponseWriter, r *http.Request)
+	// DenyCliLogin Deny a CLI device login.
+	// (POST /api/v0/cli-login/deny)
+	DenyCliLogin(w http.ResponseWriter, r *http.Request)
+	// PollCliLogin Poll a CLI device login for its token.
+	// (POST /api/v0/cli-login/poll)
+	PollCliLogin(w http.ResponseWriter, r *http.Request)
 	// GetHealth Report that the API is serving requests.
 	// (GET /api/v0/health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+	// GetMe Describe the signed-in owner and the credential used.
+	// (GET /api/v0/me)
+	GetMe(w http.ResponseWriter, r *http.Request)
+	// InviteOwner Invite another owner by email.
+	// (POST /api/v0/owners)
+	InviteOwner(w http.ResponseWriter, r *http.Request)
+	// ListSessions List the signed-in owner's dashboard sessions.
+	// (GET /api/v0/sessions)
+	ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams)
+	// RevokeSession Revoke one of the signed-in owner's sessions.
+	// (DELETE /api/v0/sessions/{sessionId})
+	RevokeSession(w http.ResponseWriter, r *http.Request, sessionId SessionId)
+	// CompleteSetup Create the first owner from the one-time setup code.
+	// (POST /api/v0/setup)
+	CompleteSetup(w http.ResponseWriter, r *http.Request)
+	// ListSites List the owner's sites.
+	// (GET /api/v0/sites)
+	ListSites(w http.ResponseWriter, r *http.Request, params ListSitesParams)
+	// CreateSite Create an empty site.
+	// (POST /api/v0/sites)
+	CreateSite(w http.ResponseWriter, r *http.Request)
+	// DeleteSite Tear down a site.
+	// (DELETE /api/v0/sites/{site})
+	DeleteSite(w http.ResponseWriter, r *http.Request, site SiteName)
+	// GetSite Get one of the owner's sites.
+	// (GET /api/v0/sites/{site})
+	GetSite(w http.ResponseWriter, r *http.Request, site SiteName)
+	// ListDeploys List a site's deploys.
+	// (GET /api/v0/sites/{site}/deploys)
+	ListDeploys(w http.ResponseWriter, r *http.Request, site SiteName, params ListDeploysParams)
+	// CreateDeploy Create a deploy from a manifest.
+	// (POST /api/v0/sites/{site}/deploys)
+	CreateDeploy(w http.ResponseWriter, r *http.Request, site SiteName)
+	// ActivateDeploy Make a pending deploy the site's active deploy.
+	// (POST /api/v0/sites/{site}/deploys/{deployId}/activate)
+	ActivateDeploy(w http.ResponseWriter, r *http.Request, site SiteName, deployId DeployId)
+	// UploadDeployBlob Upload one file body for a pending deploy.
+	// (PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256})
+	UploadDeployBlob(w http.ResponseWriter, r *http.Request, site SiteName, deployId DeployId, sha256 Sha256)
+	// ListDomains List a site's custom domains.
+	// (GET /api/v0/sites/{site}/domains)
+	ListDomains(w http.ResponseWriter, r *http.Request, site SiteName, params ListDomainsParams)
+	// AddDomain Attach a custom domain to a site.
+	// (POST /api/v0/sites/{site}/domains)
+	AddDomain(w http.ResponseWriter, r *http.Request, site SiteName)
+	// RemoveDomain Detach a custom domain from its site.
+	// (DELETE /api/v0/sites/{site}/domains/{hostname})
+	RemoveDomain(w http.ResponseWriter, r *http.Request, site SiteName, hostname DomainHostname)
+	// GetDomain Get one of a site's custom domains.
+	// (GET /api/v0/sites/{site}/domains/{hostname})
+	GetDomain(w http.ResponseWriter, r *http.Request, site SiteName, hostname DomainHostname)
+	// VerifyDomain Check a custom domain's DNS now.
+	// (POST /api/v0/sites/{site}/domains/{hostname}/verify)
+	VerifyDomain(w http.ResponseWriter, r *http.Request, site SiteName, hostname DomainHostname)
+	// RollbackSite Reactivate an earlier deploy.
+	// (POST /api/v0/sites/{site}/rollback)
+	RollbackSite(w http.ResponseWriter, r *http.Request, site SiteName)
+	// ListApiTokens List the signed-in owner's API tokens.
+	// (GET /api/v0/tokens)
+	ListApiTokens(w http.ResponseWriter, r *http.Request, params ListApiTokensParams)
+	// CreateApiToken Create an API token.
+	// (POST /api/v0/tokens)
+	CreateApiToken(w http.ResponseWriter, r *http.Request)
+	// RevokeApiToken Revoke an API token.
+	// (DELETE /api/v0/tokens/{tokenId})
+	RevokeApiToken(w http.ResponseWriter, r *http.Request, tokenId TokenId)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -60,11 +956,820 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// SendEmailCode operation middleware
+func (siw *ServerInterfaceWrapper) SendEmailCode(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SendEmailCode(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyEmailCode operation middleware
+func (siw *ServerInterfaceWrapper) VerifyEmailCode(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyEmailCode(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RedeemSignInLink operation middleware
+func (siw *ServerInterfaceWrapper) RedeemSignInLink(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RedeemSignInLink(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SignOut operation middleware
+func (siw *ServerInterfaceWrapper) SignOut(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SignOut(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartCliLogin operation middleware
+func (siw *ServerInterfaceWrapper) StartCliLogin(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartCliLogin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApproveCliLogin operation middleware
+func (siw *ServerInterfaceWrapper) ApproveCliLogin(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApproveCliLogin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DenyCliLogin operation middleware
+func (siw *ServerInterfaceWrapper) DenyCliLogin(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DenyCliLogin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PollCliLogin operation middleware
+func (siw *ServerInterfaceWrapper) PollCliLogin(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PollCliLogin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMe operation middleware
+func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// InviteOwner operation middleware
+func (siw *ServerInterfaceWrapper) InviteOwner(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InviteOwner(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSessions operation middleware
+func (siw *ServerInterfaceWrapper) ListSessions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSessionsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSessions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeSession operation middleware
+func (siw *ServerInterfaceWrapper) RevokeSession(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "sessionId" -------------
+	var sessionId SessionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sessionId", r.PathValue("sessionId"), &sessionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sessionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeSession(w, r, sessionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CompleteSetup operation middleware
+func (siw *ServerInterfaceWrapper) CompleteSetup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CompleteSetup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSites operation middleware
+func (siw *ServerInterfaceWrapper) ListSites(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSitesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "hostname" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "hostname", r.URL.Query(), &params.Hostname, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "hostname"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "hostname", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSites(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSite operation middleware
+func (siw *ServerInterfaceWrapper) CreateSite(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSite(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSite operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSite(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSite(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSite operation middleware
+func (siw *ServerInterfaceWrapper) GetSite(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSite(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDeploys operation middleware
+func (siw *ServerInterfaceWrapper) ListDeploys(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListDeploysParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDeploys(w, r, site, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateDeploy operation middleware
+func (siw *ServerInterfaceWrapper) CreateDeploy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateDeploy(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ActivateDeploy operation middleware
+func (siw *ServerInterfaceWrapper) ActivateDeploy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "deployId" -------------
+	var deployId DeployId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deployId", r.PathValue("deployId"), &deployId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "deployId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ActivateDeploy(w, r, site, deployId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UploadDeployBlob operation middleware
+func (siw *ServerInterfaceWrapper) UploadDeployBlob(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "deployId" -------------
+	var deployId DeployId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deployId", r.PathValue("deployId"), &deployId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "deployId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "sha256" -------------
+	var sha256 Sha256
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sha256", r.PathValue("sha256"), &sha256, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sha256", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UploadDeployBlob(w, r, site, deployId, sha256)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDomains operation middleware
+func (siw *ServerInterfaceWrapper) ListDomains(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListDomainsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDomains(w, r, site, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddDomain operation middleware
+func (siw *ServerInterfaceWrapper) AddDomain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddDomain(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveDomain operation middleware
+func (siw *ServerInterfaceWrapper) RemoveDomain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "hostname" -------------
+	var hostname DomainHostname
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hostname", r.PathValue("hostname"), &hostname, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "hostname", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveDomain(w, r, site, hostname)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDomain operation middleware
+func (siw *ServerInterfaceWrapper) GetDomain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "hostname" -------------
+	var hostname DomainHostname
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hostname", r.PathValue("hostname"), &hostname, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "hostname", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDomain(w, r, site, hostname)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyDomain operation middleware
+func (siw *ServerInterfaceWrapper) VerifyDomain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "hostname" -------------
+	var hostname DomainHostname
+
+	err = runtime.BindStyledParameterWithOptions("simple", "hostname", r.PathValue("hostname"), &hostname, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "hostname", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyDomain(w, r, site, hostname)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RollbackSite operation middleware
+func (siw *ServerInterfaceWrapper) RollbackSite(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RollbackSite(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListApiTokens operation middleware
+func (siw *ServerInterfaceWrapper) ListApiTokens(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListApiTokensParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListApiTokens(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateApiToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateApiToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateApiToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeApiToken operation middleware
+func (siw *ServerInterfaceWrapper) RevokeApiToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tokenId" -------------
+	var tokenId TokenId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tokenId", r.PathValue("tokenId"), &tokenId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tokenId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeApiToken(w, r, tokenId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -195,8 +1900,707 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/health", wrapper.GetHealth)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/setup", wrapper.CompleteSetup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/auth/sign-in-link", wrapper.RedeemSignInLink)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/auth/email-code", wrapper.SendEmailCode)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/auth/email-code/verify", wrapper.VerifyEmailCode)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/auth/sign-out", wrapper.SignOut)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/owners", wrapper.InviteOwner)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sessions", wrapper.ListSessions)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sessions/{sessionId}", wrapper.RevokeSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/tokens", wrapper.ListApiTokens)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/tokens", wrapper.CreateApiToken)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/tokens/{tokenId}", wrapper.RevokeApiToken)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/cli-login", wrapper.StartCliLogin)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/cli-login/poll", wrapper.PollCliLogin)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/cli-login/approve", wrapper.ApproveCliLogin)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/cli-login/deny", wrapper.DenyCliLogin)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites", wrapper.ListSites)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites", wrapper.CreateSite)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}", wrapper.DeleteSite)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}", wrapper.GetSite)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/deploys", wrapper.ListDeploys)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/deploys", wrapper.CreateDeploy)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256}", wrapper.UploadDeployBlob)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/deploys/{deployId}/activate", wrapper.ActivateDeploy)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/rollback", wrapper.RollbackSite)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/domains", wrapper.ListDomains)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/domains", wrapper.AddDomain)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/domains/{hostname}", wrapper.RemoveDomain)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/domains/{hostname}", wrapper.GetDomain)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/domains/{hostname}/verify", wrapper.VerifyDomain)
 
 	return m
+}
+
+type BadRequestJSONResponse Error
+
+type ConflictJSONResponse Error
+
+type ErrorJSONResponse Error
+
+type ForbiddenJSONResponse Error
+
+type GoneJSONResponse Error
+
+type NotFoundJSONResponse Error
+
+type RateLimitedResponseHeaders struct {
+	RetryAfter *int32
+}
+type RateLimitedJSONResponse struct {
+	Body Error
+
+	Headers RateLimitedResponseHeaders
+}
+
+type TooLargeJSONResponse Error
+
+type UnauthenticatedJSONResponse Error
+
+type SendEmailCodeRequestObject struct {
+	Body *SendEmailCodeJSONRequestBody
+}
+
+type SendEmailCodeResponseObject interface {
+	VisitSendEmailCodeResponse(w http.ResponseWriter) error
+}
+
+type SendEmailCode202Response struct {
+}
+
+func (response SendEmailCode202Response) VisitSendEmailCodeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(202)
+	return nil
+}
+
+type SendEmailCode400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response SendEmailCode400JSONResponse) VisitSendEmailCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendEmailCode429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response SendEmailCode429JSONResponse) VisitSendEmailCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendEmailCodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SendEmailCodedefaultJSONResponse) VisitSendEmailCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyEmailCodeRequestObject struct {
+	Body *VerifyEmailCodeJSONRequestBody
+}
+
+type VerifyEmailCodeResponseObject interface {
+	VisitVerifyEmailCodeResponse(w http.ResponseWriter) error
+}
+
+type VerifyEmailCode200ResponseHeaders struct {
+	SetCookie *string
+}
+
+type VerifyEmailCode200JSONResponse struct {
+	Body    Me
+	Headers VerifyEmailCode200ResponseHeaders
+}
+
+func (response VerifyEmailCode200JSONResponse) VisitVerifyEmailCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyEmailCode400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response VerifyEmailCode400JSONResponse) VisitVerifyEmailCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyEmailCode429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response VerifyEmailCode429JSONResponse) VisitVerifyEmailCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyEmailCodedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response VerifyEmailCodedefaultJSONResponse) VisitVerifyEmailCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemSignInLinkRequestObject struct {
+	Body *RedeemSignInLinkJSONRequestBody
+}
+
+type RedeemSignInLinkResponseObject interface {
+	VisitRedeemSignInLinkResponse(w http.ResponseWriter) error
+}
+
+type RedeemSignInLink200ResponseHeaders struct {
+	SetCookie *string
+}
+
+type RedeemSignInLink200JSONResponse struct {
+	Body    Me
+	Headers RedeemSignInLink200ResponseHeaders
+}
+
+func (response RedeemSignInLink200JSONResponse) VisitRedeemSignInLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemSignInLink400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RedeemSignInLink400JSONResponse) VisitRedeemSignInLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemSignInLink429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response RedeemSignInLink429JSONResponse) VisitRedeemSignInLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RedeemSignInLinkdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RedeemSignInLinkdefaultJSONResponse) VisitRedeemSignInLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SignOutRequestObject struct {
+}
+
+type SignOutResponseObject interface {
+	VisitSignOutResponse(w http.ResponseWriter) error
+}
+
+type SignOut204ResponseHeaders struct {
+	SetCookie *string
+}
+
+type SignOut204Response struct {
+	Headers SignOut204ResponseHeaders
+}
+
+func (response SignOut204Response) VisitSignOutResponse(w http.ResponseWriter) error {
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(204)
+	return nil
+}
+
+type SignOut401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SignOut401JSONResponse) VisitSignOutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SignOut403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SignOut403JSONResponse) VisitSignOutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SignOutdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SignOutdefaultJSONResponse) VisitSignOutResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartCliLoginRequestObject struct {
+	Body *StartCliLoginJSONRequestBody
+}
+
+type StartCliLoginResponseObject interface {
+	VisitStartCliLoginResponse(w http.ResponseWriter) error
+}
+
+type StartCliLogin201JSONResponse CliLogin
+
+func (response StartCliLogin201JSONResponse) VisitStartCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartCliLogin400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response StartCliLogin400JSONResponse) VisitStartCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartCliLogin429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response StartCliLogin429JSONResponse) VisitStartCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartCliLogindefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response StartCliLogindefaultJSONResponse) VisitStartCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApproveCliLoginRequestObject struct {
+	Body *ApproveCliLoginJSONRequestBody
+}
+
+type ApproveCliLoginResponseObject interface {
+	VisitApproveCliLoginResponse(w http.ResponseWriter) error
+}
+
+type ApproveCliLogin204Response struct {
+}
+
+func (response ApproveCliLogin204Response) VisitApproveCliLoginResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ApproveCliLogin400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ApproveCliLogin400JSONResponse) VisitApproveCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApproveCliLogin401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ApproveCliLogin401JSONResponse) VisitApproveCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApproveCliLogin403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ApproveCliLogin403JSONResponse) VisitApproveCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApproveCliLogin429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response ApproveCliLogin429JSONResponse) VisitApproveCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApproveCliLogindefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ApproveCliLogindefaultJSONResponse) VisitApproveCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DenyCliLoginRequestObject struct {
+	Body *DenyCliLoginJSONRequestBody
+}
+
+type DenyCliLoginResponseObject interface {
+	VisitDenyCliLoginResponse(w http.ResponseWriter) error
+}
+
+type DenyCliLogin204Response struct {
+}
+
+func (response DenyCliLogin204Response) VisitDenyCliLoginResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DenyCliLogin400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response DenyCliLogin400JSONResponse) VisitDenyCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DenyCliLogin401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DenyCliLogin401JSONResponse) VisitDenyCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DenyCliLogin403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DenyCliLogin403JSONResponse) VisitDenyCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DenyCliLogin429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response DenyCliLogin429JSONResponse) VisitDenyCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DenyCliLogindefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DenyCliLogindefaultJSONResponse) VisitDenyCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PollCliLoginRequestObject struct {
+	Body *PollCliLoginJSONRequestBody
+}
+
+type PollCliLoginResponseObject interface {
+	VisitPollCliLoginResponse(w http.ResponseWriter) error
+}
+
+type PollCliLogin200JSONResponse CreatedApiToken
+
+func (response PollCliLogin200JSONResponse) VisitPollCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PollCliLogin202JSONResponse CliLoginPending
+
+func (response PollCliLogin202JSONResponse) VisitPollCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PollCliLogin400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response PollCliLogin400JSONResponse) VisitPollCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PollCliLogin410JSONResponse struct{ GoneJSONResponse }
+
+func (response PollCliLogin410JSONResponse) VisitPollCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PollCliLogin429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response PollCliLogin429JSONResponse) VisitPollCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PollCliLogindefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response PollCliLogindefaultJSONResponse) VisitPollCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type GetHealthRequestObject struct {
@@ -220,11 +2624,2020 @@ func (response GetHealth200JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	return err
 }
 
+type GetHealthdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetHealthdefaultJSONResponse) VisitGetHealthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMeRequestObject struct {
+}
+
+type GetMeResponseObject interface {
+	VisitGetMeResponse(w http.ResponseWriter) error
+}
+
+type GetMe200JSONResponse Me
+
+func (response GetMe200JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMe401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetMe401JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetMedefaultJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InviteOwnerRequestObject struct {
+	Body *InviteOwnerJSONRequestBody
+}
+
+type InviteOwnerResponseObject interface {
+	VisitInviteOwnerResponse(w http.ResponseWriter) error
+}
+
+type InviteOwner202Response struct {
+}
+
+func (response InviteOwner202Response) VisitInviteOwnerResponse(w http.ResponseWriter) error {
+	w.WriteHeader(202)
+	return nil
+}
+
+type InviteOwner400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response InviteOwner400JSONResponse) VisitInviteOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InviteOwner401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response InviteOwner401JSONResponse) VisitInviteOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InviteOwner403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response InviteOwner403JSONResponse) VisitInviteOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InviteOwner429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response InviteOwner429JSONResponse) VisitInviteOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InviteOwnerdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response InviteOwnerdefaultJSONResponse) VisitInviteOwnerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessionsRequestObject struct {
+	Params ListSessionsParams
+}
+
+type ListSessionsResponseObject interface {
+	VisitListSessionsResponse(w http.ResponseWriter) error
+}
+
+type ListSessions200JSONResponse SessionPage
+
+func (response ListSessions200JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessions400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListSessions400JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessions401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListSessions401JSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSessionsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListSessionsdefaultJSONResponse) VisitListSessionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSessionRequestObject struct {
+	SessionId SessionId `json:"sessionId"`
+}
+
+type RevokeSessionResponseObject interface {
+	VisitRevokeSessionResponse(w http.ResponseWriter) error
+}
+
+type RevokeSession204Response struct {
+}
+
+func (response RevokeSession204Response) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeSession401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RevokeSession401JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSession403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RevokeSession403JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSession404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RevokeSession404JSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeSessiondefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RevokeSessiondefaultJSONResponse) VisitRevokeSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteSetupRequestObject struct {
+	Body *CompleteSetupJSONRequestBody
+}
+
+type CompleteSetupResponseObject interface {
+	VisitCompleteSetupResponse(w http.ResponseWriter) error
+}
+
+type CompleteSetup201ResponseHeaders struct {
+	SetCookie *string
+}
+
+type CompleteSetup201JSONResponse struct {
+	Body    Me
+	Headers CompleteSetup201ResponseHeaders
+}
+
+func (response CompleteSetup201JSONResponse) VisitCompleteSetupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteSetup400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CompleteSetup400JSONResponse) VisitCompleteSetupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteSetup429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response CompleteSetup429JSONResponse) VisitCompleteSetupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteSetupdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CompleteSetupdefaultJSONResponse) VisitCompleteSetupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSitesRequestObject struct {
+	Params ListSitesParams
+}
+
+type ListSitesResponseObject interface {
+	VisitListSitesResponse(w http.ResponseWriter) error
+}
+
+type ListSites200JSONResponse SitePage
+
+func (response ListSites200JSONResponse) VisitListSitesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSites400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListSites400JSONResponse) VisitListSitesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSites401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListSites401JSONResponse) VisitListSitesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSites403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListSites403JSONResponse) VisitListSitesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSitesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListSitesdefaultJSONResponse) VisitListSitesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSiteRequestObject struct {
+	Body *CreateSiteJSONRequestBody
+}
+
+type CreateSiteResponseObject interface {
+	VisitCreateSiteResponse(w http.ResponseWriter) error
+}
+
+type CreateSite201JSONResponse Site
+
+func (response CreateSite201JSONResponse) VisitCreateSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSite400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateSite400JSONResponse) VisitCreateSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSite401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateSite401JSONResponse) VisitCreateSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSite403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateSite403JSONResponse) VisitCreateSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSite409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateSite409JSONResponse) VisitCreateSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSitedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateSitedefaultJSONResponse) VisitCreateSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSiteRequestObject struct {
+	Site SiteName `json:"site"`
+}
+
+type DeleteSiteResponseObject interface {
+	VisitDeleteSiteResponse(w http.ResponseWriter) error
+}
+
+type DeleteSite204Response struct {
+}
+
+func (response DeleteSite204Response) VisitDeleteSiteResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteSite401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteSite401JSONResponse) VisitDeleteSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSite403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteSite403JSONResponse) VisitDeleteSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSite404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteSite404JSONResponse) VisitDeleteSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSitedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteSitedefaultJSONResponse) VisitDeleteSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSiteRequestObject struct {
+	Site SiteName `json:"site"`
+}
+
+type GetSiteResponseObject interface {
+	VisitGetSiteResponse(w http.ResponseWriter) error
+}
+
+type GetSite200JSONResponse Site
+
+func (response GetSite200JSONResponse) VisitGetSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSite401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetSite401JSONResponse) VisitGetSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSite403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetSite403JSONResponse) VisitGetSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSite404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetSite404JSONResponse) VisitGetSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSitedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetSitedefaultJSONResponse) VisitGetSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeploysRequestObject struct {
+	Site   SiteName `json:"site"`
+	Params ListDeploysParams
+}
+
+type ListDeploysResponseObject interface {
+	VisitListDeploysResponse(w http.ResponseWriter) error
+}
+
+type ListDeploys200JSONResponse DeployPage
+
+func (response ListDeploys200JSONResponse) VisitListDeploysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeploys400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListDeploys400JSONResponse) VisitListDeploysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeploys401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListDeploys401JSONResponse) VisitListDeploysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeploys403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListDeploys403JSONResponse) VisitListDeploysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeploys404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListDeploys404JSONResponse) VisitListDeploysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeploysdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListDeploysdefaultJSONResponse) VisitListDeploysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeployRequestObject struct {
+	Site SiteName `json:"site"`
+	Body *CreateDeployJSONRequestBody
+}
+
+type CreateDeployResponseObject interface {
+	VisitCreateDeployResponse(w http.ResponseWriter) error
+}
+
+type CreateDeploy201JSONResponse CreatedDeploy
+
+func (response CreateDeploy201JSONResponse) VisitCreateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeploy400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateDeploy400JSONResponse) VisitCreateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeploy401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateDeploy401JSONResponse) VisitCreateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeploy403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateDeploy403JSONResponse) VisitCreateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeploy404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response CreateDeploy404JSONResponse) VisitCreateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeploy413JSONResponse struct{ TooLargeJSONResponse }
+
+func (response CreateDeploy413JSONResponse) VisitCreateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeploydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateDeploydefaultJSONResponse) VisitCreateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateDeployRequestObject struct {
+	Site     SiteName `json:"site"`
+	DeployId DeployId `json:"deployId"`
+}
+
+type ActivateDeployResponseObject interface {
+	VisitActivateDeployResponse(w http.ResponseWriter) error
+}
+
+type ActivateDeploy200JSONResponse Activation
+
+func (response ActivateDeploy200JSONResponse) VisitActivateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateDeploy401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ActivateDeploy401JSONResponse) VisitActivateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateDeploy403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ActivateDeploy403JSONResponse) VisitActivateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateDeploy404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ActivateDeploy404JSONResponse) VisitActivateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateDeploy409JSONResponse struct{ ConflictJSONResponse }
+
+func (response ActivateDeploy409JSONResponse) VisitActivateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateDeploydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ActivateDeploydefaultJSONResponse) VisitActivateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadDeployBlobRequestObject struct {
+	Site     SiteName `json:"site"`
+	DeployId DeployId `json:"deployId"`
+	Sha256   Sha256   `json:"sha256"`
+	Body     io.Reader
+}
+
+type UploadDeployBlobResponseObject interface {
+	VisitUploadDeployBlobResponse(w http.ResponseWriter) error
+}
+
+type UploadDeployBlob204Response struct {
+}
+
+func (response UploadDeployBlob204Response) VisitUploadDeployBlobResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type UploadDeployBlob400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UploadDeployBlob400JSONResponse) VisitUploadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadDeployBlob401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UploadDeployBlob401JSONResponse) VisitUploadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadDeployBlob403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UploadDeployBlob403JSONResponse) VisitUploadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadDeployBlob404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UploadDeployBlob404JSONResponse) VisitUploadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadDeployBlob413JSONResponse struct{ TooLargeJSONResponse }
+
+func (response UploadDeployBlob413JSONResponse) VisitUploadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadDeployBlobdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UploadDeployBlobdefaultJSONResponse) VisitUploadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomainsRequestObject struct {
+	Site   SiteName `json:"site"`
+	Params ListDomainsParams
+}
+
+type ListDomainsResponseObject interface {
+	VisitListDomainsResponse(w http.ResponseWriter) error
+}
+
+type ListDomains200JSONResponse DomainPage
+
+func (response ListDomains200JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomains400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListDomains400JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomains401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListDomains401JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomains403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListDomains403JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomains404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListDomains404JSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDomainsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListDomainsdefaultJSONResponse) VisitListDomainsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomainRequestObject struct {
+	Site SiteName `json:"site"`
+	Body *AddDomainJSONRequestBody
+}
+
+type AddDomainResponseObject interface {
+	VisitAddDomainResponse(w http.ResponseWriter) error
+}
+
+type AddDomain201JSONResponse Domain
+
+func (response AddDomain201JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response AddDomain400JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response AddDomain401JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response AddDomain403JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AddDomain404JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomain409JSONResponse struct{ ConflictJSONResponse }
+
+func (response AddDomain409JSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddDomaindefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AddDomaindefaultJSONResponse) VisitAddDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDomainRequestObject struct {
+	Site     SiteName       `json:"site"`
+	Hostname DomainHostname `json:"hostname"`
+}
+
+type RemoveDomainResponseObject interface {
+	VisitRemoveDomainResponse(w http.ResponseWriter) error
+}
+
+type RemoveDomain204Response struct {
+}
+
+func (response RemoveDomain204Response) VisitRemoveDomainResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RemoveDomain401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RemoveDomain401JSONResponse) VisitRemoveDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDomain403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RemoveDomain403JSONResponse) VisitRemoveDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDomain404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RemoveDomain404JSONResponse) VisitRemoveDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDomaindefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RemoveDomaindefaultJSONResponse) VisitRemoveDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDomainRequestObject struct {
+	Site     SiteName       `json:"site"`
+	Hostname DomainHostname `json:"hostname"`
+}
+
+type GetDomainResponseObject interface {
+	VisitGetDomainResponse(w http.ResponseWriter) error
+}
+
+type GetDomain200JSONResponse Domain
+
+func (response GetDomain200JSONResponse) VisitGetDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDomain401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetDomain401JSONResponse) VisitGetDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDomain403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetDomain403JSONResponse) VisitGetDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDomain404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetDomain404JSONResponse) VisitGetDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDomaindefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetDomaindefaultJSONResponse) VisitGetDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyDomainRequestObject struct {
+	Site     SiteName       `json:"site"`
+	Hostname DomainHostname `json:"hostname"`
+}
+
+type VerifyDomainResponseObject interface {
+	VisitVerifyDomainResponse(w http.ResponseWriter) error
+}
+
+type VerifyDomain200JSONResponse Domain
+
+func (response VerifyDomain200JSONResponse) VisitVerifyDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyDomain401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response VerifyDomain401JSONResponse) VisitVerifyDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyDomain403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response VerifyDomain403JSONResponse) VisitVerifyDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyDomain404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response VerifyDomain404JSONResponse) VisitVerifyDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyDomain429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response VerifyDomain429JSONResponse) VisitVerifyDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyDomaindefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response VerifyDomaindefaultJSONResponse) VisitVerifyDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackSiteRequestObject struct {
+	Site SiteName `json:"site"`
+	Body *RollbackSiteJSONRequestBody
+}
+
+type RollbackSiteResponseObject interface {
+	VisitRollbackSiteResponse(w http.ResponseWriter) error
+}
+
+type RollbackSite200JSONResponse Activation
+
+func (response RollbackSite200JSONResponse) VisitRollbackSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackSite400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RollbackSite400JSONResponse) VisitRollbackSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackSite401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RollbackSite401JSONResponse) VisitRollbackSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackSite403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RollbackSite403JSONResponse) VisitRollbackSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackSite404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RollbackSite404JSONResponse) VisitRollbackSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackSite409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RollbackSite409JSONResponse) VisitRollbackSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RollbackSitedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RollbackSitedefaultJSONResponse) VisitRollbackSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListApiTokensRequestObject struct {
+	Params ListApiTokensParams
+}
+
+type ListApiTokensResponseObject interface {
+	VisitListApiTokensResponse(w http.ResponseWriter) error
+}
+
+type ListApiTokens200JSONResponse ApiTokenPage
+
+func (response ListApiTokens200JSONResponse) VisitListApiTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListApiTokens400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListApiTokens400JSONResponse) VisitListApiTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListApiTokens401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListApiTokens401JSONResponse) VisitListApiTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListApiTokensdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListApiTokensdefaultJSONResponse) VisitListApiTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApiTokenRequestObject struct {
+	Body *CreateApiTokenJSONRequestBody
+}
+
+type CreateApiTokenResponseObject interface {
+	VisitCreateApiTokenResponse(w http.ResponseWriter) error
+}
+
+type CreateApiToken201JSONResponse CreatedApiToken
+
+func (response CreateApiToken201JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApiToken400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateApiToken400JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApiToken401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateApiToken401JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApiToken403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateApiToken403JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApiTokendefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateApiTokendefaultJSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeApiTokenRequestObject struct {
+	TokenId TokenId `json:"tokenId"`
+}
+
+type RevokeApiTokenResponseObject interface {
+	VisitRevokeApiTokenResponse(w http.ResponseWriter) error
+}
+
+type RevokeApiToken204Response struct {
+}
+
+func (response RevokeApiToken204Response) VisitRevokeApiTokenResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeApiToken401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RevokeApiToken401JSONResponse) VisitRevokeApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeApiToken403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RevokeApiToken403JSONResponse) VisitRevokeApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeApiToken404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RevokeApiToken404JSONResponse) VisitRevokeApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeApiTokendefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RevokeApiTokendefaultJSONResponse) VisitRevokeApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// SendEmailCode Email a sign-in code.
+	// (POST /api/v0/auth/email-code)
+	SendEmailCode(ctx context.Context, request SendEmailCodeRequestObject) (SendEmailCodeResponseObject, error)
+	// VerifyEmailCode Sign in with an emailed code.
+	// (POST /api/v0/auth/email-code/verify)
+	VerifyEmailCode(ctx context.Context, request VerifyEmailCodeRequestObject) (VerifyEmailCodeResponseObject, error)
+	// RedeemSignInLink Sign in with a one-time sign-in link code.
+	// (POST /api/v0/auth/sign-in-link)
+	RedeemSignInLink(ctx context.Context, request RedeemSignInLinkRequestObject) (RedeemSignInLinkResponseObject, error)
+	// SignOut End the current session or revoke the current API token.
+	// (POST /api/v0/auth/sign-out)
+	SignOut(ctx context.Context, request SignOutRequestObject) (SignOutResponseObject, error)
+	// StartCliLogin Start a CLI device login.
+	// (POST /api/v0/cli-login)
+	StartCliLogin(ctx context.Context, request StartCliLoginRequestObject) (StartCliLoginResponseObject, error)
+	// ApproveCliLogin Approve a CLI device login.
+	// (POST /api/v0/cli-login/approve)
+	ApproveCliLogin(ctx context.Context, request ApproveCliLoginRequestObject) (ApproveCliLoginResponseObject, error)
+	// DenyCliLogin Deny a CLI device login.
+	// (POST /api/v0/cli-login/deny)
+	DenyCliLogin(ctx context.Context, request DenyCliLoginRequestObject) (DenyCliLoginResponseObject, error)
+	// PollCliLogin Poll a CLI device login for its token.
+	// (POST /api/v0/cli-login/poll)
+	PollCliLogin(ctx context.Context, request PollCliLoginRequestObject) (PollCliLoginResponseObject, error)
 	// GetHealth Report that the API is serving requests.
 	// (GET /api/v0/health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
+	// GetMe Describe the signed-in owner and the credential used.
+	// (GET /api/v0/me)
+	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// InviteOwner Invite another owner by email.
+	// (POST /api/v0/owners)
+	InviteOwner(ctx context.Context, request InviteOwnerRequestObject) (InviteOwnerResponseObject, error)
+	// ListSessions List the signed-in owner's dashboard sessions.
+	// (GET /api/v0/sessions)
+	ListSessions(ctx context.Context, request ListSessionsRequestObject) (ListSessionsResponseObject, error)
+	// RevokeSession Revoke one of the signed-in owner's sessions.
+	// (DELETE /api/v0/sessions/{sessionId})
+	RevokeSession(ctx context.Context, request RevokeSessionRequestObject) (RevokeSessionResponseObject, error)
+	// CompleteSetup Create the first owner from the one-time setup code.
+	// (POST /api/v0/setup)
+	CompleteSetup(ctx context.Context, request CompleteSetupRequestObject) (CompleteSetupResponseObject, error)
+	// ListSites List the owner's sites.
+	// (GET /api/v0/sites)
+	ListSites(ctx context.Context, request ListSitesRequestObject) (ListSitesResponseObject, error)
+	// CreateSite Create an empty site.
+	// (POST /api/v0/sites)
+	CreateSite(ctx context.Context, request CreateSiteRequestObject) (CreateSiteResponseObject, error)
+	// DeleteSite Tear down a site.
+	// (DELETE /api/v0/sites/{site})
+	DeleteSite(ctx context.Context, request DeleteSiteRequestObject) (DeleteSiteResponseObject, error)
+	// GetSite Get one of the owner's sites.
+	// (GET /api/v0/sites/{site})
+	GetSite(ctx context.Context, request GetSiteRequestObject) (GetSiteResponseObject, error)
+	// ListDeploys List a site's deploys.
+	// (GET /api/v0/sites/{site}/deploys)
+	ListDeploys(ctx context.Context, request ListDeploysRequestObject) (ListDeploysResponseObject, error)
+	// CreateDeploy Create a deploy from a manifest.
+	// (POST /api/v0/sites/{site}/deploys)
+	CreateDeploy(ctx context.Context, request CreateDeployRequestObject) (CreateDeployResponseObject, error)
+	// ActivateDeploy Make a pending deploy the site's active deploy.
+	// (POST /api/v0/sites/{site}/deploys/{deployId}/activate)
+	ActivateDeploy(ctx context.Context, request ActivateDeployRequestObject) (ActivateDeployResponseObject, error)
+	// UploadDeployBlob Upload one file body for a pending deploy.
+	// (PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256})
+	UploadDeployBlob(ctx context.Context, request UploadDeployBlobRequestObject) (UploadDeployBlobResponseObject, error)
+	// ListDomains List a site's custom domains.
+	// (GET /api/v0/sites/{site}/domains)
+	ListDomains(ctx context.Context, request ListDomainsRequestObject) (ListDomainsResponseObject, error)
+	// AddDomain Attach a custom domain to a site.
+	// (POST /api/v0/sites/{site}/domains)
+	AddDomain(ctx context.Context, request AddDomainRequestObject) (AddDomainResponseObject, error)
+	// RemoveDomain Detach a custom domain from its site.
+	// (DELETE /api/v0/sites/{site}/domains/{hostname})
+	RemoveDomain(ctx context.Context, request RemoveDomainRequestObject) (RemoveDomainResponseObject, error)
+	// GetDomain Get one of a site's custom domains.
+	// (GET /api/v0/sites/{site}/domains/{hostname})
+	GetDomain(ctx context.Context, request GetDomainRequestObject) (GetDomainResponseObject, error)
+	// VerifyDomain Check a custom domain's DNS now.
+	// (POST /api/v0/sites/{site}/domains/{hostname}/verify)
+	VerifyDomain(ctx context.Context, request VerifyDomainRequestObject) (VerifyDomainResponseObject, error)
+	// RollbackSite Reactivate an earlier deploy.
+	// (POST /api/v0/sites/{site}/rollback)
+	RollbackSite(ctx context.Context, request RollbackSiteRequestObject) (RollbackSiteResponseObject, error)
+	// ListApiTokens List the signed-in owner's API tokens.
+	// (GET /api/v0/tokens)
+	ListApiTokens(ctx context.Context, request ListApiTokensRequestObject) (ListApiTokensResponseObject, error)
+	// CreateApiToken Create an API token.
+	// (POST /api/v0/tokens)
+	CreateApiToken(ctx context.Context, request CreateApiTokenRequestObject) (CreateApiTokenResponseObject, error)
+	// RevokeApiToken Revoke an API token.
+	// (DELETE /api/v0/tokens/{tokenId})
+	RevokeApiToken(ctx context.Context, request RevokeApiTokenRequestObject) (RevokeApiTokenResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -266,6 +4679,247 @@ type strictHandler struct {
 	options     StrictHTTPServerOptions
 }
 
+// SendEmailCode operation middleware
+func (sh *strictHandler) SendEmailCode(w http.ResponseWriter, r *http.Request) {
+	var request SendEmailCodeRequestObject
+
+	var body SendEmailCodeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SendEmailCode(ctx, request.(SendEmailCodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SendEmailCode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SendEmailCodeResponseObject); ok {
+		if err := validResponse.VisitSendEmailCodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyEmailCode operation middleware
+func (sh *strictHandler) VerifyEmailCode(w http.ResponseWriter, r *http.Request) {
+	var request VerifyEmailCodeRequestObject
+
+	var body VerifyEmailCodeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.VerifyEmailCode(ctx, request.(VerifyEmailCodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyEmailCode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(VerifyEmailCodeResponseObject); ok {
+		if err := validResponse.VisitVerifyEmailCodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RedeemSignInLink operation middleware
+func (sh *strictHandler) RedeemSignInLink(w http.ResponseWriter, r *http.Request) {
+	var request RedeemSignInLinkRequestObject
+
+	var body RedeemSignInLinkJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RedeemSignInLink(ctx, request.(RedeemSignInLinkRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RedeemSignInLink")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RedeemSignInLinkResponseObject); ok {
+		if err := validResponse.VisitRedeemSignInLinkResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SignOut operation middleware
+func (sh *strictHandler) SignOut(w http.ResponseWriter, r *http.Request) {
+	var request SignOutRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SignOut(ctx, request.(SignOutRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SignOut")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SignOutResponseObject); ok {
+		if err := validResponse.VisitSignOutResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StartCliLogin operation middleware
+func (sh *strictHandler) StartCliLogin(w http.ResponseWriter, r *http.Request) {
+	var request StartCliLoginRequestObject
+
+	var body StartCliLoginJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StartCliLogin(ctx, request.(StartCliLoginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartCliLogin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StartCliLoginResponseObject); ok {
+		if err := validResponse.VisitStartCliLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ApproveCliLogin operation middleware
+func (sh *strictHandler) ApproveCliLogin(w http.ResponseWriter, r *http.Request) {
+	var request ApproveCliLoginRequestObject
+
+	var body ApproveCliLoginJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ApproveCliLogin(ctx, request.(ApproveCliLoginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ApproveCliLogin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ApproveCliLoginResponseObject); ok {
+		if err := validResponse.VisitApproveCliLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DenyCliLogin operation middleware
+func (sh *strictHandler) DenyCliLogin(w http.ResponseWriter, r *http.Request) {
+	var request DenyCliLoginRequestObject
+
+	var body DenyCliLoginJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DenyCliLogin(ctx, request.(DenyCliLoginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DenyCliLogin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DenyCliLoginResponseObject); ok {
+		if err := validResponse.VisitDenyCliLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PollCliLogin operation middleware
+func (sh *strictHandler) PollCliLogin(w http.ResponseWriter, r *http.Request) {
+	var request PollCliLoginRequestObject
+
+	var body PollCliLoginJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PollCliLogin(ctx, request.(PollCliLoginRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PollCliLogin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PollCliLoginResponseObject); ok {
+		if err := validResponse.VisitPollCliLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetHealth operation middleware
 func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	var request GetHealthRequestObject
@@ -283,6 +4937,630 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetHealthResponseObject); ok {
 		if err := validResponse.VisitGetHealthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMe operation middleware
+func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	var request GetMeRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMe(ctx, request.(GetMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMeResponseObject); ok {
+		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// InviteOwner operation middleware
+func (sh *strictHandler) InviteOwner(w http.ResponseWriter, r *http.Request) {
+	var request InviteOwnerRequestObject
+
+	var body InviteOwnerJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.InviteOwner(ctx, request.(InviteOwnerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "InviteOwner")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(InviteOwnerResponseObject); ok {
+		if err := validResponse.VisitInviteOwnerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListSessions operation middleware
+func (sh *strictHandler) ListSessions(w http.ResponseWriter, r *http.Request, params ListSessionsParams) {
+	var request ListSessionsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSessions(ctx, request.(ListSessionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSessions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSessionsResponseObject); ok {
+		if err := validResponse.VisitListSessionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeSession operation middleware
+func (sh *strictHandler) RevokeSession(w http.ResponseWriter, r *http.Request, sessionId SessionId) {
+	var request RevokeSessionRequestObject
+
+	request.SessionId = sessionId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeSession(ctx, request.(RevokeSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeSessionResponseObject); ok {
+		if err := validResponse.VisitRevokeSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CompleteSetup operation middleware
+func (sh *strictHandler) CompleteSetup(w http.ResponseWriter, r *http.Request) {
+	var request CompleteSetupRequestObject
+
+	var body CompleteSetupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CompleteSetup(ctx, request.(CompleteSetupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CompleteSetup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CompleteSetupResponseObject); ok {
+		if err := validResponse.VisitCompleteSetupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListSites operation middleware
+func (sh *strictHandler) ListSites(w http.ResponseWriter, r *http.Request, params ListSitesParams) {
+	var request ListSitesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSites(ctx, request.(ListSitesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSites")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSitesResponseObject); ok {
+		if err := validResponse.VisitListSitesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateSite operation middleware
+func (sh *strictHandler) CreateSite(w http.ResponseWriter, r *http.Request) {
+	var request CreateSiteRequestObject
+
+	var body CreateSiteJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateSite(ctx, request.(CreateSiteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateSite")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateSiteResponseObject); ok {
+		if err := validResponse.VisitCreateSiteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteSite operation middleware
+func (sh *strictHandler) DeleteSite(w http.ResponseWriter, r *http.Request, site SiteName) {
+	var request DeleteSiteRequestObject
+
+	request.Site = site
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteSite(ctx, request.(DeleteSiteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteSite")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteSiteResponseObject); ok {
+		if err := validResponse.VisitDeleteSiteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSite operation middleware
+func (sh *strictHandler) GetSite(w http.ResponseWriter, r *http.Request, site SiteName) {
+	var request GetSiteRequestObject
+
+	request.Site = site
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSite(ctx, request.(GetSiteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSite")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSiteResponseObject); ok {
+		if err := validResponse.VisitGetSiteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDeploys operation middleware
+func (sh *strictHandler) ListDeploys(w http.ResponseWriter, r *http.Request, site SiteName, params ListDeploysParams) {
+	var request ListDeploysRequestObject
+
+	request.Site = site
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDeploys(ctx, request.(ListDeploysRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDeploys")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListDeploysResponseObject); ok {
+		if err := validResponse.VisitListDeploysResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateDeploy operation middleware
+func (sh *strictHandler) CreateDeploy(w http.ResponseWriter, r *http.Request, site SiteName) {
+	var request CreateDeployRequestObject
+
+	request.Site = site
+
+	var body CreateDeployJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateDeploy(ctx, request.(CreateDeployRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateDeploy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateDeployResponseObject); ok {
+		if err := validResponse.VisitCreateDeployResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ActivateDeploy operation middleware
+func (sh *strictHandler) ActivateDeploy(w http.ResponseWriter, r *http.Request, site SiteName, deployId DeployId) {
+	var request ActivateDeployRequestObject
+
+	request.Site = site
+	request.DeployId = deployId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ActivateDeploy(ctx, request.(ActivateDeployRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ActivateDeploy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ActivateDeployResponseObject); ok {
+		if err := validResponse.VisitActivateDeployResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UploadDeployBlob operation middleware
+func (sh *strictHandler) UploadDeployBlob(w http.ResponseWriter, r *http.Request, site SiteName, deployId DeployId, sha256 Sha256) {
+	var request UploadDeployBlobRequestObject
+
+	request.Site = site
+	request.DeployId = deployId
+	request.Sha256 = sha256
+
+	request.Body = r.Body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UploadDeployBlob(ctx, request.(UploadDeployBlobRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UploadDeployBlob")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UploadDeployBlobResponseObject); ok {
+		if err := validResponse.VisitUploadDeployBlobResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDomains operation middleware
+func (sh *strictHandler) ListDomains(w http.ResponseWriter, r *http.Request, site SiteName, params ListDomainsParams) {
+	var request ListDomainsRequestObject
+
+	request.Site = site
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDomains(ctx, request.(ListDomainsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDomains")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListDomainsResponseObject); ok {
+		if err := validResponse.VisitListDomainsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddDomain operation middleware
+func (sh *strictHandler) AddDomain(w http.ResponseWriter, r *http.Request, site SiteName) {
+	var request AddDomainRequestObject
+
+	request.Site = site
+
+	var body AddDomainJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddDomain(ctx, request.(AddDomainRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddDomain")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddDomainResponseObject); ok {
+		if err := validResponse.VisitAddDomainResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveDomain operation middleware
+func (sh *strictHandler) RemoveDomain(w http.ResponseWriter, r *http.Request, site SiteName, hostname DomainHostname) {
+	var request RemoveDomainRequestObject
+
+	request.Site = site
+	request.Hostname = hostname
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveDomain(ctx, request.(RemoveDomainRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveDomain")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveDomainResponseObject); ok {
+		if err := validResponse.VisitRemoveDomainResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetDomain operation middleware
+func (sh *strictHandler) GetDomain(w http.ResponseWriter, r *http.Request, site SiteName, hostname DomainHostname) {
+	var request GetDomainRequestObject
+
+	request.Site = site
+	request.Hostname = hostname
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetDomain(ctx, request.(GetDomainRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetDomain")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetDomainResponseObject); ok {
+		if err := validResponse.VisitGetDomainResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyDomain operation middleware
+func (sh *strictHandler) VerifyDomain(w http.ResponseWriter, r *http.Request, site SiteName, hostname DomainHostname) {
+	var request VerifyDomainRequestObject
+
+	request.Site = site
+	request.Hostname = hostname
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.VerifyDomain(ctx, request.(VerifyDomainRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyDomain")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(VerifyDomainResponseObject); ok {
+		if err := validResponse.VisitVerifyDomainResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RollbackSite operation middleware
+func (sh *strictHandler) RollbackSite(w http.ResponseWriter, r *http.Request, site SiteName) {
+	var request RollbackSiteRequestObject
+
+	request.Site = site
+
+	var body RollbackSiteJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RollbackSite(ctx, request.(RollbackSiteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RollbackSite")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RollbackSiteResponseObject); ok {
+		if err := validResponse.VisitRollbackSiteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListApiTokens operation middleware
+func (sh *strictHandler) ListApiTokens(w http.ResponseWriter, r *http.Request, params ListApiTokensParams) {
+	var request ListApiTokensRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListApiTokens(ctx, request.(ListApiTokensRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListApiTokens")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListApiTokensResponseObject); ok {
+		if err := validResponse.VisitListApiTokensResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateApiToken operation middleware
+func (sh *strictHandler) CreateApiToken(w http.ResponseWriter, r *http.Request) {
+	var request CreateApiTokenRequestObject
+
+	var body CreateApiTokenJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateApiToken(ctx, request.(CreateApiTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateApiToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateApiTokenResponseObject); ok {
+		if err := validResponse.VisitCreateApiTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeApiToken operation middleware
+func (sh *strictHandler) RevokeApiToken(w http.ResponseWriter, r *http.Request, tokenId TokenId) {
+	var request RevokeApiTokenRequestObject
+
+	request.TokenId = tokenId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeApiToken(ctx, request.(RevokeApiTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeApiToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeApiTokenResponseObject); ok {
+		if err := validResponse.VisitRevokeApiTokenResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

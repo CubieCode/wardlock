@@ -1,0 +1,16 @@
+{{- /* SPDX-FileCopyrightText: 2026 CubieCode
+     SPDX-License-Identifier: AGPL-3.0-only */ -}}
+{{- /* Replaces strict/strict-interface.tmpl to list operations for tests. */ -}}
+// operation is one operation in the contract.
+type operation struct {
+	id, method, path string
+	// jsonBody is set when the operation takes a JSON request body.
+	jsonBody bool
+}
+
+// operations lists every operation in packages/api-spec/openapi.yaml.
+var operations = []operation{
+{{- range .}}{{if not .IsAlias}}
+	{id: {{printf "%q" .OperationId}}, method: {{printf "%q" .Method}}, path: {{printf "%q" .Path}}, jsonBody: {{range .Bodies}}{{if .IsJSON}}true{{else}}false{{end}}{{else}}false{{end}}},
+{{- end}}{{end}}
+}

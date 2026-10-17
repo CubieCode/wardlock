@@ -1,0 +1,15 @@
+{{- /* SPDX-FileCopyrightText: 2026 CubieCode
+     SPDX-License-Identifier: AGPL-3.0-only */ -}}
+{{- /* Replaces strict/strict-interface.tmpl to render the 501 stub. */ -}}
+// Unimplemented answers every operation with ErrNotImplemented, which the
+// handler turns into 501 not_implemented. Server embeds it, so an operation
+// answers 501 until Server declares its own method.
+type Unimplemented struct{}
+
+var _ StrictServerInterface = Unimplemented{}
+{{range .}}{{if not .IsAlias}}
+// {{.OperationId}} is not implemented yet.
+func (Unimplemented) {{.OperationId}}(context.Context, {{.OperationId | ucFirst}}RequestObject) ({{.OperationId | ucFirst}}ResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+{{end}}{{end}}

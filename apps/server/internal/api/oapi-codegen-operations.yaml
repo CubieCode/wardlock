@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 CubieCode
+# SPDX-License-Identifier: AGPL-3.0-only
+# The operation table the 501 test walks.
+package: api
+output: internal/api/operations.gen_test.go
+generate:
+  std-http-server: true
+  strict-server: true
+output-options:
+  user-templates:
+    stdhttp/std-http-interface.tmpl: internal/api/templates/empty.tmpl
+    stdhttp/std-http-middleware.tmpl: internal/api/templates/empty.tmpl
+    stdhttp/std-http-handler.tmpl: internal/api/templates/empty.tmpl
+    strict/strict-responses.tmpl: internal/api/templates/empty.tmpl
+    strict/strict-http.tmpl: internal/api/templates/empty.tmpl
+    strict/strict-interface.tmpl: internal/api/templates/operations_test.tmpl

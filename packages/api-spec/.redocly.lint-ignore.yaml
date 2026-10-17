@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 CubieCode
+# SPDX-License-Identifier: MIT
+#
+# Deliberate exceptions to lint.redocly.yaml. getHealth is unauthenticated and
+# takes no input, so it has no 4xx response.
+openapi.yaml:
+  operation-4xx-response:
+    - '#/paths/~1api~1v0~1health/get/responses'
