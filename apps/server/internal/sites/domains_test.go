@@ -206,16 +206,16 @@ func TestVerification(t *testing.T) {
 			r.Fail("_wardlock."+h, errServFail)
 		}, store.DomainPending, store.DomainDNSError, "failed or timed out"},
 		{"timeout", "www.example.com", func(r *sitestest.Resolver, h, _ string) {
-			r.Fail(h, sitestest.Hang)
-			r.Fail("_wardlock."+h, sitestest.Hang)
+			r.Fail(h, sitestest.ErrHang)
+			r.Fail("_wardlock."+h, sitestest.ErrHang)
 		}, store.DomainPending, store.DomainDNSError, "failed or timed out"},
 		{"timeout on the CNAME, TXT answers", "www.example.com", func(r *sitestest.Resolver, h, tok string) {
-			r.Fail(h, sitestest.Hang)
+			r.Fail(h, sitestest.ErrHang)
 			r.TXT("_wardlock."+h, sites.TXTPrefix+tok)
 		}, store.DomainActive, "", ""},
 		{"timeout on the TXT lookup, no CNAME", "example.com", func(r *sitestest.Resolver, h, _ string) {
 			r.Addr(h)
-			r.Fail("_wardlock."+h, sitestest.Hang)
+			r.Fail("_wardlock."+h, sitestest.ErrHang)
 		}, store.DomainPending, store.DomainDNSError, "failed or timed out"},
 		{"the sites wildcard is itself a CNAME", "www.example.com", func(r *sitestest.Resolver, h, _ string) {
 			r.CNAME("docs."+base, "lb.example.net")

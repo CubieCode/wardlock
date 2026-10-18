@@ -97,9 +97,9 @@ func (r *Resolver) Lookups() int {
 	return r.lookups
 }
 
-// Hang, given to Fail, makes lookups of a name wait until their context
+// ErrHang, given to Fail, makes lookups of a name wait until their context
 // ends, like a resolver that never answers.
-var Hang = errors.New("hang")
+var ErrHang = errors.New("hang")
 
 // CanonicalName implements sites.Resolver.
 func (r *Resolver) CanonicalName(ctx context.Context, host string) (string, error) {
@@ -156,9 +156,9 @@ func (r *Resolver) lookupTXT(name string) ([]string, error) {
 	return append([]string(nil), v...), nil
 }
 
-// wait turns Hang into waiting for ctx; other errors pass through.
+// wait turns ErrHang into waiting for ctx; other errors pass through.
 func wait(ctx context.Context, err error) error {
-	if !errors.Is(err, Hang) {
+	if !errors.Is(err, ErrHang) {
 		return err
 	}
 	<-ctx.Done()
