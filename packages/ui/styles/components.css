@@ -445,3 +445,100 @@
   width: 0.875em;
   height: 0.875em;
 }
+
+/* Visually hidden, still read by assistive technology */
+.wl-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Select: a native control styled like the text input */
+.wl-select {
+  padding-inline-end: var(--space-8);
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    right calc(var(--space-4) + 4px) center,
+    right var(--space-4) center;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+/* Table: columns from 48rem, labelled stacked blocks below */
+.wl-table-frame {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.wl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.wl-table th {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
+  text-align: start;
+}
+
+.wl-table td {
+  padding: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.wl-table-mono {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 47.99rem) {
+  .wl-table,
+  .wl-table tbody {
+    display: block;
+  }
+
+  .wl-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .wl-table tr {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-3);
+  }
+
+  .wl-table tr + tr {
+    border-top: 1px solid var(--color-border);
+  }
+
+  .wl-table td {
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: var(--space-2);
+    padding: 0;
+    border: 0;
+  }
+
+  .wl-table td::before {
+    content: attr(data-label);
+    color: var(--color-text-muted);
+    font-family: var(--font-sans);
+    font-weight: var(--font-weight-medium);
+  }
+}

@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { TextField } from './index.js';
+import { SelectField, TextField } from './index.js';
 
 afterEach(cleanup);
 
@@ -94,5 +94,52 @@ describe('TextField', () => {
         description: 'Also wrong',
       }),
     ).toBeTruthy();
+  });
+});
+
+describe('SelectField', () => {
+  const options = (
+    <>
+      <option value="never">Never</option>
+      <option value="1d">In 1 day</option>
+    </>
+  );
+
+  it('labels the select, describes it and reports changes', () => {
+    let chosen = '';
+    render(
+      <SelectField
+        label="Expires"
+        hint="When the link stops working."
+        defaultValue="never"
+        onChange={(event) => (chosen = event.target.value)}
+      >
+        {options}
+      </SelectField>,
+    );
+    const select = screen.getByRole('combobox', {
+      name: 'Expires',
+      description: 'When the link stops working.',
+    });
+    expect((select as HTMLSelectElement).value).toBe('never');
+    expect(select.hasAttribute('aria-invalid')).toBe(false);
+    fireEvent.change(select, { target: { value: '1d' } });
+    expect(chosen).toBe('1d');
+  });
+
+  it('marks the select invalid and announces the error', () => {
+    render(
+      <SelectField label="Expires" error="Choose when the link stops working.">
+        {options}
+      </SelectField>,
+    );
+    const select = screen.getByRole('combobox', {
+      name: 'Expires',
+      description: 'Choose when the link stops working.',
+    });
+    expect(select.getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Choose when the link stops working.',
+    );
   });
 });

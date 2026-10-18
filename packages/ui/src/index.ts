@@ -11,7 +11,13 @@ export {
 } from './feedback.js';
 export { CopyField } from './copy.js';
 export { Dialog } from './dialog.js';
-export { TextField, type TextFieldProps } from './form.js';
+export {
+  SelectField,
+  TextField,
+  type SelectFieldProps,
+  type TextFieldProps,
+} from './form.js';
+export { Table, type TableColumn } from './table.js';
 export {
   AppShell,
   Card,
