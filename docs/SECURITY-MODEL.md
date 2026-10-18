@@ -20,7 +20,9 @@ Wardlock protects static content with secrets that travel in URLs. That is a del
 | Shoulder-surfing, screenshots                             | Dashboard shows the token once; afterwards only the label and public ID                                                                                                                                          | None beyond normal care                                                                                             |
 | Database theft                                            | Only HMAC-SHA-256 of tokens (keyed by `WARDLOCK_SECRET`) and Argon2id password hashes are stored                                                                                                                 | Stolen database plus stolen key allows offline token checks, not recovery                                           |
 
-Rotation and revocation take effect on the next request, including for sessions created from the link.
+Rotation and revocation take effect on the next request, including for sessions created from the link. A session is stored only while its link still has the token that was checked, so a request racing a rotation or revocation cannot leave a live session behind.
+
+**Exception: clean-URL redirects keep the token.** wardlock-access forbids putting a raw token in a URL the server builds. The one exception is the clean-URL redirect (`/dir` to `/dir/`, SPEC "Serving"), whose `Location` keeps the request's query, `t` included, so AI fetchers and other cookie-less clients that follow it still get the page. The token is the one the client just sent, the redirect points to the same host, and protected responses send `Referrer-Policy: no-referrer` and `Cache-Control: private`; the residual risk is a proxy or client that logs `Location` headers but not request URLs.
 
 ### The server key
 
@@ -38,7 +40,7 @@ Wardlock serves owner-supplied HTML and JavaScript as is; it does not sanitise s
 
 ### Preview bots and email scanners
 
-Chat apps, email security scanners and link unfurlers fetch URLs automatically. For ordinary links that is intended (AI-readability is a feature). For use-limited links it would spend uses, so those links show an interstitial on GET and count a use only on POST. Bots do not press buttons. The interstitial's form carries a short-lived ticket signed with the server key and bound to the link's current token, not the token itself, so the page never echoes the token and rotating or revoking the link voids any ticket already shown.
+Chat apps, email security scanners and link unfurlers fetch URLs automatically. For ordinary links that is intended (AI-readability is a feature). For use-limited links it would spend uses, so those links show an interstitial on GET and count a use only on POST. Bots do not press buttons. The interstitial's form carries a short-lived ticket signed with the server key and bound to the link's current token, not the token itself, so the page never echoes the token and rotating or revoking the link voids any ticket already shown. The button only works from a page on the same host (the logout rule), so a page elsewhere cannot post a ticket for a link of its own and replace a visitor's session with one it chose.
 
 ### Path policies and fallbacks
 

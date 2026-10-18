@@ -199,7 +199,7 @@ func TestShareListRevokeRotate(t *testing.T) {
 	}
 	var listed shareListResult
 	assertJSONKeys(t, out.Bytes(), "site", "links")
-	if err := json.Unmarshal(out.Bytes(), &listed); err != nil || len(listed.Links) != 3 || listed.Site != "docs" {
+	if err := json.Unmarshal(out.Bytes(), &listed); err != nil || len(listed.Links) != 3 || listed.Site.Name != "docs" {
 		t.Fatalf("%s (%v)", out, err)
 	}
 	noTokens(t, out.String())
@@ -266,6 +266,25 @@ func TestParseExpiry(t *testing.T) {
 	for _, bad := range []string{"", "d", "-1d", "1y", "1.5h", "100001d"} {
 		if _, err := parseExpiry(bad, now); err == nil {
 			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+// TestShareUsageErrorsNeedNoServer: bad flags exit 2 before any request,
+// even when the server cannot be reached.
+func TestShareUsageErrorsNeedNoServer(t *testing.T) {
+	srv := newFakeAPI(t)
+	a, _, errOut := ciApp(t, srv)
+	srv.Close()
+	for _, args := range [][]string{
+		{"share", "create", "docs", "--expires", "tomorrow"},
+		{"share", "create", "docs", "--uses", "-3"},
+		{"share", "revoke", "docs", "nope"},
+	} {
+		errOut.Reset()
+		err := run(t.Context(), a, args)
+		if code := exitCode(errOut, err); code != 2 || strings.Contains(errOut.String(), "could not reach") {
+			t.Fatalf("%v: exit %d, stderr %q", args, code, errOut)
 		}
 	}
 }

@@ -125,14 +125,28 @@ func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
 
 	t.Run("no-cookie fetchers get the page on the first request", func(t *testing.T) {
 		e := setup(t)
-		for name, v := range map[string]visit{
-			"?t= without Accept":     {target: withT("/", e.token)},
-			"?t= from a browser":     {target: withT("/", e.token), header: html},
-			"Authorization: Bearer":  {target: "/", header: bearer(e.token)},
-			"?t= with ?format=md":    {target: withT("/", e.token) + "&format=md"},
-			"Bearer with ?format=md": {target: "/?format=txt", header: bearer(e.token)},
+		navigate := http.Header{"Accept": {"text/html"}, "Sec-Fetch-Mode": {"navigate"}}
+		fetch := http.Header{"Accept": {"text/html"}, "Sec-Fetch-Mode": {"cors"}}
+		// Only a browser navigation earns a session; every other client
+		// gets the content each time it sends the token, and leaves no
+		// session row behind.
+		for name, v := range map[string]struct {
+			visit
+			session bool
+		}{
+			"?t= without Accept (curl)": {visit: visit{target: withT("/", e.token)}},
+			"?t= from a browser":        {visit: visit{target: withT("/", e.token), header: html}, session: true},
+			"?t= navigation":            {visit: visit{target: withT("/", e.token), header: navigate}, session: true},
+			"?t= from fetch()":          {visit: visit{target: withT("/", e.token), header: fetch}},
+			"?t= HEAD from a browser":   {visit: visit{method: http.MethodHead, target: withT("/", e.token), header: html}},
+			"Authorization: Bearer":     {visit: visit{target: "/", header: bearer(e.token)}},
+			"?t= with ?format=md":       {visit: visit{target: withT("/", e.token) + "&format=md"}},
+			"Bearer with ?format=md":    {visit: visit{target: "/?format=txt", header: bearer(e.token)}},
 		} {
-			r := e.p.visit(v)
+			r := e.p.visit(v.visit)
+			if v.method == http.MethodHead {
+				r.body = "Home page"
+			}
 			r.expect(t, 200, "Home page", "")
 			if r.h.Get("Location") != "" {
 				t.Fatalf("%s: redirected to %s", name, r.h.Get("Location"))
@@ -141,9 +155,8 @@ func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
 			if !strings.HasPrefix(r.h.Get("Cache-Control"), "private") {
 				t.Fatalf("%s: Cache-Control %q", name, r.h.Get("Cache-Control"))
 			}
-			cookie := r.sessionCookie()
-			if fromURL := strings.Contains(v.target, "?t="); fromURL != (cookie != "") {
-				t.Fatalf("%s: session cookie %q, want one exactly for ?t=", name, cookie)
+			if cookie := r.sessionCookie(); v.session != (cookie != "") {
+				t.Fatalf("%s: session cookie %q, want one: %v", name, cookie, v.session)
 			}
 		}
 		recs := e.p.accessRecords()
@@ -211,7 +224,7 @@ func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
 	t.Run("expired", func(t *testing.T) {
 		e := setup(t)
 		_, token := e.p.link("docs", access.NewLink{ExpiresAt: e.p.now().Add(time.Hour)})
-		cookie := e.p.visit(visit{target: withT("/", token)}).sessionCookie()
+		cookie := e.p.visit(visit{target: withT("/", token), header: html}).sessionCookie()
 		e.p.advance(time.Hour)
 		e.p.visit(visit{target: withT("/", token)}).expect(t, 401, "protected", "Home page")
 		e.p.visit(visit{target: "/", header: bearer(token)}).expect(t, 401, "protected", "Home page")
@@ -226,7 +239,7 @@ func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
 
 	t.Run("revoked", func(t *testing.T) {
 		e := setup(t)
-		cookie := e.p.visit(visit{target: withT("/", e.token)}).sessionCookie()
+		cookie := e.p.visit(visit{target: withT("/", e.token), header: html}).sessionCookie()
 		if err := e.p.acc.RevokeLink(t.Context(), e.p.owner.ID, "docs", e.l.PublicID); err != nil {
 			t.Fatal(err)
 		}
@@ -241,7 +254,7 @@ func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
 
 	t.Run("rotated: the old token and its sessions fail, the new token works", func(t *testing.T) {
 		e := setup(t)
-		cookie := e.p.visit(visit{target: withT("/", e.token)}).sessionCookie()
+		cookie := e.p.visit(visit{target: withT("/", e.token), header: html}).sessionCookie()
 		l, fresh, err := e.p.acc.RotateLink(t.Context(), e.p.owner.ID, "docs", e.l.PublicID)
 		if err != nil {
 			t.Fatal(err)
@@ -263,7 +276,7 @@ func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
 		e := setup(t)
 		e.p.visit(visit{host: otherHost, target: withT("/", e.token)}).expect(t, 401, "protected", "Home page")
 		e.p.visit(visit{host: otherHost, target: "/", header: bearer(e.token)}).expect(t, 401, "protected", "Home page")
-		cookie := e.p.visit(visit{target: withT("/", e.token)}).sessionCookie()
+		cookie := e.p.visit(visit{target: withT("/", e.token), header: html}).sessionCookie()
 		r := e.p.visit(visit{host: otherHost, target: "/", cookie: cookie})
 		r.expect(t, 401, "protected", "Home page")
 		if !r.cleared() {
@@ -278,7 +291,7 @@ func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
 		e.p.visit(visit{target: withT("/internal", token)}).expect(t, 301, "", "")
 		e.p.visit(visit{target: withT("/", token)}).expect(t, 401, "protected", "Home page")
 		e.p.visit(visit{target: "/assets/site.css", header: bearer(token)}).expect(t, 401, "protected", "teal")
-		cookie := e.p.visit(visit{target: withT("/internal/", token)}).sessionCookie()
+		cookie := e.p.visit(visit{target: withT("/internal/", token), header: html}).sessionCookie()
 		e.p.visit(visit{target: "/internal/", cookie: cookie}).expect(t, 200, "Internal plans", "")
 		r := e.p.visit(visit{target: "/", cookie: cookie})
 		r.expect(t, 401, "protected", "Home page")
@@ -288,11 +301,27 @@ func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
 		// 404.html sits outside the scope, so a missing page in it is a
 		// plain 404.
 		e.p.visit(visit{target: withT("/internal/missing", token)}).expect(t, 404, "", "Custom not found")
+		// The scope is a directory of the decoded, dot-resolved path,
+		// matched case-sensitively.
+		for target, code := range map[string]int{
+			"/internal-other/":          401, // a sibling sharing the prefix
+			"/internalx":                401,
+			"/INTERNAL/":                401, // case
+			"/internal/../":             401, // dot segments resolve first
+			"/internal/..%2Findex.html": 401, // an encoded slash decodes before matching
+			"/internal%2F":              200, // which also works the other way
+			"/internal/./index.html":    200,
+		} {
+			r := e.p.visit(visit{target: withT(target, token)})
+			if r.code != code || (code == 401 && strings.Contains(r.body, "Home page")) {
+				t.Fatalf("%s: %d %q, want %d", target, r.code, r.body, code)
+			}
+		}
 	})
 
 	t.Run("links switched off on the policy", func(t *testing.T) {
 		e := setup(t)
-		cookie := e.p.visit(visit{target: withT("/", e.token)}).sessionCookie()
+		cookie := e.p.visit(visit{target: withT("/", e.token), header: html}).sessionCookie()
 		e.p.set("docs", "/internal/", store.Protected, true)
 		e.p.visit(visit{target: withT("/internal/", e.token)}).expect(t, 200, "Internal plans", "")
 		// A policy without links (once other methods exist) refuses links;
@@ -308,7 +337,7 @@ func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
 
 	t.Run("cookie isolation from the dashboard", func(t *testing.T) {
 		e := setup(t)
-		cookie := e.p.visit(visit{target: withT("/", e.token)}).sessionCookie()
+		cookie := e.p.visit(visit{target: withT("/", e.token), header: html}).sessionCookie()
 		hits := e.p.dashboardHits
 		r := e.p.visit(visit{host: "wardlock.localhost", target: withT("/", e.token), cookie: cookie})
 		if e.p.dashboardHits != hits+1 || r.sessionCookie() != "" {
@@ -316,10 +345,22 @@ func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
 		}
 	})
 
+	t.Run("a bad guess on a fallback file counts once", func(t *testing.T) {
+		e := setup(t)
+		cookie := e.p.visit(visit{target: withT("/", e.token), header: html}).sessionCookie()
+		limit := access.DefaultLimits().TokenFailuresPerIP.N
+		// Allowed by the cookie despite the bad token, then answered by
+		// 404.html: the fallback decision must not count the guess again.
+		for range limit/2 + 1 {
+			e.p.visit(visit{target: withT("/missing", "junk"), cookie: cookie, ip: "198.51.100.30"}).expect(t, 404, "Custom not found", "")
+		}
+		e.p.visit(visit{target: withT("/", e.token), ip: "198.51.100.30"}).expect(t, 200, "Home page", "")
+	})
+
 	t.Run("a deploy cannot override /.wardlock/", func(t *testing.T) {
 		e := setup(t)
 		e.p.visit(visit{target: "/.wardlock/view"}).expect(t, 405, "", "")
-		e.p.visit(visit{target: "/.wardlock/view", method: http.MethodPost, form: url.Values{"ticket": {"x"}}}).
+		e.p.visit(visit{target: "/.wardlock/view", method: http.MethodPost, header: sameOrigin, form: url.Values{"ticket": {"x"}}}).
 			expect(t, 410, "This link no longer works", "")
 	})
 }
@@ -371,9 +412,27 @@ func TestUseLimitedLinkThroughTheEdge(t *testing.T) {
 		}
 	}
 
+	// A cross-site form (an attacker posting a ticket for their own link
+	// to swap the visitor's session), a sibling site and a request with no
+	// origin headers are all refused, spending nothing.
+	for name, h := range map[string]http.Header{
+		"another site":    {"Origin": {"https://evil.example"}},
+		"a sibling site":  {"Origin": {"http://other.wardlock.localhost"}},
+		"cross-site mode": {"Sec-Fetch-Site": {"cross-site"}},
+		"no origin":       nil,
+	} {
+		r := p.visit(visit{method: http.MethodPost, target: "/.wardlock/view", header: h, form: url.Values{"ticket": {ticket}}})
+		if r.code != http.StatusForbidden || r.sessionCookie() != "" {
+			t.Fatalf("%s: %d %v", name, r.code, r.h)
+		}
+	}
+	if uses() != 0 {
+		t.Fatalf("refused POSTs spent %d uses", uses())
+	}
+
 	// POST spends the use, sets the session and returns to the page
 	// without the token.
-	r := p.visit(visit{method: http.MethodPost, target: "/.wardlock/view", form: url.Values{"ticket": {ticket}}})
+	r := p.visit(visit{method: http.MethodPost, target: "/.wardlock/view", header: sameOrigin, form: url.Values{"ticket": {ticket}}})
 	if r.code != http.StatusSeeOther || r.h.Get("Location") != "/internal/?x=1" || r.sessionCookie() == "" {
 		t.Fatalf("view POST: %d %v", r.code, r.h)
 	}
@@ -386,7 +445,7 @@ func TestUseLimitedLinkThroughTheEdge(t *testing.T) {
 	p.visit(visit{target: withT("/", token), cookie: cookie}).expect(t, 200, "Home page", "")
 
 	// A second POST fails, and the spent link opens nothing new.
-	p.visit(visit{method: http.MethodPost, target: "/.wardlock/view", form: url.Values{"ticket": {ticket}}}).
+	p.visit(visit{method: http.MethodPost, target: "/.wardlock/view", header: sameOrigin, form: url.Values{"ticket": {ticket}}}).
 		expect(t, http.StatusGone, "This link no longer works", "")
 	p.visit(visit{target: withT("/", token)}).expect(t, 401, "protected", "Home page")
 	if uses() != 1 {
@@ -405,11 +464,11 @@ func TestUseLimitedLinkThroughTheEdge(t *testing.T) {
 	if _, _, err := p.acc.RotateLink(t.Context(), p.owner.ID, "docs", l2.PublicID); err != nil {
 		t.Fatal(err)
 	}
-	p.visit(visit{method: http.MethodPost, target: "/.wardlock/view", form: url.Values{"ticket": {old}}}).expect(t, http.StatusGone, "", "")
+	p.visit(visit{method: http.MethodPost, target: "/.wardlock/view", header: sameOrigin, form: url.Values{"ticket": {old}}}).expect(t, http.StatusGone, "", "")
 	_, token3 := p.link("docs", access.NewLink{MaxUses: 3})
 	late := ticketFor(token3)
 	p.advance(access.TicketLifetime)
-	p.visit(visit{method: http.MethodPost, target: "/.wardlock/view", form: url.Values{"ticket": {late}}}).expect(t, http.StatusGone, "", "")
+	p.visit(visit{method: http.MethodPost, target: "/.wardlock/view", header: sameOrigin, form: url.Values{"ticket": {late}}}).expect(t, http.StatusGone, "", "")
 	p.noRawTokens(t, p.accessRecords())
 }
 

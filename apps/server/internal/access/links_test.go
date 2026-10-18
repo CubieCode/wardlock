@@ -223,3 +223,45 @@ func TestDecideWithTokens(t *testing.T) {
 		t.Fatalf("log output:\n%s", out)
 	}
 }
+
+// TestIssueRacesRotationAndRevocation: a token checked just before its link
+// is rotated or revoked earns no session (the old-token holder would
+// otherwise keep access for the session's lifetime).
+func TestIssueRacesRotationAndRevocation(t *testing.T) {
+	ctx := t.Context()
+	for _, tc := range []struct {
+		name string
+		end  func(h *harness, o string, l store.ShareLink)
+	}{
+		{"rotated", func(h *harness, o string, l store.ShareLink) {
+			if _, _, err := h.svc.RotateLink(ctx, o, "docs", l.PublicID); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"revoked", func(h *harness, o string, l store.ShareLink) {
+			if err := h.svc.RevokeLink(ctx, o, "docs", l.PublicID); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"expired", func(h *harness, _ string, _ store.ShareLink) { h.clock.advance(time.Hour) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			o := h.owner()
+			s := h.site(o, "docs")
+			h.protect(o, "docs")
+			l, token, err := h.svc.CreateLink(ctx, o, "docs", access.NewLink{ExpiresAt: start.Add(time.Hour)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			d := h.decide(access.Request{SiteID: s.ID, Path: "/", Token: token, Browser: true})
+			if d.Outcome != access.Allow || d.Issue == nil {
+				t.Fatalf("decision %+v", d)
+			}
+			tc.end(h, o, l)
+			if _, err := h.svc.IssueSession(ctx, *d.Issue); !errors.Is(err, access.ErrLinkChanged) {
+				t.Fatalf("IssueSession after the link changed: %v", err)
+			}
+		})
+	}
+}

@@ -23,6 +23,9 @@ func (hs *harness) createLink(owner, site string, body any) api.CreatedShareLink
 	hs.t.Helper()
 	res := hs.do(owner, http.MethodPost, "/sites/"+site+"/links", body)
 	res.want(hs.t, http.StatusCreated, "")
+	if cc := res.header.Get("Cache-Control"); cc != "no-store" {
+		hs.t.Fatalf("create Cache-Control %q", cc)
+	}
 	var c api.CreatedShareLink
 	res.decode(hs.t, &c)
 	return c
@@ -82,6 +85,9 @@ func TestShareLinks(t *testing.T) {
 	// Rotation keeps everything but the secret.
 	res := hs.do(hs.ownerA, http.MethodPost, "/sites/docs/links/"+l.PublicId+"/rotate", nil)
 	res.want(t, http.StatusOK, "")
+	if cc := res.header.Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("rotate Cache-Control %q", cc)
+	}
 	var rotated api.CreatedShareLink
 	res.decode(t, &rotated)
 	if rotated.Token == c.Token || rotated.ShareLink.PublicId != l.PublicId || rotated.ShareLink.Id != l.Id ||

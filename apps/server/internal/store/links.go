@@ -71,6 +71,12 @@ type Links interface {
 	// Touch moves the link's last access forward to at; an earlier at
 	// changes nothing.
 	Touch(ctx context.Context, id string, at time.Time) error
+	// CreateSession stores link session s (s.ShareLinkID set; Method and
+	// Subject are implied) only while its link still has linkTokenHash and
+	// is unrevoked and unexpired at s.CreatedAt, in one statement.
+	// Otherwise it is ErrNotFound and nothing is stored, so a session can
+	// never outlive a rotation or revocation that raced its issue.
+	CreateSession(ctx context.Context, s SiteSession, linkTokenHash string) error
 }
 
 // Links returns the SQLite Links repository.
@@ -198,4 +204,19 @@ func (r linksRepo) Use(ctx context.Context, id, tokenHash string, at time.Time) 
 
 func (r linksRepo) Touch(ctx context.Context, id string, at time.Time) error {
 	return mapErr("touch share link", r.db.q.TouchShareLink(ctx, sqlcgen.TouchShareLinkParams{ID: id, LastAccessedAt: nullMs(at)}))
+}
+
+func (r linksRepo) CreateSession(ctx context.Context, s SiteSession, linkTokenHash string) error {
+	n, err := r.db.q.CreateLinkSession(ctx, sqlcgen.CreateLinkSessionParams{
+		ID:               s.ID,
+		SessionTokenHash: s.TokenHash,
+		PolicyID:         s.PolicyID,
+		PolicyVersion:    int64(s.PolicyVersion),
+		CreatedAt:        ms(s.CreatedAt),
+		ExpiresAt:        ms(s.ExpiresAt),
+		ShareLinkID:      s.ShareLinkID,
+		SiteID:           s.SiteID,
+		LinkTokenHash:    linkTokenHash,
+	})
+	return rowsAffected("create link session", n, err)
 }

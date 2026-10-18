@@ -1667,7 +1667,8 @@ paths:
       operationId: createShareLink
       summary: Create a share link.
       description: >-
-        The response is the only time the token and its URL are shown. The
+        The response is the only time the token and its URL are shown, and is
+        sent with `Cache-Control: no-store`. The
         link lets anyone holding it read the site, or only `path` and below,
         wherever a protected policy enables share links; it works whatever
         the site's policies are now, so it starts working if the site is
@@ -1751,7 +1752,8 @@ paths:
         Issues a new token for the same link, keeping its public ID, label,
         path, expiry and use count. The old token and every site session
         created from the link stop working on their next request. The
-        response is the only time the new token is shown.
+        response is the only time the new token is shown, and is sent with
+        `Cache-Control: no-store`.
       tags: [links]
       security:
         - sessionCookie: []

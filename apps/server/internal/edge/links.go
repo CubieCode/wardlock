@@ -74,20 +74,35 @@ func withoutToken(r *http.Request) string {
 	return p
 }
 
-// issueLinkSession creates the session an accepted token earned and sets
-// its cookie. Only tokens from the URL earn one: a client sending
-// Authorization sends it again next time, and a browser that followed a
-// link keeps working once the token is stripped from its address bar.
-// ok is false when it has already answered 500.
-func (e *Edge) issueLinkSession(w http.ResponseWriter, r *http.Request, d access.Decision) bool {
+// navigation reports whether r is a browser loading a page: a GET that
+// accepts HTML and, when the browser says, is a navigation. Only these earn
+// a session from a token in the URL; curl, bots, crawlers, HEAD requests
+// and subresource fetches get the content on every request with the token
+// and leave no session behind.
+func navigation(r *http.Request) bool {
+	mode := r.Header.Get("Sec-Fetch-Mode")
+	return r.Method == http.MethodGet && acceptsHTML(r) && (mode == "" || mode == "navigate")
+}
+
+// issueLinkSession creates the session an accepted token earned and
+// returns its cookie. A link rotated, revoked or expired since the
+// decision issues nothing, and *d becomes a refusal. ok is false when it
+// has already answered 500.
+func (e *Edge) issueLinkSession(w http.ResponseWriter, r *http.Request, d *access.Decision) (*http.Cookie, bool) {
 	c, err := e.access.IssueSession(r.Context(), *d.Issue)
+	if errors.Is(err, access.ErrLinkChanged) {
+		d.Outcome, d.Via, d.LinkPublicID, d.TokenAccepted, d.Issue = access.Unauthorized, access.ViaNone, "", false, nil
+		if acceptsHTML(r) {
+			d.Outcome = access.Login
+		}
+		return nil, true
+	}
 	if err != nil {
 		e.log.ErrorContext(r.Context(), "issue link session", slog.String("site_id", d.Issue.SiteID), slog.Any("error", err))
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return false
+		return nil, false
 	}
-	w.Header().Add("Set-Cookie", SessionCookie(c).String())
-	return true
+	return SessionCookie(c), true
 }
 
 // stripScript removes the token from the address bar once an HTML page has
@@ -96,18 +111,22 @@ func (e *Edge) issueLinkSession(w http.ResponseWriter, r *http.Request, d access
 const stripScript = `<script>(function(){try{var u=new URL(location.href);if(u.searchParams.has("t")){u.searchParams.delete("t");history.replaceState(history.state,"",u.pathname+u.search+u.hash)}}catch(e){}})();</script>`
 
 // injectStrip inserts stripScript into an HTML document: before </head>,
-// else before <body, else after a leading doctype, else at the start.
+// else before <body, else after a leading doctype, else at the start. Tags
+// are matched ASCII-case-insensitively on doc itself, so every index is a
+// byte offset into doc whatever its encoding (Unicode case folding changes
+// byte lengths, and Latin-1 pages are not UTF-8).
 func injectStrip(doc []byte) []byte {
-	lower := bytes.ToLower(doc)
-	at := bytes.Index(lower, []byte("</head"))
+	at := indexASCIIFold(doc, "</head")
 	if at < 0 {
-		at = bytes.Index(lower, []byte("<body"))
+		at = indexASCIIFold(doc, "<body")
 	}
 	if at < 0 {
 		at = 0
-		if trimmed := bytes.TrimLeft(bytes.TrimPrefix(lower, []byte("\xef\xbb\xbf")), " \t\r\n"); bytes.HasPrefix(trimmed, []byte("<!doctype")) {
-			if end := bytes.IndexByte(lower, '>'); end >= 0 {
-				at = end + 1
+		rest := bytes.TrimPrefix(doc, []byte("\xef\xbb\xbf"))
+		lead := len(doc) - len(bytes.TrimLeft(rest, " \t\r\n"))
+		if hasPrefixASCIIFold(doc[lead:], "<!doctype") {
+			if end := bytes.IndexByte(doc[lead:], '>'); end >= 0 {
+				at = lead + end + 1
 			}
 		}
 	}
@@ -115,6 +134,33 @@ func injectStrip(doc []byte) []byte {
 	out = append(out, doc[:at]...)
 	out = append(out, stripScript...)
 	return append(out, doc[at:]...)
+}
+
+// indexASCIIFold is bytes.Index with A-Z folded to a-z; lowerPattern must
+// be lowercase ASCII. Other bytes compare exactly.
+func indexASCIIFold(doc []byte, lowerPattern string) int {
+	for i := 0; i+len(lowerPattern) <= len(doc); i++ {
+		if hasPrefixASCIIFold(doc[i:], lowerPattern) {
+			return i
+		}
+	}
+	return -1
+}
+
+func hasPrefixASCIIFold(b []byte, lowerPattern string) bool {
+	if len(b) < len(lowerPattern) {
+		return false
+	}
+	for j := range len(lowerPattern) {
+		c := b[j]
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		if c != lowerPattern[j] {
+			return false
+		}
+	}
+	return true
 }
 
 // serveStripped sends an HTML file with stripScript injected. The body is
@@ -195,12 +241,17 @@ func (e *Edge) viewPage(w http.ResponseWriter, r *http.Request, data viewData, s
 // view answers POST /.wardlock/view, the interstitial's button: it spends
 // one use of the link and sends the visitor, now holding a session, back
 // to the page they asked for. GET never spends anything, so preview bots
-// and mail scanners cannot use links up. No same-origin check is needed:
-// spending a use takes a ticket, which takes the token itself.
+// and mail scanners cannot use links up. Like logout it takes only a
+// same-origin POST: otherwise a page elsewhere could post a ticket for its
+// own link and swap the visitor's session for one it chose.
 func (e *Edge) view(w http.ResponseWriter, r *http.Request, site ServedSite) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !sameOrigin(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxViewForm)

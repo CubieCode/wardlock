@@ -60,39 +60,45 @@ func runShare(ctx context.Context, a *app, args []string) error {
 	return errUsage
 }
 
-// shareConn parses the DOMAIN (and LINK_ID, when wantID) arguments and
-// connects, returning the site's name.
-func shareConn(ctx context.Context, a *app, fs *flag.FlagSet, g *globalFlags, args []string, wantID bool) (c *conn, site, linkID string, err error) {
+// shareConn parses the DOMAIN (and LINK_ID, when wantID) arguments, runs
+// check on the flags (so every usage error exits 2 before any network
+// round trip), then connects and finds the site.
+func shareConn(ctx context.Context, a *app, fs *flag.FlagSet, g *globalFlags, args []string, wantID bool, check func() error) (c *conn, site apiclient.Site, linkID string, err error) {
 	pos, err := parseArgs(fs, args)
 	if err != nil {
-		return nil, "", "", err
+		return nil, site, "", err
 	}
 	if n := map[bool]int{false: 1, true: 2}[wantID]; len(pos) != n {
 		fs.Usage()
-		return nil, "", "", errUsage
+		return nil, site, "", errUsage
 	}
 	t, err := parseTarget(pos[0])
 	if err != nil {
-		return nil, "", "", err
+		return nil, site, "", err
 	}
 	if wantID {
 		linkID = strings.ToLower(pos[1])
 		if !linkIDPattern.MatchString(linkID) {
-			return nil, "", "", usageErrorf("%q is not a share link ID: use the 10-character ID wardlock share list %s shows", pos[1], t)
+			return nil, site, "", usageErrorf("%q is not a share link ID: use the 10-character ID wardlock share list %s shows", pos[1], t)
+		}
+	}
+	if check != nil {
+		if err := check(); err != nil {
+			return nil, site, "", err
 		}
 	}
 	cfgServer, err := a.configServer()
 	if err != nil {
-		return nil, "", "", err
+		return nil, site, "", err
 	}
 	if c, err = a.connect(g.server, cfgServer); err != nil {
-		return nil, "", "", err
+		return nil, site, "", err
 	}
-	s, err := c.mustFindSite(ctx, t)
+	site, err = c.mustFindSite(ctx, t)
 	if err != nil {
-		return nil, "", "", err
+		return nil, site, "", err
 	}
-	return c, s.Name, linkID, nil
+	return c, site, linkID, nil
 }
 
 // parseExpiry turns --expires into a time: never, or a whole number of
@@ -127,38 +133,41 @@ func shareCreate(ctx context.Context, a *app, args []string) error {
 	label := fs.String("label", "", `a note for you, such as "Linear ENG-123" (never part of the URL)`)
 	expires := fs.String("expires", "never", "when the link stops working: never, or such as 30m, 1h, 7d, 30d, 2w")
 	uses := fs.Int("uses", 0, "how many times the link can be opened (1 for a one-time link; default unlimited)")
-	c, site, _, err := shareConn(ctx, a, fs, g, args, false)
+	body := apiclient.CreateShareLinkJSONRequestBody{Path: path}
+	check := func() error {
+		at, err := parseExpiry(*expires, a.now())
+		if err != nil {
+			return err
+		}
+		if !at.IsZero() {
+			body.ExpiresAt = ptr(at.UnixMilli())
+		}
+		if *uses < 0 || *uses > 1_000_000 {
+			return usageErrorf("--uses must be 1 to 1000000, or left out for unlimited uses")
+		}
+		if *uses > 0 {
+			body.MaxUses = ptr(int32(*uses))
+		}
+		if *label != "" {
+			body.Label = label
+		}
+		return nil
+	}
+	c, site, _, err := shareConn(ctx, a, fs, g, args, false, check)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	body := apiclient.CreateShareLinkJSONRequestBody{Path: path}
-	if *label != "" {
-		body.Label = label
-	}
-	at, err := parseExpiry(*expires, a.now())
-	if err != nil {
-		return err
-	}
-	if !at.IsZero() {
-		body.ExpiresAt = ptr(at.UnixMilli())
-	}
-	if *uses < 0 || *uses > 1_000_000 {
-		return usageErrorf("--uses must be 1 to 1000000, or left out for unlimited uses")
-	}
-	if *uses > 0 {
-		body.MaxUses = ptr(int32(*uses))
-	}
-	res, err := c.api.CreateShareLinkWithResponse(ctx, site, body, c.auth)
+	res, err := c.api.CreateShareLinkWithResponse(ctx, site.Name, body, c.auth)
 	if err != nil {
 		return c.unreachable(ctx, err)
 	}
 	if res.JSON201 == nil {
 		return c.failed(res.HTTPResponse, res.Body)
 	}
-	return printCreated(a, g.json, site, "Created", res.JSON201)
+	return printCreated(a, g.json, site.Name, "Created", res.JSON201)
 }
 
 // printCreated prints a link's URL: the only output that ever shows its
@@ -191,7 +200,7 @@ func describeLink(l apiclient.ShareLink) string {
 }
 
 type shareListResult struct {
-	Site  string                `json:"site"`
+	Site  apiclient.Site        `json:"site"`
 	Links []apiclient.ShareLink `json:"links"`
 }
 
@@ -201,7 +210,7 @@ func shareList(ctx context.Context, a *app, args []string) error {
 		"expiry, uses and last access. Revoked links are not shown, and URLs\n"+
 		"never are: rotate a link for a new one.")
 	g := addGlobalFlags(fs)
-	c, site, _, err := shareConn(ctx, a, fs, g, args, false)
+	c, site, _, err := shareConn(ctx, a, fs, g, args, false, nil)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}
@@ -211,7 +220,7 @@ func shareList(ctx context.Context, a *app, args []string) error {
 	out := shareListResult{Site: site, Links: []apiclient.ShareLink{}}
 	var cursor *string
 	for {
-		res, err := c.api.ListShareLinksWithResponse(ctx, site, &apiclient.ListShareLinksParams{Limit: ptr(pageSize), Cursor: cursor}, c.auth)
+		res, err := c.api.ListShareLinksWithResponse(ctx, site.Name, &apiclient.ListShareLinksParams{Limit: ptr(pageSize), Cursor: cursor}, c.auth)
 		if err != nil {
 			return c.unreachable(ctx, err)
 		}
@@ -227,7 +236,7 @@ func shareList(ctx context.Context, a *app, args []string) error {
 		return writeJSON(a.stdout, out)
 	}
 	if len(out.Links) == 0 {
-		fmt.Fprintf(a.stdout, "%s has no share links. Create one with wardlock share create %s.\n", site, site)
+		fmt.Fprintf(a.stdout, "%s has no share links. Create one with wardlock share create %s.\n", site.Name, site.Name)
 		return nil
 	}
 	tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
@@ -252,9 +261,9 @@ func shareList(ctx context.Context, a *app, args []string) error {
 }
 
 type shareRevokeResult struct {
-	Revoked  bool   `json:"revoked"`
-	Site     string `json:"site"`
-	PublicID string `json:"publicId"`
+	Revoked  bool           `json:"revoked"`
+	Site     apiclient.Site `json:"site"`
+	PublicID string         `json:"publicId"`
 }
 
 func shareRevoke(ctx context.Context, a *app, args []string) error {
@@ -262,24 +271,24 @@ func shareRevoke(ctx context.Context, a *app, args []string) error {
 		"Stops the link working at once, with every browser session opened\n"+
 		"with it. Needs a token with the manage scope.")
 	g := addGlobalFlags(fs)
-	c, site, id, err := shareConn(ctx, a, fs, g, args, true)
+	c, site, id, err := shareConn(ctx, a, fs, g, args, true, nil)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	res, err := c.api.RevokeShareLinkWithResponse(ctx, site, id, c.auth)
+	res, err := c.api.RevokeShareLinkWithResponse(ctx, site.Name, id, c.auth)
 	if err != nil {
 		return c.unreachable(ctx, err)
 	}
 	if res.StatusCode() != http.StatusNoContent {
-		return linkFailed(c, res.HTTPResponse, res.Body, site, id)
+		return linkFailed(c, res.HTTPResponse, res.Body, site.Name, id)
 	}
 	if g.json {
 		return writeJSON(a.stdout, shareRevokeResult{Revoked: true, Site: site, PublicID: id})
 	}
-	fmt.Fprintf(a.stdout, "Revoked share link %s on %s. It and every session opened with it stop working now.\n", id, site)
+	fmt.Fprintf(a.stdout, "Revoked share link %s on %s. It and every session opened with it stop working now.\n", id, site.Name)
 	return nil
 }
 
@@ -289,21 +298,21 @@ func shareRotate(ctx context.Context, a *app, args []string) error {
 		"expiry and uses. The old URL, and every session opened with it, stop\n"+
 		"working at once. Needs a token with the manage scope.")
 	g := addGlobalFlags(fs)
-	c, site, id, err := shareConn(ctx, a, fs, g, args, true)
+	c, site, id, err := shareConn(ctx, a, fs, g, args, true, nil)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	res, err := c.api.RotateShareLinkWithResponse(ctx, site, id, c.auth)
+	res, err := c.api.RotateShareLinkWithResponse(ctx, site.Name, id, c.auth)
 	if err != nil {
 		return c.unreachable(ctx, err)
 	}
 	if res.JSON200 == nil {
-		return linkFailed(c, res.HTTPResponse, res.Body, site, id)
+		return linkFailed(c, res.HTTPResponse, res.Body, site.Name, id)
 	}
-	return printCreated(a, g.json, site, "Rotated", res.JSON200)
+	return printCreated(a, g.json, site.Name, "Rotated", res.JSON200)
 }
 
 // linkFailed is conn.failed with a missing link explained.

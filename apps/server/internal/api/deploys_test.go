@@ -99,6 +99,7 @@ func newHarness(t *testing.T, limits deploys.Limits) *harness {
 type response struct {
 	status int
 	body   []byte
+	header http.Header
 }
 
 func (r response) decode(t *testing.T, v any) {
@@ -139,7 +140,7 @@ func (hs *harness) do(owner, method, path string, body any) response {
 	}
 	rec := httptest.NewRecorder()
 	hs.h.ServeHTTP(rec, req)
-	return response{rec.Code, rec.Body.Bytes()}
+	return response{rec.Code, rec.Body.Bytes(), rec.Result().Header}
 }
 
 // want fails unless r has status and, for errors, code.

@@ -384,6 +384,11 @@ type NewSession struct {
 	Method store.SessionMethod
 	// ShareLinkID is set exactly when Method is store.SessionLink.
 	ShareLinkID string
+	// LinkTokenHash is the stored hash of the link token that earned a
+	// link session. The session is stored only if the link still has it
+	// (and is unrevoked and unexpired), so a rotation or revocation that
+	// races the issue cannot leave a live session behind (ErrLinkChanged).
+	LinkTokenHash string
 	// Subject is the verified email for email-code and OAuth sessions.
 	Subject string
 	// NotAfter caps the session's lifetime (a link's expiry); zero means
@@ -401,10 +406,13 @@ func (s *Service) IssueSession(ctx context.Context, n NewSession) (Cookie, error
 		expires = n.NotAfter.UTC().Truncate(time.Millisecond)
 	}
 	if !now.Before(expires) {
+		if n.Method == store.SessionLink {
+			return Cookie{}, ErrLinkChanged // the link expired after the check
+		}
 		return Cookie{}, errors.New("issue site session: already expired")
 	}
 	token := newToken()
-	err := s.c.Sessions.CreateSite(ctx, store.SiteSession{
+	row := store.SiteSession{
 		ID:            store.NewID(),
 		SiteID:        n.SiteID,
 		TokenHash:     s.key.tokenHash(token),
@@ -415,7 +423,19 @@ func (s *Service) IssueSession(ctx context.Context, n NewSession) (Cookie, error
 		Subject:       n.Subject,
 		CreatedAt:     now,
 		ExpiresAt:     expires,
-	})
+	}
+	var err error
+	if n.Method == store.SessionLink {
+		if n.LinkTokenHash == "" {
+			return Cookie{}, errors.New("issue site session: a link session needs the link's token hash")
+		}
+		err = s.c.Links.CreateSession(ctx, row, n.LinkTokenHash)
+		if errors.Is(err, store.ErrNotFound) {
+			return Cookie{}, ErrLinkChanged
+		}
+	} else {
+		err = s.c.Sessions.CreateSite(ctx, row)
+	}
 	if err != nil {
 		return Cookie{}, fmt.Errorf("issue site session: %w", err)
 	}

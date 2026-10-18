@@ -13,6 +13,49 @@ import (
 	"database/sql"
 )
 
+const createLinkSession = `-- name: CreateLinkSession :execrows
+INSERT INTO site_sessions (id, site_id, token_hash, method, share_link_id, policy_id, policy_version, subject, created_at, expires_at, revoked_at)
+SELECT ?1, share_links.site_id, ?2, 'link', share_links.id, ?3, ?4, NULL, ?5, ?6, NULL
+FROM share_links
+WHERE share_links.id = ?7 AND share_links.site_id = ?8
+  AND share_links.token_hash = ?9 AND share_links.revoked_at IS NULL
+  AND (share_links.expires_at IS NULL OR share_links.expires_at > ?5)
+`
+
+type CreateLinkSessionParams struct {
+	ID               string
+	SessionTokenHash string
+	PolicyID         string
+	PolicyVersion    int64
+	CreatedAt        int64
+	ExpiresAt        int64
+	ShareLinkID      string
+	SiteID           string
+	LinkTokenHash    string
+}
+
+// Creates a link session only while the link still has token_hash and is
+// unrevoked and unexpired at created_at, in one statement, so a rotation or
+// revocation that commits first leaves nothing behind (its own session
+// revocation would miss a row inserted after it).
+func (q *Queries) CreateLinkSession(ctx context.Context, arg CreateLinkSessionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, createLinkSession,
+		arg.ID,
+		arg.SessionTokenHash,
+		arg.PolicyID,
+		arg.PolicyVersion,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+		arg.ShareLinkID,
+		arg.SiteID,
+		arg.LinkTokenHash,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const createShareLink = `-- name: CreateShareLink :exec
 INSERT INTO share_links (id, site_id, public_id, token_hash, label, path_prefix, created_at, expires_at, max_uses, use_count, last_accessed_at, rotated_at, revoked_at)
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)

@@ -20,6 +20,21 @@ import (
 // Share-link operations (A2.2). Every handler takes the owner from the
 // verified request context, never from the request.
 
+// secretResponses are the operations whose success carries a share-link
+// token: no cache, shared or private, may keep them.
+var secretResponses = map[string]bool{"CreateShareLink": true, "RotateShareLink": true}
+
+// noStoreSecrets sets Cache-Control: no-store on secretResponses.
+func noStoreSecrets(next StrictHandlerFunc, operationID string) StrictHandlerFunc {
+	if !secretResponses[operationID] {
+		return next
+	}
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		w.Header().Set("Cache-Control", "no-store")
+		return next(ctx, w, r, request)
+	}
+}
+
 // linkFailed maps an access error to its response, or returns it as is for
 // 500 internal.
 func linkFailed(err error) (*failure, error) {

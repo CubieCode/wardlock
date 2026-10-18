@@ -152,6 +152,46 @@ func linksContract(t *testing.T, open Opener) {
 		f.must(f.r.Links.Revoke(t.Context(), o.ID, s.ID, unlimited.PublicID, now))
 		wantErr(t, f.r.Links.Use(t.Context(), unlimited.ID, unlimited.TokenHash, now), store.ErrNotFound)
 	})
+	t.Run("CreateSession", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		p := f.policy(o.ID, s.ID)
+		l := f.validLink(s.ID)
+		l.ExpiresAt = now.Add(time.Hour)
+		f.must(f.r.Links.Create(t.Context(), o.ID, l))
+		sess := func() store.SiteSession {
+			v := f.validSiteSession(s.ID, p)
+			v.Method, v.ShareLinkID = store.SessionLink, l.ID
+			return v
+		}
+		ok := sess()
+		f.must(f.r.Links.CreateSession(t.Context(), ok, l.TokenHash))
+		got, err := f.r.Sessions.GetSiteByTokenHash(t.Context(), ok.TokenHash)
+		if err != nil || got.Method != store.SessionLink || got.ShareLinkID != l.ID || got.PolicyID != p.ID || !got.ExpiresAt.Equal(ok.ExpiresAt) || !got.RevokedAt.IsZero() {
+			t.Fatalf("stored %+v, %v", got, err)
+		}
+		wantErr(t, f.r.Links.CreateSession(t.Context(), sess(), f.hash()), store.ErrNotFound)
+		late := sess()
+		late.CreatedAt, late.ExpiresAt = now.Add(time.Hour), now.Add(2*time.Hour)
+		wantErr(t, f.r.Links.CreateSession(t.Context(), late, l.TokenHash), store.ErrNotFound)
+		other := f.site(o.ID)
+		foreign := f.validSiteSession(other.ID, f.policy(o.ID, other.ID))
+		foreign.Method, foreign.ShareLinkID = store.SessionLink, l.ID
+		wantErr(t, f.r.Links.CreateSession(t.Context(), foreign, l.TokenHash), store.ErrNotFound)
+		// After a rotation the old hash creates nothing; the new one does.
+		rotated, err := f.r.Links.Rotate(t.Context(), o.ID, s.ID, l.PublicID, f.hash(), now)
+		f.must(err)
+		raced := sess()
+		wantErr(t, f.r.Links.CreateSession(t.Context(), raced, l.TokenHash), store.ErrNotFound)
+		if _, err := f.r.Sessions.GetSiteByTokenHash(t.Context(), raced.TokenHash); err == nil {
+			t.Fatal("a refused session was stored")
+		}
+		f.must(f.r.Links.CreateSession(t.Context(), sess(), rotated.TokenHash))
+		f.must(f.r.Links.Revoke(t.Context(), o.ID, s.ID, l.PublicID, now))
+		wantErr(t, f.r.Links.CreateSession(t.Context(), sess(), rotated.TokenHash), store.ErrNotFound)
+	})
 	t.Run("Touch", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, open)

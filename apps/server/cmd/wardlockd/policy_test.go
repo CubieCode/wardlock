@@ -169,7 +169,7 @@ func (p *policyEdge) issue(site store.Site, pol store.Policy) string {
 	if err := p.db.Links().Create(ctx, p.owner.ID, l); err != nil {
 		t.Fatal(err)
 	}
-	c, err := p.acc.IssueSession(ctx, access.NewSession{SiteID: site.ID, Policy: pol, Method: store.SessionLink, ShareLinkID: l.ID})
+	c, err := p.acc.IssueSession(ctx, access.NewSession{SiteID: site.ID, Policy: pol, Method: store.SessionLink, ShareLinkID: l.ID, LinkTokenHash: l.TokenHash})
 	if err != nil {
 		t.Fatal(err)
 	}

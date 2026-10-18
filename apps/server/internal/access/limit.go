@@ -74,14 +74,7 @@ func (l *limiter) allow(key string, r Rate) (bool, time.Duration) {
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if !now.Before(l.nextSweep) {
-		for k, w := range l.windows {
-			if !now.Before(w.end) {
-				delete(l.windows, k)
-			}
-		}
-		l.nextSweep = now.Add(sweepEvery)
-	}
+	l.sweep(now)
 	w, ok := l.windows[key]
 	if !ok && len(l.windows) >= l.maxKeys {
 		return false, max(l.nextSweep.Sub(now), time.Second)
@@ -98,16 +91,37 @@ func (l *limiter) allow(key string, r Rate) (bool, time.Duration) {
 }
 
 // exceeded reports whether key's current window under r is already full,
-// without counting an event, and how long until it resets.
+// or the table is full and does not hold key, without counting an event,
+// and how long until that changes.
 func (l *limiter) exceeded(key string, r Rate) (bool, time.Duration) {
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.sweep(now)
 	w, ok := l.windows[key]
+	if !ok && len(l.windows) >= l.maxKeys {
+		// Full: a key the table cannot hold cannot be counted, so it is
+		// refused (fail closed) until a sweep frees room.
+		return true, max(l.nextSweep.Sub(now), time.Second)
+	}
 	if !ok || !now.Before(w.end) || w.n < r.N {
 		return false, 0
 	}
 	return true, w.end.Sub(now)
+}
+
+// sweep drops expired windows, at most once per sweepEvery, so a full
+// table costs no scan per request.
+func (l *limiter) sweep(now time.Time) {
+	if now.Before(l.nextSweep) {
+		return
+	}
+	for k, w := range l.windows {
+		if !now.Before(w.end) {
+			delete(l.windows, k)
+		}
+	}
+	l.nextSweep = now.Add(sweepEvery)
 }
 
 // ipKey is the rate-limit key for a client address: the address itself for

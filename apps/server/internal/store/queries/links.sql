@@ -56,6 +56,18 @@ WHERE id = sqlc.arg(id) AND token_hash = sqlc.arg(token_hash) AND revoked_at IS 
   AND (expires_at IS NULL OR expires_at > sqlc.arg(at))
   AND (max_uses IS NULL OR use_count < max_uses);
 
+-- Creates a link session only while the link still has token_hash and is
+-- unrevoked and unexpired at created_at, in one statement, so a rotation or
+-- revocation that commits first leaves nothing behind (its own session
+-- revocation would miss a row inserted after it).
+-- name: CreateLinkSession :execrows
+INSERT INTO site_sessions (id, site_id, token_hash, method, share_link_id, policy_id, policy_version, subject, created_at, expires_at, revoked_at)
+SELECT sqlc.arg(id), share_links.site_id, sqlc.arg(session_token_hash), 'link', share_links.id, sqlc.arg(policy_id), sqlc.arg(policy_version), NULL, sqlc.arg(created_at), sqlc.arg(expires_at), NULL
+FROM share_links
+WHERE share_links.id = sqlc.arg(share_link_id) AND share_links.site_id = sqlc.arg(site_id)
+  AND share_links.token_hash = sqlc.arg(link_token_hash) AND share_links.revoked_at IS NULL
+  AND (share_links.expires_at IS NULL OR share_links.expires_at > sqlc.arg(created_at));
+
 -- name: TouchShareLink :exec
 UPDATE share_links SET last_accessed_at = sqlc.arg(last_accessed_at)
 WHERE id = sqlc.arg(id) AND (last_accessed_at IS NULL OR last_accessed_at < sqlc.arg(last_accessed_at));

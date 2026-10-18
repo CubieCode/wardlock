@@ -130,11 +130,21 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// A token in a browser navigation's URL earns a session, issued before
+	// the access is recorded so a refused issue is recorded as refused.
+	var session *http.Cookie
+	if d.Outcome == access.Allow && d.Issue != nil && tokenInURL && navigation(r) {
+		if session, ok = e.issueLinkSession(w, r, &d); !ok {
+			return
+		}
+	}
 	w, done := e.recordAccess(w, r, s.site, clean, d)
 	defer done()
-	issue := d.Outcome == access.Allow && d.Issue != nil && tokenInURL
-	if d.ClearCookie && !issue {
+	if d.ClearCookie && session == nil {
 		w.Header().Add("Set-Cookie", ClearSessionCookie().String())
+	}
+	if session != nil {
+		w.Header().Add("Set-Cookie", session.String())
 	}
 	switch d.Outcome {
 	case access.Allow:
@@ -148,9 +158,6 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		e.challenge(w, r, s.site, d)
 		return
 	}
-	if issue && !e.issueLinkSession(w, r, d) {
-		return
-	}
 	protected := d.Protected
 	// Only HTML answers to a token in the URL get the strip script.
 	strip := d.TokenAccepted && tokenInURL
@@ -162,6 +169,11 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// allow the visitor too, or they get a plain 404 rather than its
 		// content.
 		req.Path = "/" + res.file.Path
+		if !d.TokenAccepted {
+			// A refused token was counted once already; the fallback
+			// file is checked against the cookie alone.
+			req.Token = ""
+		}
 		fd, allowed := e.decide(w, r, req)
 		if !allowed {
 			return

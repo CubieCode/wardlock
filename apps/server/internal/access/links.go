@@ -27,6 +27,9 @@ var (
 	// ErrInvalidLink means a new link's label, expiry or use limit is not
 	// acceptable. It arrives inside a TargetError.
 	ErrInvalidLink = errors.New("invalid share link")
+	// ErrLinkChanged means IssueSession refused a link session because
+	// the link was rotated, revoked or expired after the token was checked.
+	ErrLinkChanged = errors.New("share link changed since it was checked")
 	// ErrTicket means an interstitial ticket is forged, expired or for
 	// another site, or its link can no longer be used (revoked, rotated,
 	// expired or out of uses).
@@ -54,6 +57,12 @@ const (
 // errTokenRefused is checkToken's answer for any token that does not let
 // the request in, whatever the reason.
 var errTokenRefused = errors.New("share link refused")
+
+// limitedError is checkToken's answer for a refused guess that went over a
+// limit (or found the limiter full): RetryAfter says for how long.
+type limitedError struct{ RetryAfter time.Duration }
+
+func (e *limitedError) Error() string { return "share link guesses limited" }
 
 // NewLink is what an owner asks for when creating a share link.
 type NewLink struct {
@@ -242,6 +251,13 @@ func (s *Service) decideToken(ctx context.Context, r Request, p store.Policy, se
 	if errors.Is(err, errTokenRefused) {
 		return bySession(), nil
 	}
+	if le, ok := errors.AsType[*limitedError](err); ok {
+		if sess.allows {
+			return bySession(), nil
+		}
+		d.Outcome, d.RetryAfter = RateLimited, le.RetryAfter
+		return d, nil
+	}
 	if err != nil {
 		return Decision{}, err
 	}
@@ -264,7 +280,9 @@ func (s *Service) decideToken(ctx context.Context, r Request, p store.Policy, se
 	}
 	s.touchLink(ctx, l)
 	d.Outcome, d.Via, d.LinkPublicID = Allow, ViaLink, l.PublicID
-	d.Issue = &NewSession{SiteID: r.SiteID, Policy: p, Method: store.SessionLink, ShareLinkID: l.ID, NotAfter: l.ExpiresAt}
+	d.Issue = &NewSession{
+		SiteID: r.SiteID, Policy: p, Method: store.SessionLink, ShareLinkID: l.ID, LinkTokenHash: l.TokenHash, NotAfter: l.ExpiresAt,
+	}
 	return d, nil
 }
 
@@ -281,19 +299,24 @@ func (s *Service) overTokenLimit(r Request) (bool, time.Duration) {
 
 // checkToken finds the usable link r.Token names on r's site. Every other
 // token is errTokenRefused, whatever the reason; malformed, unknown, wrong
-// and other sites' tokens also count against the IP's and site's limits.
+// and other sites' tokens also count against the IP's and site's limits,
+// and the guess that goes over one (or finds the limiter full) is a
+// *limitedError instead.
 // Only public IDs are logged, never tokens.
 func (s *Service) checkToken(ctx context.Context, r Request) (store.ShareLink, error) {
 	refuse := func(publicID string, guess bool) (store.ShareLink, error) {
-		if guess {
-			s.limiter.allow(tokenIPKey(r.ClientIP), s.limits.TokenFailuresPerIP)
-			s.limiter.allow(tokenSiteKey(r.SiteID), s.limits.TokenFailuresPerSite)
-		}
 		attrs := []slog.Attr{slog.String("site_id", r.SiteID)}
 		if publicID != "" {
 			attrs = append(attrs, slog.String("public_id", publicID))
 		}
 		s.log.LogAttrs(ctx, slog.LevelInfo, "share link refused", attrs...)
+		if guess {
+			ipOK, ipWait := s.limiter.allow(tokenIPKey(r.ClientIP), s.limits.TokenFailuresPerIP)
+			siteOK, siteWait := s.limiter.allow(tokenSiteKey(r.SiteID), s.limits.TokenFailuresPerSite)
+			if !ipOK || !siteOK {
+				return store.ShareLink{}, &limitedError{RetryAfter: max(ipWait, siteWait)}
+			}
+		}
 		return store.ShareLink{}, errTokenRefused
 	}
 	publicID, ok := parseLinkToken(r.Token)
@@ -421,8 +444,12 @@ func (s *Service) View(ctx context.Context, siteID, ticket string) (Viewed, erro
 		return Viewed{}, fmt.Errorf("use share link: %w", err)
 	}
 	c, err := s.IssueSession(ctx, NewSession{
-		SiteID: siteID, Policy: p, Method: store.SessionLink, ShareLinkID: l.ID, NotAfter: l.ExpiresAt,
+		SiteID: siteID, Policy: p, Method: store.SessionLink, ShareLinkID: l.ID, LinkTokenHash: l.TokenHash, NotAfter: l.ExpiresAt,
 	})
+	if errors.Is(err, ErrLinkChanged) {
+		// Rotated or revoked between spending the use and issuing.
+		return Viewed{}, ErrTicket
+	}
 	if err != nil {
 		return Viewed{}, err
 	}

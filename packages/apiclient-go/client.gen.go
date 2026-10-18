@@ -1766,7 +1766,7 @@ type ClientInterface interface {
 
 	// CreateShareLinkWithBody Create a share link.
 	//
-	// The response is the only time the token and its URL are shown. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+	// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1775,7 +1775,7 @@ type ClientInterface interface {
 
 	// CreateShareLink Create a share link.
 	//
-	// The response is the only time the token and its URL are shown. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+	// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1791,7 +1791,7 @@ type ClientInterface interface {
 
 	// RotateShareLink Rotate a share link's token.
 	//
-	// Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown.
+	// Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown, and is sent with `Cache-Control: no-store`.
 	//
 	// Corresponds with POST /api/v0/sites/{site}/links/{linkId}/rotate (the `RotateShareLink` operationId).
 	RotateShareLink(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2749,7 +2749,7 @@ func (c *Client) ListShareLinks(ctx context.Context, site SiteName, params *List
 
 // CreateShareLinkWithBody Create a share link.
 //
-// The response is the only time the token and its URL are shown. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2768,7 +2768,7 @@ func (c *Client) CreateShareLinkWithBody(ctx context.Context, site SiteName, con
 
 // CreateShareLink Create a share link.
 //
-// The response is the only time the token and its URL are shown. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2804,7 +2804,7 @@ func (c *Client) RevokeShareLink(ctx context.Context, site SiteName, linkId Link
 
 // RotateShareLink Rotate a share link's token.
 //
-// Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown.
+// Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown, and is sent with `Cache-Control: no-store`.
 //
 // Corresponds with POST /api/v0/sites/{site}/links/{linkId}/rotate (the `RotateShareLink` operationId).
 func (c *Client) RotateShareLink(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5399,7 +5399,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateShareLinkWithBodyWithResponse Create a share link.
 	//
-	// The response is the only time the token and its URL are shown. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+	// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5408,7 +5408,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateShareLinkWithResponse Create a share link.
 	//
-	// The response is the only time the token and its URL are shown. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+	// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5426,7 +5426,7 @@ type ClientWithResponsesInterface interface {
 
 	// RotateShareLinkWithResponse Rotate a share link's token.
 	//
-	// Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown.
+	// Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown, and is sent with `Cache-Control: no-store`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -9353,7 +9353,7 @@ func (c *ClientWithResponses) ListShareLinksWithResponse(ctx context.Context, si
 
 // CreateShareLinkWithBodyWithResponse Create a share link.
 //
-// The response is the only time the token and its URL are shown. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9368,7 +9368,7 @@ func (c *ClientWithResponses) CreateShareLinkWithBodyWithResponse(ctx context.Co
 
 // CreateShareLinkWithResponse Create a share link.
 //
-// The response is the only time the token and its URL are shown. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9398,7 +9398,7 @@ func (c *ClientWithResponses) RevokeShareLinkWithResponse(ctx context.Context, s
 
 // RotateShareLinkWithResponse Rotate a share link's token.
 //
-// Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown.
+// Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown, and is sent with `Cache-Control: no-store`.
 //
 // Returns a wrapper object for the known response body format(s).
 //
