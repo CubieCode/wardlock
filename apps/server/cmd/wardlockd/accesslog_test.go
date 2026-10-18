@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -57,6 +58,14 @@ func (publicSite) Decide(context.Context, access.Request) (access.Decision, erro
 }
 
 func (publicSite) EndSession(context.Context, string, string) error { return nil }
+
+func (publicSite) IssueSession(context.Context, access.NewSession) (access.Cookie, error) {
+	return access.Cookie{}, errors.New("public sites issue no sessions")
+}
+
+func (publicSite) View(context.Context, string, string) (access.Viewed, error) {
+	return access.Viewed{}, access.ErrTicket
+}
 
 type noInvalidations struct{}
 

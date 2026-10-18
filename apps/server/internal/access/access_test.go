@@ -97,6 +97,7 @@ func newHarnessKey(t *testing.T, db *store.DB, key []byte) *harness {
 		Sites:    db.Sites(),
 		Policies: h.policies,
 		Sessions: db.Sessions(),
+		Links:    db.Links(),
 		Notifier: &notifier{},
 		Secret:   key,
 		Now:      h.clock.Now,
@@ -165,7 +166,7 @@ func (h *harness) session(siteID string, p store.Policy, m store.SessionMethod) 
 		if err := h.db.Links().Create(h.t.Context(), ownerID, l); err != nil {
 			h.t.Fatal(err)
 		}
-		n.ShareLinkID = l.ID
+		n.ShareLinkID, n.LinkTokenHash = l.ID, l.TokenHash
 	case store.SessionEmail, store.SessionOAuth:
 		n.Subject = "visitor@example.test"
 	}

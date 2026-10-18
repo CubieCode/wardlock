@@ -34,9 +34,28 @@ type policyEdge struct {
 	logs          *bytes.Buffer
 	dashboardHits int
 
-	mu    sync.Mutex
-	clock time.Time
-	links int
+	mu      sync.Mutex
+	clock   time.Time
+	links   int
+	records []edge.AccessRecord
+	// tokens are every share-link token minted, for log assertions.
+	tokens []string
+}
+
+// Record keeps the edge's access records for assertions.
+func (p *policyEdge) Record(r edge.AccessRecord) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.records = append(p.records, r)
+}
+
+// accessRecords returns and forgets the records so far.
+func (p *policyEdge) accessRecords() []edge.AccessRecord {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := p.records
+	p.records = nil
+	return out
 }
 
 func (p *policyEdge) now() time.Time {
@@ -59,7 +78,7 @@ func newPolicyEdge(t *testing.T) *policyEdge {
 	notifier := deploys.NewLocalNotifier()
 	log := slog.New(slog.NewTextHandler(p.logs, nil))
 	acc, err := access.New(access.Config{
-		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Notifier: notifier,
+		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), Notifier: notifier,
 		Secret: []byte(testSecret), Now: p.now, Log: log,
 	})
 	if err != nil {
@@ -79,6 +98,7 @@ func newPolicyEdge(t *testing.T) *policyEdge {
 		Blobs:         blobs,
 		Invalidator:   notifier,
 		Access:        acc,
+		Recorder:      p,
 		Log:           log,
 	})
 	if err != nil {
@@ -149,7 +169,7 @@ func (p *policyEdge) issue(site store.Site, pol store.Policy) string {
 	if err := p.db.Links().Create(ctx, p.owner.ID, l); err != nil {
 		t.Fatal(err)
 	}
-	c, err := p.acc.IssueSession(ctx, access.NewSession{SiteID: site.ID, Policy: pol, Method: store.SessionLink, ShareLinkID: l.ID})
+	c, err := p.acc.IssueSession(ctx, access.NewSession{SiteID: site.ID, Policy: pol, Method: store.SessionLink, ShareLinkID: l.ID, LinkTokenHash: l.TokenHash})
 	if err != nil {
 		t.Fatal(err)
 	}

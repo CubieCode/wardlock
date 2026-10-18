@@ -130,8 +130,18 @@ func cacheControl(protected bool) string {
 	return "public, max-age=0, must-revalidate"
 }
 
-// serveFile writes f (or a precompressed sibling) with status.
-func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f ServedFile, status int, protected bool) {
+// serveFile writes f (or a precompressed sibling) with status. With strip,
+// an HTML file gets the share-link strip script (serveStripped); other
+// types are never altered.
+func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f ServedFile, status int, protected, strip bool) {
+	ctype := mime.TypeByExtension(path.Ext(f.Path))
+	if ctype == "" {
+		ctype = "application/octet-stream" // never sniff
+	}
+	if strip && strings.HasPrefix(ctype, "text/html") {
+		e.serveStripped(w, r, s, f, status, ctype)
+		return
+	}
 	send, coding, vary := negotiate(s, f, r.Header.Get("Accept-Encoding"))
 	blob, err := e.blobs.Open(r.Context(), send.SHA256)
 	if err != nil {
@@ -146,10 +156,6 @@ func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f Se
 	h.Set("Cache-Control", cacheControl(protected))
 	if vary {
 		h.Add("Vary", "Accept-Encoding")
-	}
-	ctype := mime.TypeByExtension(path.Ext(f.Path))
-	if ctype == "" {
-		ctype = "application/octet-stream" // never sniff
 	}
 	h.Set("Content-Type", ctype)
 	if coding != "" {

@@ -1,0 +1,200 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 CubieCode -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!--
+  The use-limited share-link interstitial (A2.2): a GET of a page with a
+  use-limited link's token shows it at the same URL, and its button posts a
+  signed ticket (never the token) to /.wardlock/view, which spends one use.
+  Preview bots and mail scanners do not press buttons, so they cannot use a
+  link up. With .Gone it is the dead end for a link that no longer works.
+  No scripts: the same strict Content-Security-Policy as the login page,
+  whose styles it shares (colours mirror packages/ui/styles/tokens.css).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="referrer" content="no-referrer" />
+    <title>
+      {{if .Gone}}Link no longer works{{else}}Shared page{{end}} · {{.Site}}
+    </title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --canvas: light-dark(#f6f6f3, #12171d);
+        --surface: light-dark(#ffffff, #1a2028);
+        --surface-muted: light-dark(#eeeeea, #222a33);
+        --text: light-dark(#1b2430, #e8ebee);
+        --muted: light-dark(#4f5a66, #a7b0ba);
+        --border: light-dark(#d9dad4, #2e3742);
+        --accent: light-dark(#a8741f, #d7a756);
+        --accent-strong: light-dark(#1b2430, #e8ebee);
+        --accent-hover: light-dark(#2e3a49, #ffffff);
+        --on-accent: light-dark(#ffffff, #12171d);
+        --warning: light-dark(#7d5200, #e8c06d);
+        --warning-surface: light-dark(#fbf1dc, #2a2213);
+        --warning-border: light-dark(#e2c27c, #5e4a1d);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5rem;
+        padding: 1.5rem 1rem;
+        background: var(--canvas);
+        color: var(--text);
+        font:
+          1rem/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      main {
+        width: 100%;
+        max-width: 26rem;
+        padding: 2rem;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+      .site {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 1.5rem;
+        font-size: 0.875rem;
+        color: var(--muted);
+      }
+      .host {
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+      }
+      .status {
+        flex: none;
+        padding: 0.125rem 0.5rem;
+        border: 1px solid var(--warning-border);
+        border-radius: 999px;
+        background: var(--warning-surface);
+        color: var(--warning);
+        font-weight: 500;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.5rem;
+        line-height: 1.25;
+        font-weight: 650;
+      }
+      p {
+        margin: 0;
+      }
+      .lead {
+        color: var(--muted);
+      }
+      .methods {
+        margin-top: 1.5rem;
+      }
+      .method {
+        padding: 1rem;
+        border-radius: 6px;
+        background: var(--surface-muted);
+      }
+      .method h2 {
+        margin: 0 0 0.25rem;
+        font-size: 1rem;
+        font-weight: 650;
+      }
+      .method + .method::before {
+        content: 'or';
+        display: block;
+        margin: -1rem -1rem 1rem;
+        padding: 0.75rem 0 0;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 0.875rem;
+        text-align: center;
+      }
+      .method + .method {
+        margin-top: 0.75rem;
+      }
+      .notice {
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      form {
+        margin-top: 1.5rem;
+      }
+      button {
+        width: 100%;
+        min-height: 2.75rem;
+        padding: 0.625rem 1rem;
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent-strong);
+        color: var(--on-accent);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:hover {
+        background: var(--accent-hover);
+      }
+      button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      footer {
+        font-size: 0.875rem;
+        color: var(--muted);
+      }
+      footer span {
+        color: var(--accent);
+      }
+      @media (max-width: 30rem) {
+        body {
+          justify-content: flex-start;
+          padding-top: 3rem;
+        }
+        main {
+          padding: 1.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="site">
+        <span class="host">{{.Site}}</span>
+        <span class="status">Protected</span>
+      </p>
+      {{if .Gone}}
+      <h1>This link no longer works</h1>
+      <p class="lead">
+        It has expired, been used up or been switched off by the site's owner.
+        Ask them for a new link.
+      </p>
+      {{else}}
+      <h1>Someone shared a page with you</h1>
+      <p class="lead">
+        This link can be opened a limited number of times. Viewing the page uses
+        one, and lets you in on this device.
+      </p>
+      <form method="post" action="/.wardlock/view">
+        <input type="hidden" name="ticket" value="{{.Ticket}}" />
+        <button type="submit">Click to view</button>
+      </form>
+      {{end}}
+    </main>
+    <footer>Protected by <span>Wardlock</span></footer>
+  </body>
+</html>

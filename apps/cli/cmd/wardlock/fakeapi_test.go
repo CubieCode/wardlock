@@ -50,6 +50,8 @@ type fakeAPI struct {
 	reached chan struct{}
 	created []apiclient.CreateDeployRequest
 	nextID  int
+	// links are each site's share links, newest first (share_test.go).
+	links map[string][]*apiclient.ShareLink
 }
 
 type fakeSite struct {
@@ -127,6 +129,7 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 	handle("PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256}", "deploy", f.upload)
 	handle("POST /api/v0/sites/{site}/deploys/{deployId}/activate", "deploy", f.withSite(f.activate))
 	handle("POST /api/v0/sites/{site}/rollback", "deploy", f.withSite(f.rollback))
+	f.handleLinks(handle)
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f

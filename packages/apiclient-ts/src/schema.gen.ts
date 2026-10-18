@@ -778,6 +778,98 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/sites/{site}/links': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    /**
+     * List a site's share links.
+     * @description Newest first. Revoked links are not listed; expired and used-up links are, with their `status`. Tokens are never returned.
+     */
+    get: operations['listShareLinks'];
+    put?: never;
+    /**
+     * Create a share link.
+     * @description The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+     */
+    post: operations['createShareLink'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/links/{linkId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The share link's public ID.
+         * @example q4v7m2xkpa
+         */
+        linkId: components['parameters']['LinkId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Revoke a share link.
+     * @description Immediate: the token and every site session created from it stop working on their next request. A revoked link is no longer listed, and revoking it again answers `404`.
+     */
+    delete: operations['revokeShareLink'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/links/{linkId}/rotate': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The share link's public ID.
+         * @example q4v7m2xkpa
+         */
+        linkId: components['parameters']['LinkId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Rotate a share link's token.
+     * @description Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown, and is sent with `Cache-Control: no-store`.
+     */
+    post: operations['rotateShareLink'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1190,6 +1282,68 @@ export interface components {
       /** @description Methods to enable on a protected policy; omitted means `[links]` (share links are on by default). Must be empty or omitted for a public policy. */
       methods?: components['schemas']['PolicyMethod'][];
     };
+    /**
+     * @description A share link's public ID: it names the link in listings, the access log and the CLI without revealing the token.
+     * @example q4v7m2xkpa
+     */
+    LinkPublicId: string;
+    /**
+     * @description `active`: the link works. `expired`: past `expiresAt`. `used_up`: `uses` has reached `maxUses`.
+     * @enum {string}
+     */
+    ShareLinkStatus: 'active' | 'expired' | 'used_up';
+    ShareLink: {
+      id: components['schemas']['Id'];
+      publicId: components['schemas']['LinkPublicId'];
+      /** @description Free text for the owner; never part of the URL. Absent when empty. */
+      label?: string;
+      path: components['schemas']['PolicyPath'];
+      status: components['schemas']['ShareLinkStatus'];
+      /**
+       * Format: int32
+       * @description Uses spent: presses of the "Click to view" button on a link with `maxUses`. Always 0 for a link without a use limit.
+       */
+      uses: number;
+      /**
+       * Format: int32
+       * @description Absent when the link has no use limit.
+       */
+      maxUses?: number;
+      createdAt: components['schemas']['Timestamp'];
+      /** @description Absent when the link never expires. */
+      expiresAt?: components['schemas']['Timestamp'];
+      /** @description The last request the link (or a session from it) let in, to the minute. Absent until first used. */
+      lastAccessedAt?: components['schemas']['Timestamp'];
+      /** @description Absent until the token is first rotated. */
+      rotatedAt?: components['schemas']['Timestamp'];
+    };
+    ShareLinkPage: {
+      items: components['schemas']['ShareLink'][];
+      nextCursor?: components['schemas']['Cursor'];
+    };
+    CreateShareLinkRequest: {
+      /** @description Free text up to 200 characters, such as "Linear ENG-123" or "sent to Alice". */
+      label?: string;
+      /** @description Scope: `/` (the default) for the whole site, or a directory prefix such as `/docs/`, which also covers `/docs`. */
+      path?: components['schemas']['PolicyPath'];
+      /** @description When the link stops working. Omit for a link that never expires (a first-class choice for permanent references). */
+      expiresAt?: components['schemas']['Timestamp'];
+      /**
+       * Format: int32
+       * @description Limit the uses (1 for a one-time link). Omit for unlimited.
+       */
+      maxUses?: number;
+    };
+    CreatedShareLink: {
+      shareLink: components['schemas']['ShareLink'];
+      /** @description The secret token. Shown only in this response. */
+      token: string;
+      /**
+       * Format: uri
+       * @description The share link: `https://<site host><path>?t=<token>`. Shown only in this response.
+       */
+      url: string;
+    };
   };
   responses: {
     /** @description The request is malformed or a field is invalid. */
@@ -1388,6 +1542,11 @@ export interface components {
      * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41
      */
     PolicyId: components['schemas']['Id'];
+    /**
+     * @description The share link's public ID.
+     * @example q4v7m2xkpa
+     */
+    LinkId: components['schemas']['LinkPublicId'];
     /**
      * @description The custom domain, in its normalised form.
      * @example docs.example.com
@@ -3043,6 +3202,174 @@ export interface operations {
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
       409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  listShareLinks: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+      };
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One page of share links. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e50",
+           *           "publicId": "q4v7m2xkpa",
+           *           "label": "Linear ENG-123",
+           *           "path": "/",
+           *           "status": "active",
+           *           "uses": 0,
+           *           "createdAt": 1767225600000,
+           *           "lastAccessedAt": 1767312000000
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['ShareLinkPage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  createShareLink: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "label": "Linear ENG-123",
+         *       "path": "/docs/",
+         *       "expiresAt": 1767830400000
+         *     }
+         */
+        'application/json': components['schemas']['CreateShareLinkRequest'];
+      };
+    };
+    responses: {
+      /** @description Created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CreatedShareLink'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  revokeShareLink: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The share link's public ID.
+         * @example q4v7m2xkpa
+         */
+        linkId: components['parameters']['LinkId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Revoked. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  rotateShareLink: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The share link's public ID.
+         * @example q4v7m2xkpa
+         */
+        linkId: components['parameters']['LinkId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The link with its new token. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CreatedShareLink'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
       default: components['responses']['Error'];
     };
   };

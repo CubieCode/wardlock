@@ -218,6 +218,27 @@ func (e Scope) Valid() bool {
 	}
 }
 
+// Defines values for ShareLinkStatus.
+const (
+	ShareLinkStatusActive  ShareLinkStatus = "active"
+	ShareLinkStatusExpired ShareLinkStatus = "expired"
+	ShareLinkStatusUsedUp  ShareLinkStatus = "used_up"
+)
+
+// Valid indicates whether the value is a known member of the ShareLinkStatus enum.
+func (e ShareLinkStatus) Valid() bool {
+	switch e {
+	case ShareLinkStatusActive:
+		return true
+	case ShareLinkStatusExpired:
+		return true
+	case ShareLinkStatusUsedUp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Activation defines model for Activation.
 type Activation struct {
 	Deploy Deploy `json:"deploy"`
@@ -351,6 +372,25 @@ type CreatePasskeyRequest struct {
 	Name *string `json:"name,omitempty"`
 }
 
+// CreateShareLinkRequest defines model for CreateShareLinkRequest.
+type CreateShareLinkRequest struct {
+	// ExpiresAt When the link stops working. Omit for a link that never expires (a first-class choice for permanent references).
+	//
+	// Examples: 1767225600000
+	ExpiresAt *Timestamp `json:"expiresAt,omitempty"`
+
+	// Label Free text up to 200 characters, such as "Linear ENG-123" or "sent to Alice".
+	Label *string `json:"label,omitempty"`
+
+	// MaxUses Limit the uses (1 for a one-time link). Omit for unlimited.
+	MaxUses *int32 `json:"maxUses,omitempty"`
+
+	// Path Scope: `/` (the default) for the whole site, or a directory prefix such as `/docs/`, which also covers `/docs`.
+	//
+	// Examples: /docs/
+	Path *PolicyPath `json:"path,omitempty"`
+}
+
 // CreateSiteRequest defines model for CreateSiteRequest.
 type CreateSiteRequest struct {
 	// Name A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
@@ -373,6 +413,17 @@ type CreatedDeploy struct {
 
 	// Missing Hashes to upload before activating, each once.
 	Missing []Sha256 `json:"missing"`
+}
+
+// CreatedShareLink defines model for CreatedShareLink.
+type CreatedShareLink struct {
+	ShareLink ShareLink `json:"shareLink"`
+
+	// Token The secret token. Shown only in this response.
+	Token string `json:"token"`
+
+	// Url The share link: `https://<site host><path>?t=<token>`. Shown only in this response.
+	Url string `json:"url"`
 }
 
 // Cursor Opaque pagination cursor.
@@ -578,6 +629,11 @@ type InviteOwnerRequest struct {
 	// Email Examples: owner@example.com
 	Email Email `json:"email"`
 }
+
+// LinkPublicId A share link's public ID: it names the link in listings, the access log and the CLI without revealing the token.
+//
+// Examples: q4v7m2xkpa
+type LinkPublicId = string
 
 // ManifestFile defines model for ManifestFile.
 type ManifestFile struct {
@@ -818,6 +874,69 @@ type SetupRequest struct {
 // Examples: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
 type Sha256 = string
 
+// ShareLink defines model for ShareLink.
+type ShareLink struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// ExpiresAt Absent when the link never expires.
+	//
+	// Examples: 1767225600000
+	ExpiresAt *Timestamp `json:"expiresAt,omitempty"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Label Free text for the owner; never part of the URL. Absent when empty.
+	Label *string `json:"label,omitempty"`
+
+	// LastAccessedAt The last request the link (or a session from it) let in, to the minute. Absent until first used.
+	//
+	// Examples: 1767225600000
+	LastAccessedAt *Timestamp `json:"lastAccessedAt,omitempty"`
+
+	// MaxUses Absent when the link has no use limit.
+	MaxUses *int32 `json:"maxUses,omitempty"`
+
+	// Path `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
+	//
+	// Examples: /docs/
+	Path PolicyPath `json:"path"`
+
+	// PublicId A share link's public ID: it names the link in listings, the access log and the CLI without revealing the token.
+	//
+	// Examples: q4v7m2xkpa
+	PublicId LinkPublicId `json:"publicId"`
+
+	// RotatedAt Absent until the token is first rotated.
+	//
+	// Examples: 1767225600000
+	RotatedAt *Timestamp `json:"rotatedAt,omitempty"`
+
+	// Status `active`: the link works. `expired`: past `expiresAt`. `used_up`: `uses` has reached `maxUses`.
+	Status ShareLinkStatus `json:"status"`
+
+	// Uses Uses spent: presses of the "Click to view" button on a link with `maxUses`. Always 0 for a link without a use limit.
+	Uses int32 `json:"uses"`
+}
+
+// ShareLinkPage defines model for ShareLinkPage.
+type ShareLinkPage struct {
+	Items []ShareLink `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// ShareLinkStatus `active`: the link works. `expired`: past `expiresAt`. `used_up`: `uses` has reached `maxUses`.
+type ShareLinkStatus string
+
 // SignInLinkRequest defines model for SignInLinkRequest.
 type SignInLinkRequest struct {
 	// Code The `code` query parameter of the sign-in URL.
@@ -903,6 +1022,11 @@ type DomainHostname = Hostname
 
 // Limit defines model for Limit.
 type Limit = int32
+
+// LinkId A share link's public ID: it names the link in listings, the access log and the CLI without revealing the token.
+//
+// Examples: q4v7m2xkpa
+type LinkId = LinkPublicId
 
 // PasskeyId A lowercase, hyphenated UUIDv7.
 //
@@ -990,6 +1114,15 @@ type ListDomainsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListShareLinksParams defines parameters for ListShareLinks.
+type ListShareLinksParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListPoliciesParams defines parameters for ListPolicies.
 type ListPoliciesParams struct {
 	// Limit Page size.
@@ -1049,6 +1182,9 @@ type CreateDeployJSONRequestBody = CreateDeployRequest
 
 // AddDomainJSONRequestBody defines body for AddDomain for application/json ContentType.
 type AddDomainJSONRequestBody = AddDomainRequest
+
+// CreateShareLinkJSONRequestBody defines body for CreateShareLink for application/json ContentType.
+type CreateShareLinkJSONRequestBody = CreateShareLinkRequest
 
 // SetPolicyJSONRequestBody defines body for SetPolicy for application/json ContentType.
 type SetPolicyJSONRequestBody = SetPolicyRequest
@@ -1620,6 +1756,45 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/v0/sites/{site}/domains/{hostname}/verify (the `VerifyDomain` operationId).
 	VerifyDomain(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListShareLinks List a site's share links.
+	//
+	// Newest first. Revoked links are not listed; expired and used-up links are, with their `status`. Tokens are never returned.
+	//
+	// Corresponds with GET /api/v0/sites/{site}/links (the `ListShareLinks` operationId).
+	ListShareLinks(ctx context.Context, site SiteName, params *ListShareLinksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateShareLinkWithBody Create a share link.
+	//
+	// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/links (the `CreateShareLink` operationId).
+	CreateShareLinkWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateShareLink Create a share link.
+	//
+	// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/links (the `CreateShareLink` operationId).
+	CreateShareLink(ctx context.Context, site SiteName, body CreateShareLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevokeShareLink Revoke a share link.
+	//
+	// Immediate: the token and every site session created from it stop working on their next request. A revoked link is no longer listed, and revoking it again answers `404`.
+	//
+	// Corresponds with DELETE /api/v0/sites/{site}/links/{linkId} (the `RevokeShareLink` operationId).
+	RevokeShareLink(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RotateShareLink Rotate a share link's token.
+	//
+	// Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown, and is sent with `Cache-Control: no-store`.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/links/{linkId}/rotate (the `RotateShareLink` operationId).
+	RotateShareLink(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListPolicies List a site's access policies.
 	//
@@ -2545,6 +2720,95 @@ func (c *Client) GetDomain(ctx context.Context, site SiteName, hostname DomainHo
 // Corresponds with POST /api/v0/sites/{site}/domains/{hostname}/verify (the `VerifyDomain` operationId).
 func (c *Client) VerifyDomain(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewVerifyDomainRequest(c.Server, site, hostname)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListShareLinks List a site's share links.
+//
+// Newest first. Revoked links are not listed; expired and used-up links are, with their `status`. Tokens are never returned.
+//
+// Corresponds with GET /api/v0/sites/{site}/links (the `ListShareLinks` operationId).
+func (c *Client) ListShareLinks(ctx context.Context, site SiteName, params *ListShareLinksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListShareLinksRequest(c.Server, site, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateShareLinkWithBody Create a share link.
+//
+// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/sites/{site}/links (the `CreateShareLink` operationId).
+func (c *Client) CreateShareLinkWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateShareLinkRequestWithBody(c.Server, site, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateShareLink Create a share link.
+//
+// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/sites/{site}/links (the `CreateShareLink` operationId).
+func (c *Client) CreateShareLink(ctx context.Context, site SiteName, body CreateShareLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateShareLinkRequest(c.Server, site, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RevokeShareLink Revoke a share link.
+//
+// Immediate: the token and every site session created from it stop working on their next request. A revoked link is no longer listed, and revoking it again answers `404`.
+//
+// Corresponds with DELETE /api/v0/sites/{site}/links/{linkId} (the `RevokeShareLink` operationId).
+func (c *Client) RevokeShareLink(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeShareLinkRequest(c.Server, site, linkId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RotateShareLink Rotate a share link's token.
+//
+// Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown, and is sent with `Cache-Control: no-store`.
+//
+// Corresponds with POST /api/v0/sites/{site}/links/{linkId}/rotate (the `RotateShareLink` operationId).
+func (c *Client) RotateShareLink(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRotateShareLinkRequest(c.Server, site, linkId)
 	if err != nil {
 		return nil, err
 	}
@@ -4113,6 +4377,208 @@ func NewVerifyDomainRequest(server string, site SiteName, hostname DomainHostnam
 	return req, nil
 }
 
+// NewListShareLinksRequest constructs an http.Request for the ListShareLinks method
+func NewListShareLinksRequest(server string, site SiteName, params *ListShareLinksParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/links", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateShareLinkRequest calls the generic CreateShareLink builder with application/json body
+func NewCreateShareLinkRequest(server string, site SiteName, body CreateShareLinkJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateShareLinkRequestWithBody(server, site, "application/json", bodyReader)
+}
+
+// NewCreateShareLinkRequestWithBody constructs an http.Request for the CreateShareLink method, with any body, and a specified content type
+func NewCreateShareLinkRequestWithBody(server string, site SiteName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/links", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRevokeShareLinkRequest constructs an http.Request for the RevokeShareLink method
+func NewRevokeShareLinkRequest(server string, site SiteName, linkId LinkId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "linkId", linkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/links/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRotateShareLinkRequest constructs an http.Request for the RotateShareLink method
+func NewRotateShareLinkRequest(server string, site SiteName, linkId LinkId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "linkId", linkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/links/%s/rotate", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListPoliciesRequest constructs an http.Request for the ListPolicies method
 func NewListPoliciesRequest(server string, site SiteName, params *ListPoliciesParams) (*http.Request, error) {
 	var err error
@@ -4921,6 +5387,51 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/v0/sites/{site}/domains/{hostname}/verify (the `VerifyDomain` operationId).
 	VerifyDomainWithResponse(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*VerifyDomainResponse, error)
+
+	// ListShareLinksWithResponse List a site's share links.
+	//
+	// Newest first. Revoked links are not listed; expired and used-up links are, with their `status`. Tokens are never returned.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sites/{site}/links (the `ListShareLinks` operationId).
+	ListShareLinksWithResponse(ctx context.Context, site SiteName, params *ListShareLinksParams, reqEditors ...RequestEditorFn) (*ListShareLinksResponse, error)
+
+	// CreateShareLinkWithBodyWithResponse Create a share link.
+	//
+	// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/links (the `CreateShareLink` operationId).
+	CreateShareLinkWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateShareLinkResponse, error)
+
+	// CreateShareLinkWithResponse Create a share link.
+	//
+	// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/links (the `CreateShareLink` operationId).
+	CreateShareLinkWithResponse(ctx context.Context, site SiteName, body CreateShareLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateShareLinkResponse, error)
+
+	// RevokeShareLinkWithResponse Revoke a share link.
+	//
+	// Immediate: the token and every site session created from it stop working on their next request. A revoked link is no longer listed, and revoking it again answers `404`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/sites/{site}/links/{linkId} (the `RevokeShareLink` operationId).
+	RevokeShareLinkWithResponse(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*RevokeShareLinkResponse, error)
+
+	// RotateShareLinkWithResponse Rotate a share link's token.
+	//
+	// Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown, and is sent with `Cache-Control: no-store`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/links/{linkId}/rotate (the `RotateShareLink` operationId).
+	RotateShareLinkWithResponse(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*RotateShareLinkResponse, error)
 
 	// ListPoliciesWithResponse List a site's access policies.
 	//
@@ -7346,6 +7857,289 @@ func (r VerifyDomainResponse) ContentType() string {
 	return ""
 }
 
+type ListShareLinksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ShareLinkPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListShareLinksResponse) GetJSON200() *ShareLinkPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListShareLinksResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListShareLinksResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListShareLinksResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListShareLinksResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListShareLinksResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListShareLinksResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListShareLinksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListShareLinksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListShareLinksResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateShareLinkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *CreatedShareLink
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateShareLinkResponse) GetJSON201() *CreatedShareLink {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateShareLinkResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateShareLinkResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateShareLinkResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r CreateShareLinkResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateShareLinkResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateShareLinkResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateShareLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateShareLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateShareLinkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RevokeShareLinkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RevokeShareLinkResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RevokeShareLinkResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RevokeShareLinkResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RevokeShareLinkResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RevokeShareLinkResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeShareLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeShareLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RevokeShareLinkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RotateShareLinkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *CreatedShareLink
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RotateShareLinkResponse) GetJSON200() *CreatedShareLink {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RotateShareLinkResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RotateShareLinkResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RotateShareLinkResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RotateShareLinkResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RotateShareLinkResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RotateShareLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RotateShareLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RotateShareLinkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListPoliciesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8540,6 +9334,81 @@ func (c *ClientWithResponses) VerifyDomainWithResponse(ctx context.Context, site
 		return nil, err
 	}
 	return ParseVerifyDomainResponse(rsp)
+}
+
+// ListShareLinksWithResponse List a site's share links.
+//
+// Newest first. Revoked links are not listed; expired and used-up links are, with their `status`. Tokens are never returned.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sites/{site}/links (the `ListShareLinks` operationId).
+func (c *ClientWithResponses) ListShareLinksWithResponse(ctx context.Context, site SiteName, params *ListShareLinksParams, reqEditors ...RequestEditorFn) (*ListShareLinksResponse, error) {
+	rsp, err := c.ListShareLinks(ctx, site, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListShareLinksResponse(rsp)
+}
+
+// CreateShareLinkWithBodyWithResponse Create a share link.
+//
+// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/links (the `CreateShareLink` operationId).
+func (c *ClientWithResponses) CreateShareLinkWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateShareLinkResponse, error) {
+	rsp, err := c.CreateShareLinkWithBody(ctx, site, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateShareLinkResponse(rsp)
+}
+
+// CreateShareLinkWithResponse Create a share link.
+//
+// The response is the only time the token and its URL are shown, and is sent with `Cache-Control: no-store`. The link lets anyone holding it read the site, or only `path` and below, wherever a protected policy enables share links; it works whatever the site's policies are now, so it starts working if the site is protected later. `url` opens the page directly with status 200 and a site session, with no login page or redirect; `Authorization: Bearer` with the token works too. A link with `maxUses` shows a "Click to view" page and counts a use only when the button is pressed. A label longer than 200 characters or with control characters, an expiry not in the future, a use limit outside 1 to 1000000 or a path that is not `/` or a clean directory prefix answers `400 invalid_share_link`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/links (the `CreateShareLink` operationId).
+func (c *ClientWithResponses) CreateShareLinkWithResponse(ctx context.Context, site SiteName, body CreateShareLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateShareLinkResponse, error) {
+	rsp, err := c.CreateShareLink(ctx, site, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateShareLinkResponse(rsp)
+}
+
+// RevokeShareLinkWithResponse Revoke a share link.
+//
+// Immediate: the token and every site session created from it stop working on their next request. A revoked link is no longer listed, and revoking it again answers `404`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/sites/{site}/links/{linkId} (the `RevokeShareLink` operationId).
+func (c *ClientWithResponses) RevokeShareLinkWithResponse(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*RevokeShareLinkResponse, error) {
+	rsp, err := c.RevokeShareLink(ctx, site, linkId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeShareLinkResponse(rsp)
+}
+
+// RotateShareLinkWithResponse Rotate a share link's token.
+//
+// Issues a new token for the same link, keeping its public ID, label, path, expiry and use count. The old token and every site session created from the link stop working on their next request. The response is the only time the new token is shown, and is sent with `Cache-Control: no-store`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/links/{linkId}/rotate (the `RotateShareLink` operationId).
+func (c *ClientWithResponses) RotateShareLinkWithResponse(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*RotateShareLinkResponse, error) {
+	rsp, err := c.RotateShareLink(ctx, site, linkId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRotateShareLinkResponse(rsp)
 }
 
 // ListPoliciesWithResponse List a site's access policies.
@@ -10651,6 +11520,232 @@ func ParseVerifyDomainResponse(rsp *http.Response) (*VerifyDomainResponse, error
 			headers.RetryAfter = &value
 		}
 		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListShareLinksResponse parses an HTTP response from a ListShareLinksWithResponse call
+func ParseListShareLinksResponse(rsp *http.Response) (*ListShareLinksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListShareLinksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ShareLinkPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateShareLinkResponse parses an HTTP response from a CreateShareLinkWithResponse call
+func ParseCreateShareLinkResponse(rsp *http.Response) (*CreateShareLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateShareLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest CreatedShareLink
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRevokeShareLinkResponse parses an HTTP response from a RevokeShareLinkWithResponse call
+func ParseRevokeShareLinkResponse(rsp *http.Response) (*RevokeShareLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeShareLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRotateShareLinkResponse parses an HTTP response from a RotateShareLinkWithResponse call
+func ParseRotateShareLinkResponse(rsp *http.Response) (*RotateShareLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RotateShareLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CreatedShareLink
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
 	}
 
 	return response, nil

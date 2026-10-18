@@ -13,6 +13,49 @@ import (
 	"database/sql"
 )
 
+const createLinkSession = `-- name: CreateLinkSession :execrows
+INSERT INTO site_sessions (id, site_id, token_hash, method, share_link_id, policy_id, policy_version, subject, created_at, expires_at, revoked_at)
+SELECT ?1, share_links.site_id, ?2, 'link', share_links.id, ?3, ?4, NULL, ?5, ?6, NULL
+FROM share_links
+WHERE share_links.id = ?7 AND share_links.site_id = ?8
+  AND share_links.token_hash = ?9 AND share_links.revoked_at IS NULL
+  AND (share_links.expires_at IS NULL OR share_links.expires_at > ?5)
+`
+
+type CreateLinkSessionParams struct {
+	ID               string
+	SessionTokenHash string
+	PolicyID         string
+	PolicyVersion    int64
+	CreatedAt        int64
+	ExpiresAt        int64
+	ShareLinkID      string
+	SiteID           string
+	LinkTokenHash    string
+}
+
+// Creates a link session only while the link still has token_hash and is
+// unrevoked and unexpired at created_at, in one statement, so a rotation or
+// revocation that commits first leaves nothing behind (its own session
+// revocation would miss a row inserted after it).
+func (q *Queries) CreateLinkSession(ctx context.Context, arg CreateLinkSessionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, createLinkSession,
+		arg.ID,
+		arg.SessionTokenHash,
+		arg.PolicyID,
+		arg.PolicyVersion,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+		arg.ShareLinkID,
+		arg.SiteID,
+		arg.LinkTokenHash,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const createShareLink = `-- name: CreateShareLink :exec
 INSERT INTO share_links (id, site_id, public_id, token_hash, label, path_prefix, created_at, expires_at, max_uses, use_count, last_accessed_at, rotated_at, revoked_at)
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
@@ -51,4 +94,257 @@ func (q *Queries) CreateShareLink(ctx context.Context, arg CreateShareLinkParams
 		arg.RevokedAt,
 	)
 	return err
+}
+
+const getShareLink = `-- name: GetShareLink :one
+SELECT id, site_id, public_id, token_hash, label, path_prefix, created_at, expires_at, max_uses, use_count, last_accessed_at, rotated_at, revoked_at
+FROM share_links WHERE id = ?1 AND site_id = ?2
+`
+
+type GetShareLinkParams struct {
+	ID     string
+	SiteID string
+}
+
+// Instance-wide: the edge checks the link behind a link session.
+func (q *Queries) GetShareLink(ctx context.Context, arg GetShareLinkParams) (ShareLink, error) {
+	row := q.db.QueryRowContext(ctx, getShareLink, arg.ID, arg.SiteID)
+	var i ShareLink
+	err := row.Scan(
+		&i.ID,
+		&i.SiteID,
+		&i.PublicID,
+		&i.TokenHash,
+		&i.Label,
+		&i.PathPrefix,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.MaxUses,
+		&i.UseCount,
+		&i.LastAccessedAt,
+		&i.RotatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const getShareLinkByPublicID = `-- name: GetShareLinkByPublicID :one
+SELECT id, site_id, public_id, token_hash, label, path_prefix, created_at, expires_at, max_uses, use_count, last_accessed_at, rotated_at, revoked_at
+FROM share_links WHERE public_id = ?1
+`
+
+// Instance-wide: the edge looks a token up by its public ID before
+// comparing the HMAC.
+func (q *Queries) GetShareLinkByPublicID(ctx context.Context, publicID string) (ShareLink, error) {
+	row := q.db.QueryRowContext(ctx, getShareLinkByPublicID, publicID)
+	var i ShareLink
+	err := row.Scan(
+		&i.ID,
+		&i.SiteID,
+		&i.PublicID,
+		&i.TokenHash,
+		&i.Label,
+		&i.PathPrefix,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.MaxUses,
+		&i.UseCount,
+		&i.LastAccessedAt,
+		&i.RotatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const listShareLinks = `-- name: ListShareLinks :many
+SELECT share_links.id, share_links.site_id, share_links.public_id, share_links.token_hash, share_links.label, share_links.path_prefix, share_links.created_at, share_links.expires_at, share_links.max_uses, share_links.use_count, share_links.last_accessed_at, share_links.rotated_at, share_links.revoked_at
+FROM share_links JOIN sites ON sites.id = share_links.site_id
+WHERE share_links.site_id = ?1 AND sites.owner_id = ?2
+  AND share_links.revoked_at IS NULL
+  AND (
+    share_links.created_at < ?3
+    OR (share_links.created_at = ?3 AND share_links.id < ?4)
+  )
+ORDER BY share_links.created_at DESC, share_links.id DESC
+LIMIT ?5
+`
+
+type ListShareLinksParams struct {
+	SiteID        string
+	OwnerID       string
+	BeforeCreated int64
+	BeforeID      string
+	RowLimit      int64
+}
+
+// Unrevoked links of one of the owner's sites, newest first; the cursor is
+// the (created_at, id) of the previous page's last row; the first page
+// passes the largest before_created.
+func (q *Queries) ListShareLinks(ctx context.Context, arg ListShareLinksParams) ([]ShareLink, error) {
+	rows, err := q.db.QueryContext(ctx, listShareLinks,
+		arg.SiteID,
+		arg.OwnerID,
+		arg.BeforeCreated,
+		arg.BeforeID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ShareLink
+	for rows.Next() {
+		var i ShareLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.SiteID,
+			&i.PublicID,
+			&i.TokenHash,
+			&i.Label,
+			&i.PathPrefix,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.MaxUses,
+			&i.UseCount,
+			&i.LastAccessedAt,
+			&i.RotatedAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const revokeShareLink = `-- name: RevokeShareLink :one
+UPDATE share_links SET revoked_at = ?1
+WHERE site_id = ?2 AND public_id = ?3 AND revoked_at IS NULL
+  AND site_id IN (SELECT sites.id FROM sites WHERE sites.owner_id = ?4)
+RETURNING id
+`
+
+type RevokeShareLinkParams struct {
+	RevokedAt sql.NullInt64
+	SiteID    string
+	PublicID  string
+	OwnerID   string
+}
+
+func (q *Queries) RevokeShareLink(ctx context.Context, arg RevokeShareLinkParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, revokeShareLink,
+		arg.RevokedAt,
+		arg.SiteID,
+		arg.PublicID,
+		arg.OwnerID,
+	)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
+const revokeShareLinkSessions = `-- name: RevokeShareLinkSessions :exec
+UPDATE site_sessions SET revoked_at = COALESCE(revoked_at, ?1)
+WHERE site_id = ?2 AND share_link_id = ?3
+`
+
+type RevokeShareLinkSessionsParams struct {
+	RevokedAt   sql.NullInt64
+	SiteID      string
+	ShareLinkID sql.NullString
+}
+
+// Ends every session a link created, so revocation and rotation reach
+// browsers that hold its cookie.
+func (q *Queries) RevokeShareLinkSessions(ctx context.Context, arg RevokeShareLinkSessionsParams) error {
+	_, err := q.db.ExecContext(ctx, revokeShareLinkSessions, arg.RevokedAt, arg.SiteID, arg.ShareLinkID)
+	return err
+}
+
+const rotateShareLink = `-- name: RotateShareLink :one
+UPDATE share_links SET token_hash = ?1, rotated_at = ?2
+WHERE site_id = ?3 AND public_id = ?4 AND revoked_at IS NULL
+  AND site_id IN (SELECT sites.id FROM sites WHERE sites.owner_id = ?5)
+RETURNING id, site_id, public_id, token_hash, label, path_prefix, created_at, expires_at, max_uses, use_count, last_accessed_at, rotated_at, revoked_at
+`
+
+type RotateShareLinkParams struct {
+	TokenHash string
+	RotatedAt sql.NullInt64
+	SiteID    string
+	PublicID  string
+	OwnerID   string
+}
+
+// Rotation keeps the public ID, label, scope, expiry and use count; only the
+// secret (and so the hash) changes.
+func (q *Queries) RotateShareLink(ctx context.Context, arg RotateShareLinkParams) (ShareLink, error) {
+	row := q.db.QueryRowContext(ctx, rotateShareLink,
+		arg.TokenHash,
+		arg.RotatedAt,
+		arg.SiteID,
+		arg.PublicID,
+		arg.OwnerID,
+	)
+	var i ShareLink
+	err := row.Scan(
+		&i.ID,
+		&i.SiteID,
+		&i.PublicID,
+		&i.TokenHash,
+		&i.Label,
+		&i.PathPrefix,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.MaxUses,
+		&i.UseCount,
+		&i.LastAccessedAt,
+		&i.RotatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
+const touchShareLink = `-- name: TouchShareLink :exec
+UPDATE share_links SET last_accessed_at = ?1
+WHERE id = ?2 AND (last_accessed_at IS NULL OR last_accessed_at < ?1)
+`
+
+type TouchShareLinkParams struct {
+	LastAccessedAt sql.NullInt64
+	ID             string
+}
+
+func (q *Queries) TouchShareLink(ctx context.Context, arg TouchShareLinkParams) error {
+	_, err := q.db.ExecContext(ctx, touchShareLink, arg.LastAccessedAt, arg.ID)
+	return err
+}
+
+const useShareLink = `-- name: UseShareLink :execrows
+UPDATE share_links SET use_count = use_count + 1, last_accessed_at = ?1
+WHERE id = ?2 AND token_hash = ?3 AND revoked_at IS NULL
+  AND (expires_at IS NULL OR expires_at > ?1)
+  AND (max_uses IS NULL OR use_count < max_uses)
+`
+
+type UseShareLinkParams struct {
+	At        sql.NullInt64
+	ID        string
+	TokenHash string
+}
+
+// Spends one use of a usable link whose hash is still token_hash (so a
+// rotation in between fails it).
+func (q *Queries) UseShareLink(ctx context.Context, arg UseShareLinkParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, useShareLink, arg.At, arg.ID, arg.TokenHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

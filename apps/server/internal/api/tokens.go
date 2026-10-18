@@ -59,6 +59,11 @@ var tokenScopes = map[string][]string{
 	"ListPolicies": {"deploy", "manage"},
 	"SetPolicy":    {"manage"},
 	"DeletePolicy": {"manage"},
+
+	"ListShareLinks":  {"deploy", "manage"},
+	"CreateShareLink": {"manage"},
+	"RevokeShareLink": {"manage"},
+	"RotateShareLink": {"manage"},
 }
 
 var sessionOnly = map[string]bool{

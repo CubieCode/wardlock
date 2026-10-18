@@ -67,7 +67,7 @@ func newHarness(t *testing.T, limits deploys.Limits) *harness {
 		hs.notified = append(hs.notified, siteID)
 	})
 	policies, err := access.New(access.Config{
-		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Notifier: notifier,
+		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), Notifier: notifier,
 		Secret: []byte("api-test-server-key-0123456789abcdef-01"), Now: time.Now,
 	})
 	if err != nil {
@@ -99,6 +99,7 @@ func newHarness(t *testing.T, limits deploys.Limits) *harness {
 type response struct {
 	status int
 	body   []byte
+	header http.Header
 }
 
 func (r response) decode(t *testing.T, v any) {
@@ -139,7 +140,7 @@ func (hs *harness) do(owner, method, path string, body any) response {
 	}
 	rec := httptest.NewRecorder()
 	hs.h.ServeHTTP(rec, req)
-	return response{rec.Code, rec.Body.Bytes()}
+	return response{rec.Code, rec.Body.Bytes(), rec.Result().Header}
 }
 
 // want fails unless r has status and, for errors, code.

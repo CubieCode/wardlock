@@ -199,6 +199,14 @@ func (publicAccess) Decide(context.Context, access.Request) (access.Decision, er
 
 func (publicAccess) EndSession(context.Context, string, string) error { return nil }
 
+func (publicAccess) IssueSession(context.Context, access.NewSession) (access.Cookie, error) {
+	return access.Cookie{}, errors.New("public sites issue no sessions")
+}
+
+func (publicAccess) View(context.Context, string, string) (access.Viewed, error) {
+	return access.Viewed{}, access.ErrTicket
+}
+
 type harness struct {
 	edge     *edge.Edge
 	fx       fixtures

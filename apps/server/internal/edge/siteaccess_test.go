@@ -19,10 +19,12 @@ import (
 
 // fakeAccess answers with fn and records what the edge asked.
 type fakeAccess struct {
-	fn    func(access.Request) (access.Decision, error)
-	mu    sync.Mutex
-	seen  []access.Request
-	ended []string
+	fn func(access.Request) (access.Decision, error)
+	// issueErr, when set, is what IssueSession answers.
+	issueErr error
+	mu       sync.Mutex
+	seen     []access.Request
+	ended    []string
 }
 
 func (a *fakeAccess) Decide(_ context.Context, r access.Request) (access.Decision, error) {
@@ -37,6 +39,17 @@ func (a *fakeAccess) EndSession(_ context.Context, siteID, cookie string) error 
 	defer a.mu.Unlock()
 	a.ended = append(a.ended, siteID+" "+cookie)
 	return nil
+}
+
+func (a *fakeAccess) IssueSession(_ context.Context, n access.NewSession) (access.Cookie, error) {
+	if a.issueErr != nil {
+		return access.Cookie{}, a.issueErr
+	}
+	return access.Cookie{Name: access.SessionCookieName, Value: "issued-" + n.ShareLinkID, Expires: time.Now().Add(time.Hour)}, nil
+}
+
+func (a *fakeAccess) View(context.Context, string, string) (access.Viewed, error) {
+	return access.Viewed{}, access.ErrTicket
 }
 
 func (a *fakeAccess) requests() []access.Request {
@@ -177,7 +190,7 @@ func TestProtectedResponses(t *testing.T) {
 		"Accept": {"text/html"}, "Cookie": {"wardlock_site=tossed; " + access.SessionCookieName + "=good"},
 	})
 	got := a.requests()
-	want := access.Request{SiteID: "site-basic", Path: "/about/", Cookie: "good", Browser: true}
+	want := access.Request{SiteID: "site-basic", Path: "/about/", Cookie: "good", Browser: true, Return: "/assets/../about/", ClientIP: "192.0.2.1"}
 	if len(got) != 1 || got[0] != want {
 		t.Fatalf("Decide saw %+v, want [%+v]", got, want)
 	}
