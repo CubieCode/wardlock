@@ -202,11 +202,12 @@ func ldh(r rune) bool {
 
 // allowedDomain reports whether d is a DNS name of at least two ASCII
 // labels, optionally after "*." and with one trailing dot, not ending in a
-// numeric label.
+// numeric label, and at most 253 bytes with the wildcard.
 func allowedDomain(d string) bool {
-	name, _ := strings.CutPrefix(strings.TrimSuffix(d, "."), "*.")
+	d = strings.TrimSuffix(d, ".")
+	name, _ := strings.CutPrefix(d, "*.")
 	labels := strings.Split(name, ".")
-	if len(name) > 253 || len(labels) < 2 || strings.Trim(labels[len(labels)-1], "0123456789") == "" {
+	if len(d) > 253 || len(labels) < 2 || strings.Trim(labels[len(labels)-1], "0123456789") == "" {
 		return false
 	}
 	for _, l := range labels {

@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"math/big"
 	netmail "net/mail"
+	"strings"
 	"time"
 
 	"wardlock.nz/server/internal/mail"
@@ -89,13 +90,13 @@ func (s *Service) SendEmailCode(ctx context.Context, r EmailCodeRequest) error {
 	if err := allowAttempt(s.ipAttempts, "email-send-ip:"+ipKey(r.IP), s.limits.EmailSendPerIP); err != nil {
 		return err
 	}
-	if err := allowAttempt(s.ipAttempts, "email-send-address:"+addr, s.limits.EmailSendPerAddress); err != nil {
+	if err := allowAttempt(s.addressAttempts, "email-send-address:"+addr, s.limits.EmailSendPerAddress); err != nil {
 		return err
 	}
 	if err := allowAttempt(s.siteAttempts, "email-send-site:"+r.SiteID, s.limits.EmailSendPerSite); err != nil {
 		return err
 	}
-	s.background(ctx, func(ctx context.Context) error { return s.sendEmailCode(ctx, r, addr) })
+	s.background(ctx, addr, func(ctx context.Context) error { return s.sendEmailCode(ctx, r, addr) })
 	return nil
 }
 
@@ -137,14 +138,20 @@ func (s *Service) sendEmailCode(ctx context.Context, r EmailCodeRequest, addr st
 }
 
 // background runs fn after the request, on a context that outlives it but
-// not emailSendTimeout. Close waits for it.
-func (s *Service) background(ctx context.Context, fn func(context.Context) error) {
+// not emailSendTimeout. Close waits for it. A failure is logged without
+// addr: mail errors carry only the SMTP stage and reply code, and addr is
+// redacted from the text all the same in case another error repeats it.
+func (s *Service) background(ctx context.Context, addr string, fn func(context.Context) error) {
 	ctx = context.WithoutCancel(ctx)
 	s.bg.Go(func() {
 		ctx, cancel := context.WithTimeout(ctx, emailSendTimeout)
 		defer cancel()
 		if err := fn(ctx); err != nil {
-			s.log.LogAttrs(ctx, slog.LevelError, "email code failed", slog.String("error", err.Error()))
+			msg := err.Error()
+			if addr != "" {
+				msg = strings.ReplaceAll(msg, addr, "[address]")
+			}
+			s.log.LogAttrs(ctx, slog.LevelError, "email code failed", slog.String("error", msg))
 		}
 	})
 }
@@ -164,9 +171,13 @@ type EmailCodeAttempt struct {
 // address. Every failure is ErrInvalidCode; a *RateLimitError when the
 // client, the address or the site has made too many attempts. Each attempt
 // is counted against the code before the comparison, so concurrent
-// guesses cannot exceed EmailCodeAttempts, and the stored code is looked
-// up whether or not the address is allowed, so the allowlist cannot be
-// probed here either.
+// guesses cannot exceed EmailCodeAttempts. Whether or not the address is
+// allowed or has a live code, the attempt does the same lookup and the
+// same conditional UPDATE (on a fresh ID when there is no usable code), so
+// a refusal costs about the same either way. What remains measurable (the
+// comparison and session insert of a right code) needs the code itself;
+// small timing differences are further bounded by the per-IP and
+// per-address verify limits.
 func (s *Service) EmailCodeLogin(ctx context.Context, a EmailCodeAttempt) (Cookie, error) {
 	if err := allowAttempt(s.ipAttempts, "email-verify-ip:"+ipKey(a.IP), s.limits.EmailVerifyPerIP); err != nil {
 		return Cookie{}, err
@@ -178,7 +189,7 @@ func (s *Service) EmailCodeLogin(ctx context.Context, a EmailCodeAttempt) (Cooki
 	if !ok {
 		return Cookie{}, ErrInvalidCode
 	}
-	if err := allowAttempt(s.ipAttempts, "email-verify-address:"+addr, s.limits.EmailVerifyPerAddress); err != nil {
+	if err := allowAttempt(s.addressAttempts, "email-verify-address:"+addr, s.limits.EmailVerifyPerAddress); err != nil {
 		return Cookie{}, err
 	}
 	if !isSixDigits(a.Code) {
@@ -198,18 +209,27 @@ func (s *Service) EmailCodeLogin(ctx context.Context, a EmailCodeAttempt) (Cooki
 		return Cookie{}, ErrInvalidCode
 	}
 	c, err := s.c.EmailCodes.Get(ctx, a.SiteID, p.ID, s.key.addressHash(a.SiteID, p.ID, addr))
-	if errors.Is(err, store.ErrNotFound) {
-		return refuse("no code")
-	}
-	if err != nil {
+	why := ""
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		why = "no code"
+	case err != nil:
 		return Cookie{}, fmt.Errorf("get email code: %w", err)
+	case c.PolicyVersion != p.Version:
+		why = "stale"
 	}
 	now := s.now()
-	if c.PolicyVersion != p.Version || !now.Before(c.ExpiresAt) || c.Attempts >= EmailCodeAttempts {
-		return refuse("stale")
+	attemptID := c.ID
+	if why != "" {
+		// Count against no code at all, so the refusal does the same
+		// database work as a wrong guess at a live one.
+		attemptID = store.NewID()
 	}
-	if _, err := s.c.EmailCodes.AddAttempt(ctx, c.ID, EmailCodeAttempts, now); errors.Is(err, store.ErrNotFound) {
-		return refuse("stale")
+	if _, err := s.c.EmailCodes.AddAttempt(ctx, attemptID, EmailCodeAttempts, now); errors.Is(err, store.ErrNotFound) {
+		if why == "" {
+			why = "stale" // expired or out of attempts
+		}
+		return refuse(why)
 	} else if err != nil {
 		return Cookie{}, fmt.Errorf("count email code attempt: %w", err)
 	}

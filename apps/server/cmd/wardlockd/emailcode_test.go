@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -114,10 +115,13 @@ func TestEmailCodeThroughTheEdge(t *testing.T) {
 	if allowed.code != stranger.code || strings.ReplaceAll(allowed.body, visitorAddr, strangerAddr) != stranger.body {
 		t.Fatalf("allowed and disallowed answers differ:\n%d %s\n%d %s", allowed.code, allowed.body, stranger.code, stranger.body)
 	}
-	for _, k := range []string{"Cache-Control", "Content-Type", "Content-Security-Policy", "X-Robots-Tag", "Referrer-Policy", "Set-Cookie", "Retry-After"} {
-		if allowed.h.Get(k) != stranger.h.Get(k) {
-			t.Fatalf("header %s differs: %q vs %q", k, allowed.h.Get(k), stranger.h.Get(k))
+	for _, k := range []string{"Cache-Control", "Content-Type", "Content-Security-Policy", "X-Robots-Tag", "Referrer-Policy", "Set-Cookie", "Retry-After", "Vary", "X-Frame-Options"} {
+		if !slices.Equal(allowed.h.Values(k), stranger.h.Values(k)) {
+			t.Fatalf("header %s differs: %q vs %q", k, allowed.h.Values(k), stranger.h.Values(k))
 		}
+	}
+	if allowed.h.Get("X-Frame-Options") != "DENY" || allowed.h.Get("Vary") == "" {
+		t.Fatalf("sent page headers %v", allowed.h)
 	}
 	for _, want := range []string{`name="step" value="verify"`, `autocomplete="one-time-code"`, `name="email" value="` + visitorAddr + `"`, "Send a new code", `href="/.wardlock/login?next=%2finternal%2f"`} {
 		if !strings.Contains(allowed.body, want) {

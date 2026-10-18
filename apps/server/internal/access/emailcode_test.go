@@ -530,6 +530,8 @@ func TestEmailCodeSetValidation(t *testing.T) {
 		{"hyphen edge", emailRule("/", *list("-crew.test")), "allowlist"},
 		{"empty label", emailRule("/", *list("crew..test")), "allowlist"},
 		{"long label", emailRule("/", *list(strings.Repeat("a", 64) + ".test")), "allowlist"},
+		{"long wildcard", emailRule("/", *list("*." + longDomain)), "allowlist"},
+		{"long domain", emailRule("/", *list("a" + longDomain)), "allowlist"},
 	} {
 		_, err := h.svc.Set(t.Context(), a, "harbour", tc.rule)
 		var te *access.TargetError
@@ -553,6 +555,14 @@ func TestEmailCodeSetValidation(t *testing.T) {
 		t.Fatalf("normalised %+v, want %+v", p.Allowlist, want)
 	}
 
+	// The longest names that fit are stored: 253 bytes with or without
+	// the wildcard.
+	longest := h.set(a, "harbour", emailRule("/", *list(longDomain, "*."+longDomain[2:])))
+	if len(longest.Allowlist.Domains) != 2 || len(longest.Allowlist.Domains[0]) != 253 || len(longest.Allowlist.Domains[1]) != 253 {
+		t.Fatalf("longest domains: %+v", longest.Allowlist)
+	}
+	p = h.set(a, "harbour", emailRule("/", *list("Bo@Example.TEST", "ana@example.test", "bo@example.test", "Crew.Test.", "*.XN--BCHER-KVA.example")))
+
 	// Owner isolation: owner B gets the same not-found for A's site as for
 	// a missing one, and A's allowlist is untouched.
 	for _, site := range []string{"harbour", "missing"} {
@@ -566,6 +576,52 @@ func TestEmailCodeSetValidation(t *testing.T) {
 	}
 	if ps, err := h.svc.List(t.Context(), b, "harbour", "", 10); !errors.Is(err, access.ErrNotFound) {
 		t.Fatalf("owner B lists %+v, %v", ps, err)
+	}
+}
+
+// longDomain is a 253-byte domain, the longest DNS name.
+var longDomain = strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("a", 56) + ".test"
+
+// TestEmailCodeAddressTable shows per-address keys live in a bounded
+// table of their own: inventing addresses until it is full refuses only
+// new addresses' email codes, never password attempts, per-IP limits or
+// addresses already counted.
+func TestEmailCodeAddressTable(t *testing.T) {
+	h := newEmailHarness(t, access.Limits{})
+	access.SetAddressTableSize(h.svc, 3)
+	o := h.owner()
+	s := h.site(o, "harbour")
+	other := h.site(o, "tides")
+	h.set(o, "harbour", emailRule("/", store.Allowlist{Domains: []string{"crew.test"}}))
+	h.set(o, "tides", passwordRule("/", firstPassword))
+	limited := func(name string, err error) {
+		t.Helper()
+		var rl *access.RateLimitError
+		if !errors.As(err, &rl) {
+			t.Fatalf("%s: %v, want a RateLimitError", name, err)
+		}
+	}
+	for i, addr := range []string{"a@crew.test", "b@crew.test", "c@crew.test"} {
+		if err := h.send(s.ID, "/", "192.0.2."+string(rune('1'+i)), addr); err != nil {
+			t.Fatalf("send to %s: %v", addr, err)
+		}
+	}
+	// The table is full: a new address is refused, sending and verifying.
+	limited("send to a new address", h.send(s.ID, "/", "192.0.2.9", "d@crew.test"))
+	_, err := h.login(s.ID, "/", "192.0.2.9", "d@crew.test", "123456")
+	limited("verify for a new address", err)
+	// Counted addresses, per-IP keys and password attempts are unaffected.
+	if err := h.send(s.ID, "/", "198.51.100.1", "a@crew.test"); err != nil {
+		t.Fatalf("send to a counted address: %v", err)
+	}
+	for _, ip := range []string{"198.51.100.2", "198.51.100.3", "2001:db8:9::1"} {
+		c, err := h.svc.PasswordLogin(t.Context(), access.PasswordAttempt{SiteID: other.ID, Path: "/", IP: ip, Password: firstPassword})
+		if err != nil || c.Value == "" {
+			t.Fatalf("password from %s with the address table full: %v", ip, err)
+		}
+	}
+	if _, err := h.svc.PasswordLogin(t.Context(), access.PasswordAttempt{SiteID: other.ID, Path: "/", IP: "198.51.100.4", Password: "wrong-guess"}); !errors.Is(err, access.ErrWrongPassword) {
+		t.Fatalf("wrong password with the address table full: %v", err)
 	}
 }
 
@@ -688,7 +744,9 @@ func TestEmailCodeNeverLogged(t *testing.T) {
 	if _, err := h.login(s.ID, "/", "192.0.2.1", allowedAddr, code); err != nil {
 		t.Fatal(err)
 	}
-	h.mailer.err = errors.New("smtp: 550 mailbox unavailable")
+	// A server error that echoes the recipient, as RCPT TO replies often
+	// do, still leaves the address out of the log.
+	h.mailer.err = errors.New("rcpt to: 550 5.1.1 <" + allowedAddr + ">: Recipient address rejected")
 	if err := h.send(s.ID, "/", "192.0.2.1", allowedAddr); err != nil {
 		t.Fatal(err)
 	}

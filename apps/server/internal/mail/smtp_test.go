@@ -99,6 +99,23 @@ func TestSMTPAuthErrorHidesCredentials(t *testing.T) {
 	}
 }
 
+// A refused recipient is reported by stage and reply code only: the
+// server's text, which echoes the address, never reaches the error.
+func TestSMTPRecipientErrorHidesAddress(t *testing.T) {
+	srv := startFakeSMTP(t, fakeOptions{starttls: true, rejectRcpt: true})
+	msg, err := mail.EmailCodeMessage(recipient, mail.EmailCode{Code: testCode, Site: "docs.example.test", ValidFor: 10 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = srv.mailer(platform.SMTPStartTLS, testUser, testPass).Send(t.Context(), msg)
+	if err == nil || !strings.HasSuffix(err.Error(), "rcpt to: server replied 550") {
+		t.Fatalf("Send = %v, want the stage and code only", err)
+	}
+	if strings.Contains(err.Error(), recipient.Address) {
+		t.Fatalf("error contains the recipient: %v", err)
+	}
+}
+
 func TestSMTPHonoursContext(t *testing.T) {
 	// A server that accepts and never greets.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -150,6 +167,8 @@ type fakeOptions struct {
 	implicitTLS bool
 	starttls    bool
 	rejectAuth  bool
+	// rejectRcpt refuses every recipient, echoing the address back.
+	rejectRcpt bool
 }
 
 type delivery struct {
@@ -259,6 +278,10 @@ func (s *fakeSMTP) serve(conn net.Conn) {
 			reply("250 ok")
 		case "RCPT":
 			cur.to = mailbox(arg, "TO:")
+			if s.opts.rejectRcpt {
+				reply("550 5.1.1 <%s>: Recipient address rejected", cur.to)
+				continue
+			}
 			reply("250 ok")
 		case "DATA":
 			reply("354 go ahead")

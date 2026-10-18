@@ -187,6 +187,7 @@ func TestPolicySetEmail(t *testing.T) {
 		{"bad address", []string{"policy", "set", "docs", "--protected", "--email", "--allow", "Ana <ana@example.com>"}, 2, "is not an email address", ""},
 		{"bad domain", []string{"policy", "set", "docs", "--protected", "--email", "--allow", "localhost"}, 2, "is not an address or a domain", ""},
 		{"wildcard alone", []string{"policy", "set", "docs", "--protected", "--email", "--allow", "*.com"}, 2, "is not an address or a domain", ""},
+		{"long wildcard", []string{"policy", "set", "docs", "--protected", "--email", "--allow", "*." + strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("a", 56) + ".test"}, 2, "is not an address or a domain", ""},
 		{"Unicode domain", []string{"policy", "set", "docs", "--protected", "--email", "--allow", "bücher.example"}, 2, "xn-- form", ""},
 	}
 	for _, tt := range tests {

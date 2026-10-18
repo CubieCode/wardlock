@@ -59,10 +59,10 @@ func (f *FakeLimiter) Keys() []string {
 // with l; nil removes both limiters.
 func SetAttemptLimiter(s *Service, l *FakeLimiter) {
 	if l == nil {
-		s.ipAttempts, s.siteAttempts = nil, nil
+		s.ipAttempts, s.siteAttempts, s.addressAttempts = nil, nil, nil
 		return
 	}
-	s.ipAttempts, s.siteAttempts = l, l
+	s.ipAttempts, s.siteAttempts, s.addressAttempts = l, l, l
 }
 
 // SetDerive replaces s's Argon2id derivation, for tests that hold or count
@@ -75,6 +75,9 @@ func SetDerive(s *Service, fn func(password, salt []byte, time, memory uint32, t
 func SetHashSlots(s *Service, n int, wait time.Duration) {
 	s.hashSlots, s.hashWait = make(chan struct{}, n), wait
 }
+
+// SetAddressTableSize bounds s's per-address limiter table to n keys.
+func SetAddressTableSize(s *Service, n int) { s.addressLimiter.maxKeys = n }
 
 // SetMailer makes s send visitor email codes with m.
 func SetMailer(s *Service, m mail.Mailer) { s.c.Mailer = m }

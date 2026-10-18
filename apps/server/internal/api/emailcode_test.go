@@ -6,6 +6,7 @@ package api_test
 import (
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"wardlock.nz/server/internal/api"
@@ -78,6 +79,7 @@ func TestPolicyEmail(t *testing.T) {
 		{"email with an empty allowlist", map[string]any{"path": "/", "visibility": "protected", "methods": []string{"email"}, "allowlist": allow([]string{}, []string{})}, "allowlist"},
 		{"bad address", map[string]any{"path": "/", "visibility": "protected", "methods": []string{"email"}, "allowlist": allow([]string{"ana"}, nil)}, "allowlist"},
 		{"bad domain", map[string]any{"path": "/", "visibility": "protected", "methods": []string{"email"}, "allowlist": allow(nil, []string{"*.com"})}, "allowlist"},
+		{"wildcard over 253 bytes", map[string]any{"path": "/", "visibility": "protected", "methods": []string{"email"}, "allowlist": allow(nil, []string{"*." + strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("a", 56) + ".test"})}, "allowlist"},
 		{"public with an allowlist", map[string]any{"path": "/", "visibility": "public", "allowlist": allow(nil, []string{"example.com"})}, "allowlist"},
 		{"public with the method", map[string]any{"path": "/", "visibility": "public", "methods": []string{"email"}}, "methods"},
 	} {

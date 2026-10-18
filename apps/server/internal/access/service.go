@@ -92,10 +92,16 @@ type Service struct {
 	limits      Limits
 	limiter     *limiter // client keys (IPs), bounded
 	siteLimiter *limiter // server keys (sites, policies), unbounded
-	// ipAttempts and siteAttempts count password attempts: limiter and
-	// siteLimiter, or fakes in tests.
-	ipAttempts, siteAttempts attemptLimiter
-	derive                   deriveFunc
+	// addressLimiter counts email-code requests per address (A2.4) in a
+	// bounded table of its own: addresses are as cheap to invent as IPs
+	// are not, so filling it must never touch the password, share-link or
+	// per-IP limits in limiter.
+	addressLimiter *limiter
+	// ipAttempts and siteAttempts count password and email-code attempts,
+	// addressAttempts email-code attempts per address: limiter,
+	// siteLimiter and addressLimiter, or fakes in tests.
+	ipAttempts, siteAttempts, addressAttempts attemptLimiter
+	derive                                    deriveFunc
 	// hashSlots bounds concurrent password checks (each holds 19 MiB);
 	// hashWait is how long an attempt waits for a slot.
 	hashSlots   chan struct{}
@@ -144,7 +150,8 @@ func New(cfg Config) (*Service, error) {
 	}
 	s.limiter = newLimiter(s.now)
 	s.siteLimiter = newServerKeyLimiter(s.now)
-	s.ipAttempts, s.siteAttempts = s.limiter, s.siteLimiter
+	s.addressLimiter = newLimiter(s.now)
+	s.ipAttempts, s.siteAttempts, s.addressAttempts = s.limiter, s.siteLimiter, s.addressLimiter
 	s.unsubscribe = cfg.Notifier.Subscribe(s.invalidate)
 	return s, nil
 }

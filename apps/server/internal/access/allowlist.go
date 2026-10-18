@@ -64,7 +64,12 @@ func normaliseDomain(raw string) (string, bool) {
 		return "", false
 	}
 	if wildcard {
-		return "*." + name, true
+		name = "*." + name
+	}
+	// The stored value, wildcard included, is a DNS name: 253 bytes at
+	// most (policy_allowlist.value allows 254).
+	if len(name) > maxDomainBytes {
+		return "", false
 	}
 	return name, true
 }
