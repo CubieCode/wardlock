@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/zalando/go-keyring"
+	"golang.org/x/term"
 )
 
 // version is set at build time with -ldflags "-X main.version=…".
@@ -155,9 +156,10 @@ func run(ctx context.Context, a *app, args []string) error {
 	return errUsage
 }
 
+// isTerminal reports whether f is a terminal. /dev/null and other
+// character devices are not.
 func isTerminal(f *os.File) bool {
-	fi, err := f.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 func sleep(ctx context.Context, d time.Duration) error {
