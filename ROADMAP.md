@@ -109,7 +109,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.6: Owner passkeys
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/c1.6-owner-passkeys`
 - PR: https://github.com/CubieCode/wardlock/pull/34
 - Depends on: C1.1
