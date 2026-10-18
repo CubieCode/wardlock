@@ -195,9 +195,15 @@ describe('site detail', () => {
     activatedAt: now - hour,
   });
   const earlier = deploy('00000002', { message: 'First draft' });
-  const { activatedAt: _, ...pending } = deploy('00000004', {
+  // A pending deploy has never been live, so it has no activation time.
+  const pending: Deploy = {
+    id: '01928c5e-7a1b-7c3d-9e4f-000000000004',
     status: 'pending',
-  });
+    createdAt: now - hour,
+    fileCount: 3,
+    totalSize: 1_532_918,
+    spa: false,
+  };
   const docs = site('docs', {
     activeDeployId: live.id,
     activatedAt: live.activatedAt!,

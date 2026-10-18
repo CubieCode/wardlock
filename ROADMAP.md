@@ -256,7 +256,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.2: Sites and deploys
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: `feat/d3.2-sites-and-deploys`
 - PR:
 - Depends on: D3.1, C1.2
