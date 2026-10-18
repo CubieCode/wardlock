@@ -101,6 +101,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Notifier: notifier,
 
 		PasswordSessions: db.PasswordSessions(),
+		AccessLog:        db.AccessLog(),
 		Secret:           cfg.Secret,
 		Now:              time.Now,
 		Log:              log,

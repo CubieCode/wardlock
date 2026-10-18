@@ -229,6 +229,35 @@ func (s *Service) RotateLink(ctx context.Context, ownerID, siteName, publicID st
 	return l, token, nil
 }
 
+// LinkAccessLog returns up to limit of the access-log entries of the link
+// publicID on ownerID's site called siteName, newest first, before the
+// cursor. A revoked link's entries are still listed; a missing link, or one
+// on another site or of another owner, is ErrNotFound.
+func (s *Service) LinkAccessLog(ctx context.Context, ownerID, siteName, publicID string, before store.AccessCursor, limit int) ([]store.AccessEntry, error) {
+	if s.c.AccessLog == nil {
+		return nil, errors.New("link access log: no access log configured")
+	}
+	site, err := s.ownedSite(ctx, ownerID, siteName)
+	if err != nil {
+		return nil, err
+	}
+	if !validPublicID(publicID) {
+		return nil, fmt.Errorf("link access log: %w", ErrNotFound)
+	}
+	l, err := s.c.Links.GetByPublicID(ctx, publicID)
+	if errors.Is(err, store.ErrNotFound) || err == nil && l.SiteID != site.ID {
+		return nil, fmt.Errorf("link access log: %w", ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("link access log: %w", err)
+	}
+	entries, err := s.c.AccessLog.ListByLink(ctx, ownerID, site.ID, publicID, before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("link access log: %w", err)
+	}
+	return entries, nil
+}
+
 // decideToken lets r in with its share-link token, under protected policy
 // p. sess is r's cookie as checkSession found it; d is the refusal so far.
 // A refused token falls back to the session, so a stale ?t= in a bookmark

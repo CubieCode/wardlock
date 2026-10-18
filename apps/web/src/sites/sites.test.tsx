@@ -99,6 +99,7 @@ function oneSite(
     [`GET ${base}`]: () => Response.json(s),
     [`GET ${base}/deploys`]: () => Response.json({ items: deploys }),
     [`GET ${base}/policies`]: () => Response.json({ items: policies }),
+    [`GET ${base}/links`]: () => Response.json({ items: [] }),
   };
 }
 

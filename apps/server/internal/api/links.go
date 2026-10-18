@@ -212,3 +212,59 @@ func (s *Server) RotateShareLink(ctx context.Context, req RotateShareLinkRequest
 	}
 	return RotateShareLink200JSONResponse(s.createdShareLink(req.Site, l, token)), nil
 }
+
+// ListShareLinkAccessLog lists one link's access-log entries, newest first.
+func (s *Server) ListShareLinkAccessLog(ctx context.Context, req ListShareLinkAccessLogRequestObject) (ListShareLinkAccessLogResponseObject, error) {
+	owner, ok := OwnerID(ctx)
+	if !ok {
+		return ListShareLinkAccessLogdefaultJSONResponse(*unauthenticated), nil
+	}
+	limit, f := pageLimit(req.Params.Limit)
+	if f != nil {
+		return ListShareLinkAccessLogdefaultJSONResponse(*f), nil
+	}
+	before, beforeID, ok := linkCursor(req.Params.Cursor)
+	if !ok {
+		return ListShareLinkAccessLogdefaultJSONResponse(*badCursor), nil
+	}
+	cursor := store.AccessCursor{OccurredAt: before, ID: beforeID}
+	list, err := s.Access.LinkAccessLog(ctx, owner, req.Site, req.LinkId, cursor, limit+1)
+	if err != nil {
+		f, err := linkFailed(err)
+		if f == nil {
+			return nil, err
+		}
+		return ListShareLinkAccessLogdefaultJSONResponse(*f), nil
+	}
+	page := ListShareLinkAccessLog200JSONResponse{Items: []AccessLogEntry{}}
+	if len(list) > limit {
+		list = list[:limit]
+		last := list[limit-1]
+		page.NextCursor = encodeCursor(strconv.FormatInt(last.OccurredAt.UnixMilli(), 10) + ":" + last.ID)
+	}
+	for _, e := range list {
+		page.Items = append(page.Items, accessLogEntryBody(e))
+	}
+	return page, nil
+}
+
+func accessLogEntryBody(e store.AccessEntry) AccessLogEntry {
+	out := AccessLogEntry{
+		Id:         e.ID,
+		OccurredAt: e.OccurredAt.UnixMilli(),
+		Host:       e.Host,
+		Path:       e.Path,
+		Status:     clampInt32(e.Status),
+		Via:        AccessVia(e.Via),
+	}
+	if e.LinkPublicID != "" {
+		out.LinkPublicId = &e.LinkPublicID
+	}
+	if e.IP != "" {
+		out.Ip = &e.IP
+	}
+	if e.UserAgent != "" {
+		out.UserAgent = &e.UserAgent
+	}
+	return out
+}

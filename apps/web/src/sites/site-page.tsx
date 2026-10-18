@@ -12,6 +12,7 @@ import {
   StatusBadge,
 } from '@wardlock/ui';
 import { useEffect, useRef, useState } from 'react';
+import { ShareLinksCard } from '../links/share-links.js';
 import { useTitle } from '../shell/page.js';
 import {
   defaultPolicy,
@@ -227,6 +228,8 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
           </>
         )}
       </Card>
+
+      <ShareLinksCard api={api} site={site} />
 
       <Card title="Deploys">
         {rolledBack && (

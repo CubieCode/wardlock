@@ -57,6 +57,7 @@ var operations = []operation{
 	{id: "ListShareLinks", method: "GET", path: "/api/v0/sites/{site}/links", jsonBody: false, security: []string{"sessionCookie", "apiToken:deploy", "apiToken:manage"}},
 	{id: "CreateShareLink", method: "POST", path: "/api/v0/sites/{site}/links", jsonBody: true, security: []string{"sessionCookie", "apiToken:manage"}},
 	{id: "RevokeShareLink", method: "DELETE", path: "/api/v0/sites/{site}/links/{linkId}", jsonBody: false, security: []string{"sessionCookie", "apiToken:manage"}},
+	{id: "ListShareLinkAccessLog", method: "GET", path: "/api/v0/sites/{site}/links/{linkId}/access-log", jsonBody: false, security: []string{"sessionCookie", "apiToken:deploy", "apiToken:manage"}},
 	{id: "RotateShareLink", method: "POST", path: "/api/v0/sites/{site}/links/{linkId}/rotate", jsonBody: false, security: []string{"sessionCookie", "apiToken:manage"}},
 	{id: "ListPolicies", method: "GET", path: "/api/v0/sites/{site}/policies", jsonBody: false, security: []string{"sessionCookie", "apiToken:deploy", "apiToken:manage"}},
 	{id: "SetPolicy", method: "PUT", path: "/api/v0/sites/{site}/policies", jsonBody: true, security: []string{"sessionCookie", "apiToken:manage"}},

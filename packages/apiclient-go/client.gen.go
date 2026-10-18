@@ -20,6 +20,36 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AccessVia.
+const (
+	AccessViaEmail    AccessVia = "email"
+	AccessViaLink     AccessVia = "link"
+	AccessViaNone     AccessVia = "none"
+	AccessViaOauth    AccessVia = "oauth"
+	AccessViaPassword AccessVia = "password"
+	AccessViaPublic   AccessVia = "public"
+)
+
+// Valid indicates whether the value is a known member of the AccessVia enum.
+func (e AccessVia) Valid() bool {
+	switch e {
+	case AccessViaEmail:
+		return true
+	case AccessViaLink:
+		return true
+	case AccessViaNone:
+		return true
+	case AccessViaOauth:
+		return true
+	case AccessViaPassword:
+		return true
+	case AccessViaPublic:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CliLoginPendingStatus.
 const (
 	CliLoginPendingStatusPending CliLoginPendingStatus = "pending"
@@ -241,6 +271,55 @@ func (e ShareLinkStatus) Valid() bool {
 		return false
 	}
 }
+
+// AccessLogEntry defines model for AccessLogEntry.
+type AccessLogEntry struct {
+	// Host The host the request named.
+	Host string `json:"host"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Ip The client IP, truncated as the server is configured (IPv4 /24 and IPv6 /48 by default). Absent when not recorded.
+	Ip *string `json:"ip,omitempty"`
+
+	// LinkPublicId The share link the request came through; absent unless `via` is `link`.
+	//
+	// Examples: q4v7m2xkpa
+	LinkPublicId *LinkPublicId `json:"linkPublicId,omitempty"`
+
+	// OccurredAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	OccurredAt Timestamp `json:"occurredAt"`
+
+	// Path The requested path, without the query string.
+	Path string `json:"path"`
+
+	// Status The HTTP status of the response.
+	Status int32 `json:"status"`
+
+	// UserAgent The User-Agent header; absent when the request sent none.
+	UserAgent *string `json:"userAgent,omitempty"`
+
+	// Via How the request got in: `public` (no protection), `link` (a share link's token or a session from it), `password`, `email`, `oauth`, or `none` when it was refused.
+	Via AccessVia `json:"via"`
+}
+
+// AccessLogPage defines model for AccessLogPage.
+type AccessLogPage struct {
+	Items []AccessLogEntry `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// AccessVia How the request got in: `public` (no protection), `link` (a share link's token or a session from it), `password`, `email`, `oauth`, or `none` when it was refused.
+type AccessVia string
 
 // Activation defines model for Activation.
 type Activation struct {
@@ -1129,6 +1208,15 @@ type ListShareLinksParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListShareLinkAccessLogParams defines parameters for ListShareLinkAccessLog.
+type ListShareLinkAccessLogParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListPoliciesParams defines parameters for ListPolicies.
 type ListPoliciesParams struct {
 	// Limit Page size.
@@ -1794,6 +1882,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with DELETE /api/v0/sites/{site}/links/{linkId} (the `RevokeShareLink` operationId).
 	RevokeShareLink(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListShareLinkAccessLog List one share link's access log.
+	//
+	// The requests that came in through the link (its token or a site session created from it), newest first. A revoked link's entries stay readable for as long as the access log keeps them. Entries name the link by public ID and never hold a token. A missing link, and a link on another site or of another owner, answer the same `404`.
+	//
+	// Corresponds with GET /api/v0/sites/{site}/links/{linkId}/access-log (the `ListShareLinkAccessLog` operationId).
+	ListShareLinkAccessLog(ctx context.Context, site SiteName, linkId LinkId, params *ListShareLinkAccessLogParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RotateShareLink Rotate a share link's token.
 	//
@@ -2798,6 +2893,23 @@ func (c *Client) CreateShareLink(ctx context.Context, site SiteName, body Create
 // Corresponds with DELETE /api/v0/sites/{site}/links/{linkId} (the `RevokeShareLink` operationId).
 func (c *Client) RevokeShareLink(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRevokeShareLinkRequest(c.Server, site, linkId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListShareLinkAccessLog List one share link's access log.
+//
+// The requests that came in through the link (its token or a site session created from it), newest first. A revoked link's entries stay readable for as long as the access log keeps them. Entries name the link by public ID and never hold a token. A missing link, and a link on another site or of another owner, answer the same `404`.
+//
+// Corresponds with GET /api/v0/sites/{site}/links/{linkId}/access-log (the `ListShareLinkAccessLog` operationId).
+func (c *Client) ListShareLinkAccessLog(ctx context.Context, site SiteName, linkId LinkId, params *ListShareLinkAccessLogParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListShareLinkAccessLogRequest(c.Server, site, linkId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -4544,6 +4656,86 @@ func NewRevokeShareLinkRequest(server string, site SiteName, linkId LinkId) (*ht
 	return req, nil
 }
 
+// NewListShareLinkAccessLogRequest constructs an http.Request for the ListShareLinkAccessLog method
+func NewListShareLinkAccessLogRequest(server string, site SiteName, linkId LinkId, params *ListShareLinkAccessLogParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "linkId", linkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/links/%s/access-log", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewRotateShareLinkRequest constructs an http.Request for the RotateShareLink method
 func NewRotateShareLinkRequest(server string, site SiteName, linkId LinkId) (*http.Request, error) {
 	var err error
@@ -5429,6 +5621,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with DELETE /api/v0/sites/{site}/links/{linkId} (the `RevokeShareLink` operationId).
 	RevokeShareLinkWithResponse(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*RevokeShareLinkResponse, error)
+
+	// ListShareLinkAccessLogWithResponse List one share link's access log.
+	//
+	// The requests that came in through the link (its token or a site session created from it), newest first. A revoked link's entries stay readable for as long as the access log keeps them. Entries name the link by public ID and never hold a token. A missing link, and a link on another site or of another owner, answer the same `404`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sites/{site}/links/{linkId}/access-log (the `ListShareLinkAccessLog` operationId).
+	ListShareLinkAccessLogWithResponse(ctx context.Context, site SiteName, linkId LinkId, params *ListShareLinkAccessLogParams, reqEditors ...RequestEditorFn) (*ListShareLinkAccessLogResponse, error)
 
 	// RotateShareLinkWithResponse Rotate a share link's token.
 	//
@@ -8077,6 +8278,82 @@ func (r RevokeShareLinkResponse) ContentType() string {
 	return ""
 }
 
+type ListShareLinkAccessLogResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AccessLogPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListShareLinkAccessLogResponse) GetJSON200() *AccessLogPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListShareLinkAccessLogResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListShareLinkAccessLogResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListShareLinkAccessLogResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListShareLinkAccessLogResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListShareLinkAccessLogResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListShareLinkAccessLogResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListShareLinkAccessLogResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListShareLinkAccessLogResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListShareLinkAccessLogResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type RotateShareLinkResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9400,6 +9677,21 @@ func (c *ClientWithResponses) RevokeShareLinkWithResponse(ctx context.Context, s
 		return nil, err
 	}
 	return ParseRevokeShareLinkResponse(rsp)
+}
+
+// ListShareLinkAccessLogWithResponse List one share link's access log.
+//
+// The requests that came in through the link (its token or a site session created from it), newest first. A revoked link's entries stay readable for as long as the access log keeps them. Entries name the link by public ID and never hold a token. A missing link, and a link on another site or of another owner, answer the same `404`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sites/{site}/links/{linkId}/access-log (the `ListShareLinkAccessLog` operationId).
+func (c *ClientWithResponses) ListShareLinkAccessLogWithResponse(ctx context.Context, site SiteName, linkId LinkId, params *ListShareLinkAccessLogParams, reqEditors ...RequestEditorFn) (*ListShareLinkAccessLogResponse, error) {
+	rsp, err := c.ListShareLinkAccessLog(ctx, site, linkId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListShareLinkAccessLogResponse(rsp)
 }
 
 // RotateShareLinkWithResponse Rotate a share link's token.
@@ -11669,6 +11961,67 @@ func ParseRevokeShareLinkResponse(rsp *http.Response) (*RevokeShareLinkResponse,
 	switch {
 	case rsp.StatusCode == 204:
 		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListShareLinkAccessLogResponse parses an HTTP response from a ListShareLinkAccessLogWithResponse call
+func ParseListShareLinkAccessLogResponse(rsp *http.Response) (*ListShareLinkAccessLogResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListShareLinkAccessLogResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AccessLogPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest Unauthenticated

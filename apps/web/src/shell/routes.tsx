@@ -4,6 +4,7 @@
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import type { ReactNode } from 'react';
 import { PasskeysPage } from '../auth/passkeys.js';
+import { LinkAccessLogPage } from '../links/access-log-page.js';
 import { OverviewPage } from '../overview/overview.js';
 import { SitePage } from '../sites/site-page.js';
 import { SitesPage } from '../sites/sites-page.js';
@@ -45,6 +46,17 @@ export const shellRoutes: ShellRoute[] = [
     // A key per site, so moving between sites starts from a fresh page.
     render: ({ api, params }) => (
       <SitePage key={params.name} api={api} name={params.name!} />
+    ),
+  },
+  {
+    path: '/sites/:name/links/:linkId',
+    render: ({ api, params }) => (
+      <LinkAccessLogPage
+        key={`${params.name}/${params.linkId}`}
+        api={api}
+        name={params.name!}
+        publicId={params.linkId!}
+      />
     ),
   },
   {

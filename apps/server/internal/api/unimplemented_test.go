@@ -50,6 +50,9 @@ var implemented = map[string]bool{
 	"RevokeShareLink": true,
 	"RotateShareLink": true,
 
+	// Share-link access log (D3.3).
+	"ListShareLinkAccessLog": true,
+
 	// C1.1 owners.
 	"CompleteSetup":    true,
 	"RedeemSignInLink": true,
