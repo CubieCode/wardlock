@@ -72,7 +72,7 @@ func (e *Edge) challenge(w http.ResponseWriter, r *http.Request, site ServedSite
 		e.loginPage(w, r, d.Policy.LinksEnabled, http.StatusUnauthorized)
 		return
 	}
-	// Share-link tokens are also accepted as Bearer credentials (A2.2).
+	// Share-link tokens are also accepted as Bearer credentials.
 	h.Set("WWW-Authenticate", `Bearer realm="`+site.Name+`"`)
 	h.Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
@@ -111,8 +111,8 @@ func (e *Edge) loginPage(w http.ResponseWriter, r *http.Request, links bool, sta
 }
 
 // serveReserved answers /.wardlock/* on a site. Policies never apply here,
-// so health and sign-in work whatever the site's policy says. Callbacks
-// and the share-link interstitial join in later A2 items.
+// so health, sign-in and the share-link interstitial's button work
+// whatever the site's policy says. Callbacks join in later A2 items.
 func (e *Edge) serveReserved(w http.ResponseWriter, r *http.Request, site ServedSite, clean string) {
 	h := w.Header()
 	h.Set("Cache-Control", "no-store")
@@ -134,6 +134,8 @@ func (e *Edge) serveReserved(w http.ResponseWriter, r *http.Request, site Served
 		e.loginPage(w, r, d.Policy.LinksEnabled, http.StatusOK)
 	case ReservedPrefix + "logout":
 		e.logout(w, r, site)
+	case ReservedPrefix + "view":
+		e.view(w, r, site)
 	default:
 		http.NotFound(w, r)
 	}

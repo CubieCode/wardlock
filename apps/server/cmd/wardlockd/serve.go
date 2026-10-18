@@ -97,6 +97,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Sites:    db.Sites(),
 		Policies: db.Policies(),
 		Sessions: db.Sessions(),
+		Links:    db.Links(),
 		Notifier: notifier,
 		Secret:   cfg.Secret,
 		Now:      time.Now,

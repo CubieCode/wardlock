@@ -121,21 +121,39 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req := access.Request{SiteID: s.site.ID, Path: clean, Cookie: sessionCookieValue(r), Browser: acceptsHTML(r)}
+	token, tokenInURL := linkToken(r)
+	req := access.Request{
+		SiteID: s.site.ID, Path: clean, Cookie: sessionCookieValue(r), Browser: acceptsHTML(r),
+		Token: token, Return: withoutToken(r), ClientIP: clientIP(r),
+	}
 	d, ok := e.decide(w, r, req)
 	if !ok {
 		return
 	}
 	w, done := e.recordAccess(w, r, s.site, clean, d)
 	defer done()
-	if d.ClearCookie {
+	issue := d.Outcome == access.Allow && d.Issue != nil && tokenInURL
+	if d.ClearCookie && !issue {
 		w.Header().Add("Set-Cookie", ClearSessionCookie().String())
 	}
-	if d.Outcome != access.Allow {
+	switch d.Outcome {
+	case access.Allow:
+	case access.Interstitial:
+		e.viewPage(w, r, viewData{Ticket: d.Ticket}, http.StatusOK)
+		return
+	case access.RateLimited:
+		rateLimited(w, r, d.RetryAfter)
+		return
+	default:
 		e.challenge(w, r, s.site, d)
 		return
 	}
+	if issue && !e.issueLinkSession(w, r, d) {
+		return
+	}
 	protected := d.Protected
+	// Only HTML answers to a token in the URL get the strip script.
+	strip := d.TokenAccepted && tokenInURL
 
 	res, ok := resolve(s, strings.TrimPrefix(clean, "/"))
 	if ok && res.redirect == "" && !sameDirectory(clean, res.file.Path) {
@@ -168,7 +186,7 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Location", target)
 		w.WriteHeader(http.StatusMovedPermanently)
 	default:
-		e.serveFile(w, r, s, res.file, res.status, protected)
+		e.serveFile(w, r, s, res.file, res.status, protected, strip)
 	}
 }
 

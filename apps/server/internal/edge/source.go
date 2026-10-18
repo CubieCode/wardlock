@@ -57,11 +57,15 @@ type Invalidator interface {
 	Subscribe(fn func(siteID string)) (unsubscribe func())
 }
 
-// Access decides who may read a site. *access.Service satisfies it; nil in
-// Config means every site is public.
+// Access decides who may read a site. *access.Service satisfies it.
 type Access interface {
 	// Decide applies the policy governing r.Path on r.SiteID.
 	Decide(ctx context.Context, r access.Request) (access.Decision, error)
+	// IssueSession stores a site session a method earned and returns its
+	// cookie.
+	IssueSession(ctx context.Context, n access.NewSession) (access.Cookie, error)
+	// View spends a use of the link behind an interstitial ticket.
+	View(ctx context.Context, siteID, ticket string) (access.Viewed, error)
 	// EndSession revokes the site session a cookie value names, if any.
 	EndSession(ctx context.Context, siteID, cookie string) error
 }

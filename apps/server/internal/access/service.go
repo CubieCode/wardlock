@@ -54,21 +54,27 @@ type Config struct {
 	Sites    store.Sites
 	Policies store.Policies
 	Sessions store.Sessions
+	Links    store.Links
 	Notifier notifier
 	// Secret is the server key (WARDLOCK_SECRET): it signs session cookies
 	// and keys the stored session token hashes.
 	Secret []byte
+	// Limits are the visitor rate limits; zero means DefaultLimits.
+	Limits Limits
 	Now    func() time.Time
 	Log    *slog.Logger
 }
 
-// Service evaluates site policies for the edge, issues and ends site
-// sessions, and serves the owner's policy operations.
+// Service evaluates site policies and share-link tokens for the edge,
+// issues and ends site sessions, and serves the owner's policy and
+// share-link operations.
 type Service struct {
 	c           Config
 	key         keyed
 	now         timeFunc
 	log         *slog.Logger
+	limits      Limits
+	limiter     *limiter
 	unsubscribe func()
 
 	mu       sync.Mutex
@@ -81,6 +87,9 @@ func New(cfg Config) (*Service, error) {
 	if len(cfg.Secret) < 32 {
 		return nil, errors.New("access: the server key must be at least 32 bytes")
 	}
+	if cfg.Links == nil {
+		return nil, errors.New("access: Config.Links is required")
+	}
 	s := &Service{
 		c:        cfg,
 		key:      keyed{secret: cfg.Secret},
@@ -91,6 +100,11 @@ func New(cfg Config) (*Service, error) {
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
 	}
+	s.limits = cfg.Limits
+	if s.limits == (Limits{}) {
+		s.limits = DefaultLimits()
+	}
+	s.limiter = newLimiter(s.now)
 	s.unsubscribe = cfg.Notifier.Subscribe(s.invalidate)
 	return s, nil
 }
@@ -159,6 +173,15 @@ type Request struct {
 	// Browser reports that the client accepts HTML, so it is shown the
 	// login page rather than a bare 401.
 	Browser bool
+	// Token is the share-link token from ?t= or Authorization: Bearer; ""
+	// without one. It is checked on every request that carries it.
+	Token string
+	// Return is the request's path and query without the token: where a
+	// use-limited link's interstitial sends the visitor back to.
+	Return string
+	// ClientIP is the client address (after trusted-proxy resolution),
+	// the key for token-guess limits.
+	ClientIP string
 }
 
 // Outcome is what the edge does with a request.
@@ -171,6 +194,12 @@ const (
 	Login
 	// Unauthorized answers a bare 401.
 	Unauthorized
+	// Interstitial shows a use-limited link's "Click to view" page, whose
+	// form posts Decision.Ticket to /.wardlock/view. Nothing is spent.
+	Interstitial
+	// RateLimited answers 429: too many tokens were refused for this IP or
+	// site. Decision.RetryAfter says for how long.
+	RateLimited
 )
 
 // Via says how a request was let in, in the access log's terms: its values
@@ -214,20 +243,32 @@ type Decision struct {
 	// in, and otherwise the method of the session that allowed it.
 	Via Via
 	// LinkPublicID is the share link's public ID, set only when Via is
-	// ViaLink. Share-link sessions arrive with A2.2; until then it is
-	// empty.
+	// ViaLink.
 	LinkPublicID string
+	// TokenAccepted reports that the request's share-link token is valid
+	// here, so HTML responses strip it from the address bar.
+	TokenAccepted bool
+	// Issue, when set on an allowed request, is the link session the
+	// request's token has earned; the edge issues it when the token came
+	// in the URL (a browser following a link) and sets its cookie.
+	Issue *NewSession
+	// Ticket is the interstitial's form value (Outcome Interstitial).
+	Ticket string
+	// RetryAfter is how long a RateLimited client must wait.
+	RetryAfter time.Duration
 	// ClearCookie asks the edge to delete the visitor's session cookie: it
 	// is forged, tampered with, for another site, expired, revoked or bound
 	// to a policy version that no longer exists.
 	ClearCookie bool
 }
 
-// Decide applies the governing policy to r. A public policy allows anyone.
-// A protected one allows a valid site session bound to that policy's
+// Decide applies the governing policy to r. A public policy allows anyone
+// and ignores tokens. A protected one allows a valid share-link token in
+// its scope when the policy enables links (a use-limited link shows the
+// interstitial instead), or a valid site session bound to that policy's
 // current version and created by a method it still enables (methods are
 // alternatives); otherwise browsers get the login page and other clients a
-// bare 401. Share-link tokens and Authorization headers join in A2.2.
+// bare 401.
 func (s *Service) Decide(ctx context.Context, r Request) (Decision, error) {
 	ps, err := s.sitePolicies(ctx, r.SiteID)
 	if err != nil {
@@ -244,49 +285,84 @@ func (s *Service) Decide(ctx context.Context, r Request) (Decision, error) {
 	if r.Browser {
 		d.Outcome = Login
 	}
-	if r.Cookie == "" {
-		return d, nil
+	var sess session
+	if r.Cookie != "" {
+		if sess, err = s.checkSession(ctx, r, ps, p); err != nil {
+			return Decision{}, err
+		}
+		// Anything but a good session (for this or another of the site's
+		// policies) is cleared.
+		d.ClearCookie = !sess.valid
 	}
-	method, valid, err := s.checkSession(ctx, r, ps, p)
-	if err != nil {
-		return Decision{}, err
+	if r.Token != "" {
+		return s.decideToken(ctx, r, p, sess, d)
 	}
-	switch {
-	case valid && enables(p, method):
-		d.Outcome, d.Via = Allow, viaSession(method)
-	case valid:
-		// A good session for another of the site's policies: keep it.
-	default:
-		d.ClearCookie = true
+	if sess.allows {
+		d.Outcome, d.Via, d.LinkPublicID = Allow, sess.via, sess.linkPublicID
 	}
 	return d, nil
 }
 
-// checkSession verifies r's cookie. valid is true when it is a live session
-// of r's site bound to the current version of one of the site's policies;
-// method is how it was created. The cookie is only accepted for p, the
-// governing policy, by the caller.
-func (s *Service) checkSession(ctx context.Context, r Request, ps []store.Policy, p store.Policy) (method store.SessionMethod, valid bool, err error) {
+// session is what checkSession found in a cookie.
+type session struct {
+	// valid: a live session of the site, bound to the current version of
+	// one of its policies. Keep the cookie.
+	valid bool
+	// allows: valid, and it lets the request in under the governing
+	// policy.
+	allows bool
+	via    Via
+	// linkPublicID names the link behind a link session.
+	linkPublicID string
+}
+
+// checkSession verifies r's cookie against p, the governing policy. A
+// session allows r only under the policy it was created under, while p
+// still enables its method; a link session also needs its link unrevoked,
+// unexpired and scoped to r.Path, checked on every request.
+func (s *Service) checkSession(ctx context.Context, r Request, ps []store.Policy, p store.Policy) (session, error) {
 	c, ok := s.key.decode(r.Cookie)
 	if !ok || c.SiteID != r.SiteID || !s.now().Before(c.ExpiresAt) || !current(ps, c.PolicyID, c.PolicyVersion) {
-		return "", false, nil
+		return session{}, nil
 	}
 	if c.PolicyID != p.ID {
 		// Valid for another policy of the site; no need to look it up.
-		return "", true, nil
+		return session{valid: true}, nil
 	}
 	row, err := s.c.Sessions.GetSiteByTokenHash(ctx, s.key.tokenHash(c.Token))
 	if errors.Is(err, store.ErrNotFound) {
-		return "", false, nil
+		return session{}, nil
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("get site session: %w", err)
+		return session{}, fmt.Errorf("get site session: %w", err)
 	}
 	if row.SiteID != c.SiteID || row.PolicyID != c.PolicyID || row.PolicyVersion != c.PolicyVersion ||
 		!row.RevokedAt.IsZero() || !s.now().Before(row.ExpiresAt) {
-		return "", false, nil
+		return session{}, nil
 	}
-	return row.Method, true, nil
+	sess := session{valid: true, via: viaSession(row.Method)}
+	if !enables(p, row.Method) {
+		return sess, nil
+	}
+	if row.Method == store.SessionLink {
+		l, err := s.c.Links.Get(ctx, r.SiteID, row.ShareLinkID)
+		if errors.Is(err, store.ErrNotFound) {
+			return session{}, nil
+		}
+		if err != nil {
+			return session{}, fmt.Errorf("get share link: %w", err)
+		}
+		if !l.RevokedAt.IsZero() || expired(l, s.now()) {
+			return session{}, nil
+		}
+		sess.linkPublicID = l.PublicID
+		if !inScope(l.PathPrefix, r.Path) {
+			return sess, nil
+		}
+		s.touchLink(ctx, l)
+	}
+	sess.allows = true
+	return sess, nil
 }
 
 // current reports whether policy id exists in ps at version.

@@ -52,10 +52,6 @@ func (e *Edge) recordAccess(w http.ResponseWriter, r *http.Request, site ServedS
 		if p != nil && sw.status == 0 {
 			status = http.StatusInternalServerError
 		}
-		ip := r.RemoteAddr
-		if host, _, err := net.SplitHostPort(ip); err == nil {
-			ip = host
-		}
 		e.cfg.Recorder.Record(AccessRecord{
 			Time:         start,
 			SiteID:       site.ID,
@@ -64,13 +60,22 @@ func (e *Edge) recordAccess(w http.ResponseWriter, r *http.Request, site ServedS
 			Status:       status,
 			Via:          d.Via,
 			LinkPublicID: d.LinkPublicID,
-			RemoteIP:     ip,
+			RemoteIP:     clientIP(r),
 			UserAgent:    r.UserAgent(),
 		})
 		if p != nil {
 			panic(p)
 		}
 	}
+}
+
+// clientIP is the client address without its port. Trusted-proxy handling
+// has already replaced RemoteAddr when a proxy is believed.
+func clientIP(r *http.Request) string {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 // statusWriter remembers the status sent through it.

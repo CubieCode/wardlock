@@ -97,6 +97,7 @@ func newHarnessKey(t *testing.T, db *store.DB, key []byte) *harness {
 		Sites:    db.Sites(),
 		Policies: h.policies,
 		Sessions: db.Sessions(),
+		Links:    db.Links(),
 		Notifier: &notifier{},
 		Secret:   key,
 		Now:      h.clock.Now,
