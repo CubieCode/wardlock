@@ -12,6 +12,7 @@ import (
 )
 
 func policiesContract(t *testing.T, open Opener) {
+	policiesSetPassword(t, open)
 	t.Run("Create", func(t *testing.T) {
 		t.Parallel()
 		policiesCreate(t, open)

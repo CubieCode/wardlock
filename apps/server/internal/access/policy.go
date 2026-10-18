@@ -19,8 +19,8 @@ const DefaultPrefix = "/"
 // maxPrefixBytes matches the policies.path_prefix CHECK.
 const maxPrefixBytes = 1024
 
-// Rule is what an owner sets for a path prefix. Password, email-code and
-// OAuth settings join it with A2.3, A2.4 and A2.5.
+// Rule is what an owner sets for a path prefix. Email-code and OAuth
+// settings join it with A2.4 and A2.5.
 type Rule struct {
 	// PathPrefix is "/" for the site default, or a directory prefix such
 	// as "/docs/".
@@ -28,6 +28,12 @@ type Rule struct {
 	Visibility store.Visibility
 	// Links enables share links (A2.2) on a protected policy.
 	Links bool
+	// Password enables the policy password (A2.3).
+	Password bool
+	// NewPassword, when not empty, becomes the policy password; it is
+	// hashed with Argon2id and never stored, logged or returned. Without
+	// it an enabled password keeps the current one, which must exist.
+	NewPassword string
 }
 
 // newDefault is the policy a site has before its owner sets one: public,
@@ -76,11 +82,11 @@ func checkRule(r Rule) error {
 	}
 	switch r.Visibility {
 	case store.Public:
-		if r.Links {
+		if r.Links || r.Password {
 			return &TargetError{Err: ErrInvalidPolicy, Target: "methods", Message: "A public policy takes no methods."}
 		}
 	case store.Protected:
-		if !r.Links {
+		if !r.Links && !r.Password {
 			return &TargetError{Err: ErrInvalidPolicy, Target: "methods", Message: "A protected policy needs at least one method."}
 		}
 	default:

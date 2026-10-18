@@ -99,9 +99,11 @@ func newHarnessKey(t *testing.T, db *store.DB, key []byte) *harness {
 		Sessions: db.Sessions(),
 		Links:    db.Links(),
 		Notifier: &notifier{},
-		Secret:   key,
-		Now:      h.clock.Now,
-		Log:      slog.New(slog.NewTextHandler(h.log, nil)),
+
+		PasswordSessions: db.PasswordSessions(),
+		Secret:           key,
+		Now:              h.clock.Now,
+		Log:              slog.New(slog.NewTextHandler(h.log, nil)),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -167,6 +169,8 @@ func (h *harness) session(siteID string, p store.Policy, m store.SessionMethod) 
 			h.t.Fatal(err)
 		}
 		n.ShareLinkID, n.LinkTokenHash = l.ID, l.TokenHash
+	case store.SessionPassword:
+		n.PasswordHash = p.PasswordHash
 	case store.SessionEmail, store.SessionOAuth:
 		n.Subject = "visitor@example.test"
 	}
@@ -507,7 +511,7 @@ func TestSessionExpiryAndLogout(t *testing.T) {
 
 	// NotAfter caps the lifetime.
 	capped, err := h.svc.IssueSession(t.Context(), access.NewSession{
-		SiteID: s.ID, Policy: p, Method: store.SessionPassword, NotAfter: h.clock.Now().Add(time.Hour),
+		SiteID: s.ID, Policy: p, Method: store.SessionEmail, Subject: "visitor@example.test", NotAfter: h.clock.Now().Add(time.Hour),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -516,7 +520,7 @@ func TestSessionExpiryAndLogout(t *testing.T) {
 		t.Fatalf("capped expiry %v", capped.Expires)
 	}
 	if _, err := h.svc.IssueSession(t.Context(), access.NewSession{
-		SiteID: s.ID, Policy: p, Method: store.SessionPassword, NotAfter: h.clock.Now(),
+		SiteID: s.ID, Policy: p, Method: store.SessionEmail, Subject: "visitor@example.test", NotAfter: h.clock.Now(),
 	}); err == nil {
 		t.Fatal("issued an already expired session")
 	}

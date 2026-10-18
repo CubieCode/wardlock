@@ -99,9 +99,11 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Sessions: db.Sessions(),
 		Links:    db.Links(),
 		Notifier: notifier,
-		Secret:   cfg.Secret,
-		Now:      time.Now,
-		Log:      log,
+
+		PasswordSessions: db.PasswordSessions(),
+		Secret:           cfg.Secret,
+		Now:              time.Now,
+		Log:              log,
 	})
 	if err != nil {
 		_ = ln.Close()

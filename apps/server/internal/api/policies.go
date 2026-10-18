@@ -53,6 +53,9 @@ func policyBody(p store.Policy) Policy {
 	if p.LinksEnabled {
 		out.Methods = append(out.Methods, PolicyMethodLinks)
 	}
+	if p.PasswordEnabled {
+		out.Methods = append(out.Methods, PolicyMethodPassword)
+	}
 	return out
 }
 
@@ -112,12 +115,20 @@ func (s *Server) SetPolicy(ctx context.Context, req SetPolicyRequestObject) (Set
 	if req.Body.Methods != nil {
 		seen := map[PolicyMethod]bool{}
 		for _, m := range *req.Body.Methods {
-			if m != PolicyMethodLinks || seen[m] {
-				return SetPolicydefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_request", "methods must be distinct, from: links.", "methods")), nil
+			if !m.Valid() || seen[m] {
+				return SetPolicydefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_request", "methods must be distinct, from: links, password.", "methods")), nil
 			}
 			seen[m] = true
 		}
 		rule.Links = seen[PolicyMethodLinks]
+		rule.Password = seen[PolicyMethodPassword]
+	}
+	// Write-only: hashed by Set, never echoed, logged or returned.
+	if req.Body.Password != nil {
+		rule.NewPassword = *req.Body.Password
+		if rule.NewPassword == "" {
+			return SetPolicydefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_policy", "The password cannot be empty; omit it to keep the current one.", "password")), nil
+		}
 	}
 	p, err := s.Access.Set(ctx, owner, req.Site, rule)
 	if err != nil {

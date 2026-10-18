@@ -737,7 +737,7 @@ export interface paths {
     get: operations['listPolicies'];
     /**
      * Set the default or a path policy.
-     * @description Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+     * @description Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`, as does the `password` method without a password to set or keep (`target: password`). The password is write-only: no response includes it or its hash.
      */
     put: operations['setPolicy'];
     post?: never;
@@ -1249,10 +1249,10 @@ export interface components {
      */
     PolicyVisibility: 'public' | 'protected';
     /**
-     * @description A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). Password, email code and OAuth join with A2.3, A2.4 and A2.5.
+     * @description A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). `password`: the policy password, entered on the site's login page (A2.3). Email code and OAuth join with A2.4 and A2.5.
      * @enum {string}
      */
-    PolicyMethod: 'links';
+    PolicyMethod: 'links' | 'password';
     /**
      * @description `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
      * @example /docs/
@@ -1281,6 +1281,11 @@ export interface components {
       visibility: components['schemas']['PolicyVisibility'];
       /** @description Methods to enable on a protected policy; omitted means `[links]` (share links are on by default). Must be empty or omitted for a public policy. */
       methods?: components['schemas']['PolicyMethod'][];
+      /**
+       * Format: password
+       * @description The new policy password, with the `password` method only: at least 8 characters and at most 1,024 bytes of UTF-8 (the server enforces the byte limit; JSON Schema lengths count characters). Stored only as an Argon2id hash and never returned. Omitted with the `password` method keeps the current password (`400 invalid_policy` when there is none). Any new password, even the same text, is a change: it increments `version` and ends the policy's password sessions.
+       */
+      password?: string;
     };
     /**
      * @description A share link's public ID: it names the link in listings, the access log and the CLI without revealing the token.

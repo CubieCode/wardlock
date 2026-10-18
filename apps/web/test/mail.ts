@@ -88,6 +88,10 @@ export const cliOwnerFor = (project: string, scheme: string) =>
 export const sitesOwnerFor = (project: string, scheme: string) =>
   `${project}-${scheme}-sites@example.test`;
 
+/** The synthetic owner the site access spec signs in as. */
+export const accessOwnerFor = (project: string, scheme: string) =>
+  `${project}-${scheme}-access@example.test`;
+
 /** A site the first owner creates in setup; every other owner's foreign site. */
 export const foreignSite = 'first-owners-site';
 

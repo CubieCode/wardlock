@@ -177,9 +177,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.3: Password policy
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: feat/a2.3-password-policy
+- PR: https://github.com/CubieCode/wardlock/pull/46
 - Depends on: A2.1
 - Scope: Per-policy password (Argon2id), `/.wardlock/login` password form, attempt rate limiting through `Limiter` (in-memory implementation if not yet present), password change ending password sessions, `wardlock policy set --password` reading from prompt or stdin.
 - Acceptance: Tests cover correct and wrong passwords, rate limits and reset, session invalidation on change, timing-safe comparison, login page `no-store` and no password in logs.

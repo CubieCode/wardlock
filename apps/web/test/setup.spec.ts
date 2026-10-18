@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { expect, test } from '@playwright/test';
 import {
+  accessOwnerFor,
   cliOwnerFor,
   foreignSite,
   ownerFor,
@@ -63,6 +64,7 @@ test('the setup URL creates the first owner', async ({
         passkeyOwnerFor(project, scheme),
         cliOwnerFor(project, scheme),
         sitesOwnerFor(project, scheme),
+        accessOwnerFor(project, scheme),
       ]) {
         const res = await page.request.post(`${origin}/api/v0/owners`, {
           data: { email },

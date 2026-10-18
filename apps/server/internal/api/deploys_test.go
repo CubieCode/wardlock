@@ -67,7 +67,7 @@ func newHarness(t *testing.T, limits deploys.Limits) *harness {
 		hs.notified = append(hs.notified, siteID)
 	})
 	policies, err := access.New(access.Config{
-		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), Notifier: notifier,
+		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), Notifier: notifier,
 		Secret: []byte("api-test-server-key-0123456789abcdef-01"), Now: time.Now,
 	})
 	if err != nil {

@@ -52,6 +52,10 @@ func (a *fakeAccess) View(context.Context, string, string) (access.Viewed, error
 	return access.Viewed{}, access.ErrTicket
 }
 
+func (a *fakeAccess) PasswordLogin(context.Context, access.PasswordAttempt) (access.Cookie, error) {
+	return access.Cookie{}, access.ErrWrongPassword
+}
+
 func (a *fakeAccess) requests() []access.Request {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -212,7 +216,9 @@ func TestReservedPathIgnoresPolicies(t *testing.T) {
 		{name: "health via dot segments", target: "/docs/../.wardlock/health", status: 200, body: `{"status":"ok"}`},
 		{name: "deployed reserved file", target: "/.wardlock/index.html", status: 404, body: "404 page not found"},
 		{name: "login page", target: "/.wardlock/login", header: browser, status: 200, body: "This page is private", headers: map[string]string{"X-Frame-Options": "DENY"}},
-		{name: "login is GET only", method: http.MethodPost, target: "/.wardlock/login", status: 405, headers: map[string]string{"Allow": "GET, HEAD"}},
+		{name: "login takes GET, HEAD and POST", method: http.MethodPut, target: "/.wardlock/login", status: 405, headers: map[string]string{"Allow": "GET, HEAD, POST"}},
+		{name: "login from another site", method: http.MethodPost, target: "/.wardlock/login", header: sameSite(http.Header{}, "Origin", "https://evil.example"), status: 403, headers: map[string]string{"Set-Cookie": ""}},
+		{name: "login with no origin information", method: http.MethodPost, target: "/.wardlock/login", status: 403},
 		{name: "logout", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Origin", "http://basic."+base), status: 303, headers: map[string]string{"Location": "/", "Set-Cookie": clearValue}},
 		{name: "logout by fetch metadata", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Sec-Fetch-Site", "same-origin"), status: 303, headers: map[string]string{"Set-Cookie": clearValue}},
 		{name: "logout from another site", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Origin", "https://evil.example"), status: 403, headers: map[string]string{"Set-Cookie": ""}},
@@ -220,7 +226,14 @@ func TestReservedPathIgnoresPolicies(t *testing.T) {
 		{name: "logout from another port", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Origin", "http://basic."+base+":8080"), status: 403},
 		{name: "logout cross-site by fetch metadata", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Sec-Fetch-Site", "same-site"), status: 403},
 		{name: "logout with no origin information", method: http.MethodPost, target: "/.wardlock/logout", header: withCookie, status: 403},
-		{name: "logout with a null origin", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Origin", "null"), status: 403},
+		{name: "logout with only a null origin", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Origin", "null"), status: 403},
+		// A no-referrer page posts with Origin: null; fetch metadata decides.
+		{name: "logout with a null origin from the same origin", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(sameSite(withCookie, "Origin", "null"), "Sec-Fetch-Site", "same-origin"), status: 303, headers: map[string]string{"Set-Cookie": clearValue}},
+		{name: "logout with a null origin, cross-site", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(sameSite(withCookie, "Origin", "null"), "Sec-Fetch-Site", "cross-site"), status: 403},
+		{name: "logout same-origin by metadata but another Origin", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(sameSite(withCookie, "Origin", "https://evil.example"), "Sec-Fetch-Site", "same-origin"), status: 403},
+		{name: "logout same-site by metadata with a matching Origin", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(sameSite(withCookie, "Origin", "http://basic."+base), "Sec-Fetch-Site", "same-site"), status: 403},
+		{name: "login with a null origin, cross-site", method: http.MethodPost, target: "/.wardlock/login", header: sameSite(sameSite(http.Header{}, "Origin", "null"), "Sec-Fetch-Site", "cross-site"), status: 403},
+		{name: "login page ignores ?format", target: "/.wardlock/login?format=md", header: browser, status: 200, body: "This page is private", headers: map[string]string{"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}},
 		{name: "logout is POST only", target: "/.wardlock/logout", header: withCookie, status: 405, headers: map[string]string{"Allow": "POST"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -250,8 +263,8 @@ func TestReservedPathIgnoresPolicies(t *testing.T) {
 			}
 		})
 	}
-	// Only the two same-origin logouts ended a session.
-	if len(a.ended) != 2 || a.ended[0] != "site-basic good" || a.ended[1] != "site-basic good" {
+	// Only the three same-origin logouts ended a session.
+	if len(a.ended) != 3 || a.ended[0] != "site-basic good" || a.ended[2] != "site-basic good" {
 		t.Fatalf("EndSession calls %v", a.ended)
 	}
 }

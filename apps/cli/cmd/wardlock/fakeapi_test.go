@@ -62,6 +62,8 @@ type fakeSite struct {
 	// pathPolicies are listed before the "/" policy, to push it past the
 	// first page.
 	pathPolicies int
+	// set records the setPolicy bodies received, as sent.
+	set []map[string]any
 }
 
 const (
@@ -124,6 +126,7 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 		page, next := paginate(r, items)
 		reply(w, http.StatusOK, apiclient.PolicyPage{Items: page, NextCursor: next})
 	}))
+	handle("PUT /api/v0/sites/{site}/policies", "manage", f.withSite(f.setPolicy))
 	handle("GET /api/v0/sites/{site}/deploys", "", f.withSite(f.listDeploys))
 	handle("POST /api/v0/sites/{site}/deploys", "deploy", f.withSite(f.createDeploy))
 	handle("PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256}", "deploy", f.upload)

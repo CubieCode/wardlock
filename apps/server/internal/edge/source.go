@@ -79,4 +79,7 @@ type Access interface {
 	View(ctx context.Context, siteID, ticket string) (access.Viewed, error)
 	// EndSession revokes the site session a cookie value names, if any.
 	EndSession(ctx context.Context, siteID, cookie string) error
+	// PasswordLogin checks a password sign-in and returns the session
+	// cookie it earns (A2.3).
+	PasswordLogin(ctx context.Context, a access.PasswordAttempt) (access.Cookie, error)
 }
