@@ -98,7 +98,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.5: CLI deploy and site commands
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/c1.5-cli-deploy-commands`
 - PR: https://github.com/CubieCode/wardlock/pull/41
 - Depends on: C1.2, C1.7
