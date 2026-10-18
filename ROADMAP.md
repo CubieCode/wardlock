@@ -267,7 +267,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.3: Share links
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: `feat/d3.3-share-links`
 - PR:
 - Depends on: D3.2, A2.2
