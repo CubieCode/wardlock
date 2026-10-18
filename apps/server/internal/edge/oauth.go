@@ -204,20 +204,36 @@ func (e *Edge) loginAgain(w http.ResponseWriter, r *http.Request, site ServedSit
 	e.loginPage(w, r, data, status)
 }
 
-// formAction is the login page's CSP form-action: its own origin and, when
-// it lists OAuth providers, where their buttons redirect (browsers apply
-// form-action to a form's redirects too): any https: origin, since an OIDC
-// issuer's discovery may name another host, and a plain-HTTP provider's
-// own origin (a local issuer in development).
+// formAction is the login page's CSP form-action. Browsers apply it to a
+// form's whole redirect chain, so a page with OAuth buttons also allows the
+// origins pressing one may pass through: each provider's authorisation
+// endpoint and the auth origin. Nothing else is ever allowed, so the
+// password and email forms keep posting only to the page's own origin.
 func formAction(providers []access.ProviderInfo) string {
-	if len(providers) == 0 {
-		return "'self'"
-	}
-	out := "'self' https:"
+	out := "'self'"
+	seen := map[string]bool{}
 	for _, p := range providers {
-		if strings.HasPrefix(p.Origin, "http://") && !strings.ContainsAny(p.Origin, " ;,'") {
-			out += " " + p.Origin
+		for _, o := range p.Origins {
+			if cspOrigin(o) && !seen[o] {
+				seen[o] = true
+				out += " " + o
+			}
 		}
 	}
 	return out
+}
+
+// cspOrigin reports whether o is a plain http(s) origin, safe to put in a
+// CSP source list as is.
+func cspOrigin(o string) bool {
+	rest, ok := strings.CutPrefix(o, "https://")
+	if !ok {
+		rest, ok = strings.CutPrefix(o, "http://")
+	}
+	return ok && rest != "" && !strings.ContainsFunc(rest, func(r rune) bool { return !hostChar(r) })
+}
+
+// hostChar reports whether r may appear in a host and port.
+func hostChar(r rune) bool {
+	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || '0' <= r && r <= '9' || strings.ContainsRune(".-:[]", r)
 }

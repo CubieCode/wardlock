@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -316,10 +317,12 @@ func TestOAuthFlows(t *testing.T) {
 			}
 			// Browsers apply form-action to the button's redirect to the
 			// provider, so the login page must allow it.
-			csp := r.h.Get("Content-Security-Policy")
-			wantAction := "form-action 'self' https: " + o.github.URL() + " " + o.google.URL() + " " + o.oidc.URL() + ";"
-			if !strings.Contains(csp, wantAction) {
-				t.Fatalf("login page CSP %q lacks %q", csp, wantAction)
+			// It names exactly the providers' authorisation endpoints and
+			// the auth origin, never a whole scheme.
+			wantCSP := "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' " + o.github.URL() + " http://" + authHost + " " +
+				o.google.URL() + " " + o.oidc.URL() + "; frame-ancestors 'none'; base-uri 'none'"
+			if csp := r.h.Get("Content-Security-Policy"); csp != wantCSP || strings.Contains(csp, "https:") {
+				t.Fatalf("login page CSP %q, want %q", csp, wantCSP)
 			}
 
 			hops := b.signIn(host, tt.provider, "/internal/")
@@ -573,6 +576,10 @@ func TestOAuthRefusals(t *testing.T) {
 			o.set("other", "/", store.Protected, true)
 			r := b.start(otherHost, "github", "/")
 			r.expect(t, 400, "That sign-in method is not available here.", "")
+			// Without OAuth the login page posts to its own origin only.
+			if csp := r.h.Get("Content-Security-Policy"); !strings.Contains(csp, "form-action 'self';") {
+				t.Fatalf("login page without OAuth has CSP %q", csp)
+			}
 			if r.h.Get("Set-Cookie") != "" || strings.Contains(r.body, "Continue with GitHub") {
 				t.Fatalf("refused start set %v or offered providers", r.h.Values("Set-Cookie"))
 			}
@@ -684,5 +691,84 @@ func TestAuthOrigin(t *testing.T) {
 		if r.code != c.code || r.h.Get("Set-Cookie") != "" || r.h.Get("Cache-Control") != "no-store" || r.h.Get("X-Robots-Tag") != "noindex" {
 			t.Fatalf("%s %s: %d %v", c.method, c.target, r.code, r.h)
 		}
+	}
+}
+
+// TestOAuthFlowsPerSite checks that a flood of starts aimed at one site,
+// from many clients, fills only that site's share of pending sign-ins:
+// another site's visitors can still start.
+func TestOAuthFlowsPerSite(t *testing.T) {
+	o := newOAuthEdge(t)
+	o.publish("docs")
+	o.publish("other")
+	list := store.Allowlist{Emails: []string{"visitor@example.test"}}
+	o.protect("docs", "/", list)
+	o.protect("other", "/", list)
+	started := 0
+	for i := 0; ; i++ {
+		// 30 starts per client fit under the per-client limit.
+		r := o.browser(fmt.Sprintf("10.0.%d.%d", i/30/250, i/30%250+1)).start(host, "github", "/")
+		if r.code != http.StatusSeeOther {
+			r.expect(t, http.StatusTooManyRequests, "Too many sign-in attempts.", "")
+			break
+		}
+		if started++; started > 5000 {
+			t.Fatal("no per-site bound on pending sign-ins")
+		}
+	}
+	if started != 1000 {
+		t.Fatalf("%d starts accepted on the flooded site, want 1000", started)
+	}
+	if r := o.browser("192.0.2.60").start(otherHost, "github", "/"); r.code != http.StatusSeeOther {
+		t.Fatalf("another site's start: %d", r.code)
+	}
+	// The flooded site recovers when its flows expire.
+	o.advance(access.OAuthFlowLifetime)
+	if r := o.browser("192.0.2.61").start(host, "github", "/"); r.code != http.StatusSeeOther {
+		t.Fatalf("flooded site after expiry: %d", r.code)
+	}
+}
+
+// TestOAuthConcurrentRedeem checks that a code is single use even when
+// many requests carry it at once: exactly one gets a session.
+func TestOAuthConcurrentRedeem(t *testing.T) {
+	o := newOAuthEdge(t)
+	o.publish("docs")
+	o.protect("docs", "/", store.Allowlist{Emails: []string{"visitor@example.test"}})
+	o.github.Configure(func(opt *oauthtest.Options) { opt.Account = verifiedAccount("visitor@example.test") })
+	b := o.browser("192.0.2.70")
+	_, cb := b.toCallback(host, "github", "/internal/")
+	u, err := url.Parse(cb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := b.cookie(host, access.OAuthBindingCookieName)
+	const n = 16
+	codes := make(chan int, n)
+	var wg sync.WaitGroup
+	for range n {
+		wg.Go(func() {
+			req := httptest.NewRequest(http.MethodGet, u.RequestURI(), nil)
+			req.Host = host
+			req.AddCookie(&http.Cookie{Name: access.OAuthBindingCookieName, Value: binding})
+			rec := httptest.NewRecorder()
+			o.e.ServeHTTP(rec, req)
+			codes <- rec.Code
+		})
+	}
+	wg.Wait()
+	close(codes)
+	ok := 0
+	for c := range codes {
+		switch c {
+		case http.StatusSeeOther:
+			ok++
+		case http.StatusBadRequest:
+		default:
+			t.Fatalf("redeem answered %d", c)
+		}
+	}
+	if sessions := o.sessions.take(); ok != 1 || len(sessions) != 1 {
+		t.Fatalf("%d redemptions succeeded and %d sessions stored, want 1 and 1", ok, len(sessions))
 	}
 }

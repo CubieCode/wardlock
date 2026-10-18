@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -43,15 +44,28 @@ type OIDC struct {
 	c      OIDCConfig
 	client *http.Client
 
+	// now is the clock for caching discovery failures.
+	now func() time.Time
+
 	mu       sync.Mutex
 	provider *oidc.Provider
+	// inflight is closed when the discovery under way finishes.
+	inflight chan struct{}
+	// failed is the last discovery's error, reused until failedUntil.
+	failed      error
+	failedUntil time.Time
 }
+
+// discoveryRetry is how long a failed discovery is reused before the next
+// sign-in tries again, so an unreachable issuer costs each visitor nothing
+// more than an error.
+const discoveryRetry = 10 * time.Second
 
 var _ access.Provider = (*OIDC)(nil)
 
 // NewOIDC returns an OIDC provider.
 func NewOIDC(c OIDCConfig) *OIDC {
-	o := &OIDC{c: c, client: c.HTTPClient}
+	o := &OIDC{c: c, client: c.HTTPClient, now: time.Now}
 	if o.client == nil {
 		o.client = NewHTTPClient()
 	}
@@ -67,28 +81,93 @@ func (o *OIDC) ID() string   { return o.c.ID }
 func (o *OIDC) Name() string { return o.c.Name }
 func (*OIDC) GitHub() bool   { return false }
 
-// Origin implements access.Provider: the issuer's, which hosts the
-// authorisation endpoint for every provider Wardlock is known to work
-// with; the login page also allows any https: origin.
-func (o *OIDC) Origin() string { return origin(o.c.Issuer) }
+// Origins implements access.Provider: the issuer's, where providers
+// usually serve the authorisation endpoint, and the endpoint's own once
+// discovery has run. Without it, discovery starts in the background
+// (serve also warms it at startup), so only a page rendered before the
+// first discovery can miss an endpoint on another host.
+func (o *OIDC) Origins() []string {
+	out := []string{origin(o.c.Issuer)}
+	o.mu.Lock()
+	p := o.provider
+	o.mu.Unlock()
+	if p == nil {
+		o.Warm(context.Background())
+	} else {
+		if a := origin(p.Endpoint().AuthURL); a != "" && a != out[0] {
+			out = append(out, a)
+		}
+	}
+	return out
+}
 
 func (o *OIDC) ctx(ctx context.Context) context.Context {
 	return oidc.ClientContext(context.WithValue(ctx, oauth2.HTTPClient, o.client), o.client)
 }
 
-// discover returns the provider's metadata, fetching it once.
+// discover returns the provider's metadata, fetching it once. Concurrent
+// callers share one fetch, made without holding the lock, each waiting no
+// longer than its own context allows, and a failure is reused for
+// discoveryRetry.
 func (o *OIDC) discover(ctx context.Context) (*oidc.Provider, error) {
+	for {
+		o.mu.Lock()
+		switch {
+		case o.provider != nil:
+			p := o.provider
+			o.mu.Unlock()
+			return p, nil
+		case o.failed != nil && o.now().Before(o.failedUntil):
+			err := o.failed
+			o.mu.Unlock()
+			return nil, err
+		case o.inflight != nil:
+			wait := o.inflight
+			o.mu.Unlock()
+			select {
+			case <-wait:
+				continue
+			case <-ctx.Done():
+				return nil, fmt.Errorf("%w: OIDC discovery for %s: %w", ErrProvider, o.c.Issuer, ctx.Err())
+			}
+		}
+		o.inflight = make(chan struct{})
+		// Detached from the caller, who may give up while others wait.
+		go o.fetch(context.WithoutCancel(ctx), o.inflight)
+		o.mu.Unlock()
+	}
+}
+
+// fetch runs one discovery, records its result and closes done. It runs
+// apart from any caller, so a caller that gives up returns at once and the
+// others still get the result.
+func (o *OIDC) fetch(ctx context.Context, done chan struct{}) {
+	ctx, cancel := context.WithTimeout(ctx, Timeout)
+	p, err := oidc.NewProvider(o.ctx(ctx), o.c.Issuer)
+	cancel()
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.provider != nil {
-		return o.provider, nil
-	}
-	p, err := oidc.NewProvider(o.ctx(ctx), o.c.Issuer)
+	o.inflight = nil
 	if err != nil {
-		return nil, fmt.Errorf("%w: OIDC discovery for %s: %w", ErrProvider, o.c.Issuer, err)
+		o.failed = fmt.Errorf("%w: OIDC discovery for %s: %w", ErrProvider, o.c.Issuer, err)
+		o.failedUntil = o.now().Add(discoveryRetry)
+	} else {
+		o.provider, o.failed = p, nil
 	}
-	o.provider = p
-	return p, nil
+	close(done)
+}
+
+// Warm runs discovery in the background if it has not succeeded yet, so
+// the login page's form-action can name the authorisation endpoint before
+// the first visitor presses the button.
+func (o *OIDC) Warm(ctx context.Context) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.provider != nil || o.inflight != nil || o.failed != nil && o.now().Before(o.failedUntil) {
+		return
+	}
+	o.inflight = make(chan struct{})
+	go o.fetch(context.WithoutCancel(ctx), o.inflight)
 }
 
 func (o *OIDC) config(p *oidc.Provider, redirectURI string) *oauth2.Config {

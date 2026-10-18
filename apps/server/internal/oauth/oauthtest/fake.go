@@ -77,6 +77,11 @@ type Options struct {
 	// Challenge, when set, replaces the flow's PKCE challenge, so the
 	// client's verifier no longer matches.
 	Challenge string
+	// AuthorizeEndpoint, when set, is the authorization_endpoint OIDC
+	// discovery announces instead of the fake's own.
+	AuthorizeEndpoint string
+	// MembershipDelay slows each GitHub membership lookup.
+	MembershipDelay time.Duration
 }
 
 // Provider is a running fake.
@@ -323,7 +328,7 @@ func (p *Provider) discovery(w http.ResponseWriter, _ *http.Request) {
 	base := p.URL()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"issuer": base, "authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token",
+		"issuer": base, "authorization_endpoint": or(p.options().AuthorizeEndpoint, base+"/authorize"), "token_endpoint": base + "/token",
 		"jwks_uri": base + "/jwks", "userinfo_endpoint": base + "/userinfo",
 		"id_token_signing_alg_values_supported": []string{"RS256"},
 		"code_challenge_methods_supported":      []string{"S256"},
@@ -385,6 +390,13 @@ func (p *Provider) membership(w http.ResponseWriter, r *http.Request) {
 	if !ok || p.Kind != GitHub {
 		http.Error(w, "unauthorised", http.StatusUnauthorized)
 		return
+	}
+	if d := p.options().MembershipDelay; d > 0 {
+		select {
+		case <-time.After(d):
+		case <-r.Context().Done():
+			return
+		}
 	}
 	org := r.PathValue("org")
 	for _, o := range a.Orgs {

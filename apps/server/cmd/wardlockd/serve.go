@@ -112,7 +112,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		EmailCodes:       db.EmailCodes(),
 		Mailer:           mailer,
 		OAuth: access.OAuthConfig{
-			Providers:  oauthProviders(cfg.OAuth),
+			Providers:  oauthProviders(ctx, cfg.OAuth),
 			AuthOrigin: publicOrigin(cfg.AuthHost(), port).String(),
 			SiteOrigin: func(host string) string { return publicOrigin(host, port).String() },
 		},
@@ -380,18 +380,24 @@ func publicOrigin(host string, port int) *url.URL {
 
 // oauthProviders builds the operator's OAuth and OIDC providers in the
 // order login pages list them.
-func oauthProviders(c platform.OAuthConfig) []access.Provider {
+func oauthProviders(ctx context.Context, c platform.OAuthConfig) []access.Provider {
 	var ps []access.Provider
 	if c.GitHubClientID != "" {
 		ps = append(ps, oauth.NewGitHub(oauth.GitHubConfig{ClientID: c.GitHubClientID, ClientSecret: string(c.GitHubClientSecret)}))
 	}
+	// OIDC discovery starts in the background now, so login pages can name
+	// the authorisation endpoints in their form-action from the start.
 	if c.GoogleClientID != "" {
-		ps = append(ps, oauth.NewGoogle(c.GoogleClientID, string(c.GoogleClientSecret), nil))
+		g := oauth.NewGoogle(c.GoogleClientID, string(c.GoogleClientSecret), nil)
+		g.Warm(ctx)
+		ps = append(ps, g)
 	}
 	if c.OIDCClientID != "" {
-		ps = append(ps, oauth.NewOIDC(oauth.OIDCConfig{
+		o := oauth.NewOIDC(oauth.OIDCConfig{
 			ID: "oidc", Name: c.OIDCName, Issuer: c.OIDCIssuer, ClientID: c.OIDCClientID, ClientSecret: string(c.OIDCClientSecret),
-		}))
+		})
+		o.Warm(ctx)
+		ps = append(ps, o)
 	}
 	return ps
 }

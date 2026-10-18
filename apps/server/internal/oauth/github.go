@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"golang.org/x/oauth2"
 
@@ -77,8 +78,8 @@ func (*GitHub) ID() string   { return "github" }
 func (*GitHub) Name() string { return "GitHub" }
 func (*GitHub) GitHub() bool { return true }
 
-// Origin implements access.Provider.
-func (g *GitHub) Origin() string { return origin(g.cfg.Endpoint.AuthURL) }
+// Origins implements access.Provider.
+func (g *GitHub) Origins() []string { return []string{origin(g.cfg.Endpoint.AuthURL)} }
 
 // AuthCodeURL implements access.Provider.
 func (g *GitHub) AuthCodeURL(_ context.Context, a access.AuthRequest) (string, error) {
@@ -120,24 +121,69 @@ func (g *GitHub) Identify(ctx context.Context, x access.Exchange) (access.Identi
 			}
 		}
 	}
-	for _, org := range x.Orgs {
-		var m struct {
-			State        string `json:"state"`
-			Organization struct {
-				Login string `json:"login"`
-			} `json:"organization"`
-		}
-		status, err := g.get(ctx, tok, "/user/memberships/orgs/"+url.PathEscape(org), &m)
-		if err != nil {
-			return access.Identity{}, err
-		}
-		// 404 and 403 mean not a member, or the organisation has not
-		// approved the app: either way no membership to count.
-		if status == http.StatusOK && m.State == "active" && strings.EqualFold(m.Organization.Login, org) {
-			id.Orgs = append(id.Orgs, strings.ToLower(org))
-		}
+	if id.Orgs, err = g.memberships(ctx, tok, x.Orgs); err != nil {
+		return access.Identity{}, err
 	}
 	return id, nil
+}
+
+// maxOrgLookups bounds the membership lookups one sign-in runs at once.
+const maxOrgLookups = 4
+
+// memberships returns the first of orgs the token's account is found to be
+// an active member of, or none. Lookups run maxOrgLookups at a time and
+// stop at the first membership found, since one is enough; the caller's
+// deadline bounds them all.
+func (g *GitHub) memberships(ctx context.Context, tok *oauth2.Token, orgs []string) ([]string, error) {
+	if len(orgs) == 0 {
+		return nil, nil
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type result struct {
+		org    string
+		member bool
+		err    error
+	}
+	results := make(chan result, len(orgs))
+	slots := make(chan struct{}, maxOrgLookups)
+	var wg sync.WaitGroup
+	for _, org := range orgs {
+		wg.Go(func() {
+			select {
+			case slots <- struct{}{}:
+				defer func() { <-slots }()
+			case <-ctx.Done():
+				results <- result{org: org, err: ctx.Err()}
+				return
+			}
+			var m struct {
+				State        string `json:"state"`
+				Organization struct {
+					Login string `json:"login"`
+				} `json:"organization"`
+			}
+			status, err := g.get(ctx, tok, "/user/memberships/orgs/"+url.PathEscape(org), &m)
+			// 404 and 403 mean not a member, or the organisation has not
+			// approved the app: either way no membership to count.
+			results <- result{org: org, err: err,
+				member: err == nil && status == http.StatusOK && m.State == "active" && strings.EqualFold(m.Organization.Login, org)}
+		})
+	}
+	go func() { wg.Wait(); close(results) }()
+	var firstErr error
+	for r := range results {
+		if r.member {
+			return []string{strings.ToLower(r.org)}, nil
+		}
+		if r.err != nil && firstErr == nil {
+			firstErr = r.err
+		}
+	}
+	if firstErr != nil {
+		return nil, fmt.Errorf("%w: GitHub memberships: %w", ErrProvider, firstErr)
+	}
+	return nil, nil
 }
 
 // maxAPIBody bounds what one GitHub API answer may hold.

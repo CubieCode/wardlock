@@ -4,13 +4,19 @@
 package oauth_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/oauth"
@@ -177,5 +183,111 @@ func TestOIDCDiscoveryIsLazyAndRetried(t *testing.T) {
 	g := oauth.NewGoogle("id", "secret", nil)
 	if g.ID() != "google" || g.Name() != "Google" || g.GitHub() {
 		t.Fatalf("google provider %s %s", g.ID(), g.Name())
+	}
+}
+
+func TestOIDCDiscoveryIsSharedAndUnlocked(t *testing.T) {
+	f := oauthtest.New(t, oauthtest.OIDC, oauthtest.Account{Subject: "s1"})
+	f.Configure(func(o *oauthtest.Options) { o.AuthorizeEndpoint = "https://login.example.test/authorize" })
+	p := oidcFor(f)
+	// Before discovery only the issuer is known.
+	if got := p.Origins(); len(got) < 1 || got[0] != f.URL() {
+		t.Fatalf("origins before discovery %v", got)
+	}
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			if _, err := p.AuthCodeURL(t.Context(), access.AuthRequest{RedirectURI: redirectURI, State: state}); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if n := f.Requests("/.well-known/openid-configuration"); n != 1 {
+		t.Fatalf("%d discovery requests, want 1 (Origins may have started it)", n)
+	}
+	if got := p.Origins(); !slices.Equal(got, []string{f.URL(), "https://login.example.test"}) {
+		t.Fatalf("origins after discovery %v", got)
+	}
+}
+
+func TestOIDCSlowDiscoveryHoldsNoLock(t *testing.T) {
+	release := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	defer slow.Close()
+	defer close(release)
+	p := oauth.NewOIDC(oauth.OIDCConfig{ID: "oidc", Issuer: slow.URL, ClientID: "x", ClientSecret: "y"})
+	go func() { _, _ = p.AuthCodeURL(context.Background(), access.AuthRequest{}) }()
+	// A caller that gives up does not wait for the fetch.
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	begun := time.Now()
+	if _, err := p.AuthCodeURL(ctx, access.AuthRequest{}); !errors.Is(err, oauth.ErrProvider) {
+		t.Fatalf("waiting caller: %v", err)
+	}
+	// Rendering a login page (Origins) never waits for the network.
+	p.Origins()
+	if waited := time.Since(begun); waited > 2*time.Second {
+		t.Fatalf("callers blocked %s behind a slow discovery", waited)
+	}
+}
+
+func TestOIDCDiscoveryFailureIsCached(t *testing.T) {
+	var hits atomic.Int32
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	defer down.Close()
+	p := oauth.NewOIDC(oauth.OIDCConfig{ID: "oidc", Issuer: down.URL, ClientID: "x", ClientSecret: "y"})
+	for range 3 {
+		if _, err := p.AuthCodeURL(t.Context(), access.AuthRequest{}); !errors.Is(err, oauth.ErrProvider) {
+			t.Fatalf("issuer down: %v", err)
+		}
+	}
+	if n := hits.Load(); n != 1 {
+		t.Fatalf("%d discovery requests within the retry window, want 1", n)
+	}
+}
+
+func TestGitHubOrgChecksAreConcurrentAndBounded(t *testing.T) {
+	orgs := make([]string, 20)
+	for i := range orgs {
+		orgs[i] = fmt.Sprintf("org-%d", i)
+	}
+	f := oauthtest.New(t, oauthtest.GitHub, oauthtest.Account{
+		Emails: []oauthtest.Email{{Address: "a@example.test", Primary: true, Verified: true}}, Orgs: []string{"org-17"},
+	})
+	f.Configure(func(o *oauthtest.Options) { o.MembershipDelay = 100 * time.Millisecond })
+	g := githubFor(f)
+
+	// Twenty lookups four at a time take about five delays, not twenty.
+	code := signIn(t, g, true)
+	begun := time.Now()
+	id, err := g.Identify(t.Context(), access.Exchange{RedirectURI: redirectURI, Code: code, Verifier: verifier, Orgs: orgs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(begun); !slices.Equal(id.Orgs, []string{"org-17"}) || took > 1500*time.Millisecond {
+		t.Fatalf("orgs %v after %s", id.Orgs, took)
+	}
+
+	// One deadline bounds them all: slow lookups fail the sign-in.
+	f.Configure(func(o *oauthtest.Options) { o.MembershipDelay = 5 * time.Second })
+	code = signIn(t, g, true)
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+	begun = time.Now()
+	if _, err := g.Identify(ctx, access.Exchange{RedirectURI: redirectURI, Code: code, Verifier: verifier, Orgs: orgs}); !errors.Is(err, oauth.ErrProvider) {
+		t.Fatalf("slow lookups: %v", err)
+	}
+	if took := time.Since(begun); took > 2*time.Second {
+		t.Fatalf("deadline ignored: %s", took)
 	}
 }

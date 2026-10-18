@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/net/idna"
@@ -66,11 +65,16 @@ const (
 	// OAuthCodeLifetime is how long a site code lives (SECURITY-MODEL).
 	OAuthCodeLifetime = 60 * time.Second
 	// maxOAuthEntries bounds flows and codes alike, so a flood of starts
-	// costs bounded memory; the per-IP start limit keeps one client from
-	// filling it.
-	maxOAuthEntries = 50_000
+	// costs bounded memory; maxOAuthEntriesPerSite keeps a flood aimed at
+	// one site from using it all, and the per-IP start limit keeps one
+	// client from filling a site's share.
+	maxOAuthEntries        = 50_000
+	maxOAuthEntriesPerSite = 1_000
 	// maxGitHubOrgChecks bounds the membership lookups one sign-in makes.
 	maxGitHubOrgChecks = 20
+	// OAuthIdentifyTimeout bounds a provider's whole code exchange and
+	// identity lookups at the auth origin.
+	OAuthIdentifyTimeout = 15 * time.Second
 )
 
 // OAuthBindingCookieName is the cookie that ties a flow to the browser that
@@ -89,10 +93,10 @@ type Provider interface {
 	// GitHub reports whether the provider is GitHub, the only one whose
 	// identities carry organisations.
 	GitHub() bool
-	// Origin is the scheme and host its sign-in page is expected on (the
-	// configured authorisation URL or issuer), which the login page's
-	// form-action must allow the redirect to.
-	Origin() string
+	// Origins are the schemes and hosts of its authorisation endpoint as
+	// far as it knows them (configured, or found by OIDC discovery), which
+	// the login page's form-action must allow the redirect to.
+	Origins() []string
 	// AuthCodeURL is where the visitor's browser goes to sign in.
 	AuthCodeURL(ctx context.Context, a AuthRequest) (string, error)
 	// Identify exchanges the provider's code and returns the verified
@@ -139,8 +143,10 @@ type Identity struct {
 type ProviderInfo struct {
 	ID   string
 	Name string
-	// Origin is Provider.Origin.
-	Origin string
+	// Origins are where pressing its button may lead within the form's
+	// redirect chain: Provider.Origins and the auth origin (a provider that
+	// remembers the visitor redirects straight back to it).
+	Origins []string
 }
 
 // OAuthConfig configures OAuth sign-in. Without providers the method is
@@ -186,52 +192,15 @@ type oauthCode struct {
 // oauthState holds the flows and codes in flight. Entries are taken out
 // when looked up, so each is single-use whatever the outcome.
 type oauthState struct {
-	mu    sync.Mutex
-	flows map[string]oauthFlow
-	codes map[string]oauthCode
+	flows *pending[oauthFlow]
+	codes *pending[oauthCode]
 }
 
 func newOAuthState() *oauthState {
-	return &oauthState{flows: map[string]oauthFlow{}, codes: map[string]oauthCode{}}
-}
-
-// sweep drops expired entries from m.
-func sweep[V interface{ expiry() time.Time }](m map[string]V, now time.Time) {
-	for k, v := range m {
-		if !now.Before(v.expiry()) {
-			delete(m, k)
-		}
+	return &oauthState{
+		flows: newPending[oauthFlow](maxOAuthEntries, maxOAuthEntriesPerSite),
+		codes: newPending[oauthCode](maxOAuthEntries, maxOAuthEntriesPerSite),
 	}
-}
-
-func (f oauthFlow) expiry() time.Time { return f.expires }
-func (c oauthCode) expiry() time.Time { return c.expires }
-
-// put stores v under key in m unless m is full of live entries.
-func put[V interface{ expiry() time.Time }](mu *sync.Mutex, m map[string]V, key string, v V, now time.Time) bool {
-	mu.Lock()
-	defer mu.Unlock()
-	if len(m) >= maxOAuthEntries {
-		sweep(m, now)
-		if len(m) >= maxOAuthEntries {
-			return false
-		}
-	}
-	m[key] = v
-	return true
-}
-
-// take removes and returns m[key] if it is there and live.
-func take[V interface{ expiry() time.Time }](mu *sync.Mutex, m map[string]V, key string, now time.Time) (V, bool) {
-	mu.Lock()
-	defer mu.Unlock()
-	v, ok := m[key]
-	delete(m, key)
-	if !ok || !now.Before(v.expiry()) {
-		var zero V
-		return zero, false
-	}
-	return v, true
 }
 
 // Purposes for the OAuth hashes, apart from every other use of the key.
@@ -255,7 +224,8 @@ func pkceChallenge(verifier string) string {
 func (s *Service) OAuthProviders() []ProviderInfo {
 	out := make([]ProviderInfo, 0, len(s.c.OAuth.Providers))
 	for _, p := range s.c.OAuth.Providers {
-		out = append(out, ProviderInfo{ID: p.ID(), Name: p.Name(), Origin: p.Origin()})
+		origins := append(p.Origins(), strings.TrimSuffix(s.c.OAuth.AuthOrigin, "/"))
+		out = append(out, ProviderInfo{ID: p.ID(), Name: p.Name(), Origins: origins})
 	}
 	return out
 }
@@ -314,7 +284,7 @@ func (s *Service) StartOAuth(ctx context.Context, a OAuthStart) (OAuthStarted, e
 		verifier: verifier, nonce: nonce, binding: s.key.hashOf(purposeOAuthBinding, binding),
 		expires: now.Add(OAuthFlowLifetime),
 	}
-	if !put(&s.oauth.mu, s.oauth.flows, s.key.hashOf(purposeOAuthState, state), f, now) {
+	if !s.oauth.flows.put(s.key.hashOf(purposeOAuthState, state), f.siteID, f, f.expires, now) {
 		return OAuthStarted{}, &RateLimitError{RetryAfter: time.Minute}
 	}
 	u, err := prov.AuthCodeURL(ctx, AuthRequest{
@@ -356,7 +326,7 @@ func (s *Service) FinishOAuth(ctx context.Context, cb OAuthCallback) (OAuthFinis
 	if cb.State == "" {
 		return OAuthFinished{}, ErrOAuthState
 	}
-	f, ok := take(&s.oauth.mu, s.oauth.flows, s.key.hashOf(purposeOAuthState, cb.State), s.now())
+	f, ok := s.oauth.flows.take(s.key.hashOf(purposeOAuthState, cb.State), s.now())
 	if !ok || f.provider != cb.Provider {
 		return OAuthFinished{}, ErrOAuthState
 	}
@@ -377,7 +347,11 @@ func (s *Service) FinishOAuth(ctx context.Context, cb OAuthCallback) (OAuthFinis
 	if prov.GitHub() {
 		orgs = list.GitHubOrgs[:min(len(list.GitHubOrgs), maxGitHubOrgChecks)]
 	}
-	id, err := prov.Identify(ctx, Exchange{
+	// One deadline for the whole provider exchange, however many requests
+	// it makes, so a slow provider cannot hold the callback open.
+	idCtx, cancel := context.WithTimeout(ctx, OAuthIdentifyTimeout)
+	defer cancel()
+	id, err := prov.Identify(idCtx, Exchange{
 		RedirectURI: s.redirectURI(prov), Code: cb.Code, Verifier: f.verifier, Nonce: f.nonce, Orgs: orgs,
 	})
 	if err != nil {
@@ -398,7 +372,7 @@ func (s *Service) FinishOAuth(ctx context.Context, cb OAuthCallback) (OAuthFinis
 		siteID: f.siteID, host: f.host, path: f.path, policyID: p.ID, policyVersion: p.Version,
 		subject: subject, binding: f.binding, expires: now.Add(OAuthCodeLifetime),
 	}
-	if !put(&s.oauth.mu, s.oauth.codes, s.key.hashOf(purposeOAuthCode, code), c, now) {
+	if !s.oauth.codes.put(s.key.hashOf(purposeOAuthCode, code), c.siteID, c, c.expires, now) {
 		return out, &RateLimitError{RetryAfter: time.Minute}
 	}
 	out.URL = s.siteOrigin(f.host) + "/.wardlock/callback?code=" + url.QueryEscape(code)
@@ -450,7 +424,7 @@ func (s *Service) RedeemOAuth(ctx context.Context, r OAuthRedeem) (OAuthRedeemed
 	if r.Code == "" {
 		return OAuthRedeemed{}, ErrOAuthCode
 	}
-	c, ok := take(&s.oauth.mu, s.oauth.codes, s.key.hashOf(purposeOAuthCode, r.Code), s.now())
+	c, ok := s.oauth.codes.take(s.key.hashOf(purposeOAuthCode, r.Code), s.now())
 	if !ok || c.siteID != r.SiteID || c.host != r.Host || r.Binding == "" ||
 		!hmacEqual(c.binding, s.key.hashOf(purposeOAuthBinding, r.Binding)) {
 		return OAuthRedeemed{}, ErrOAuthCode

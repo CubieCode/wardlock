@@ -513,6 +513,12 @@ func (s *Service) IssueSession(ctx context.Context, n NewSession) (Cookie, error
 			return Cookie{}, ErrPolicyChanged
 		}
 	default:
+		// OAuth: stored without a condition, unlike the methods above.
+		// That is safe because a session lets nothing in unless its
+		// policy still has the version it was bound to (checkSession), and
+		// any change to the policy or its allowlist bumps the version: a
+		// session that races a change is born stale. Single use is the
+		// code table's job (RedeemOAuth takes the code before issuing).
 		err = s.c.Sessions.CreateSite(ctx, row)
 	}
 	if err != nil {
