@@ -199,7 +199,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.5: OAuth and OIDC
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/a2.5-oauth-oidc`
 - PR: https://github.com/CubieCode/wardlock/pull/55
 - Depends on: A2.1, C1.4
