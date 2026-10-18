@@ -18,7 +18,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function Confirm({ onClose = () => {} }: { onClose?: () => void }) {
+function Confirm({
+  onClose = () => {},
+  busy = false,
+}: {
+  onClose?: () => void;
+  /** While busy the dialog ignores requests to close, as callers do. */
+  busy?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -30,7 +37,7 @@ function Confirm({ onClose = () => {} }: { onClose?: () => void }) {
         title="Remove the thing?"
         onClose={() => {
           onClose();
-          setOpen(false);
+          if (!busy) setOpen(false);
         }}
         actions={
           <>
@@ -81,6 +88,47 @@ describe('Dialog', () => {
     expect(onClose).toHaveBeenCalledOnce();
     expect(cancel.defaultPrevented).toBe(true);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('Dialog closed by the browser', () => {
+  // Chromium closes a modal dialog on a second Escape without a cancellable
+  // cancel event; the element then fires only "close".
+  const closeNatively = (dialog: HTMLElement) =>
+    act(async () => {
+      dialog.removeAttribute('open');
+      dialog.dispatchEvent(new Event('close'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+  it('tells the caller, which closes it', async () => {
+    const onClose = vi.fn();
+    render(<Confirm onClose={onClose} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await closeNatively(screen.getByRole('dialog'));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(screen.queryByText('It cannot be undone.')).toBeNull();
+  });
+
+  it('shows itself again while the caller keeps it open', async () => {
+    const onClose = vi.fn();
+    render(<Confirm onClose={onClose} busy />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    const dialog = screen.getByRole('dialog') as HTMLDialogElement;
+    await closeNatively(dialog);
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(dialog.hasAttribute('open')).toBe(true);
+    expect(screen.getByText('It cannot be undone.')).toBeTruthy();
+  });
+
+  it('ignores the close that follows its own closing', async () => {
+    const onClose = vi.fn();
+    render(<Confirm onClose={onClose} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    const dialog = screen.getByRole('dialog', { hidden: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await closeNatively(dialog);
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
 

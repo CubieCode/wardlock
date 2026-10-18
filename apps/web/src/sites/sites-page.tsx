@@ -111,7 +111,10 @@ export function SitesPage({ api }: { api: ApiClient }) {
       )}
       {state.kind === 'ready' && state.rows.length === 0 && (
         <EmptyState title="No sites yet">
-          <p>A site appears here after its first deploy.</p>
+          <p>
+            Your sites are listed here, with who can open each one and its live
+            deploy.
+          </p>
         </EmptyState>
       )}
       {state.kind === 'ready' && state.rows.length > 0 && (

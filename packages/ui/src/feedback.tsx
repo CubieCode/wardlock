@@ -9,12 +9,24 @@ export type StatusTone = 'neutral' | 'success' | 'warning' | 'danger';
 /** A short status word. Tone supplements the word; it never replaces it. */
 export function StatusBadge({
   tone = 'neutral',
+  icon,
   children,
 }: {
   tone?: StatusTone;
+  /** A small decorative glyph before the word, so states differ in shape. */
+  icon?: ReactNode;
   children: ReactNode;
 }) {
-  return <span className={cx('wl-badge', `wl-badge-${tone}`)}>{children}</span>;
+  return (
+    <span className={cx('wl-badge', `wl-badge-${tone}`)}>
+      {icon ? (
+        <span className="wl-badge-icon" aria-hidden="true">
+          {icon}
+        </span>
+      ) : null}
+      {children}
+    </span>
+  );
 }
 
 export type NoticeTone = 'info' | 'warning' | 'danger';

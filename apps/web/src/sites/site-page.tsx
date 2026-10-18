@@ -11,7 +11,7 @@ import {
   PageHeader,
   StatusBadge,
 } from '@wardlock/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTitle } from '../shell/page.js';
 import {
   defaultPolicy,
@@ -20,6 +20,7 @@ import {
   PolicyBadge,
   shortId,
   Time,
+  type Activation,
   type Deploy,
   type Policy,
   type Site,
@@ -73,6 +74,10 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
   const [tearingDown, setTearingDown] = useState(false);
   const [rolledBack, setRolledBack] = useState<Deploy | null>(null);
   const [more, setMore] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  // Bumped by every in-place refresh, so a page of older deploys that was
+  // requested before it cannot overwrite the fresh history.
+  const generation = useRef(0);
   useTitle(state.kind === 'not-found' ? 'Site not found' : name);
 
   // Each attempt loads the page again; Try again starts a new one.
@@ -129,26 +134,63 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
 
   const loadOlder = async () => {
     if (!nextCursor) return;
+    const started = generation.current;
     setMore('loading');
     const { data } = await api
       .GET('/api/v0/sites/{site}/deploys', {
         params: { path: { site: site.name }, query: { cursor: nextCursor } },
       })
       .catch(() => ({ data: undefined }));
+    if (started !== generation.current) return;
     if (!data) return setMore('error');
     setMore('idle');
-    setState({
-      ...state,
-      deploys: [...deploys, ...data.items],
-      nextCursor: data.nextCursor,
-    });
+    setState((current) =>
+      current.kind === 'ready'
+        ? {
+            ...current,
+            deploys: [...current.deploys, ...data.items],
+            nextCursor: data.nextCursor,
+          }
+        : current,
+    );
   };
 
-  const afterRollback = (deploy: Deploy) => {
+  /** Reads the site again without leaving the page; a failure says so inline. */
+  const refresh = () => {
+    const started = ++generation.current;
+    setMore('idle');
+    setRefreshFailed(false);
+    loadSite(api, name).then(
+      (loaded) => {
+        if (started === generation.current)
+          setState({ kind: 'ready', ...loaded });
+      },
+      () => {
+        if (started === generation.current) setRefreshFailed(true);
+      },
+    );
+  };
+
+  const afterRollback = ({ site: now, deploy }: Activation) => {
     setRollbackTo(null);
     setRolledBack(deploy);
-    // Statuses of every deploy change; read them again in place.
-    setAttempt((n) => n + 1);
+    // Show the answer straight away, then read every status again in place.
+    setState((current) =>
+      current.kind === 'ready'
+        ? {
+            ...current,
+            site: now,
+            deploys: current.deploys.map((d) =>
+              d.id === deploy.id
+                ? deploy
+                : d.status === 'active'
+                  ? { ...d, status: 'inactive' }
+                  : d,
+            ),
+          }
+        : current,
+    );
+    refresh();
   };
 
   return (
@@ -191,6 +233,17 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
           <Notice>
             Rolled back. Deploy <code>{shortId(rolledBack.id)}</code> is live.
           </Notice>
+        )}
+        {refreshFailed && (
+          <div className="sites-error">
+            <Notice tone="danger">
+              Could not refresh the deploy history. The statuses below may be
+              out of date.
+            </Notice>
+            <Button type="button" onClick={refresh}>
+              Refresh
+            </Button>
+          </div>
         )}
         {deploys.length === 0 ? (
           <EmptyState title="No deploys yet">
@@ -264,7 +317,7 @@ function accessSummary(policy: Policy | undefined) {
   if (!policy) return 'Could not read who can open this site.';
   if (policy.visibility === 'public')
     return 'Anyone with the address can open this site.';
-  return 'Visitors need a share link to open this site.';
+  return 'Only visitors with access can open this site.';
 }
 
 /** One deploy: its status word, ID, message, time, size and rollback. */
@@ -284,7 +337,7 @@ function DeployRow({
           <StatusBadge tone="success">Live</StatusBadge>
         )}
         {deploy.status === 'inactive' && (
-          <StatusBadge tone="neutral">Earlier</StatusBadge>
+          <StatusBadge tone="neutral">Not live</StatusBadge>
         )}
         {deploy.status === 'pending' && (
           <StatusBadge tone="neutral">Not activated</StatusBadge>

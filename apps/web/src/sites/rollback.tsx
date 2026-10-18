@@ -9,6 +9,7 @@ import {
   formatBytes,
   shortId,
   Time,
+  type Activation,
   type Deploy,
   type Site,
 } from './format.js';
@@ -31,7 +32,7 @@ export function RollbackDialog({
   live: Deploy | undefined;
   to: Deploy;
   onClose: () => void;
-  onDone: (deploy: Deploy) => void;
+  onDone: (activation: Activation) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +47,7 @@ export function RollbackDialog({
       })
       .catch(() => null);
     setBusy(false);
-    if (result?.data) return onDone(result.data.deploy);
+    if (result?.data) return onDone(result.data);
     setError(
       result?.error?.message
         ? `Could not roll back: ${result.error.message}`
@@ -78,16 +79,17 @@ export function RollbackDialog({
       }
     >
       <p>
-        Visitors to <code>{site.hostname}</code> see the earlier deploy straight
-        away. Nothing is uploaded, and the current deploy stays in the history
-        so you can return to it the same way.
+        Visitors to <code>{site.hostname}</code> see deploy{' '}
+        <code>{shortId(to.id)}</code> straight away. Nothing is uploaded, and
+        the deploy live now stays in the history, so you can return to it the
+        same way.
       </p>
       <dl className="rollback-swap">
         <div>
           <dt>Live now</dt>
           <dd>
             {live ? (
-              <DeploySummary deploy={live} />
+              <DeploySummary deploy={live} live />
             ) : (
               <code>{shortId(site.activeDeployId ?? '')}</code>
             )}
@@ -105,15 +107,30 @@ export function RollbackDialog({
   );
 }
 
-function DeploySummary({ deploy }: { deploy: Deploy }) {
+/** The deploy's ID and message, and when it went live or was uploaded. */
+function DeploySummary({
+  deploy,
+  live = false,
+}: {
+  deploy: Deploy;
+  live?: boolean;
+}) {
   return (
     <>
       <span className="rollback-title">
         <code>{shortId(deploy.id)}</code> {deploy.message || 'No message'}
       </span>
       <span className="rollback-meta">
-        Uploaded <Time at={deploy.createdAt} /> · {fileCount(deploy.fileCount)}{' '}
-        · {formatBytes(deploy.totalSize)}
+        {live && deploy.activatedAt !== undefined ? (
+          <>
+            Live since <Time at={deploy.activatedAt} />
+          </>
+        ) : (
+          <>
+            Uploaded <Time at={deploy.createdAt} />
+          </>
+        )}{' '}
+        · {fileCount(deploy.fileCount)} · {formatBytes(deploy.totalSize)}
       </span>
     </>
   );

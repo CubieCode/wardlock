@@ -122,6 +122,10 @@ describe('site list', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]!.textContent).toContain('docs.sites.example.test');
     expect(rows[0]!.textContent).toContain('Protected');
+    // Protected and Public carry the same weight; a lock tells them apart.
+    const badge = within(rows[0]!).getByText('Protected');
+    expect(badge.className).toContain('wl-badge-neutral');
+    expect(badge.querySelector('[aria-hidden="true"] svg')).toBeTruthy();
     expect(rows[0]!.textContent).toContain('Deployed 3 hours ago');
     expect(rows[1]!.textContent).toContain('Public');
     expect(rows[1]!.textContent).toContain('Not deployed yet');
@@ -230,7 +234,7 @@ describe('site detail', () => {
       ).value,
     ).toBe('https://docs.sites.example.test/');
     expect(
-      screen.getByText('Visitors need a share link to open this site.'),
+      screen.getByText('Only visitors with access can open this site.'),
     ).toBeTruthy();
     expect(screen.getByText('/assets/')).toBeTruthy();
     const rows = within(
@@ -239,7 +243,7 @@ describe('site detail', () => {
     expect(rows.map((row) => row.textContent)).toEqual([
       expect.stringContaining('Not activated'),
       expect.stringContaining('Live'),
-      expect.stringContaining('Earlier'),
+      expect.stringContaining('Not live'),
     ]);
     expect(rows[1]!.textContent).toContain('Fix typo on the install page');
     expect(rows[1]!.textContent).toContain('3 files');
@@ -304,6 +308,10 @@ describe('site detail', () => {
     const dialog = screen.getByRole('dialog', { name: 'Roll back docs?' });
     expect(dialog.textContent).toContain('Live now');
     expect(dialog.textContent).toContain('Fix typo on the install page');
+    // The live deploy shows when it went live; the target is named by ID.
+    expect(dialog.textContent).toContain('Live since 1 hour ago');
+    expect(dialog.textContent).toContain('see deploy 00000002 straight away');
+    expect(dialog.textContent).not.toContain('earlier');
     expect(dialog.textContent).toContain('Goes live');
     expect(dialog.textContent).toContain('First draft');
     fireEvent.click(
@@ -350,6 +358,106 @@ describe('site detail', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('keeps the page after a rollback when the refresh fails', async () => {
+    at('/sites/docs');
+    let down = false;
+    const routes = oneSite(docs, [live, earlier]);
+    const { api } = fakeServer({
+      ...routes,
+      'GET /api/v0/sites/docs': (request, body) =>
+        down
+          ? Response.json(
+              { code: 'internal', message: 'Internal error.' },
+              { status: 500 },
+            )
+          : routes['GET /api/v0/sites/docs']!(request, body),
+      'POST /api/v0/sites/docs/rollback': () => {
+        down = true;
+        const back = { ...earlier, status: 'active' as const };
+        return Response.json({
+          site: { ...docs, activeDeployId: back.id },
+          deploy: back,
+        });
+      },
+    });
+    render(<App api={api} />);
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Roll back to deploy 00000002',
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Roll back to this deploy' }),
+    );
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Could not refresh the deploy history.',
+    );
+    expect(screen.getByRole('main').textContent).toContain(
+      'Rolled back. Deploy 00000002 is live.',
+    );
+    // The rollback's own answer already shows the new live deploy.
+    const rows = within(
+      screen.getByRole('list', { name: 'Deploy history' }),
+    ).getAllByRole('listitem');
+    expect(rows[0]!.textContent).toContain('Not live');
+    expect(rows[1]!.textContent).toContain('Live');
+    expect(
+      screen.getByRole('button', { name: 'Roll back to deploy 00000003' }),
+    ).toBeTruthy();
+
+    down = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  });
+
+  it('drops a page of older deploys that a rollback refresh overtook', async () => {
+    at('/sites/docs');
+    const older = deploy('00000001', { message: 'Very first' });
+    let releaseOlder!: () => void;
+    const olderGate = new Promise<void>((resolve) => (releaseOlder = resolve));
+    const routes = oneSite(docs, [live, earlier]);
+    const { api } = fakeServer({
+      ...routes,
+      'GET /api/v0/sites/docs/deploys': (request) =>
+        new URL(request.url).searchParams.get('cursor') === 'older'
+          ? (olderGate.then(() =>
+              Response.json({ items: [older] }),
+            ) as unknown as Response)
+          : Response.json({ items: [live, earlier], nextCursor: 'older' }),
+      'POST /api/v0/sites/docs/rollback': () =>
+        Response.json({
+          site: { ...docs, activeDeployId: earlier.id },
+          deploy: { ...earlier, status: 'active' },
+        }),
+    });
+    render(<App api={api} />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Show older deploys' }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Roll back to deploy 00000002' }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Roll back to this deploy' }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('main').textContent).toContain('Rolled back.'),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Show older deploys' }),
+      ).toHaveProperty('disabled', false),
+    );
+    releaseOlder();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByText('Very first')).toBeNull();
+    expect(
+      within(screen.getByRole('list', { name: 'Deploy history' })).getAllByRole(
+        'listitem',
+      ),
+    ).toHaveLength(2);
   });
 
   it('tears down only after the name is typed, then returns to the list', async () => {
