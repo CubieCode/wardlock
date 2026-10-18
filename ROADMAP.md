@@ -269,7 +269,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: `feat/d3.3-share-links`
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/49
 - Depends on: D3.2, A2.2
 - Scope: Create a link (label, expiry or never, use limit, path scope), show the URL once with a copy action, list links, revoke, rotate, per-link access log.
 - Acceptance: Browser tests cover creation, the one-time display, copy, revoke and rotate confirmations and the access log view; tokens never appear after creation, in page titles or in screenshots. Mobbin references cited in the PR (start with: create share link dialog with expiry and permissions; API key shown once with copy; activity or access log table).
