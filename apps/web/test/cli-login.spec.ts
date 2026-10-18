@@ -49,8 +49,18 @@ for (const scheme of schemes) {
     const cli = await playwright.request.newContext();
     try {
       await test.step('the owner signs in', async () => {
-        const inbox = mailbox(cliOwnerFor(info.project.name, scheme));
-        await page.goto(await inbox.signInLink());
+        // Sign in by email code rather than the invitation link: link
+        // redemptions are limited per IP, and the other specs use them.
+        const email = cliOwnerFor(info.project.name, scheme);
+        const inbox = mailbox(email);
+        await inbox.signInLink(); // skip the invitation
+        await page.goto(`${origin}/sign-in`);
+        await page.getByRole('textbox', { name: 'Email address' }).fill(email);
+        await page.getByRole('button', { name: 'Send code' }).click();
+        await page
+          .getByRole('textbox', { name: 'Sign-in code' })
+          .fill(await inbox.code());
+        await page.getByRole('button', { name: 'Sign in' }).click();
         await expect(
           page.getByRole('heading', { level: 1, name: 'Overview' }),
         ).toBeVisible();
@@ -78,9 +88,8 @@ for (const scheme of schemes) {
         ).toBeChecked();
         await expect(
           page.getByRole('checkbox', { name: /Manage/ }),
-        ).toBeChecked();
+        ).not.toBeChecked();
         await shot('review');
-        await page.getByRole('checkbox', { name: /Manage/ }).uncheck();
         await page.getByRole('button', { name: 'Approve' }).click();
         await expect(
           page.getByRole('heading', { level: 1, name: 'CLI login approved' }),

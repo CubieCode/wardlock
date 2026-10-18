@@ -142,6 +142,17 @@ func (c credentialStore) read() (storedCredentials, error) {
 	return rec, nil
 }
 
+// makePrivateDir sets dir to 0700 (owner only; a directory needs the
+// execute bit to be entered).
+func makePrivateDir(dir string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	return root.Chmod(".", 0o700)
+}
+
 // readInDir reads name inside dir and nowhere else.
 func readInDir(dir, name string) ([]byte, error) {
 	root, err := os.OpenRoot(dir)
@@ -162,6 +173,10 @@ func (c credentialStore) write(rec storedCredentials) (string, error) {
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create %s: %w", dir, err)
+	}
+	// MkdirAll leaves an existing directory as it was; tighten it.
+	if err := makePrivateDir(dir); err != nil {
+		return "", fmt.Errorf("make %s private: %w", dir, err)
 	}
 	b, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {

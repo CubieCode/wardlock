@@ -16,3 +16,12 @@ coverage/
 apps/server/internal/dashboard/ui/dist/
 test-results/
 playwright-report/
+# Binaries `go build` leaves in a module or command directory; pnpm build
+# writes them to .local/bin instead.
+/apps/cli/wardlock
+/apps/cli/cmd/wardlock/wardlock
+/apps/server/wardlockd
+/apps/server/cmd/wardlockd/wardlockd
+*.exe
+# Local workspace checksums; each module's go.sum is the committed record.
+go.work.sum

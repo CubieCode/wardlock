@@ -111,11 +111,10 @@ describe('/cli-login', () => {
     const deploy = screen.getByRole('checkbox', { name: /Deploy/ });
     const manage = screen.getByRole('checkbox', { name: /Manage/ });
     expect((deploy as HTMLInputElement).checked).toBe(true);
-    expect((manage as HTMLInputElement).checked).toBe(true);
+    expect((manage as HTMLInputElement).checked).toBe(false);
 
     // Nothing chosen: say so, send nothing.
     fireEvent.click(deploy);
-    fireEvent.click(manage);
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     expect(
       await screen.findByText(
@@ -124,7 +123,7 @@ describe('/cli-login', () => {
     ).toBeTruthy();
     expect(server.count('POST /api/v0/cli-login/approve')).toBe(0);
 
-    fireEvent.click(deploy);
+    fireEvent.click(manage);
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     const heading = await screen.findByRole('heading', {
       name: 'CLI login approved',
@@ -132,7 +131,7 @@ describe('/cli-login', () => {
     await waitFor(() => expect(document.activeElement).toBe(heading));
     expect(server.calls.at(-1)?.body).toEqual({
       userCode: 'BDFH-KMPR',
-      scopes: ['deploy'],
+      scopes: ['manage'],
     });
     expect(screen.getByText(/Return to your terminal/)).toBeTruthy();
   });
@@ -185,7 +184,7 @@ describe('/cli-login', () => {
     await screen.findByRole('heading', { name: 'CLI login approved' });
     expect(server.calls.at(-1)?.body).toEqual({
       userCode: 'GJKL-MNPQ',
-      scopes: ['deploy', 'manage'],
+      scopes: ['deploy'],
     });
   });
 

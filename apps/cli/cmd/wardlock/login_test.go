@@ -4,9 +4,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -477,4 +479,70 @@ func TestConfigDir(t *testing.T) {
 	if got, _ := configDir(env(map[string]string{"XDG_CONFIG_HOME": "relative"})); got != filepath.Join(home, ".config", "wardlock") {
 		t.Fatalf("default = %q", got)
 	}
+}
+
+func TestWarnPlainHTTP(t *testing.T) {
+	tests := map[string]bool{
+		"http://wardlock.example.test":   true,
+		"http://192.0.2.10:8080":         true,
+		"http://[2001:db8::1]":           true,
+		"https://wardlock.example.test":  false,
+		"http://localhost:8080":          false,
+		"http://wardlock.localhost:8080": false,
+		"http://127.0.0.1:8080":          false,
+		"http://127.1.2.3":               false,
+		"http://[::1]:8080":              false,
+		"http://WARDLOCK.LOCALHOST":      false,
+	}
+	for server, warn := range tests {
+		var b strings.Builder
+		warnPlainHTTP(&b, server)
+		if got := strings.Contains(b.String(), "Warning:"); got != warn {
+			t.Errorf("warnPlainHTTP(%q) warned %v, want %v", server, got, warn)
+		}
+	}
+}
+
+func TestLoginWarnsAboutPlainHTTP(t *testing.T) {
+	srv := newFakeServer(t, http.StatusOK)
+	a, _, errOut := testApp(t)
+	// The fake server is on 127.0.0.1: no warning.
+	if err := run(t.Context(), a, []string{"login", "--server", srv.URL}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(errOut.String(), "Warning:") {
+		t.Fatalf("warned for a loopback server: %s", errOut)
+	}
+	// The same server reached by a non-loopback name over http: warned on
+	// stderr, and the login still works.
+	a.http = &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+		},
+	}}
+	if err := run(t.Context(), a, []string{"login", "--server", "http://wardlock.example.test"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(errOut.String(), "Warning: http://wardlock.example.test uses plain http") {
+		t.Fatalf("no warning on stderr: %s", errOut)
+	}
+}
+
+func TestExistingConfigDirIsMadePrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no POSIX modes")
+	}
+	a, _, _ := testApp(t)
+	dir := filepath.Dir(credentialsPath(t, a))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a.creds.keyring.(*fakeKeyring).broken = true
+	if _, err := a.creds.save("https://wardlock.example.test", testToken); err != nil {
+		t.Fatal(err)
+	}
+	assertPrivate(t, a)
 }

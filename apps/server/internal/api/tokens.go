@@ -13,14 +13,29 @@ import (
 	"wardlock.nz/server/internal/owners"
 )
 
-// tokenScopes is what an API token needs for each operation that accepts
-// one, as the contract's security requirements list it: any one entry is
-// enough, and "" means any token. sessionOnly lists the operations that
-// take only a dashboard session, which refuse API tokens with 403: tokens
-// never manage owners, sessions or other tokens. Operations in neither
-// take no credentials, so a token makes no difference to them.
-// TestTokenScopesMatchContract keeps both tables in step with
-// packages/api-spec/openapi.yaml.
+// An API token is checked against three tables, kept in step with
+// packages/api-spec/openapi.yaml by TestTokenScopesMatchContract:
+//
+//   - publicOperations take no credentials, so a token makes no difference;
+//   - tokenScopes lists what a token needs for each operation that accepts
+//     one: any one entry is enough, and "" means any token;
+//   - sessionOnly lists the operations that take only a dashboard session:
+//     tokens never manage owners, sessions, passkeys or other tokens.
+//
+// The check is default-deny: a token-authenticated request for an operation
+// in no table (one added to the contract but not here) answers 403.
+var publicOperations = map[string]bool{
+	"GetHealth":           true,
+	"CompleteSetup":       true,
+	"RedeemSignInLink":    true,
+	"SendEmailCode":       true,
+	"VerifyEmailCode":     true,
+	"StartPasskeySignIn":  true,
+	"VerifyPasskeySignIn": true,
+	"StartCliLogin":       true,
+	"PollCliLogin":        true,
+}
+
 var tokenScopes = map[string][]string{
 	"GetMe":   {""},
 	"SignOut": {""},
@@ -55,22 +70,34 @@ var sessionOnly = map[string]bool{
 	"RevokeApiToken":  true,
 	"ApproveCliLogin": true,
 	"DenyCliLogin":    true,
+
+	"ListPasskeys":             true,
+	"StartPasskeyRegistration": true,
+	"CreatePasskey":            true,
+	"DeletePasskey":            true,
 }
 
 // errTokenScope means the request's API token may not use the operation.
 var errTokenScope = errors.New("API token lacks the scope")
 
-// requireTokenScopes refuses an API-token request whose token lacks the
-// operation's scope. Session and unauthenticated requests pass through;
-// handlers answer 401 when they need an owner and have none.
+// requireTokenScopes refuses an API-token request unless the operation is
+// public or the token has a scope the operation accepts. Session and
+// unauthenticated requests pass through; handlers answer 401 when they need
+// an owner and have none.
 func requireTokenScopes(next StrictHandlerFunc, operationID string) StrictHandlerFunc {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		ri := info(ctx)
-		if ri.tokenID != "" && (sessionOnly[operationID] || tokenScopes[operationID] != nil && !scopesAllow(ri.scopes, tokenScopes[operationID])) {
+		if ri.tokenID != "" && !tokenAllowed(operationID, ri.scopes) {
 			return nil, errTokenScope
 		}
 		return next(ctx, w, r, request)
 	}
+}
+
+// tokenAllowed reports whether a token with scopes may call operationID.
+// sessionOnly operations and unknown ones are refused.
+func tokenAllowed(operationID string, scopes owners.Scopes) bool {
+	return publicOperations[operationID] || scopesAllow(scopes, tokenScopes[operationID])
 }
 
 func scopesAllow(have owners.Scopes, accepted []string) bool {

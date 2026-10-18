@@ -178,8 +178,9 @@ function Review({
 }) {
   useTitle('Approve CLI login');
   const { api, session } = useSession();
+  // Least privilege: Deploy only, unless the owner also ticks Manage.
   const [scopes, setScopes] = useState<Set<Scope>>(
-    () => new Set<Scope>(['deploy', 'manage']),
+    () => new Set<Scope>(['deploy']),
   );
   const [scopeError, setScopeError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);

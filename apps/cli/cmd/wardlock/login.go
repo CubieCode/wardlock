@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os/exec"
 	"runtime"
@@ -65,6 +66,7 @@ func runLogin(ctx context.Context, a *app, args []string) error {
 		fmt.Fprintln(a.stderr, "wardlock login:", err)
 		return errUsage
 	}
+	warnPlainHTTP(a.stderr, server)
 	// Instructions go to stderr with --json, so stdout stays one JSON value.
 	info := a.stdout
 	if *asJSON {
@@ -214,6 +216,7 @@ func runLogout(ctx context.Context, a *app, args []string) error {
 		return err
 	}
 	server := rec.Server
+	warnPlainHTTP(a.stderr, server)
 	_, token, loadErr := a.creds.load()
 
 	// Revoke first; forget locally whatever happens, so a dead server
@@ -271,6 +274,24 @@ func checkServer(raw string) (string, error) {
 		return "", fmt.Errorf("%q is not a server address like https://wardlock.example.com", raw)
 	}
 	return s, nil
+}
+
+// warnPlainHTTP warns that a token sent over plain HTTP to another
+// computer can be read on the way. Loopback addresses and *.localhost, used
+// for local servers, are not warned about.
+func warnPlainHTTP(w io.Writer, server string) {
+	u, err := url.Parse(server)
+	if err != nil || u.Scheme != "http" {
+		return
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return
+	}
+	if ip, err := netip.ParseAddr(host); err == nil && ip.Unmap().IsLoopback() {
+		return
+	}
+	fmt.Fprintf(w, "Warning: %s uses plain http, so your API token travels unencrypted and anyone on the network path can read it. Use https unless this is a trusted private network.\n", server)
 }
 
 func normaliseServer(raw string) string { return strings.TrimRight(strings.TrimSpace(raw), "/") }

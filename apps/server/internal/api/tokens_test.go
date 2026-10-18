@@ -102,6 +102,9 @@ func TestAPITokensEndToEnd(t *testing.T) {
 	wantError(t, h.bearer(tok, req{method: http.MethodGet, path: "/api/v0/tokens"}), http.StatusForbidden, "forbidden")
 	wantError(t, h.bearer(tok, req{method: http.MethodPost, path: "/api/v0/tokens", body: api.CreateApiTokenRequest{Name: "x", Scopes: api.Scopes{api.ScopeDeploy}}}), http.StatusForbidden, "forbidden")
 	wantError(t, h.bearer(tok, req{method: http.MethodGet, path: "/api/v0/sessions"}), http.StatusForbidden, "forbidden")
+	// Nor passkeys: a leaked token must not register a dashboard passkey.
+	wantError(t, h.bearer(tok, req{method: http.MethodGet, path: "/api/v0/passkeys"}), http.StatusForbidden, "forbidden")
+	wantError(t, h.bearer(tok, req{method: http.MethodPost, path: "/api/v0/passkeys/registration"}), http.StatusForbidden, "forbidden")
 	// Public operations do not mind a token.
 	wantStatus(t, h.bearer(tok, req{method: http.MethodGet, path: "/api/v0/health"}), http.StatusOK)
 
