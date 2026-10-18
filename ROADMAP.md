@@ -210,8 +210,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.6: AI-readable renditions
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: feat/a2.6-ai-renditions
 - PR:
 - Depends on: A2.1, C1.2
 - Scope: HTML to Markdown and plain text at deploy time, stored as blobs referenced from the manifest; `?format=md|txt` with correct content types; `Link: rel="alternate"` on HTML; documented conversion contract in SPEC; golden-file fixtures.
