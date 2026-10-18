@@ -69,11 +69,13 @@ type Domains interface {
 	// instance-wide routing lookup for the edge; a pending or lapsed
 	// hostname is ErrNotFound.
 	GetActiveByHostname(ctx context.Context, hostname string) (Domain, error)
-	// RecordCheck stores the outcome of a verification check: d's status,
-	// LastCheckedAt, VerifiedAt, FailingSince, LastFailureReason and
-	// FailureDetail, for the claim with d.ID. Instance-wide, for the
-	// verification worker; ErrNotFound once the claim is gone.
-	RecordCheck(ctx context.Context, d Domain) error
+	// RecordCheck stores the outcome of a verification check of prev, the
+	// domain as the checker read it: next's status, LastCheckedAt,
+	// VerifiedAt, FailingSince, LastFailureReason and FailureDetail. It is
+	// a compare-and-set on prev's ID, status and LastCheckedAt, so it is
+	// ErrNotFound, changing nothing, once the claim is gone or another
+	// check has been recorded since prev was read. Instance-wide.
+	RecordCheck(ctx context.Context, prev, next Domain) error
 	// ListToCheck returns up to limit domains, by ID after afterID ("" for
 	// the first page), that may be due a check: pending domains created
 	// at or after windowStart, and active or lapsed ones never checked or
@@ -142,15 +144,17 @@ func (r domainsRepo) GetActiveByHostname(ctx context.Context, hostname string) (
 	return domainFrom(sqlcgen.GetDomainRow(row)), nil
 }
 
-func (r domainsRepo) RecordCheck(ctx context.Context, d Domain) error {
+func (r domainsRepo) RecordCheck(ctx context.Context, prev, next Domain) error {
 	_, err := r.db.q.RecordDomainCheck(ctx, sqlcgen.RecordDomainCheckParams{
-		ID:                d.ID,
-		Status:            string(d.Status),
-		LastCheckedAt:     nullMs(d.LastCheckedAt),
-		VerifiedAt:        nullMs(d.VerifiedAt),
-		FailingSince:      nullMs(d.FailingSince),
-		LastFailureReason: nullString(string(d.LastFailureReason)),
-		FailureDetail:     nullString(d.FailureDetail),
+		ID:                prev.ID,
+		PrevStatus:        string(prev.Status),
+		PrevLastCheckedAt: nullMs(prev.LastCheckedAt),
+		Status:            string(next.Status),
+		LastCheckedAt:     nullMs(next.LastCheckedAt),
+		VerifiedAt:        nullMs(next.VerifiedAt),
+		FailingSince:      nullMs(next.FailingSince),
+		LastFailureReason: nullString(string(next.LastFailureReason)),
+		FailureDetail:     nullString(next.FailureDetail),
 	})
 	return mapErr("record domain check", err)
 }

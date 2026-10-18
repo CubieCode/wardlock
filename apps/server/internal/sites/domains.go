@@ -72,6 +72,10 @@ func (s *Service) AddDomain(ctx context.Context, ownerID, siteName, hostname str
 		return store.Domain{}, storeErr("create domain", err)
 	}
 	checked, err := s.check(ctx, d, site.Name)
+	if errors.Is(err, errSuperseded) {
+		// The worker got there first; answer with what it recorded.
+		return s.reread(ctx, ownerID, d)
+	}
 	if err != nil {
 		// The domain exists; the worker checks it on its next pass.
 		s.log().LogAttrs(ctx, slog.LevelWarn, "first domain check failed",
@@ -112,8 +116,19 @@ func (s *Service) VerifyDomain(ctx context.Context, ownerID, siteName, hostname 
 	if wait := d.LastCheckedAt.Add(VerifyCooldown).Sub(s.now()); !d.LastCheckedAt.IsZero() && wait > 0 {
 		return store.Domain{}, &CheckTooSoonError{RetryAfter: wait}
 	}
-	d, err = s.check(ctx, d, site.Name)
-	return d, storeErr("verify domain", err)
+	checked, err := s.check(ctx, d, site.Name)
+	if errors.Is(err, errSuperseded) {
+		// Another check (the worker's, or a concurrent request) was
+		// recorded while this one ran: answer with the newer result.
+		return s.reread(ctx, ownerID, d)
+	}
+	return checked, storeErr("verify domain", err)
+}
+
+// reread returns d as currently stored.
+func (s *Service) reread(ctx context.Context, ownerID string, d store.Domain) (store.Domain, error) {
+	cur, err := s.c.Domains.Get(ctx, ownerID, d.SiteID, d.Hostname)
+	return cur, storeErr("get domain", err)
 }
 
 // RemoveDomain detaches one of ownerID's domains: serving it stops at once
@@ -152,9 +167,17 @@ func (s *Service) ownedDomain(ctx context.Context, ownerID, siteName, hostname s
 	return site, d, nil
 }
 
+// errSuperseded means a check's snapshot of its domain was out of date by
+// the time it finished: the domain was removed, or another check was
+// recorded meanwhile. Nothing was written.
+var errSuperseded = errors.New("domain changed during the check")
+
 // check runs one verification check of d, a domain of the site called
-// siteName, and records it. A status change is announced to the edge at
-// once, and a domain that lapses loses its certificate.
+// siteName, and records it only if d is still the stored state, so a slow
+// check can never overwrite a newer result. The edge is told about every
+// status change and every result that is not active (so it can never keep
+// serving a host from a stale positive), and a domain that lapses loses its
+// certificate.
 func (s *Service) check(ctx context.Context, d store.Domain, siteName string) (store.Domain, error) {
 	timeout := s.c.CheckTimeout
 	if timeout <= 0 {
@@ -162,11 +185,17 @@ func (s *Service) check(ctx context.Context, d store.Domain, siteName string) (s
 	}
 	res := verify(ctx, s.c.Resolver, timeout, d.Hostname, s.RoutingTarget(siteName), d.VerificationToken)
 	next := apply(d, res, s.now())
-	if err := s.c.Domains.RecordCheck(ctx, next); err != nil {
+	err := s.c.Domains.RecordCheck(ctx, d, next)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Domain{}, fmt.Errorf("record domain check: %w", errSuperseded)
+	}
+	if err != nil {
 		return store.Domain{}, fmt.Errorf("record domain check: %w", err)
 	}
-	if next.Status != d.Status {
+	if next.Status != d.Status || next.Status != store.DomainActive {
 		s.c.Notifier.Notify(ctx, d.SiteID)
+	}
+	if next.Status != d.Status {
 		if next.Status == store.DomainLapsed {
 			s.removeCert(ctx, d.Hostname)
 		}
@@ -248,8 +277,8 @@ func (s *Service) checkOne(ctx context.Context, d store.Domain) bool {
 	if err == nil {
 		_, err = s.check(ctx, d, site.Name)
 	}
-	if errors.Is(err, store.ErrNotFound) {
-		return false // removed meanwhile
+	if errors.Is(err, store.ErrNotFound) || errors.Is(err, errSuperseded) {
+		return false // removed, or checked by someone else, meanwhile
 	}
 	if err != nil {
 		s.log().LogAttrs(ctx, slog.LevelError, "domain check failed",

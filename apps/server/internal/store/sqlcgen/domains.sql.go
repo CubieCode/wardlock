@@ -314,6 +314,11 @@ UPDATE domains SET
   last_failure_reason = ?5,
   failure_detail = ?6
 WHERE id = ?7
+  AND status = ?8
+  AND (
+    last_checked_at = ?9
+    OR (last_checked_at IS NULL AND ?9 IS NULL)
+  )
 RETURNING id
 `
 
@@ -325,11 +330,14 @@ type RecordDomainCheckParams struct {
 	LastFailureReason sql.NullString
 	FailureDetail     sql.NullString
 	ID                string
+	PrevStatus        string
+	PrevLastCheckedAt sql.NullInt64
 }
 
-// Instance-wide: the verification worker records each check. The ID names
-// one claim, so a check that finishes after its domain was removed (and
-// perhaps claimed again under a new ID) changes nothing.
+// Instance-wide: records a check. Compare-and-set on the claim's ID and the
+// status and last check the checker read: a check that finishes after its
+// domain was removed (and perhaps claimed again under a new ID), or after
+// another check was recorded, changes nothing.
 func (q *Queries) RecordDomainCheck(ctx context.Context, arg RecordDomainCheckParams) (string, error) {
 	row := q.db.QueryRowContext(ctx, recordDomainCheck,
 		arg.Status,
@@ -339,6 +347,8 @@ func (q *Queries) RecordDomainCheck(ctx context.Context, arg RecordDomainCheckPa
 		arg.LastFailureReason,
 		arg.FailureDetail,
 		arg.ID,
+		arg.PrevStatus,
+		arg.PrevLastCheckedAt,
 	)
 	var id string
 	err := row.Scan(&id)

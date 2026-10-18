@@ -119,9 +119,18 @@ func TestCustomDomainsThroughTheEdge(t *testing.T) {
 		if !want && !errors.Is(allowErr, wltls.ErrNotAllowed) {
 			t.Fatalf("decision error %v", allowErr)
 		}
-		// tls-ask never answers anyone but the proxy.
+		// tls-ask never answers anyone but the proxy itself: not a client
+		// connecting directly, nor a visitor's request the proxy forwards
+		// (as Caddy's reverse_proxy does, from the trusted address, with
+		// forwarding headers), on any host.
 		if ask := get(custom, wltls.AskPath+"?domain="+custom, client, nil); ask.code != http.StatusNotFound {
 			t.Fatalf("tls-ask from a client = %d", ask.code)
+		}
+		for _, h := range []string{custom, host, "anything.example"} {
+			viaProxy := http.Header{"X-Forwarded-For": {client}, "X-Forwarded-Proto": {"https"}}
+			if ask := get(h, wltls.AskPath+"?domain="+custom, proxy, viaProxy); ask.code != http.StatusNotFound {
+				t.Fatalf("tls-ask forwarded from a visitor on %s = %d", h, ask.code)
+			}
 		}
 	}
 

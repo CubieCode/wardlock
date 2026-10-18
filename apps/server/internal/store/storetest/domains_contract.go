@@ -138,7 +138,7 @@ func domainsContract(t *testing.T, open Opener) {
 		failed := d
 		failed.LastCheckedAt, failed.FailingSince = later, later
 		failed.LastFailureReason, failed.FailureDetail = store.DomainNoRecord, "No CNAME or TXT record found."
-		f.must(f.r.Domains.RecordCheck(t.Context(), failed))
+		f.must(f.r.Domains.RecordCheck(t.Context(), d, failed))
 		got, err := f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname)
 		if err != nil || got != failed {
 			t.Fatalf("after a failed check Get() = %+v, %v; want %+v", got, err, failed)
@@ -148,7 +148,7 @@ func domainsContract(t *testing.T, open Opener) {
 		passed.Status, passed.VerifiedAt = store.DomainActive, later.Add(time.Minute)
 		passed.LastCheckedAt = passed.VerifiedAt
 		passed.FailingSince, passed.LastFailureReason, passed.FailureDetail = time.Time{}, "", ""
-		f.must(f.r.Domains.RecordCheck(t.Context(), passed))
+		f.must(f.r.Domains.RecordCheck(t.Context(), failed, passed))
 		got, err = f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname)
 		if err != nil || got != passed {
 			t.Fatalf("after a passed check Get() = %+v, %v; want %+v", got, err, passed)
@@ -157,13 +157,29 @@ func domainsContract(t *testing.T, open Opener) {
 			t.Fatalf("an active domain is not routed: %v", err)
 		}
 
+		// A check of a snapshot that is no longer current changes nothing:
+		// the status or the last check differ from what was read.
+		stale := failed
+		stale.LastCheckedAt = later.Add(time.Hour)
+		stale.LastFailureReason, stale.FailureDetail = store.DomainDNSError, "timeout"
+		wantErr(t, f.r.Domains.RecordCheck(t.Context(), failed, stale), store.ErrNotFound)
+		sameStatus := passed
+		sameStatus.LastCheckedAt = later // read before the passing check
+		wantErr(t, f.r.Domains.RecordCheck(t.Context(), sameStatus, stale), store.ErrNotFound)
+		wantErr(t, f.r.Domains.RecordCheck(t.Context(), d, stale), store.ErrNotFound) // never checked
+		got, err = f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname)
+		if err != nil || got != passed {
+			t.Fatalf("a stale check changed the domain: %+v, %v", got, err)
+		}
+
 		// The row's constraints still hold.
 		bad := passed
+		bad.LastCheckedAt = later.Add(2 * time.Hour)
 		bad.FailingSince = later
-		wantErr(t, f.r.Domains.RecordCheck(t.Context(), bad), store.ErrConstraint)
+		wantErr(t, f.r.Domains.RecordCheck(t.Context(), passed, bad), store.ErrConstraint)
 		bad = passed
 		bad.Status = "verified"
-		wantErr(t, f.r.Domains.RecordCheck(t.Context(), bad), store.ErrConstraint)
+		wantErr(t, f.r.Domains.RecordCheck(t.Context(), passed, bad), store.ErrConstraint)
 
 		// A check for a removed claim changes nothing, even when the
 		// hostname has been claimed again under a new ID.
@@ -171,7 +187,7 @@ func domainsContract(t *testing.T, open Opener) {
 		again := f.validDomain(s.ID)
 		again.Hostname = d.Hostname
 		f.must(f.r.Domains.Create(t.Context(), o.ID, again))
-		wantErr(t, f.r.Domains.RecordCheck(t.Context(), passed), store.ErrNotFound)
+		wantErr(t, f.r.Domains.RecordCheck(t.Context(), passed, stale), store.ErrNotFound)
 		got, err = f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname)
 		if err != nil || got != again {
 			t.Fatalf("a stale check changed the new claim: %+v, %v", got, err)

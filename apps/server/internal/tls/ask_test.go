@@ -18,31 +18,48 @@ func TestAsk(t *testing.T) {
 	domains := &fakeDomains{active: map[string]bool{"docs.customer.test": true, "xn--bcher-kva.example": true}}
 	ask := proxies.Handler(Ask(OnDemand{BaseDomain: "sites.test", DashboardHost: "wardlock.example.test", Domains: domains}, slog.New(slog.DiscardHandler)))
 	tests := []struct {
-		name   string
-		peer   string
-		method string
-		domain string
-		want   int
+		name    string
+		peer    string
+		method  string
+		domain  string
+		want    int
+		forward map[string]string // headers a forwarded visitor request carries
 	}{
-		{"active domain from the proxy", "127.0.0.1:5000", http.MethodGet, "docs.customer.test", http.StatusOK},
-		{"over IPv6", "[::1]:5000", http.MethodGet, "docs.customer.test", http.StatusOK},
-		{"HEAD", "127.0.0.1:5000", http.MethodHead, "docs.customer.test", http.StatusOK},
-		{"in another case with a trailing dot", "127.0.0.1:5000", http.MethodGet, "Docs.Customer.Test.", http.StatusOK},
-		{"an A-label", "127.0.0.1:5000", http.MethodGet, "xn--bcher-kva.example", http.StatusOK},
-		{"unknown, pending or lapsed", "127.0.0.1:5000", http.MethodGet, "other.customer.test", http.StatusNotFound},
-		{"a site under the base domain", "127.0.0.1:5000", http.MethodGet, "docs.sites.test", http.StatusNotFound},
-		{"the dashboard host", "127.0.0.1:5000", http.MethodGet, "wardlock.example.test", http.StatusNotFound},
-		{"an IP address", "127.0.0.1:5000", http.MethodGet, "192.0.2.1", http.StatusNotFound},
-		{"no domain", "127.0.0.1:5000", http.MethodGet, "", http.StatusNotFound},
-		{"POST", "127.0.0.1:5000", http.MethodPost, "docs.customer.test", http.StatusNotFound},
-		{"an untrusted peer", "192.0.2.10:5000", http.MethodGet, "docs.customer.test", http.StatusNotFound},
-		{"an untrusted peer claiming to be forwarded by the proxy", "192.0.2.10:5000", http.MethodGet, "docs.customer.test", http.StatusNotFound},
+		{"active domain from the proxy", "127.0.0.1:5000", http.MethodGet, "docs.customer.test", http.StatusOK, nil},
+		{"over IPv6", "[::1]:5000", http.MethodGet, "docs.customer.test", http.StatusOK, nil},
+		{"HEAD", "127.0.0.1:5000", http.MethodHead, "docs.customer.test", http.StatusOK, nil},
+		{"in another case with a trailing dot", "127.0.0.1:5000", http.MethodGet, "Docs.Customer.Test.", http.StatusOK, nil},
+		{"an A-label", "127.0.0.1:5000", http.MethodGet, "xn--bcher-kva.example", http.StatusOK, nil},
+		{"unknown, pending or lapsed", "127.0.0.1:5000", http.MethodGet, "other.customer.test", http.StatusNotFound, nil},
+		{"a site under the base domain", "127.0.0.1:5000", http.MethodGet, "docs.sites.test", http.StatusNotFound, nil},
+		{"the dashboard host", "127.0.0.1:5000", http.MethodGet, "wardlock.example.test", http.StatusNotFound, nil},
+		{"an IP address", "127.0.0.1:5000", http.MethodGet, "192.0.2.1", http.StatusNotFound, nil},
+		{"no domain", "127.0.0.1:5000", http.MethodGet, "", http.StatusNotFound, nil},
+		{"POST", "127.0.0.1:5000", http.MethodPost, "docs.customer.test", http.StatusNotFound, nil},
+		{"an untrusted peer", "192.0.2.10:5000", http.MethodGet, "docs.customer.test", http.StatusNotFound, nil},
+		{"an untrusted peer claiming to be forwarded by the proxy", "192.0.2.10:5000", http.MethodGet, "docs.customer.test", http.StatusNotFound,
+			map[string]string{"X-Forwarded-For": "127.0.0.1"}},
+		// A visitor's request the proxy forwards comes from the trusted peer
+		// too, but carries forwarding headers; only the proxy's own question
+		// has none.
+		{"a visitor forwarded by the proxy", "127.0.0.1:5000", http.MethodGet, "docs.customer.test", http.StatusNotFound,
+			map[string]string{"X-Forwarded-For": "192.0.2.10", "X-Forwarded-Proto": "https"}},
+		{"forwarded with only X-Forwarded-Proto", "127.0.0.1:5000", http.MethodGet, "docs.customer.test", http.StatusNotFound,
+			map[string]string{"X-Forwarded-Proto": "https"}},
+		{"forwarded with Forwarded", "127.0.0.1:5000", http.MethodGet, "docs.customer.test", http.StatusNotFound,
+			map[string]string{"Forwarded": "for=192.0.2.10"}},
+		{"forwarded with X-Real-IP", "127.0.0.1:5000", http.MethodGet, "docs.customer.test", http.StatusNotFound,
+			map[string]string{"X-Real-IP": "192.0.2.10"}},
+		{"forwarded with an empty X-Forwarded-For", "127.0.0.1:5000", http.MethodGet, "docs.customer.test", http.StatusNotFound,
+			map[string]string{"X-Forwarded-For": ""}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(tt.method, "http://anything.example"+AskPath+"?domain="+url.QueryEscape(tt.domain), nil)
 			req.RemoteAddr = tt.peer
-			req.Header.Set("X-Forwarded-For", "127.0.0.1")
+			for k, v := range tt.forward {
+				req.Header.Set(k, v)
+			}
 			rec := httptest.NewRecorder()
 			ask.ServeHTTP(rec, req)
 			if rec.Code != tt.want {

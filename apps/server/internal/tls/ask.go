@@ -14,15 +14,18 @@ import (
 const AskPath = "/.wardlock/tls-ask"
 
 // Ask answers AskPath?domain=<hostname> in proxy mode: 200 when the
-// hostname is an active custom domain, 404 otherwise. Only a trusted proxy
-// (recorded by TrustedProxies.Handler, so mount it behind that) gets an
-// answer; any other peer gets the same 404 whatever the domain, so the
-// endpoint tells the internet nothing about which domains exist.
+// hostname is an active custom domain, 404 otherwise. Only the trusted
+// proxy itself gets an answer: the peer must be trusted (recorded by
+// TrustedProxies.Handler, so mount it behind that), and the request must
+// carry no forwarding header, since the proxy's own on-demand question
+// has none while every visitor request it forwards does. Anything else
+// gets the same 404 whatever the domain, so the endpoint tells the
+// internet nothing about which domains exist.
 func Ask(o OnDemand, log *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		peer, ok := PeerFrom(r.Context())
-		if !ok || !peer.Trusted || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
+		if !ok || !peer.Trusted || forwarded(r) || (r.Method != http.MethodGet && r.Method != http.MethodHead) {
 			http.NotFound(w, r)
 			return
 		}
@@ -38,4 +41,15 @@ func Ask(o OnDemand, log *slog.Logger) http.Handler {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 	})
+}
+
+// forwarded reports whether r was relayed for someone else: it carries any
+// forwarding header.
+func forwarded(r *http.Request) bool {
+	for _, h := range forwardedHeaders {
+		if _, ok := r.Header[http.CanonicalHeaderKey(h)]; ok {
+			return true
+		}
+	}
+	return false
 }

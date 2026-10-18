@@ -30,9 +30,10 @@ WHERE site_id = sqlc.arg(site_id) AND hostname = sqlc.arg(hostname)
   AND site_id IN (SELECT sites.id FROM sites WHERE sites.owner_id = sqlc.arg(owner_id))
 RETURNING id;
 
--- Instance-wide: the verification worker records each check. The ID names
--- one claim, so a check that finishes after its domain was removed (and
--- perhaps claimed again under a new ID) changes nothing.
+-- Instance-wide: records a check. Compare-and-set on the claim's ID and the
+-- status and last check the checker read: a check that finishes after its
+-- domain was removed (and perhaps claimed again under a new ID), or after
+-- another check was recorded, changes nothing.
 -- name: RecordDomainCheck :one
 UPDATE domains SET
   status = sqlc.arg(status),
@@ -42,6 +43,11 @@ UPDATE domains SET
   last_failure_reason = sqlc.narg(last_failure_reason),
   failure_detail = sqlc.narg(failure_detail)
 WHERE id = sqlc.arg(id)
+  AND status = sqlc.arg(prev_status)
+  AND (
+    last_checked_at = sqlc.narg(prev_last_checked_at)
+    OR (last_checked_at IS NULL AND sqlc.narg(prev_last_checked_at) IS NULL)
+  )
 RETURNING id;
 
 -- Instance-wide: the verification worker's candidates, by ID after

@@ -27,16 +27,20 @@ type Resolver struct {
 	addr  map[string]bool
 	txt   map[string][]string
 	errs  map[string]error
+	// gates hold the next lookup of a name until released.
+	gates map[string]*gate
 	// Lookups counts lookups, so tests can tell a check ran.
 	lookups int
 }
+
+type gate struct{ entered, release chan struct{} }
 
 var _ sites.Resolver = (*Resolver)(nil)
 
 // NewResolver returns an empty zone in which every name in addrs has
 // address records (the sites wildcard's names, typically).
 func NewResolver(addrs ...string) *Resolver {
-	r := &Resolver{cname: map[string]string{}, addr: map[string]bool{}, txt: map[string][]string{}, errs: map[string]error{}}
+	r := &Resolver{cname: map[string]string{}, addr: map[string]bool{}, txt: map[string][]string{}, errs: map[string]error{}, gates: map[string]*gate{}}
 	for _, a := range addrs {
 		r.addr[a] = true
 	}
@@ -90,6 +94,35 @@ func (r *Resolver) Remove(name string) {
 	delete(r.txt, name)
 }
 
+// BlockOnce holds the next lookup of name (CNAME or TXT) before it reads
+// the zone: entered closes when that lookup arrives, and it goes on, seeing
+// the zone as it is then, once release is called. Later lookups pass.
+func (r *Resolver) BlockOnce(name string) (entered <-chan struct{}, release func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	g := &gate{entered: make(chan struct{}), release: make(chan struct{})}
+	r.gates[name] = g
+	return g.entered, sync.OnceFunc(func() { close(g.release) })
+}
+
+// pass waits at name's gate, if it has one.
+func (r *Resolver) pass(ctx context.Context, name string) error {
+	r.mu.Lock()
+	g := r.gates[name]
+	delete(r.gates, name)
+	r.mu.Unlock()
+	if g == nil {
+		return nil
+	}
+	close(g.entered)
+	select {
+	case <-g.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // Lookups is the number of lookups answered so far.
 func (r *Resolver) Lookups() int {
 	r.mu.Lock()
@@ -103,6 +136,9 @@ var ErrHang = errors.New("hang")
 
 // CanonicalName implements sites.Resolver.
 func (r *Resolver) CanonicalName(ctx context.Context, host string) (string, error) {
+	if err := r.pass(ctx, strings.TrimSuffix(strings.ToLower(host), ".")); err != nil {
+		return "", err
+	}
 	name, err := r.canonical(host)
 	if err != nil {
 		return "", wait(ctx, err)
@@ -134,6 +170,9 @@ func (r *Resolver) canonical(host string) (string, error) {
 // LookupTXT implements sites.Resolver. Like DNS, it does not follow a
 // CNAME at the name.
 func (r *Resolver) LookupTXT(ctx context.Context, name string) ([]string, error) {
+	if err := r.pass(ctx, strings.TrimSuffix(strings.ToLower(name), ".")); err != nil {
+		return nil, err
+	}
 	v, err := r.lookupTXT(name)
 	if err != nil {
 		return nil, wait(ctx, err)

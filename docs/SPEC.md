@@ -188,7 +188,7 @@ Every request for a published site's content (after the access decision, allowed
 
 ## Reserved path
 
-`/.wardlock/` (matched in any letter case, as deploy validation rejects it in any case) on every published site is served by Wardlock and can never be overridden by a deploy: `login`, `callback`, `logout`, `view` (POST, the use-limited interstitial's button; A2.2), `health` and `tls-ask` (C1.9: answered only in behind-a-proxy mode and only to requests from a trusted-proxy address, on any `Host`; 404 otherwise). F0.1 implements `health`; since C1.3 it answers only on sites with an active deploy (a host with nothing published is an unknown host). A2.1 adds `login` (GET, the login page for the site default; it lists sign-in methods as A2.3 to A2.5 add them) and `logout` (POST). Policies never apply under `/.wardlock/`.
+`/.wardlock/` (matched in any letter case, as deploy validation rejects it in any case) on every published site is served by Wardlock and can never be overridden by a deploy: `login`, `callback`, `logout`, `view` (POST, the use-limited interstitial's button; A2.2), `health` and `tls-ask` (C1.9: answered only in behind-a-proxy mode and only to requests from a trusted-proxy address that carry no forwarding headers, so never to a visitor the proxy forwards, on any `Host`; 404 otherwise). F0.1 implements `health`; since C1.3 it answers only on sites with an active deploy (a host with nothing published is an unknown host). A2.1 adds `login` (GET, the login page for the site default; it lists sign-in methods as A2.3 to A2.5 add them) and `logout` (POST). Policies never apply under `/.wardlock/`.
 
 ## Protected-site response headers
 

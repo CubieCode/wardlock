@@ -19,6 +19,12 @@ server {
     access_log /var/log/nginx/wardlock.log wardlock;
     client_max_body_size 32m;
 
+    # /.wardlock/tls-ask is for an on-demand TLS proxy's own question
+    # (Caddy), never for visitors.
+    location ^~ /.wardlock/tls-ask {
+        return 404;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;

@@ -620,6 +620,11 @@ func TestLapseAndRecovery(t *testing.T) {
 		t.Fatalf("a lapsed domain is still routed: %v", err)
 	}
 	step(6*day, 1, store.DomainLapsed)
+	// Every result that is not active is announced, status change or not,
+	// so the edge can never keep a stale positive.
+	if notified, removed := e.note.take(); !slices.Equal(notified, []string{e.site.ID}) || len(removed) != 0 {
+		t.Fatalf("a lapsed re-check: notified %v, removed %v", notified, removed)
+	}
 
 	// The owner fixes DNS (with the TXT record this time); the next daily
 	// check restores it without them asking.
@@ -639,6 +644,111 @@ func TestLapseAndRecovery(t *testing.T) {
 		t.Fatalf("status changes were not logged:\n%s", e.logs)
 	}
 	e.noToken(t, d.VerificationToken)
+}
+
+// TestStaleWorkerCheck: a worker check that started before an owner's
+// check and finishes after it must not overwrite the newer result. Here
+// the worker reads a lapsed domain, stalls in DNS while the owner's check
+// restores it (and a visitor would now be served), then fails; recording
+// that failure from its stale snapshot would leave the domain lapsed in
+// the database while the edge, told nothing, kept serving it.
+func TestStaleWorkerCheck(t *testing.T) {
+	for _, from := range []store.DomainStatus{store.DomainLapsed, store.DomainPending} {
+		t.Run(string(from), func(t *testing.T) {
+			e := newEnv(t)
+			ctx := t.Context()
+			h := "www.example.com"
+			e.dns.CNAME(h, "docs."+base)
+			if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", h); err != nil {
+				t.Fatal(err)
+			}
+			e.dns.Remove(h)
+			if from == store.DomainLapsed {
+				for day := 1; day <= 4; day++ { // fails from day 1, lapses on day 4
+					e.clock.set(t0.Add(time.Duration(day) * 24 * time.Hour))
+					if _, err := e.svc.CheckDue(ctx); err != nil {
+						t.Fatal(err)
+					}
+				}
+				e.clock.set(t0.Add(5 * 24 * time.Hour)) // the next daily check is due
+			} else {
+				if err := e.svc.RemoveDomain(ctx, e.owner.ID, "docs", h); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", h); err != nil {
+					t.Fatal(err)
+				}
+				e.clock.advance(time.Minute) // the first backoff check is due
+			}
+			if d, _ := e.svc.GetDomain(ctx, e.owner.ID, "docs", h); d.Status != from {
+				t.Fatalf("setup: %+v, want %s", d, from)
+			}
+			e.note.take()
+
+			entered, release := e.dns.BlockOnce(h)
+			defer release()
+			done := make(chan error, 1)
+			go func() {
+				_, err := e.svc.CheckDue(ctx)
+				done <- err
+			}()
+			<-entered // the worker holds its snapshot, mid-lookup
+
+			e.dns.CNAME(h, "docs."+base)
+			e.clock.advance(sites.VerifyCooldown)
+			d, err := e.svc.VerifyDomain(ctx, e.owner.ID, "docs", h)
+			if err != nil || d.Status != store.DomainActive {
+				t.Fatalf("owner check: %+v, %v", d, err)
+			}
+			e.dns.Remove(h) // the worker's remaining lookups now fail
+			release()
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			got, err := e.svc.GetDomain(ctx, e.owner.ID, "docs", h)
+			if err != nil || got != d {
+				t.Fatalf("after the stale worker check: %+v, %v; want the owner's result %+v", got, err, d)
+			}
+			if _, removed := e.note.take(); len(removed) != 0 {
+				t.Fatalf("certificate removed by a stale check: %v", removed)
+			}
+		})
+	}
+}
+
+// TestConcurrentVerify: two owner checks racing past the cooldown record
+// one result; the other answers with it.
+func TestConcurrentVerify(t *testing.T) {
+	e := newEnv(t)
+	ctx := t.Context()
+	h := "www.example.com"
+	if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", h); err != nil {
+		t.Fatal(err)
+	}
+	e.clock.advance(time.Minute)
+	entered, release := e.dns.BlockOnce(h)
+	defer release()
+	first := make(chan store.Domain, 1)
+	go func() {
+		d, err := e.svc.VerifyDomain(ctx, e.owner.ID, "docs", h)
+		if err != nil {
+			t.Error(err)
+		}
+		first <- d
+	}()
+	<-entered
+	e.dns.CNAME(h, "docs."+base)
+	second, err := e.svc.VerifyDomain(ctx, e.owner.ID, "docs", h)
+	if err != nil || second.Status != store.DomainActive {
+		t.Fatalf("second check: %+v, %v", second, err)
+	}
+	release()
+	if got := <-first; got != second {
+		t.Fatalf("first check answered %+v, want the recorded %+v", got, second)
+	}
+	if stored, _ := e.svc.GetDomain(ctx, e.owner.ID, "docs", h); stored != second {
+		t.Fatalf("stored %+v", stored)
+	}
 }
 
 // TestCheckDueMany: one pass reads candidates a page at a time and checks

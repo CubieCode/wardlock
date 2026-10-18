@@ -28,6 +28,9 @@ wardlock.example.com, *.example-sites.net {
 	tls {
 		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
 	}
+	# Only Caddy's own on-demand question may reach tls-ask, never visitors.
+	@tlsask path /.wardlock/tls-ask*
+	respond @tlsask 404
 	request_body {
 		max_size 32MB
 	}
@@ -41,6 +44,9 @@ https:// {
 	tls {
 		on_demand
 	}
+	# Only Caddy's own on-demand question may reach tls-ask, never visitors.
+	@tlsask path /.wardlock/tls-ask*
+	respond @tlsask 404
 	request_body {
 		max_size 32MB
 	}
