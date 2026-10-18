@@ -60,6 +60,9 @@ type Config struct {
 	GCInterval    time.Duration
 	GCGrace       time.Duration
 	DeployHistory int
+	// DNSResolvers are the host:port DNS servers custom-domain verification
+	// asks (WARDLOCK_DNS_RESOLVERS); empty means the system resolvers.
+	DNSResolvers []string
 	// Secret is the decoded WARDLOCK_SECRET: the server key for token,
 	// code and session hashes. Empty when unset; commands that need it
 	// call RequireSecret.
@@ -158,6 +161,9 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	if err := cfg.loadGC(get); err != nil {
 		return Config{}, err
 	}
+	if cfg.DNSResolvers, err = parseResolvers(get("WARDLOCK_DNS_RESOLVERS", "")); err != nil {
+		return Config{}, err
+	}
 	if raw := get("WARDLOCK_SECRET", ""); raw != "" {
 		key, err := decodeSecret(raw)
 		if err != nil {
@@ -219,6 +225,24 @@ func (c *Config) loadGC(get func(key, fallback string) string) error {
 		l.dst(v)
 	}
 	return nil
+}
+
+// parseResolvers reads comma-separated host:port DNS servers.
+func parseResolvers(raw string) ([]string, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var out []string
+	for item := range strings.SplitSeq(raw, ",") {
+		item = strings.TrimSpace(item)
+		host, port, err := net.SplitHostPort(item)
+		n, perr := strconv.Atoi(port)
+		if err != nil || perr != nil || n < 1 || n > 65535 || (!isIPHost(host) && !validHost(normaliseHost(host))) {
+			return nil, fmt.Errorf("%w: WARDLOCK_DNS_RESOLVERS must be comma-separated host:port pairs, such as 9.9.9.9:53,[2620:fe::fe]:53; %q is not one", ErrInvalidConfig, item)
+		}
+		out = append(out, net.JoinHostPort(host, port))
+	}
+	return out, nil
 }
 
 // positiveInt parses s as an integer of at least 1, or returns fallback

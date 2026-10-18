@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/certmagic"
@@ -118,6 +119,37 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		return err
 	}
 	defer accessSvc.Close()
+	// In auto mode the certificate manager exists before the sites service,
+	// which removes custom-domain certificates when domains go.
+	var certs *wltls.Manager
+	if autoTLS != nil {
+		autoTLS.Domains = db.Domains()
+		autoTLS.Logger = log
+		autoTLS.HTTPPort = port
+		autoTLS.HTTPSPort = tlsLn.Addr().(*net.TCPAddr).Port
+		if certs, err = wltls.New(*autoTLS); err != nil {
+			_ = ln.Close()
+			return err
+		}
+		defer certs.Close()
+	}
+	sitesCfg := sites.Config{
+		Sites:         db.Sites(),
+		Domains:       db.Domains(),
+		Notifier:      notifier,
+		Resolver:      sites.NewNetResolver(cfg.DNSResolvers),
+		BaseDomain:    cfg.BaseDomain,
+		DashboardHost: cfg.DashboardHost,
+		Now:           time.Now,
+		Log:           log,
+	}
+	if certs != nil {
+		sitesCfg.Certs = certs
+	}
+	sitesSvc := sites.NewService(sitesCfg)
+	stopDomainChecks := startDomainChecks(ctx, sitesSvc)
+	defer stopDomainChecks()
+
 	tokenSvc, err := owners.NewTokens(owners.TokensConfig{
 		Tokens: db.APITokens(), Logger: log, Secret: cfg.Secret, DashboardURL: dashURL,
 	})
@@ -133,13 +165,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		// Passkey sign-in and management (C1.6).
 		Passkeys: passkeys,
 		Logger:   log,
-		Sites: sites.NewService(sites.Config{
-			Sites:         db.Sites(),
-			Notifier:      notifier,
-			BaseDomain:    cfg.BaseDomain,
-			DashboardHost: cfg.DashboardHost,
-			Now:           time.Now,
-		}),
+		Sites:    sitesSvc,
 		Deploys: deploys.NewService(deploys.Config{
 			Sites:    db.Sites(),
 			Deploys:  db.Deploys(),
@@ -177,6 +203,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Invalidator: notifier,
 		Access:      accessSvc,
 		Recorder:    recorder,
+		TLSAsk:      tlsAsk(cfg, db, log),
 		Log:         log,
 	})
 	if err != nil {
@@ -194,15 +221,6 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	if autoTLS == nil {
 		servers = []platform.Listener{{Server: newHTTPServer(log, site), Listener: ln}}
 	} else {
-		autoTLS.Domains = db.Domains()
-		autoTLS.Logger = log
-		autoTLS.HTTPPort = port
-		autoTLS.HTTPSPort = tlsLn.Addr().(*net.TCPAddr).Port
-		certs, err := wltls.New(*autoTLS)
-		if err != nil {
-			return err
-		}
-		defer certs.Close()
 		// Plain HTTP answers ACME HTTP-01 challenges and /healthz, and
 		// redirects everything else to HTTPS on the default port, where
 		// clients reach the server (see publicOrigin).
@@ -236,6 +254,32 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			slog.String("setup_url", setupURL))
 	}
 	return platform.Serve(ctx, log, servers...)
+}
+
+// tlsAsk answers /.wardlock/tls-ask for the TLS-terminating proxy in proxy
+// mode; nil in other modes, where the edge answers it 404.
+func tlsAsk(cfg platform.Config, db *store.DB, log *slog.Logger) http.Handler {
+	if cfg.TLS.Mode != platform.TLSProxy {
+		return nil
+	}
+	return wltls.Ask(wltls.OnDemand{BaseDomain: cfg.BaseDomain, DashboardHost: cfg.DashboardHost, Domains: db.Domains()}, log)
+}
+
+// domainCheckInterval is how often the verification worker looks for due
+// custom-domain checks: the shortest backoff.
+const domainCheckInterval = sites.MinBackoff
+
+// startDomainChecks runs the custom-domain verification worker until the
+// returned stop is called, which waits for it; call it before the
+// database closes.
+func startDomainChecks(ctx context.Context, svc *sites.Service) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	wg.Go(func() { svc.RunChecks(ctx, domainCheckInterval) })
+	return func() {
+		cancel()
+		wg.Wait()
+	}
 }
 
 // newHTTPServer bounds slow headers and idle keep-alive connections. It sets
