@@ -49,6 +49,7 @@ const pairs: [string, string, number][] = [
   ['--color-warning', '--color-warning-surface', 4.5],
   ['--color-danger', '--color-danger-surface', 4.5],
   ['--color-danger', '--color-surface', 4.5],
+  ['--color-surface', '--color-danger', 4.5],
   ['--color-primary', '--color-surface-muted', 3],
   ['--color-border-strong', '--color-surface', 3],
   ['--color-focus', '--color-surface', 3],

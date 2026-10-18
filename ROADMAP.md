@@ -256,9 +256,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.2: Sites and deploys
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/d3.2-sites-and-deploys`
+- PR: https://github.com/CubieCode/wardlock/pull/39
 - Depends on: D3.1, C1.2
 - Scope: Site list with policy and last deploy, site detail with deploy history, rollback and teardown with clear confirmations, copyable site URL.
 - Acceptance: Browser tests for list, empty state, rollback and teardown at both widths and themes; foreign site IDs show the same not-found state. Mobbin references cited in the PR (start with: hosting dashboard project list; deployment history with rollback; delete-project confirmation).

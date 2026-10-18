@@ -211,3 +211,26 @@ export function Card({
     </section>
   );
 }
+
+/**
+ * What a list shows when it has nothing in it: what would appear here and
+ * how to add the first one.
+ */
+export function EmptyState({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children: ReactNode;
+  /** An optional next step, such as a link or button. */
+  action?: ReactNode;
+}) {
+  return (
+    <div className="wl-empty">
+      <h2>{title}</h2>
+      <div className="wl-empty-body">{children}</div>
+      {action}
+    </div>
+  );
+}

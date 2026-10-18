@@ -5,6 +5,8 @@ import type { ApiClient } from '@wardlock/apiclient-ts';
 import type { ReactNode } from 'react';
 import { PasskeysPage } from '../auth/passkeys.js';
 import { OverviewPage } from '../overview/overview.js';
+import { SitePage } from '../sites/site-page.js';
+import { SitesPage } from '../sites/sites-page.js';
 
 export interface RouteContext {
   api: ApiClient;
@@ -32,6 +34,18 @@ export const shellRoutes: ShellRoute[] = [
     path: '/',
     nav: 'Overview',
     render: ({ api }) => <OverviewPage api={api} />,
+  },
+  {
+    path: '/sites',
+    nav: 'Sites',
+    render: ({ api }) => <SitesPage api={api} />,
+  },
+  {
+    path: '/sites/:name',
+    // A key per site, so moving between sites starts from a fresh page.
+    render: ({ api, params }) => (
+      <SitePage key={params.name} api={api} name={params.name!} />
+    ),
   },
   {
     path: '/passkeys',

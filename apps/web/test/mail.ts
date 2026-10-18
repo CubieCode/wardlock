@@ -10,6 +10,11 @@ import { expect } from '@playwright/test';
 const dir = process.env.WARDLOCK_ACCEPTANCE_MAIL_DIR;
 if (!dir) throw new Error('Run through pnpm browser:test');
 
+/** Matches a To header naming exactly `address`, bare or in angle brackets. */
+const recipient = (address: string) =>
+  new RegExp(`^To: (?:${escape(address)}|.*<${escape(address)}>)\\r?$`, 'mi');
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /** The decoded text of every message sent to `address`, oldest first. */
 function messagesTo(address: string) {
   let names: string[];
@@ -20,7 +25,7 @@ function messagesTo(address: string) {
   }
   return names
     .map((name) => readFileSync(join(dir!, name), 'utf8'))
-    .filter((raw) => new RegExp(`^To: .*<?${address}>?\\r?$`, 'mi').test(raw))
+    .filter((raw) => recipient(address).test(raw))
     .map((raw) =>
       // Quoted-printable: soft line breaks, then escaped bytes.
       raw
@@ -70,8 +75,7 @@ export const ownerFor = (project: string, scheme: string) =>
   `${project}-${scheme}@example.test`;
 
 /**
- * The synthetic owner each project and theme adds passkeys as (C1.6). No
- * address may end with another, since messagesTo matches the end of To.
+ * The synthetic owner each project and theme adds passkeys as (C1.6).
  */
 export const passkeyOwnerFor = (project: string, scheme: string) =>
   `${project}-${scheme}-passkeys@example.test`;
@@ -79,6 +83,13 @@ export const passkeyOwnerFor = (project: string, scheme: string) =>
 /** The synthetic owner the CLI login spec signs in as. */
 export const cliOwnerFor = (project: string, scheme: string) =>
   `${project}-${scheme}-cli@example.test`;
+
+/** The synthetic owner the sites spec signs in as. */
+export const sitesOwnerFor = (project: string, scheme: string) =>
+  `${project}-${scheme}-sites@example.test`;
+
+/** A site the first owner creates in setup; every other owner's foreign site. */
+export const foreignSite = 'first-owners-site';
 
 export const projects = ['desktop', 'mobile'] as const;
 export const schemes = ['light', 'dark'] as const;
