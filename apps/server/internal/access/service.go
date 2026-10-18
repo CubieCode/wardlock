@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"sync"
 	"time"
 
@@ -57,8 +58,8 @@ type Config struct {
 	Policies store.Policies
 	Sessions store.Sessions
 	Links    store.Links
-	// PasswordSessions ends a policy's password sessions when its password
-	// changes or is removed (A2.3).
+	// PasswordSessions stores password sessions only while the password
+	// they were checked against still holds (A2.3).
 	PasswordSessions store.PasswordSessions
 	Notifier         notifier
 	// Secret is the server key (WARDLOCK_SECRET): it signs session cookies
@@ -85,7 +86,11 @@ type Service struct {
 	// siteLimiter, or fakes in tests.
 	ipAttempts, siteAttempts attemptLimiter
 	derive                   deriveFunc
-	unsubscribe              func()
+	// hashSlots bounds concurrent password checks (each holds 19 MiB);
+	// hashWait is how long an attempt waits for a slot.
+	hashSlots   chan struct{}
+	hashWait    time.Duration
+	unsubscribe func()
 
 	mu       sync.Mutex
 	gen      uint64                    // bumped by every invalidation
@@ -104,12 +109,16 @@ func New(cfg Config) (*Service, error) {
 		return nil, errors.New("access: Config.PasswordSessions is required")
 	}
 	s := &Service{
-		c:        cfg,
-		key:      keyed{secret: cfg.Secret},
-		now:      func() time.Time { return cfg.Now().UTC().Truncate(time.Millisecond) },
-		log:      cfg.Log,
-		derive:   argon2.IDKey,
-		policies: map[string][]store.Policy{},
+		c:      cfg,
+		key:    keyed{secret: cfg.Secret},
+		now:    func() time.Time { return cfg.Now().UTC().Truncate(time.Millisecond) },
+		log:    cfg.Log,
+		derive: argon2.IDKey,
+		// Half the CPUs, at least two: enough to keep sign-ins moving
+		// while bounding memory to slots × 19 MiB.
+		hashSlots: make(chan struct{}, max(2, runtime.GOMAXPROCS(0)/2)),
+		hashWait:  time.Second,
+		policies:  map[string][]store.Policy{},
 	}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
@@ -543,17 +552,10 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 	if err != nil {
 		return store.Policy{}, err
 	}
-	ps, err := s.loadPolicies(ctx, site.ID)
-	if err != nil {
+	if _, err := s.sitePolicies(ctx, site.ID); err != nil {
 		return store.Policy{}, err
 	}
-	var cur store.Policy
-	for _, p := range ps {
-		if p.PathPrefix == r.PathPrefix {
-			cur = p
-		}
-	}
-	hash, err := s.passwordHash(r, cur)
+	hash, err := s.passwordHash(r)
 	if err != nil {
 		return store.Policy{}, err
 	}
@@ -566,13 +568,11 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 	if errors.Is(err, store.ErrNotFound) {
 		return store.Policy{}, fmt.Errorf("set policy: %w", ErrNotFound)
 	}
+	if errors.Is(err, store.ErrNoPasswordToKeep) {
+		return store.Policy{}, errNeedsPassword
+	}
 	if err != nil {
 		return store.Policy{}, fmt.Errorf("set policy: %w", err)
-	}
-	if cur.PasswordHash != "" && cur.PasswordHash != p.PasswordHash {
-		if _, err := s.c.PasswordSessions.RevokeForPolicy(ctx, site.ID, p.ID, s.now()); err != nil {
-			return store.Policy{}, fmt.Errorf("set policy: %w", err)
-		}
 	}
 	s.c.Notifier.Notify(ctx, site.ID)
 	s.log.LogAttrs(ctx, slog.LevelInfo, "policy set",

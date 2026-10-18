@@ -161,6 +161,9 @@
         color: var(--danger);
         font-size: 0.875rem;
       }
+      .error.alone {
+        margin-top: 1rem;
+      }
       button {
         margin-top: 0.25rem;
         padding: 0.5rem 1rem;
@@ -208,7 +211,9 @@
       </p>
       <h1>This page is private</h1>
       <p class="lead">Only people the site's owner has let in can open it.</p>
-      {{if .AnyMethod}}
+      {{if and .PasswordError (not .Password)}}
+      <p class="error alone" role="alert">{{.PasswordError}}</p>
+      {{end}} {{if .AnyMethod}}
       <div class="methods">
         {{if .Password}}
         <section class="method" aria-labelledby="method-password">

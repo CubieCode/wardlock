@@ -54,7 +54,7 @@ func (q *Queries) CreatePasswordSession(ctx context.Context, arg CreatePasswordS
 	return result.RowsAffected()
 }
 
-const revokePolicyPasswordSessions = `-- name: RevokePolicyPasswordSessions :execrows
+const revokePolicyPasswordSessions = `-- name: RevokePolicyPasswordSessions :exec
 UPDATE site_sessions SET revoked_at = ?1
 WHERE site_id = ?2 AND policy_id = ?3
   AND method = 'password' AND revoked_at IS NULL
@@ -66,11 +66,9 @@ type RevokePolicyPasswordSessionsParams struct {
 	PolicyID  string
 }
 
-// Ends every live password session bound to a policy, whatever its version.
-func (q *Queries) RevokePolicyPasswordSessions(ctx context.Context, arg RevokePolicyPasswordSessionsParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, revokePolicyPasswordSessions, arg.RevokedAt, arg.SiteID, arg.PolicyID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+// Ends every live password session bound to a policy, whatever its version;
+// Policies.Set runs it when the password changes.
+func (q *Queries) RevokePolicyPasswordSessions(ctx context.Context, arg RevokePolicyPasswordSessionsParams) error {
+	_, err := q.db.ExecContext(ctx, revokePolicyPasswordSessions, arg.RevokedAt, arg.SiteID, arg.PolicyID)
+	return err
 }

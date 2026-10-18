@@ -1283,7 +1283,7 @@ export interface components {
       methods?: components['schemas']['PolicyMethod'][];
       /**
        * Format: password
-       * @description The new policy password, with the `password` method only: 8 to 1,024 bytes of UTF-8 and at least 8 characters. Stored only as an Argon2id hash and never returned. Omitted with the `password` method keeps the current password (`400 invalid_policy` when there is none). Any new password, even the same text, is a change: it increments `version` and ends the policy's password sessions.
+       * @description The new policy password, with the `password` method only: at least 8 characters and at most 1,024 bytes of UTF-8 (the server enforces the byte limit; JSON Schema lengths count characters). Stored only as an Argon2id hash and never returned. Omitted with the `password` method keeps the current password (`400 invalid_policy` when there is none). Any new password, even the same text, is a change: it increments `version` and ends the policy's password sessions.
        */
       password?: string;
     };

@@ -45,6 +45,16 @@ func (p Policy) SameSettings(q Policy) bool {
 		p.OAuthEnabled == q.OAuthEnabled && p.PasswordHash == q.PasswordHash
 }
 
+// KeepPasswordHash, as a Policy's PasswordHash passed to Policies.Set, keeps
+// the stored policy's password hash, read inside Set's transaction so a
+// concurrent password change is never undone. With no stored password Set
+// returns ErrNoPasswordToKeep. It is never a valid hash, so never stored.
+const KeepPasswordHash = "keep:"
+
+// ErrNoPasswordToKeep is returned by Policies.Set for KeepPasswordHash when
+// the policy has no password enabled.
+var ErrNoPasswordToKeep = errors.New("no password to keep")
+
 // Policies stores site and path policies, one per site and prefix.
 type Policies interface {
 	// Create adds p to one of ownerID's sites.
@@ -65,8 +75,10 @@ type Policies interface {
 	// prefix it inserts p with Version 1. With one whose settings differ it
 	// keeps that policy's ID and CreatedAt, takes p's settings and
 	// UpdatedAt, and increments its Version, which ends every session bound
-	// to the old version. With identical settings it changes nothing. It
-	// returns the stored policy.
+	// to the old version; a changed or removed password hash also revokes
+	// the policy's password sessions. With identical settings it changes
+	// nothing. A PasswordHash of KeepPasswordHash keeps the stored one (see
+	// there). It returns the stored policy.
 	Set(ctx context.Context, ownerID string, p Policy) (Policy, error)
 	// Delete removes policy id of ownerID's site siteID together with the
 	// site sessions bound to it.
@@ -167,6 +179,9 @@ func (r policiesRepo) Set(ctx context.Context, ownerID string, p Policy) (Policy
 			return err
 		}
 		row, err := q.GetPolicyByPrefix(ctx, sqlcgen.GetPolicyByPrefixParams{OwnerID: ownerID, SiteID: p.SiteID, PathPrefix: p.PathPrefix})
+		if errors.Is(err, sql.ErrNoRows) && p.PasswordHash == KeepPasswordHash {
+			return ErrNoPasswordToKeep
+		}
 		if errors.Is(err, sql.ErrNoRows) {
 			out = p
 			out.Version = 1
@@ -190,12 +205,27 @@ func (r policiesRepo) Set(ctx context.Context, ownerID string, p Policy) (Policy
 			return mapErr("get policy", err)
 		}
 		cur := policyFromRow(row)
+		if p.PasswordHash == KeepPasswordHash {
+			if !cur.PasswordEnabled || cur.PasswordHash == "" {
+				return ErrNoPasswordToKeep
+			}
+			p.PasswordHash = cur.PasswordHash
+		}
 		if cur.SameSettings(p) {
 			out = cur
 			return nil
 		}
 		out = p
 		out.ID, out.CreatedAt, out.Version = cur.ID, cur.CreatedAt, cur.Version+1
+		if cur.PasswordHash != "" && cur.PasswordHash != out.PasswordHash {
+			// A new or removed password ends the policy's password
+			// sessions outright, in the same transaction (A2.3).
+			if err := q.RevokePolicyPasswordSessions(ctx, sqlcgen.RevokePolicyPasswordSessionsParams{
+				RevokedAt: nullMs(out.UpdatedAt), SiteID: out.SiteID, PolicyID: out.ID,
+			}); err != nil {
+				return mapErr("revoke password sessions", err)
+			}
+		}
 		return mapErr("update policy", q.UpdatePolicy(ctx, sqlcgen.UpdatePolicyParams{
 			ID:              out.ID,
 			SiteID:          out.SiteID,

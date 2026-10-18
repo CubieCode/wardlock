@@ -84,6 +84,9 @@ type app struct {
 	// canPrompt is true when stdin and stderr are terminals: only then
 	// may a command ask a question (and never with --json).
 	canPrompt bool
+	// stdinTerminal is true when stdin is a terminal: a secret read from it
+	// must then be read without echo, even with --json.
+	stdinTerminal bool
 	// liveProgress is true when stderr is a terminal, so progress can
 	// redraw one line.
 	liveProgress bool
@@ -92,7 +95,7 @@ type app struct {
 	openBrowser  func(url string) error
 	hostname     func() (string, error)
 	// readPassword reads a line from the terminal without echoing it;
-	// call it only when canPrompt.
+	// call it only when stdinTerminal.
 	readPassword func() (string, error)
 	// sleep waits for d or until ctx ends.
 	sleep func(ctx context.Context, d time.Duration) error
@@ -102,21 +105,22 @@ type app struct {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	a := &app{
-		getenv:       os.Getenv,
-		getwd:        os.Getwd,
-		stdin:        os.Stdin,
-		stdout:       os.Stdout,
-		stderr:       os.Stderr,
-		interactive:  isTerminal(os.Stdout),
-		canPrompt:    isTerminal(os.Stdin) && isTerminal(os.Stderr),
-		liveProgress: isTerminal(os.Stderr),
-		http:         &http.Client{Timeout: 30 * time.Second},
-		creds:        credentialStore{keyring: systemKeyring{}, dir: func() (string, error) { return configDir(os.Getenv) }},
-		openBrowser:  openBrowser,
-		hostname:     os.Hostname,
-		readPassword: readTerminalPassword,
-		sleep:        sleep,
-		now:          time.Now,
+		getenv:        os.Getenv,
+		getwd:         os.Getwd,
+		stdin:         os.Stdin,
+		stdout:        os.Stdout,
+		stderr:        os.Stderr,
+		interactive:   isTerminal(os.Stdout),
+		canPrompt:     isTerminal(os.Stdin) && isTerminal(os.Stderr),
+		stdinTerminal: isTerminal(os.Stdin),
+		liveProgress:  isTerminal(os.Stderr),
+		http:          &http.Client{Timeout: 30 * time.Second},
+		creds:         credentialStore{keyring: systemKeyring{}, dir: func() (string, error) { return configDir(os.Getenv) }},
+		openBrowser:   openBrowser,
+		hostname:      os.Hostname,
+		readPassword:  readTerminalPassword,
+		sleep:         sleep,
+		now:           time.Now,
 	}
 	err := run(ctx, a, os.Args[1:])
 	stop()

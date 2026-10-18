@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -24,18 +25,15 @@ const (
 	secondPassword = "tide-chart-42"
 )
 
-// revocations records RevokeForPolicy calls on top of the real repository.
-type revocations struct {
+// racingSessions runs beforeCreate once just before the next
+// CreateSession, to interleave a password change with a sign-in.
+type racingSessions struct {
 	store.PasswordSessions
-	mu    sync.Mutex
-	calls []string
-	n     int
-	// beforeCreate, when set, runs once just before the next
-	// CreateSession, to interleave a password change with a sign-in.
+	mu           sync.Mutex
 	beforeCreate func()
 }
 
-func (r *revocations) CreateSession(ctx context.Context, s store.SiteSession, hash string) error {
+func (r *racingSessions) CreateSession(ctx context.Context, s store.SiteSession, hash string) error {
 	r.mu.Lock()
 	fn := r.beforeCreate
 	r.beforeCreate = nil
@@ -46,26 +44,29 @@ func (r *revocations) CreateSession(ctx context.Context, s store.SiteSession, ha
 	return r.PasswordSessions.CreateSession(ctx, s, hash)
 }
 
-func (r *revocations) RevokeForPolicy(ctx context.Context, siteID, policyID string, at time.Time) (int, error) {
-	n, err := r.PasswordSessions.RevokeForPolicy(ctx, siteID, policyID, at)
-	r.mu.Lock()
-	r.calls = append(r.calls, siteID+" "+policyID)
-	r.n += n
-	r.mu.Unlock()
-	return n, err
+// racingPolicies runs beforeSet once just before the next Set, to
+// interleave two owners' writes.
+type racingPolicies struct {
+	store.Policies
+	mu        sync.Mutex
+	beforeSet func()
 }
 
-func (r *revocations) take() (calls []string, revoked int) {
+func (r *racingPolicies) Set(ctx context.Context, ownerID string, p store.Policy) (store.Policy, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	calls, revoked = r.calls, r.n
-	r.calls, r.n = nil, 0
-	return calls, revoked
+	fn := r.beforeSet
+	r.beforeSet = nil
+	r.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+	return r.Policies.Set(ctx, ownerID, p)
 }
 
 type passwordHarness struct {
 	*harness
-	revoked *revocations
+	racing  *racingSessions
+	writes  *racingPolicies
 	limiter *access.FakeLimiter
 }
 
@@ -85,9 +86,10 @@ func newRealLimiterHarness(t *testing.T, limits access.Limits) *passwordHarness 
 	db := storetest.New(t)
 	h := &harness{t: t, db: db, clock: &clock{now: start}, log: &bytes.Buffer{}}
 	h.policies = &countingPolicies{Policies: db.Policies()}
-	rv := &revocations{PasswordSessions: db.PasswordSessions()}
+	rv := &racingSessions{PasswordSessions: db.PasswordSessions()}
+	wr := &racingPolicies{Policies: h.policies}
 	svc, err := access.New(access.Config{
-		Sites: db.Sites(), Policies: h.policies, Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: rv,
+		Sites: db.Sites(), Policies: wr, Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: rv,
 		Notifier: &notifier{}, Secret: secret, Now: h.clock.Now,
 		Log:    slog.New(slog.NewTextHandler(h.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		Limits: limits,
@@ -97,7 +99,7 @@ func newRealLimiterHarness(t *testing.T, limits access.Limits) *passwordHarness 
 	}
 	t.Cleanup(svc.Close)
 	h.svc = svc
-	return &passwordHarness{harness: h, revoked: rv}
+	return &passwordHarness{harness: h, racing: rv, writes: wr}
 }
 
 func passwordRule(prefix, pw string) access.Rule {
@@ -287,9 +289,6 @@ func TestSetPassword(t *testing.T) {
 	v1 := h.set(a, "harbour", access.Rule{PathPrefix: "/", Visibility: store.Protected, Links: true, Password: true, NewPassword: firstPassword})
 	pw := h.loginCookie(s.ID, firstPassword)
 	link := h.session(s.ID, v1, store.SessionLink)
-	if calls, _ := h.revoked.take(); len(calls) != 0 {
-		t.Fatalf("setting the first password revoked %v", calls)
-	}
 
 	// Keeping the method without a new password keeps the hash and the
 	// sessions: nothing changed.
@@ -318,9 +317,6 @@ func TestSetPassword(t *testing.T) {
 	if v2.Version != v1.Version+1 || v2.PasswordHash == v1.PasswordHash {
 		t.Fatalf("re-set password: %+v", v2)
 	}
-	if calls, n := h.revoked.take(); len(calls) != 1 || calls[0] != s.ID+" "+v1.ID || n != 1 {
-		t.Fatalf("revocations %v (%d sessions), want one for the policy", calls, n)
-	}
 	h.allowed("old password session", s.ID, pw, false)
 	h.allowed("link session across a version bump", s.ID, link, false)
 
@@ -331,17 +327,11 @@ func TestSetPassword(t *testing.T) {
 		t.Fatalf("old password after a change: %v", err)
 	}
 	pw = h.loginCookie(s.ID, secondPassword)
-	if calls, _ := h.revoked.take(); len(calls) != 1 {
-		t.Fatalf("revocations %v", calls)
-	}
 
 	// Removing the method clears the hash and revokes too.
 	off := h.set(a, "harbour", access.Rule{PathPrefix: "/", Visibility: store.Protected, Links: true})
 	if off.PasswordEnabled || off.PasswordHash != "" || off.Version != v3.Version+1 {
 		t.Fatalf("password removed: %+v", off)
-	}
-	if calls, _ := h.revoked.take(); len(calls) != 1 {
-		t.Fatalf("revocations %v", calls)
 	}
 	h.allowed("after removal", s.ID, pw, false)
 	if _, err := h.login(s.ID, "/", "192.0.2.9", secondPassword); !errors.Is(err, access.ErrWrongPassword) {
@@ -385,9 +375,9 @@ func TestPasswordChangeRacingASignIn(t *testing.T) {
 	o := h.owner()
 	s := h.site(o, "harbour")
 	old := h.set(o, "harbour", passwordRule("/", firstPassword))
-	h.revoked.mu.Lock()
-	h.revoked.beforeCreate = func() { h.set(o, "harbour", passwordRule("/", secondPassword)) }
-	h.revoked.mu.Unlock()
+	h.racing.mu.Lock()
+	h.racing.beforeCreate = func() { h.set(o, "harbour", passwordRule("/", secondPassword)) }
+	h.racing.mu.Unlock()
 	if _, err := h.login(s.ID, "/", "192.0.2.1", firstPassword); !errors.Is(err, access.ErrWrongPassword) {
 		t.Fatalf("sign-in raced by a change: %v, want ErrWrongPassword", err)
 	}
@@ -402,6 +392,30 @@ func TestPasswordChangeRacingASignIn(t *testing.T) {
 		}
 	}
 	if _, err := h.login(s.ID, "/", "192.0.2.1", secondPassword); err != nil {
+		t.Fatalf("new password: %v", err)
+	}
+}
+
+// "Keep the current password" is resolved inside the store's transaction:
+// a password change that lands while another write keeps the password is
+// never undone, so the old password cannot come back.
+func TestKeepingThePasswordNeverRevivesAnOldOne(t *testing.T) {
+	h := newPasswordHarness(t, access.Limits{})
+	o := h.owner()
+	s := h.site(o, "harbour")
+	h.set(o, "harbour", passwordRule("/", firstPassword))
+	h.writes.mu.Lock()
+	h.writes.beforeSet = func() { h.set(o, "harbour", passwordRule("/", secondPassword)) }
+	h.writes.mu.Unlock()
+	// Read the policy, then (racing) keep its password while turning links on.
+	kept := h.set(o, "harbour", access.Rule{PathPrefix: "/", Visibility: store.Protected, Links: true, Password: true})
+	if !kept.LinksEnabled {
+		t.Fatalf("kept %+v", kept)
+	}
+	if _, err := h.login(s.ID, "/", "192.0.2.1", firstPassword); !errors.Is(err, access.ErrWrongPassword) {
+		t.Fatalf("old password after the racing keep: %v", err)
+	}
+	if _, err := h.login(s.ID, "/", "192.0.2.2", secondPassword); err != nil {
 		t.Fatalf("new password: %v", err)
 	}
 }
@@ -441,5 +455,68 @@ func TestLogsNeverContainPasswords(t *testing.T) {
 		if strings.Contains(out, secret) {
 			t.Fatalf("log contains a secret (%d bytes):\n%s", len(secret), out)
 		}
+	}
+}
+
+// However many attempts pass the limiters, at most the service's hash slots
+// run Argon2id at once; an attempt that cannot get a slot in time is told
+// to retry, never left waiting.
+func TestPasswordChecksAreBounded(t *testing.T) {
+	h := newPasswordHarness(t, access.Limits{PasswordPerIP: access.Rate{N: 100, Per: time.Minute}, PasswordPerSite: access.Rate{N: 100, Per: time.Minute}})
+	o := h.owner()
+	s := h.site(o, "harbour")
+	h.set(o, "harbour", passwordRule("/", firstPassword))
+
+	var mu sync.Mutex
+	running, peak := 0, 0
+	release := make(chan struct{})
+	access.SetDerive(h.svc, func(pw, salt []byte, t, m uint32, p uint8, n uint32) []byte {
+		mu.Lock()
+		running++
+		peak = max(peak, running)
+		mu.Unlock()
+		<-release
+		mu.Lock()
+		running--
+		mu.Unlock()
+		return make([]byte, n)
+	})
+	access.SetHashSlots(h.svc, 2, 200*time.Millisecond)
+
+	const attempts = 12
+	errs := make(chan error, attempts)
+	for i := range attempts {
+		go func() {
+			_, err := h.login(s.ID, "/", "192.0.2."+strconv.Itoa(i+1), "wrong-guess")
+			errs <- err
+		}()
+	}
+	// Those that found no slot give up with a RateLimitError.
+	busy := 0
+	for range attempts - 2 {
+		err := <-errs
+		var rl *access.RateLimitError
+		if !errors.As(err, &rl) || rl.RetryAfter != time.Second {
+			t.Fatalf("attempt without a slot: %v, want RateLimitError retry 1s", err)
+		}
+		busy++
+	}
+	close(release)
+	for range 2 {
+		if err := <-errs; !errors.Is(err, access.ErrWrongPassword) {
+			t.Fatalf("attempt with a slot: %v", err)
+		}
+	}
+	if peak != 2 || busy != attempts-2 {
+		t.Fatalf("peak %d concurrent checks, %d busy; want 2 and %d", peak, busy, attempts-2)
+	}
+
+	// A cancelled request stops waiting with its own error.
+	access.SetDerive(h.svc, func(pw, salt []byte, t, m uint32, p uint8, n uint32) []byte { return make([]byte, n) })
+	access.SetHashSlots(h.svc, 0, time.Minute)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := h.svc.PasswordLogin(ctx, access.PasswordAttempt{SiteID: s.ID, Path: "/", IP: "192.0.2.99", Password: "x"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled wait: %v", err)
 	}
 }

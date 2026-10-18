@@ -62,3 +62,14 @@ func SetAttemptLimiter(s *Service, l *FakeLimiter) {
 	}
 	s.ipAttempts, s.siteAttempts = l, l
 }
+
+// SetDerive replaces s's Argon2id derivation, for tests that hold or count
+// checks.
+func SetDerive(s *Service, fn func(password, salt []byte, time, memory uint32, threads uint8, keyLen uint32) []byte) {
+	s.derive = fn
+}
+
+// SetHashSlots gives s n password-check slots and a wait of wait for one.
+func SetHashSlots(s *Service, n int, wait time.Duration) {
+	s.hashSlots, s.hashWait = make(chan struct{}, n), wait
+}

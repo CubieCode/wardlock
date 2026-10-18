@@ -62,8 +62,11 @@ func passwordSessionsContract(t *testing.T, open Opener) {
 		}
 		wantErr(t, f.r.PasswordSessions.CreateSession(ctx, ok, p.PasswordHash), store.ErrConflict)
 	})
+}
 
-	t.Run("RevokeForPolicy", func(t *testing.T) {
+// policiesSetPassword covers Policies.Set's password handling (A2.3).
+func policiesSetPassword(t *testing.T, open Opener) {
+	t.Run("SetPassword", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, open)
 		ctx := t.Context()
@@ -98,13 +101,29 @@ func passwordSessionsContract(t *testing.T, open Opener) {
 		otherSite := session(other.ID, otherPolicy.ID, store.SessionPassword, "", 1, time.Time{})
 
 		at := now.Add(time.Hour)
-		// Another site's ID never reaches this site's sessions.
-		if n, err := f.r.PasswordSessions.RevokeForPolicy(ctx, other.ID, p.ID, at); err != nil || n != 0 {
-			t.Fatalf("wrong site: %d, %v; want 0", n, err)
+		set := func(hash string) (store.Policy, error) {
+			q := p
+			q.ID, q.PasswordEnabled, q.PasswordHash, q.UpdatedAt = store.NewID(), hash != "", hash, at
+			return f.r.Policies.Set(ctx, o.ID, q)
 		}
-		n, err := f.r.PasswordSessions.RevokeForPolicy(ctx, s.ID, p.ID, at)
-		if err != nil || n != 2 {
-			t.Fatalf("RevokeForPolicy = %d, %v; want 2", n, err)
+		revokedAt := func(ss store.SiteSession) time.Time {
+			got, err := f.r.Sessions.GetSiteByTokenHash(ctx, ss.TokenHash)
+			f.must(err)
+			return got.RevokedAt
+		}
+
+		// Keeping the password changes nothing and revokes nothing.
+		kept, err := set(store.KeepPasswordHash)
+		f.must(err)
+		if kept.PasswordHash != p.PasswordHash || kept.Version != p.Version || !revokedAt(live).IsZero() {
+			t.Fatalf("keep: %+v, live revoked %v", kept, revokedAt(live))
+		}
+		// A new hash bumps the version and revokes the policy's password
+		// sessions, at every version, and nothing else.
+		changed, err := set("$argon2id$changed")
+		f.must(err)
+		if changed.PasswordHash != "$argon2id$changed" || changed.Version != p.Version+1 {
+			t.Fatalf("change: %+v", changed)
 		}
 		for _, c := range []struct {
 			name string
@@ -114,14 +133,34 @@ func passwordSessionsContract(t *testing.T, open Opener) {
 			{"live", live, at}, {"older version", oldVersion, at}, {"already revoked", already, earlier},
 			{"link", link, time.Time{}}, {"other prefix", otherPrefix, time.Time{}}, {"other site", otherSite, time.Time{}},
 		} {
-			got, err := f.r.Sessions.GetSiteByTokenHash(ctx, c.s.TokenHash)
-			f.must(err)
-			if !got.RevokedAt.Equal(c.want) {
-				t.Errorf("%s: revoked at %v, want %v", c.name, got.RevokedAt, c.want)
+			if got := revokedAt(c.s); !got.Equal(c.want) {
+				t.Errorf("%s: revoked at %v, want %v", c.name, got, c.want)
 			}
 		}
-		if n, err := f.r.PasswordSessions.RevokeForPolicy(ctx, s.ID, p.ID, at.Add(time.Hour)); err != nil || n != 0 {
-			t.Fatalf("second revoke: %d, %v; want 0", n, err)
+		// A keep that was decided before that change keeps the new hash:
+		// it can never revive the old password.
+		kept, err = set(store.KeepPasswordHash)
+		f.must(err)
+		if kept.PasswordHash != "$argon2id$changed" || kept.Version != changed.Version {
+			t.Fatalf("stale keep: %+v", kept)
+		}
+		// Removing the password revokes too, and then there is nothing to keep.
+		fresh := session(s.ID, p.ID, store.SessionPassword, "", changed.Version, time.Time{})
+		q := p
+		q.ID, q.PasswordEnabled, q.PasswordHash, q.UpdatedAt = store.NewID(), false, "", at.Add(time.Minute)
+		if _, err := f.r.Policies.Set(ctx, o.ID, q); err != nil {
+			t.Fatal(err)
+		}
+		if !revokedAt(fresh).Equal(at.Add(time.Minute)) {
+			t.Fatalf("removal left the session: %v", revokedAt(fresh))
+		}
+		if _, err := set(store.KeepPasswordHash); !errors.Is(err, store.ErrNoPasswordToKeep) {
+			t.Fatalf("keep with no password: %v", err)
+		}
+		missing := p
+		missing.ID, missing.PathPrefix, missing.PasswordHash = store.NewID(), "/new/", store.KeepPasswordHash
+		if _, err := f.r.Policies.Set(ctx, o.ID, missing); !errors.Is(err, store.ErrNoPasswordToKeep) {
+			t.Fatalf("keep on a new policy: %v", err)
 		}
 	})
 }

@@ -148,15 +148,22 @@ func ClearSessionCookie() *http.Cookie {
 }
 
 // sameOrigin reports whether an unsafe request comes from a page on its own
-// host: Origin names the request's host, or without Origin, Sec-Fetch-Site
-// is same-origin. A request with neither is refused. The scheme is not
-// compared, since behind a proxy the edge may see plain HTTP.
+// host. Sec-Fetch-Site, when sent, must be same-origin, and an Origin, when
+// it names one, must be the request's host. "null" counts as no Origin:
+// Wardlock's pages send Referrer-Policy: no-referrer, under which browsers
+// post forms with Origin: null even to their own origin, and rely on
+// Sec-Fetch-Site there. A request with neither header is refused. The
+// scheme is not compared, since behind a proxy the edge may see plain HTTP.
 func sameOrigin(r *http.Request) bool {
-	if o := r.Header.Get("Origin"); o != "" {
+	site := r.Header.Get("Sec-Fetch-Site")
+	if site != "" && site != "same-origin" {
+		return false
+	}
+	if o := r.Header.Get("Origin"); o != "" && o != "null" {
 		u, err := url.Parse(o)
 		return err == nil && u.Host != "" && canonicalHost(u.Host) == canonicalHost(r.Host) && samePort(u, r.Host)
 	}
-	return r.Header.Get("Sec-Fetch-Site") == "same-origin"
+	return site == "same-origin"
 }
 
 // samePort reports whether origin's port matches the request host's. A

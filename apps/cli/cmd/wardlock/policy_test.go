@@ -98,21 +98,26 @@ const cliPassword = "harbour-lights-7"
 
 func TestPolicySetPassword(t *testing.T) {
 	tests := []struct {
-		name      string
-		args      []string
-		canPrompt bool
-		stdin     string
-		typed     []string // what the no-echo prompt returns, in order
-		code      int
-		want      string
-		sent      string
+		name     string
+		args     []string
+		terminal bool // stdin is a terminal
+		stdin    string
+		typed    []string // what the no-echo prompt returns, in order
+		code     int
+		want     string
+		sent     string
 	}{
 		{"from stdin", []string{"policy", "set", "docs", "--protected", "--password"}, false, cliPassword + "\n", nil, 0, "docs / is now protected by a password.",
 			`{"methods":["password"],"password":"` + cliPassword + `","path":"/","visibility":"protected"}`},
 		{"from stdin with CRLF and links", []string{"policy", "set", "docs", "--protected", "--links", "--password"}, false, cliPassword + "\r\nignored\n", nil, 0, "protected by share links or a password.",
 			`{"methods":["links","password"],"password":"` + cliPassword + `","path":"/","visibility":"protected"}`},
-		{"--json reads stdin, never prompts", []string{"policy", "set", "docs", "--protected", "--password", "--json"}, true, cliPassword, nil, 0, `"visibility": "protected"`,
+		{"--json without a terminal reads stdin", []string{"policy", "set", "docs", "--protected", "--password", "--json"}, false, cliPassword, nil, 0, `"visibility": "protected"`,
 			`{"methods":["password"],"password":"` + cliPassword + `","path":"/","visibility":"protected"}`},
+		{"--json on a terminal still reads without echo", []string{"policy", "set", "docs", "--protected", "--password", "--json"}, true, "", []string{cliPassword, cliPassword}, 0, `"visibility": "protected"`,
+			`{"methods":["password"],"password":"` + cliPassword + `","path":"/","visibility":"protected"}`},
+		{"password typed as the domain", []string{"policy", "set", "--protected", "--password", cliPassword}, false, cliPassword + "\n", nil, 1, "no site the site given", ""},
+		{"password typed as a bad domain", []string{"policy", "set", "--protected", "--password", cliPassword + "!"}, false, cliPassword + "\n", nil, 2, "DOMAIN is not a site name", ""},
+		{"password typed before the domain", []string{"policy", "set", "--protected", "--password", cliPassword, "docs"}, false, cliPassword + "\n", nil, 2, "Usage: wardlock policy set", ""},
 		{"prompted twice", []string{"policy", "set", "docs", "--protected", "--password"}, true, "", []string{cliPassword, cliPassword}, 0, "New password: \nAgain: \n",
 			`{"methods":["password"],"password":"` + cliPassword + `","path":"/","visibility":"protected"}`},
 		{"prompted, no match", []string{"policy", "set", "docs", "--protected", "--password"}, true, "", []string{cliPassword, cliPassword + "8"}, 1, "do not match", ""},
@@ -126,7 +131,7 @@ func TestPolicySetPassword(t *testing.T) {
 			srv := newFakeAPI(t)
 			site := srv.addSite("docs", "")
 			a, out, errOut := ciApp(t, srv)
-			a.canPrompt = tt.canPrompt
+			a.stdinTerminal = tt.terminal
 			a.stdin = strings.NewReader(tt.stdin)
 			typed := tt.typed
 			a.readPassword = func() (string, error) {

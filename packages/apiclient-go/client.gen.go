@@ -854,7 +854,7 @@ type SetPolicyRequest struct {
 	// Methods Methods to enable on a protected policy; omitted means `[links]` (share links are on by default). Must be empty or omitted for a public policy.
 	Methods *[]PolicyMethod `json:"methods,omitempty"`
 
-	// Password The new policy password, with the `password` method only: 8 to 1,024 bytes of UTF-8 and at least 8 characters. Stored only as an Argon2id hash and never returned. Omitted with the `password` method keeps the current password (`400 invalid_policy` when there is none). Any new password, even the same text, is a change: it increments `version` and ends the policy's password sessions.
+	// Password The new policy password, with the `password` method only: at least 8 characters and at most 1,024 bytes of UTF-8 (the server enforces the byte limit; JSON Schema lengths count characters). Stored only as an Argon2id hash and never returned. Omitted with the `password` method keeps the current password (`400 invalid_policy` when there is none). Any new password, even the same text, is a change: it increments `version` and ends the policy's password sessions.
 	Password *string `json:"password,omitempty"`
 
 	// Path `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.

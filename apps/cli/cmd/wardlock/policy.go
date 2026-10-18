@@ -67,8 +67,18 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 		return errUsage
 	}
 	t, err := parseTarget(pos[0])
+	if err != nil && *password {
+		// The argument may be a password typed after --password: never
+		// repeat it.
+		return usageErrorf("DOMAIN is not a site name or hostname (the password is never an argument: it is asked for, or read from stdin)")
+	}
 	if err != nil {
 		return err
+	}
+	// Errors name the site as typed, unless it may be a password.
+	shown := t.String()
+	if *password {
+		shown = "the site given"
 	}
 	body := apiclient.SetPolicyRequest{Path: *path}
 	var methods []apiclient.PolicyMethod
@@ -93,7 +103,7 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 	}
 
 	if *password {
-		pw, err := a.newPassword(g.json)
+		pw, err := a.newPassword()
 		if err != nil {
 			return err
 		}
@@ -110,7 +120,10 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 	}
 	name := t.name
 	if name == "" {
-		site, err := c.mustFindSite(ctx, t)
+		site, err := c.findSite(ctx, t)
+		if errors.Is(err, errNoSite) {
+			return fmt.Errorf("no site %s on %s: wardlock list shows yours", shown, c.server)
+		}
 		if err != nil {
 			return err
 		}
@@ -121,7 +134,7 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 		return c.unreachable(ctx, err)
 	}
 	if res.JSON404 != nil {
-		return fmt.Errorf("no site %s on %s: wardlock list shows yours", t, c.server)
+		return fmt.Errorf("no site %s on %s: wardlock list shows yours", shown, c.server)
 	}
 	if res.JSON200 == nil {
 		return c.failed(res.HTTPResponse, res.Body)
@@ -161,12 +174,13 @@ const (
 	maxPasswordBytes = 1024
 )
 
-// newPassword reads the policy password: twice without echo when it may
-// prompt, else the first line of stdin. It never comes from a flag, so it
+// newPassword reads the policy password: twice without echo, prompting on
+// stderr, whenever stdin is a terminal (with --json too, which only shapes
+// stdout); else the first line of stdin. It never comes from a flag, so it
 // stays out of shell history and process listings.
-func (a *app) newPassword(jsonOut bool) (string, error) {
+func (a *app) newPassword() (string, error) {
 	var pw string
-	if a.canPrompt && !jsonOut {
+	if a.stdinTerminal {
 		fmt.Fprint(a.stderr, "New password: ")
 		first, err := a.readPassword()
 		fmt.Fprintln(a.stderr)

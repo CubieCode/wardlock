@@ -141,11 +141,10 @@ func checkPassword(pw string) error {
 	return nil
 }
 
-// passwordHash works out the hash a Set stores for r, given cur, the
-// policy at r's prefix ("" hash when there is none): a new password is
-// hashed, an enabled password without a new one keeps cur's, and a policy
-// without the method stores none.
-func (s *Service) passwordHash(r Rule, cur store.Policy) (string, error) {
+// passwordHash works out the hash a Set stores for r: a new password is
+// hashed, an enabled password without a new one keeps the stored one
+// (store.KeepPasswordHash), and a policy without the method stores none.
+func (s *Service) passwordHash(r Rule) (string, error) {
 	switch {
 	case !r.Password && r.NewPassword != "":
 		return "", &TargetError{Err: ErrInvalidPolicy, Target: "password", Message: "A password is set only with the password method."}
@@ -156,11 +155,15 @@ func (s *Service) passwordHash(r Rule, cur store.Policy) (string, error) {
 			return "", err
 		}
 		return hashPassword(s.derive, r.NewPassword), nil
-	case cur.PasswordEnabled && cur.PasswordHash != "":
-		return cur.PasswordHash, nil
 	}
-	return "", &TargetError{Err: ErrInvalidPolicy, Target: "password", Message: "The password method needs a password."}
+	// Keep the stored hash: Policies.Set reads it in its own transaction,
+	// so a password changed since cur was read is kept, not undone.
+	return store.KeepPasswordHash, nil
 }
+
+// errNeedsPassword answers the password method with no password to set or
+// keep.
+var errNeedsPassword = &TargetError{Err: ErrInvalidPolicy, Target: "password", Message: "The password method needs a password."}
 
 // PasswordAttempt is one visitor's password sign-in, as plain values.
 type PasswordAttempt struct {
@@ -201,7 +204,11 @@ func (s *Service) PasswordLogin(ctx context.Context, a PasswordAttempt) (Cookie,
 		// bounded prefix) so the reply takes the usual time.
 		pw, hash = pw[:MaxPasswordBytes], ""
 	}
-	if !verifyPassword(s.derive, hash, pw) {
+	right, err := s.checkPassword(ctx, hash, pw)
+	if err != nil {
+		return Cookie{}, err
+	}
+	if !right {
 		s.log.LogAttrs(ctx, slog.LevelInfo, "password sign-in refused", slog.String("site_id", a.SiteID), slog.String("policy_id", p.ID))
 		return Cookie{}, ErrWrongPassword
 	}
@@ -217,6 +224,25 @@ func (s *Service) PasswordLogin(ctx context.Context, a PasswordAttempt) (Cookie,
 	}
 	s.log.LogAttrs(ctx, slog.LevelInfo, "password sign-in", slog.String("site_id", a.SiteID), slog.String("policy_id", p.ID))
 	return c, nil
+}
+
+// checkPassword runs verifyPassword in one of the service's hash slots, so
+// however many attempts pass the limiters, at most cap(hashSlots) Argon2id
+// derivations (19 MiB each) run at once. Waiting longer than hashWait for a
+// slot answers a *RateLimitError: the server is busy checking passwords.
+func (s *Service) checkPassword(ctx context.Context, hash, pw string) (bool, error) {
+	wait, cancel := context.WithTimeout(ctx, s.hashWait)
+	defer cancel()
+	select {
+	case s.hashSlots <- struct{}{}:
+	case <-wait.Done():
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		return false, &RateLimitError{RetryAfter: time.Second}
+	}
+	defer func() { <-s.hashSlots }()
+	return verifyPassword(s.derive, hash, pw), nil
 }
 
 // allowAttempt counts one password attempt for key on l, or returns a

@@ -34,7 +34,8 @@ type loginData struct {
 	Next  string
 	Links bool
 	// Password shows the password form (A2.3); PasswordError is the
-	// message under it after a failed attempt.
+	// message under it after a failed attempt, or above the methods when
+	// the page's policy has no password form to put it under.
 	Password      bool
 	PasswordError string
 }
@@ -114,6 +115,7 @@ func (e *Edge) passwordLogin(w http.ResponseWriter, r *http.Request, site Served
 	})
 	if err == nil {
 		h := w.Header()
+		h.Set("Cache-Control", "no-store")
 		h.Add("Set-Cookie", SessionCookie(c).String())
 		h.Set("Location", (&url.URL{Path: next}).EscapedPath())
 		w.WriteHeader(http.StatusSeeOther)

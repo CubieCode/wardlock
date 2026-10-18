@@ -32,15 +32,17 @@ func (p *policyEdge) setPassword(site, prefix, pw string, links bool) store.Poli
 	return pol
 }
 
-// post submits a sign-in form from ip, from a page on h unless header
-// says otherwise.
+// post submits a sign-in form from ip as a browser does from the login
+// page on h, unless header says otherwise: the page sends no-referrer, so
+// Chromium posts with Origin: null and Sec-Fetch-Site: same-origin.
 func (p *policyEdge) post(h, ip string, form url.Values, header http.Header) result {
 	p.t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/.wardlock/login", strings.NewReader(form.Encode()))
 	req.Host = h
 	req.RemoteAddr = ip + ":40000"
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Origin", "http://"+h)
+	req.Header.Set("Origin", "null")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	for k, v := range header {
 		req.Header[k] = v
 	}
@@ -114,8 +116,8 @@ func TestPasswordThroughTheEdge(t *testing.T) {
 
 	// The right one sets a host-only __Host- cookie and returns to the page.
 	r = p.post(host, "192.0.2.11", passwordForm(sitePassword, "/internal/"), nil)
-	if r.code != http.StatusSeeOther || r.h.Get("Location") != "/internal/" {
-		t.Fatalf("correct password: %d, Location %q", r.code, r.h.Get("Location"))
+	if r.code != http.StatusSeeOther || r.h.Get("Location") != "/internal/" || r.h.Get("Cache-Control") != "no-store" {
+		t.Fatalf("correct password: %d, Location %q, Cache-Control %q", r.code, r.h.Get("Location"), r.h.Get("Cache-Control"))
 	}
 	set := r.h.Get("Set-Cookie")
 	for _, attr := range []string{access.SessionCookieName + "=", "Path=/", "HttpOnly", "Secure", "SameSite=Lax"} {
@@ -165,8 +167,9 @@ func TestPasswordThroughTheEdge(t *testing.T) {
 
 	// Only a form on this host may sign in, and only a known method.
 	for name, h := range map[string]http.Header{
-		"another site":   {"Origin": {"https://evil.example"}},
-		"a sibling site": {"Origin": {"http://" + otherHost}},
+		"another site":               {"Origin": {"https://evil.example"}, "Sec-Fetch-Site": {"cross-site"}},
+		"a sibling site":             {"Origin": {"http://" + otherHost}, "Sec-Fetch-Site": {"same-site"}},
+		"a null origin, no metadata": {"Origin": {"null"}, "Sec-Fetch-Site": nil},
 	} {
 		if r := p.post(host, "192.0.2.14", passwordForm(sitePassword, "/"), h); r.code != http.StatusForbidden || r.sessionFrom() != "" {
 			t.Fatalf("%s: %d", name, r.code)
@@ -211,6 +214,15 @@ func TestPasswordThroughTheEdge(t *testing.T) {
 	r.expect(t, 401, `<h2 id="method-links">Share link</h2>`, "")
 	if !strings.Contains(r.body, `<h2 id="method-password">Password</h2>`) {
 		t.Fatal("password form missing beside share links")
+	}
+
+	// A password posted for a path whose policy has none fails the same
+	// way, with the message shown although there is no form to put it under.
+	p.set("docs", "/internal/", store.Protected, true)
+	r = p.post(host, "192.0.2.16", passwordForm(sitePassword, "/internal/"), nil)
+	r.expect(t, 401, `<p class="error alone" role="alert">That password is not right.`, "Internal plans")
+	if strings.Contains(r.body, `id="method-password"`) || r.sessionFrom() != "" {
+		t.Fatalf("links-only policy page:\n%s", r.body)
 	}
 
 	// Nothing logged the password or the session cookie.
