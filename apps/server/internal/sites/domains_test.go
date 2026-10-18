@@ -751,6 +751,92 @@ func TestConcurrentVerify(t *testing.T) {
 	}
 }
 
+// TestPendingExpiry: a claim still pending 7 days after it was added is
+// deleted like a removal, and the hostname can be claimed again, by anyone,
+// with a new token. Active and lapsed domains never expire this way.
+func TestPendingExpiry(t *testing.T) {
+	e := newEnv(t)
+	ctx := t.Context()
+	pending, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", "pending.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.dns.CNAME("active.example.com", "docs."+base)
+	if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", "active.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	e.dns.CNAME("lapsed.example.com", "docs."+base)
+	if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", "lapsed.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	e.dns.Remove("lapsed.example.com")
+	for day := 1; day <= 4; day++ { // lapses on day 4
+		e.clock.set(t0.Add(time.Duration(day) * 24 * time.Hour))
+		if _, err := e.svc.CheckDue(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.note.take()
+	status := func(h string) store.DomainStatus {
+		d, err := e.svc.GetDomain(ctx, e.owner.ID, "docs", h)
+		if errors.Is(err, sites.ErrNotFound) {
+			return ""
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d.Status
+	}
+	expire := func(at time.Duration) int {
+		t.Helper()
+		e.clock.set(t0.Add(at))
+		n, err := e.svc.ExpirePending(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	if n := expire(6*24*time.Hour + 23*time.Hour); n != 0 || status("pending.example.com") != store.DomainPending {
+		t.Fatalf("at 6d23h: expired %d, pending.example.com %q", n, status("pending.example.com"))
+	}
+	if n := expire(7*24*time.Hour - time.Millisecond); n != 0 {
+		t.Fatalf("just before 7 days: expired %d", n)
+	}
+	if n := expire(7 * 24 * time.Hour); n != 1 {
+		t.Fatalf("at 7 days: expired %d, want 1", n)
+	}
+	if got := status("pending.example.com"); got != "" {
+		t.Fatalf("pending.example.com is still %q", got)
+	}
+	notified, removed := e.note.take()
+	if !slices.Equal(notified, []string{e.site.ID}) || !slices.Equal(removed, []string{"pending.example.com"}) {
+		t.Fatalf("expiry notified %v, removed certificates %v", notified, removed)
+	}
+	if !strings.Contains(e.logs.String(), "unverified custom domain expired") {
+		t.Fatalf("expiry was not logged:\n%s", e.logs)
+	}
+
+	// Active and lapsed domains are older than 7 days and stay.
+	if n := expire(30 * 24 * time.Hour); n != 0 || status("active.example.com") != store.DomainActive || status("lapsed.example.com") != store.DomainLapsed {
+		t.Fatalf("expired %d; active %q, lapsed %q", n, status("active.example.com"), status("lapsed.example.com"))
+	}
+
+	// Owner B claims the hostname afterwards, with a new token.
+	b := e.newOwner(t)
+	if _, err := e.svc.Create(ctx, b.ID, "bsite"); err != nil {
+		t.Fatal(err)
+	}
+	again, err := e.svc.AddDomain(ctx, b.ID, "bsite", "pending.example.com")
+	if err != nil {
+		t.Fatalf("owner B's claim after expiry: %v", err)
+	}
+	if again.ID == pending.ID || again.VerificationToken == pending.VerificationToken || again.CreatedAt != e.clock.Now() {
+		t.Fatalf("new claim %+v reuses the expired one", again)
+	}
+	e.noToken(t, pending.VerificationToken, again.VerificationToken)
+}
+
 // TestCheckDueMany: one pass reads candidates a page at a time and checks
 // every due domain.
 func TestCheckDueMany(t *testing.T) {

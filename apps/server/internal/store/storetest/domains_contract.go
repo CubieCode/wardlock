@@ -256,6 +256,96 @@ func domainsContract(t *testing.T, open Opener) {
 			t.Fatalf("ListToCheck IDs = %v, want %v", got, want)
 		}
 	})
+	t.Run("ListExpiredPending", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		cutoff := now.Add(-7 * 24 * time.Hour)
+		add := func(status store.DomainStatus, created time.Time) store.Domain {
+			d := f.validDomain(s.ID)
+			d.Status, d.CreatedAt = status, created
+			if status != store.DomainPending {
+				d.LastCheckedAt, d.VerifiedAt = created, created
+			}
+			if status == store.DomainLapsed {
+				d.FailingSince, d.LastFailureReason = created, store.DomainNoRecord
+			}
+			f.must(f.r.Domains.Create(t.Context(), o.ID, d))
+			return d
+		}
+		want := []string{
+			add(store.DomainPending, cutoff).ID,
+			add(store.DomainPending, cutoff.Add(-time.Hour)).ID,
+			add(store.DomainPending, cutoff.Add(-30*24*time.Hour)).ID,
+		}
+		add(store.DomainPending, cutoff.Add(time.Millisecond))
+		add(store.DomainActive, cutoff.Add(-time.Hour))
+		add(store.DomainLapsed, cutoff.Add(-time.Hour))
+		slices.Sort(want)
+		var got []string
+		after := ""
+		for {
+			page, err := f.r.Domains.ListExpiredPending(t.Context(), cutoff, after, 2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, d := range page {
+				got = append(got, d.ID)
+			}
+			if len(page) < 2 {
+				break
+			}
+			after = page[len(page)-1].ID
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("ListExpiredPending IDs = %v, want %v", got, want)
+		}
+	})
+	t.Run("DeleteExpiredPending", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		cutoff := now.Add(-7 * 24 * time.Hour)
+		old := f.validDomain(s.ID)
+		old.CreatedAt = cutoff
+		f.must(f.r.Domains.Create(t.Context(), o.ID, old))
+		young := f.validDomain(s.ID)
+		young.CreatedAt = cutoff.Add(time.Millisecond)
+		f.must(f.r.Domains.Create(t.Context(), o.ID, young))
+		verified := f.validDomain(s.ID)
+		verified.CreatedAt = cutoff.Add(-time.Hour)
+		f.must(f.r.Domains.Create(t.Context(), o.ID, verified))
+		// It became active after the worker listed it.
+		active := verified
+		active.Status, active.LastCheckedAt, active.VerifiedAt = store.DomainActive, now, now
+		f.must(f.r.Domains.RecordCheck(t.Context(), verified, active))
+
+		wantErr(t, f.r.Domains.DeleteExpiredPending(t.Context(), young.ID, cutoff), store.ErrNotFound)
+		wantErr(t, f.r.Domains.DeleteExpiredPending(t.Context(), verified.ID, cutoff), store.ErrNotFound)
+		wantErr(t, f.r.Domains.DeleteExpiredPending(t.Context(), store.NewID(), cutoff), store.ErrNotFound)
+		f.must(f.r.Domains.DeleteExpiredPending(t.Context(), old.ID, cutoff))
+		wantErr(t, f.r.Domains.DeleteExpiredPending(t.Context(), old.ID, cutoff), store.ErrNotFound)
+
+		_, err := f.r.Domains.Get(t.Context(), o.ID, s.ID, old.Hostname)
+		wantErr(t, err, store.ErrNotFound)
+		for _, d := range []store.Domain{young, active} {
+			if _, err := f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname); err != nil {
+				t.Fatalf("%s was deleted: %v", d.Hostname, err)
+			}
+		}
+		// The hostname is free for a new claim, by anyone.
+		other := f.owner()
+		again := f.validDomain(f.site(other.ID).ID)
+		again.Hostname = old.Hostname
+		f.must(f.r.Domains.Create(t.Context(), other.ID, again))
+		// A new claim of the same hostname is not the old claim's ID.
+		wantErr(t, f.r.Domains.DeleteExpiredPending(t.Context(), old.ID, now), store.ErrNotFound)
+		if _, err := f.r.Domains.Get(t.Context(), other.ID, again.SiteID, again.Hostname); err != nil {
+			t.Fatalf("the new claim was deleted: %v", err)
+		}
+	})
 }
 
 func domainsCreateContract(t *testing.T, open Opener) {

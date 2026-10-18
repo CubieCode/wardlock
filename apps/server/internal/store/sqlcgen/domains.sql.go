@@ -69,6 +69,27 @@ func (q *Queries) DeleteDomain(ctx context.Context, arg DeleteDomainParams) (str
 	return id, err
 }
 
+const deleteExpiredPendingDomain = `-- name: DeleteExpiredPendingDomain :one
+DELETE FROM domains
+WHERE id = ?1 AND status = 'pending' AND created_at <= ?2
+RETURNING id
+`
+
+type DeleteExpiredPendingDomainParams struct {
+	ID            string
+	CreatedBefore int64
+}
+
+// Instance-wide: deletes one expired claim, only while it is still pending
+// and older than created_before, so a claim that became active meanwhile
+// is never removed.
+func (q *Queries) DeleteExpiredPendingDomain(ctx context.Context, arg DeleteExpiredPendingDomainParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, deleteExpiredPendingDomain, arg.ID, arg.CreatedBefore)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getActiveDomainByHostname = `-- name: GetActiveDomainByHostname :one
 SELECT id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail
 FROM domains
@@ -279,6 +300,71 @@ func (q *Queries) ListDomainsToCheck(ctx context.Context, arg ListDomainsToCheck
 	var items []ListDomainsToCheckRow
 	for rows.Next() {
 		var i ListDomainsToCheckRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SiteID,
+			&i.Hostname,
+			&i.Status,
+			&i.VerificationToken,
+			&i.CreatedAt,
+			&i.LastCheckedAt,
+			&i.VerifiedAt,
+			&i.FailingSince,
+			&i.LastFailureReason,
+			&i.FailureDetail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listExpiredPendingDomains = `-- name: ListExpiredPendingDomains :many
+SELECT id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail
+FROM domains
+WHERE id > ?1 AND status = 'pending' AND created_at <= ?2
+ORDER BY id
+LIMIT ?3
+`
+
+type ListExpiredPendingDomainsParams struct {
+	AfterID       string
+	CreatedBefore int64
+	RowLimit      int64
+}
+
+type ListExpiredPendingDomainsRow struct {
+	ID                string
+	SiteID            string
+	Hostname          string
+	Status            string
+	VerificationToken string
+	CreatedAt         int64
+	LastCheckedAt     sql.NullInt64
+	VerifiedAt        sql.NullInt64
+	FailingSince      sql.NullInt64
+	LastFailureReason sql.NullString
+	FailureDetail     sql.NullString
+}
+
+// Instance-wide: pending claims created at or before created_before, by ID
+// after after_id, for the worker to expire.
+func (q *Queries) ListExpiredPendingDomains(ctx context.Context, arg ListExpiredPendingDomainsParams) ([]ListExpiredPendingDomainsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listExpiredPendingDomains, arg.AfterID, arg.CreatedBefore, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListExpiredPendingDomainsRow
+	for rows.Next() {
+		var i ListExpiredPendingDomainsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.SiteID,

@@ -115,6 +115,7 @@ func TestDomainAdd(t *testing.T) {
 		"apex domain",
 		"www.example.com is pending: No CNAME or TXT record found for www.example.com.",
 		"wardlock domain verify docs www.example.com",
+		"If it is still pending 7 days after it was added (" + formatTime(1_800_000_000_000+7*24*3600*1000) + "), it is removed.",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("output lacks %q:\n%s", want, out)

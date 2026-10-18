@@ -288,11 +288,49 @@ func (s *Service) checkOne(ctx context.Context, d store.Domain) bool {
 	return true
 }
 
-// RunChecks runs CheckDue now and then every interval until ctx ends.
+// ExpirePending deletes every claim still pending PendingExpiry after it
+// was added, as if its owner had removed it: the edge is told, any
+// certificate is deleted and the hostname is free for a new claim, which
+// gets a new token. A claim verified meanwhile is never deleted. It returns
+// how many were.
+func (s *Service) ExpirePending(ctx context.Context) (int, error) {
+	before := s.now().Add(-PendingExpiry)
+	expired := 0
+	for after := ""; ; {
+		page, err := s.c.Domains.ListExpiredPending(ctx, before, after, checkPage)
+		if err != nil {
+			return expired, fmt.Errorf("list expired domains: %w", err)
+		}
+		for _, d := range page {
+			err := s.c.Domains.DeleteExpiredPending(ctx, d.ID, before)
+			if errors.Is(err, store.ErrNotFound) {
+				continue // verified or removed meanwhile
+			}
+			if err != nil {
+				return expired, fmt.Errorf("delete expired domain: %w", err)
+			}
+			expired++
+			s.c.Notifier.Notify(ctx, d.SiteID)
+			s.removeCert(ctx, d.Hostname)
+			s.log().LogAttrs(ctx, slog.LevelInfo, "unverified custom domain expired",
+				slog.String("site_id", d.SiteID), slog.String("hostname", d.Hostname))
+		}
+		if len(page) < checkPage {
+			return expired, nil
+		}
+		after = page[len(page)-1].ID
+	}
+}
+
+// RunChecks runs ExpirePending and CheckDue now and then every interval
+// until ctx ends.
 func (s *Service) RunChecks(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
+		if _, err := s.ExpirePending(ctx); err != nil && ctx.Err() == nil {
+			s.log().LogAttrs(ctx, slog.LevelError, "expiring custom domains failed", slog.String("error", err.Error()))
+		}
 		if _, err := s.CheckDue(ctx); err != nil && ctx.Err() == nil {
 			s.log().LogAttrs(ctx, slog.LevelError, "domain checks failed", slog.String("error", err.Error()))
 		}

@@ -27,6 +27,9 @@ const (
 	// LapseAfter is how long an active domain may keep failing before it
 	// lapses.
 	LapseAfter = 72 * time.Hour
+	// PendingExpiry is how long a claim may stay pending: the worker then
+	// deletes it, freeing the hostname.
+	PendingExpiry = 7 * 24 * time.Hour
 	// VerifyCooldown is the shortest gap between checks an owner can ask
 	// for.
 	VerifyCooldown = 10 * time.Second

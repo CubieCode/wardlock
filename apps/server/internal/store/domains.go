@@ -81,6 +81,15 @@ type Domains interface {
 	// at or after windowStart, and active or lapsed ones never checked or
 	// last checked at or before recheckBefore. Instance-wide.
 	ListToCheck(ctx context.Context, windowStart, recheckBefore time.Time, afterID string, limit int) ([]Domain, error)
+	// ListExpiredPending returns up to limit pending domains created at or
+	// before createdBefore, by ID after afterID ("" for the first page).
+	// Instance-wide.
+	ListExpiredPending(ctx context.Context, createdBefore time.Time, afterID string, limit int) ([]Domain, error)
+	// DeleteExpiredPending deletes the claim with ID id only while it is
+	// still pending and was created at or before createdBefore; otherwise
+	// (gone, or verified meanwhile) it is ErrNotFound and changes nothing.
+	// Instance-wide.
+	DeleteExpiredPending(ctx context.Context, id string, createdBefore time.Time) error
 }
 
 // Domains returns the SQLite Domains repository.
@@ -174,6 +183,25 @@ func (r domainsRepo) ListToCheck(ctx context.Context, windowStart, recheckBefore
 		out = append(out, domainFrom(sqlcgen.GetDomainRow(row)))
 	}
 	return out, nil
+}
+
+func (r domainsRepo) ListExpiredPending(ctx context.Context, createdBefore time.Time, afterID string, limit int) ([]Domain, error) {
+	rows, err := r.db.q.ListExpiredPendingDomains(ctx, sqlcgen.ListExpiredPendingDomainsParams{
+		AfterID: afterID, CreatedBefore: ms(createdBefore), RowLimit: int64(limit),
+	})
+	if err != nil {
+		return nil, mapErr("list expired pending domains", err)
+	}
+	out := make([]Domain, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, domainFrom(sqlcgen.GetDomainRow(row)))
+	}
+	return out, nil
+}
+
+func (r domainsRepo) DeleteExpiredPending(ctx context.Context, id string, createdBefore time.Time) error {
+	_, err := r.db.q.DeleteExpiredPendingDomain(ctx, sqlcgen.DeleteExpiredPendingDomainParams{ID: id, CreatedBefore: ms(createdBefore)})
+	return mapErr("delete expired pending domain", err)
 }
 
 func domainFrom(row sqlcgen.GetDomainRow) Domain {

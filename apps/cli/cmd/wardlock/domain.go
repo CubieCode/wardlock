@@ -115,9 +115,9 @@ func domainAdd(ctx context.Context, a *app, args []string) error {
 	fs := newFlagSet(a, "domain add", "Usage: wardlock domain add DOMAIN HOST [--wait] [flags]\n\n"+
 		"Attaches the hostname HOST to the site DOMAIN and prints the DNS records\n"+
 		"to create. HOST is served once a check finds its record: Wardlock checks\n"+
-		"straight away, then with growing gaps for 48 hours. With --wait, keeps\n"+
-		"checking until HOST is active or 10 minutes pass. Needs a token with the\n"+
-		"manage scope.")
+		"straight away, then with growing gaps for 48 hours. A claim still\n"+
+		"pending after 7 days is removed. With --wait, keeps checking until HOST\n"+
+		"is active or 10 minutes pass. Needs a token with the manage scope.")
 	g := addGlobalFlags(fs)
 	wait := fs.Bool("wait", false, "check until the hostname is active, for up to 10 minutes")
 	c, site, host, err := domainConn(ctx, a, fs, g, args, true, nil)
@@ -174,6 +174,7 @@ func printStatus(w io.Writer, site apiclient.Site, d apiclient.Domain) {
 		fmt.Fprintf(w, "%s has lapsed: its record has been missing for 72 hours, so it is not served. %s\n", d.Hostname, failure(d))
 	default:
 		fmt.Fprintf(w, "%s is pending: %s\n", d.Hostname, failure(d))
+		fmt.Fprintf(w, "If it is still pending 7 days after it was added (%s), it is removed.\n", formatTime(d.CreatedAt+(7*24*time.Hour).Milliseconds()))
 	}
 	switch {
 	case d.Status == apiclient.DomainStatusActive:

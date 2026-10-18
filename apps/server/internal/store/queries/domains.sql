@@ -66,6 +66,23 @@ WHERE id > sqlc.arg(after_id)
 ORDER BY id
 LIMIT sqlc.arg(row_limit);
 
+-- Instance-wide: pending claims created at or before created_before, by ID
+-- after after_id, for the worker to expire.
+-- name: ListExpiredPendingDomains :many
+SELECT id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail
+FROM domains
+WHERE id > sqlc.arg(after_id) AND status = 'pending' AND created_at <= sqlc.arg(created_before)
+ORDER BY id
+LIMIT sqlc.arg(row_limit);
+
+-- Instance-wide: deletes one expired claim, only while it is still pending
+-- and older than created_before, so a claim that became active meanwhile
+-- is never removed.
+-- name: DeleteExpiredPendingDomain :one
+DELETE FROM domains
+WHERE id = sqlc.arg(id) AND status = 'pending' AND created_at <= sqlc.arg(created_before)
+RETURNING id;
+
 -- SPDX-FileCopyrightText: 2026 CubieCode
 -- SPDX-License-Identifier: AGPL-3.0-only
 -- (Licence header last: sqlc copies comments above a query into Go docs.)
