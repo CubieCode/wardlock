@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -41,6 +42,15 @@ type notifier interface {
 type Config struct {
 	Sites    store.Sites
 	Notifier notifier
+	// Domains, Resolver and Certs back custom domains (C1.9). Certs may be
+	// nil when Wardlock holds no certificates (local and proxy TLS modes).
+	Domains  store.Domains
+	Resolver Resolver
+	Certs    CertRemover
+	// CheckTimeout bounds each DNS lookup of a verification check;
+	// DefaultCheckTimeout when zero.
+	CheckTimeout time.Duration
+	Log          *slog.Logger
 	// BaseDomain and DashboardHost are lowercase hostnames without a
 	// trailing dot, as platform.Config holds them.
 	BaseDomain    string
@@ -106,7 +116,7 @@ func (s *Service) Create(ctx context.Context, ownerID, name string) (store.Site,
 		ID:        store.NewID(),
 		OwnerID:   ownerID,
 		Name:      name,
-		CreatedAt: s.c.Now().UTC().Truncate(time.Millisecond),
+		CreatedAt: s.now(),
 	}
 	err := s.c.Sites.Create(ctx, site)
 	if errors.Is(err, store.ErrConflict) {
@@ -141,6 +151,9 @@ func (s *Service) ForHostname(ctx context.Context, ownerID, hostname string) (st
 	if name, ok := strings.CutSuffix(host, "."+s.c.BaseDomain); ok && ValidName(name) {
 		return s.Get(ctx, ownerID, name)
 	}
+	if h, err := NormaliseHostname(host); err == nil {
+		host = h // a custom domain typed in Unicode
+	}
 	site, err := s.c.Sites.GetByOwnerDomain(ctx, ownerID, host)
 	return site, storeErr("get site by domain", err)
 }
@@ -153,10 +166,30 @@ func (s *Service) Delete(ctx context.Context, ownerID, name string) error {
 	if err != nil {
 		return err
 	}
+	// The site's custom domains go with it, and so do their certificates.
+	var hostnames []string
+	if s.c.Certs != nil {
+		for after := ""; ; {
+			ds, err := s.c.Domains.List(ctx, ownerID, site.ID, after, checkPage)
+			if err != nil {
+				return fmt.Errorf("list domains: %w", err)
+			}
+			for _, d := range ds {
+				hostnames = append(hostnames, d.Hostname)
+			}
+			if len(ds) < checkPage {
+				break
+			}
+			after = ds[len(ds)-1].Hostname
+		}
+	}
 	if err := s.c.Sites.Delete(ctx, ownerID, site.ID); err != nil {
 		return storeErr("delete site", err)
 	}
 	s.c.Notifier.Notify(ctx, site.ID)
+	for _, h := range hostnames {
+		s.removeCert(ctx, h)
+	}
 	return nil
 }
 

@@ -49,6 +49,26 @@ func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) erro
 	return err
 }
 
+const deleteDomain = `-- name: DeleteDomain :one
+DELETE FROM domains
+WHERE site_id = ?1 AND hostname = ?2
+  AND site_id IN (SELECT sites.id FROM sites WHERE sites.owner_id = ?3)
+RETURNING id
+`
+
+type DeleteDomainParams struct {
+	SiteID   string
+	Hostname string
+	OwnerID  string
+}
+
+func (q *Queries) DeleteDomain(ctx context.Context, arg DeleteDomainParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, deleteDomain, arg.SiteID, arg.Hostname, arg.OwnerID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getActiveDomainByHostname = `-- name: GetActiveDomainByHostname :one
 SELECT id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail
 FROM domains
@@ -87,4 +107,240 @@ func (q *Queries) GetActiveDomainByHostname(ctx context.Context, hostname string
 		&i.FailureDetail,
 	)
 	return i, err
+}
+
+const getDomain = `-- name: GetDomain :one
+SELECT domains.id, domains.site_id, domains.hostname, domains.status, domains.verification_token, domains.created_at, domains.last_checked_at, domains.verified_at, domains.failing_since, domains.last_failure_reason, domains.failure_detail
+FROM domains JOIN sites ON sites.id = domains.site_id
+WHERE domains.site_id = ?1 AND domains.hostname = ?2 AND sites.owner_id = ?3
+`
+
+type GetDomainParams struct {
+	SiteID   string
+	Hostname string
+	OwnerID  string
+}
+
+type GetDomainRow struct {
+	ID                string
+	SiteID            string
+	Hostname          string
+	Status            string
+	VerificationToken string
+	CreatedAt         int64
+	LastCheckedAt     sql.NullInt64
+	VerifiedAt        sql.NullInt64
+	FailingSince      sql.NullInt64
+	LastFailureReason sql.NullString
+	FailureDetail     sql.NullString
+}
+
+// One of the owner's sites' domains by hostname, whatever its status.
+func (q *Queries) GetDomain(ctx context.Context, arg GetDomainParams) (GetDomainRow, error) {
+	row := q.db.QueryRowContext(ctx, getDomain, arg.SiteID, arg.Hostname, arg.OwnerID)
+	var i GetDomainRow
+	err := row.Scan(
+		&i.ID,
+		&i.SiteID,
+		&i.Hostname,
+		&i.Status,
+		&i.VerificationToken,
+		&i.CreatedAt,
+		&i.LastCheckedAt,
+		&i.VerifiedAt,
+		&i.FailingSince,
+		&i.LastFailureReason,
+		&i.FailureDetail,
+	)
+	return i, err
+}
+
+const listDomains = `-- name: ListDomains :many
+SELECT domains.id, domains.site_id, domains.hostname, domains.status, domains.verification_token, domains.created_at, domains.last_checked_at, domains.verified_at, domains.failing_since, domains.last_failure_reason, domains.failure_detail
+FROM domains JOIN sites ON sites.id = domains.site_id
+WHERE domains.site_id = ?1 AND sites.owner_id = ?2
+  AND domains.hostname > ?3
+ORDER BY domains.hostname
+LIMIT ?4
+`
+
+type ListDomainsParams struct {
+	SiteID        string
+	OwnerID       string
+	AfterHostname string
+	RowLimit      int64
+}
+
+type ListDomainsRow struct {
+	ID                string
+	SiteID            string
+	Hostname          string
+	Status            string
+	VerificationToken string
+	CreatedAt         int64
+	LastCheckedAt     sql.NullInt64
+	VerifiedAt        sql.NullInt64
+	FailingSince      sql.NullInt64
+	LastFailureReason sql.NullString
+	FailureDetail     sql.NullString
+}
+
+// One of the owner's sites' domains ordered by hostname, after
+// after_hostname (” for the first page).
+func (q *Queries) ListDomains(ctx context.Context, arg ListDomainsParams) ([]ListDomainsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDomains,
+		arg.SiteID,
+		arg.OwnerID,
+		arg.AfterHostname,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDomainsRow
+	for rows.Next() {
+		var i ListDomainsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SiteID,
+			&i.Hostname,
+			&i.Status,
+			&i.VerificationToken,
+			&i.CreatedAt,
+			&i.LastCheckedAt,
+			&i.VerifiedAt,
+			&i.FailingSince,
+			&i.LastFailureReason,
+			&i.FailureDetail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDomainsToCheck = `-- name: ListDomainsToCheck :many
+SELECT id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail
+FROM domains
+WHERE id > ?1
+  AND (
+    (status = 'pending' AND created_at >= ?2)
+    OR (status <> 'pending' AND (last_checked_at IS NULL OR last_checked_at <= ?3))
+  )
+ORDER BY id
+LIMIT ?4
+`
+
+type ListDomainsToCheckParams struct {
+	AfterID       string
+	WindowStart   int64
+	RecheckBefore sql.NullInt64
+	RowLimit      int64
+}
+
+type ListDomainsToCheckRow struct {
+	ID                string
+	SiteID            string
+	Hostname          string
+	Status            string
+	VerificationToken string
+	CreatedAt         int64
+	LastCheckedAt     sql.NullInt64
+	VerifiedAt        sql.NullInt64
+	FailingSince      sql.NullInt64
+	LastFailureReason sql.NullString
+	FailureDetail     sql.NullString
+}
+
+// Instance-wide: the verification worker's candidates, by ID after
+// after_id. Pending domains still inside their backoff window
+// (created_at >= window_start) and active or lapsed domains not checked
+// since recheck_before (or never); the worker works out from each row
+// whether its next check is due.
+func (q *Queries) ListDomainsToCheck(ctx context.Context, arg ListDomainsToCheckParams) ([]ListDomainsToCheckRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDomainsToCheck,
+		arg.AfterID,
+		arg.WindowStart,
+		arg.RecheckBefore,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDomainsToCheckRow
+	for rows.Next() {
+		var i ListDomainsToCheckRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SiteID,
+			&i.Hostname,
+			&i.Status,
+			&i.VerificationToken,
+			&i.CreatedAt,
+			&i.LastCheckedAt,
+			&i.VerifiedAt,
+			&i.FailingSince,
+			&i.LastFailureReason,
+			&i.FailureDetail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const recordDomainCheck = `-- name: RecordDomainCheck :one
+UPDATE domains SET
+  status = ?1,
+  last_checked_at = ?2,
+  verified_at = ?3,
+  failing_since = ?4,
+  last_failure_reason = ?5,
+  failure_detail = ?6
+WHERE id = ?7
+RETURNING id
+`
+
+type RecordDomainCheckParams struct {
+	Status            string
+	LastCheckedAt     sql.NullInt64
+	VerifiedAt        sql.NullInt64
+	FailingSince      sql.NullInt64
+	LastFailureReason sql.NullString
+	FailureDetail     sql.NullString
+	ID                string
+}
+
+// Instance-wide: the verification worker records each check. The ID names
+// one claim, so a check that finishes after its domain was removed (and
+// perhaps claimed again under a new ID) changes nothing.
+func (q *Queries) RecordDomainCheck(ctx context.Context, arg RecordDomainCheckParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, recordDomainCheck,
+		arg.Status,
+		arg.LastCheckedAt,
+		arg.VerifiedAt,
+		arg.FailingSince,
+		arg.LastFailureReason,
+		arg.FailureDetail,
+		arg.ID,
+	)
+	var id string
+	err := row.Scan(&id)
+	return id, err
 }

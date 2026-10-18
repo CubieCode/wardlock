@@ -40,7 +40,7 @@ type Domain struct {
 	VerificationToken string
 	CreatedAt         time.Time
 	LastCheckedAt     time.Time
-	// VerifiedAt is when a check last passed; zero if never.
+	// VerifiedAt is when the domain last became active; zero if never.
 	VerifiedAt time.Time
 	// FailingSince is the first failure in the current run of failed checks.
 	FailingSince      time.Time
@@ -54,10 +54,31 @@ type Domain struct {
 type Domains interface {
 	// Create attaches d to one of ownerID's sites.
 	Create(ctx context.Context, ownerID string, d Domain) error
+	// Get returns the domain hostname of ownerID's site siteID, whatever
+	// its status. A missing domain, site or another owner's site is
+	// ErrNotFound alike.
+	Get(ctx context.Context, ownerID, siteID, hostname string) (Domain, error)
+	// List returns up to limit of the domains of ownerID's site siteID
+	// ordered by hostname, after afterHostname ("" for the first page).
+	// Another owner's site lists nothing.
+	List(ctx context.Context, ownerID, siteID, afterHostname string, limit int) ([]Domain, error)
+	// Delete detaches hostname from ownerID's site siteID (ErrNotFound if
+	// it is not attached there).
+	Delete(ctx context.Context, ownerID, siteID, hostname string) error
 	// GetActiveByHostname finds an active domain on any site. It is the
 	// instance-wide routing lookup for the edge; a pending or lapsed
 	// hostname is ErrNotFound.
 	GetActiveByHostname(ctx context.Context, hostname string) (Domain, error)
+	// RecordCheck stores the outcome of a verification check: d's status,
+	// LastCheckedAt, VerifiedAt, FailingSince, LastFailureReason and
+	// FailureDetail, for the claim with d.ID. Instance-wide, for the
+	// verification worker; ErrNotFound once the claim is gone.
+	RecordCheck(ctx context.Context, d Domain) error
+	// ListToCheck returns up to limit domains, by ID after afterID ("" for
+	// the first page), that may be due a check: pending domains created
+	// at or after windowStart, and active or lapsed ones never checked or
+	// last checked at or before recheckBefore. Instance-wide.
+	ListToCheck(ctx context.Context, windowStart, recheckBefore time.Time, afterID string, limit int) ([]Domain, error)
 }
 
 // Domains returns the SQLite Domains repository.
@@ -86,11 +107,72 @@ func (r domainsRepo) Create(ctx context.Context, ownerID string, d Domain) error
 	})
 }
 
+func (r domainsRepo) Get(ctx context.Context, ownerID, siteID, hostname string) (Domain, error) {
+	row, err := r.db.q.GetDomain(ctx, sqlcgen.GetDomainParams{SiteID: siteID, Hostname: hostname, OwnerID: ownerID})
+	if err != nil {
+		return Domain{}, mapErr("get domain", err)
+	}
+	return domainFrom(row), nil
+}
+
+func (r domainsRepo) List(ctx context.Context, ownerID, siteID, afterHostname string, limit int) ([]Domain, error) {
+	rows, err := r.db.q.ListDomains(ctx, sqlcgen.ListDomainsParams{
+		SiteID: siteID, OwnerID: ownerID, AfterHostname: afterHostname, RowLimit: int64(limit),
+	})
+	if err != nil {
+		return nil, mapErr("list domains", err)
+	}
+	out := make([]Domain, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, domainFrom(sqlcgen.GetDomainRow(row)))
+	}
+	return out, nil
+}
+
+func (r domainsRepo) Delete(ctx context.Context, ownerID, siteID, hostname string) error {
+	_, err := r.db.q.DeleteDomain(ctx, sqlcgen.DeleteDomainParams{SiteID: siteID, Hostname: hostname, OwnerID: ownerID})
+	return mapErr("delete domain", err)
+}
+
 func (r domainsRepo) GetActiveByHostname(ctx context.Context, hostname string) (Domain, error) {
 	row, err := r.db.q.GetActiveDomainByHostname(ctx, hostname)
 	if err != nil {
 		return Domain{}, mapErr("get active domain", err)
 	}
+	return domainFrom(sqlcgen.GetDomainRow(row)), nil
+}
+
+func (r domainsRepo) RecordCheck(ctx context.Context, d Domain) error {
+	_, err := r.db.q.RecordDomainCheck(ctx, sqlcgen.RecordDomainCheckParams{
+		ID:                d.ID,
+		Status:            string(d.Status),
+		LastCheckedAt:     nullMs(d.LastCheckedAt),
+		VerifiedAt:        nullMs(d.VerifiedAt),
+		FailingSince:      nullMs(d.FailingSince),
+		LastFailureReason: nullString(string(d.LastFailureReason)),
+		FailureDetail:     nullString(d.FailureDetail),
+	})
+	return mapErr("record domain check", err)
+}
+
+func (r domainsRepo) ListToCheck(ctx context.Context, windowStart, recheckBefore time.Time, afterID string, limit int) ([]Domain, error) {
+	rows, err := r.db.q.ListDomainsToCheck(ctx, sqlcgen.ListDomainsToCheckParams{
+		AfterID:       afterID,
+		WindowStart:   ms(windowStart),
+		RecheckBefore: sql.NullInt64{Int64: ms(recheckBefore), Valid: true},
+		RowLimit:      int64(limit),
+	})
+	if err != nil {
+		return nil, mapErr("list domains to check", err)
+	}
+	out := make([]Domain, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, domainFrom(sqlcgen.GetDomainRow(row)))
+	}
+	return out, nil
+}
+
+func domainFrom(row sqlcgen.GetDomainRow) Domain {
 	return Domain{
 		ID:                row.ID,
 		SiteID:            row.SiteID,
@@ -103,5 +185,5 @@ func (r domainsRepo) GetActiveByHostname(ctx context.Context, hostname string) (
 		FailingSince:      fromNullMs(row.FailingSince),
 		LastFailureReason: DomainFailure(row.LastFailureReason.String),
 		FailureDetail:     row.FailureDetail.String,
-	}, nil
+	}
 }
