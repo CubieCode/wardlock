@@ -13,8 +13,8 @@
   section here. Its form posts to /.wardlock/login with a hidden "method"
   field naming it (edge.login dispatches on it) and the hidden "next" path;
   its error, if any, sits inside its own section. Share links (A2.2), the
-  password (A2.3) and email code (A2.4) are here; OAuth (A2.5) joins the
-  same way. The else branch covers a page with no method at all. An error
+  password (A2.3) and email code (A2.4) are here; OAuth (A2.5) is in
+  login_oauth.html. The else branch covers a page with no method at all. An error
   for a method the page has no section for is shown above the methods
   (loginData.AloneError).
 
@@ -220,6 +220,26 @@
         overflow-wrap: anywhere;
         font-weight: 600;
       }
+      .providers {
+        display: grid;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+      }
+      .providers form {
+        display: block;
+        margin: 0;
+      }
+      .providers button {
+        width: 100%;
+        min-height: 2.75rem;
+        margin: 0;
+        border: 1px solid var(--border-strong);
+        background: var(--surface);
+        color: var(--text);
+      }
+      .providers button:hover {
+        background: var(--canvas);
+      }
       .notice {
         margin-top: 1.5rem;
         padding-top: 1rem;
@@ -324,7 +344,7 @@
           </form>
           {{end}}
         </section>
-        {{end}} {{if .Links}}
+        {{end}} {{if .OAuth}}{{template "oauth-method" .}}{{end}} {{if .Links}}
         <section class="method" aria-labelledby="method-links">
           <h2 id="method-links">Share link</h2>
           <p>

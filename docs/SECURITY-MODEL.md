@@ -56,7 +56,11 @@ The CLI device login (C1.7) lets anyone start a login and send its approval link
 
 ### OAuth-specific risks
 
-PKCE and `state` on every flow; OIDC `nonce` checked; allowlists match only verified emails; the auth origin hands sites a single-use, 60-second, site-bound code rather than a cookie, so a code stolen for one site is useless on another or after use.
+PKCE (S256) and `state` on every flow; OIDC `nonce` checked against the flow's, and ID tokens verified for signature, issuer, audience and expiry; allowlists match only verified emails (GitHub organisations count only for GitHub accounts, and still need a verified email as the session's subject); the auth origin hands sites a single-use, 60-second code bound to the site, the host and the policy version rather than a cookie, so a code stolen for one site is useless on another or after use. The auth origin sets no cookie at all.
+
+**Login CSRF and session planting (A2.5 decision).** Without more, an attacker could finish a flow in their own browser, stop before the site callback, and send the victim the `/.wardlock/callback?code=…` link, signing the victim in as the attacker. Starting a flow therefore sets a second host-only cookie on the site, `__Host-wardlock_oauth` (random 256 bits; only its HMAC is kept with the flow; `Secure`, `HttpOnly`, `Path=/`, `SameSite=Lax` so it rides the top-level redirect back from the auth origin, `Max-Age` 600), and a code is redeemed only with the cookie of the browser that started its flow. The callback clears it whether or not it succeeds, and any attempt spends the code. Flows and codes live in memory: a restart drops sign-ins in flight; the number held is bounded, and starts are limited to 30 per client per 15 minutes.
+
+**Return paths.** The provider only ever returns to the auth origin's fixed `/callback/<provider>`, which only ever sends visitors to the site and host the flow started from; the path to return to is checked like the password form's `next` (only a plain path on the site, otherwise `/`).
 
 ### Custom domain takeover
 

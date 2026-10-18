@@ -74,10 +74,9 @@ func normaliseDomain(raw string) (string, bool) {
 	return name, true
 }
 
-// checkAllowlist normalises the addresses and domains of a, which an owner is
-// setting, sorted and without duplicates, or returns a TargetError naming
-// the first entry it cannot read. GitHub organisations are kept as given
-// (A2.5 checks them).
+// checkAllowlist normalises the entries of a, which an owner is setting,
+// sorted and without duplicates, or returns a TargetError naming the first
+// entry it cannot read.
 func checkAllowlist(a store.Allowlist) (store.Allowlist, error) {
 	invalid := func(msg string) error {
 		return &TargetError{Err: ErrInvalidPolicy, Target: "allowlist", Message: msg}
@@ -85,10 +84,7 @@ func checkAllowlist(a store.Allowlist) (store.Allowlist, error) {
 	if a.Len() > MaxAllowlistEntries {
 		return store.Allowlist{}, invalid(fmt.Sprintf("An allowlist holds at most %d entries.", MaxAllowlistEntries))
 	}
-	out := store.Allowlist{Emails: []string{}, Domains: []string{}, GitHubOrgs: slices.Clone(a.GitHubOrgs)}
-	if out.GitHubOrgs == nil {
-		out.GitHubOrgs = []string{}
-	}
+	out := store.Allowlist{Emails: []string{}, Domains: []string{}, GitHubOrgs: []string{}}
 	for _, raw := range a.Emails {
 		e, ok := NormaliseAddress(raw)
 		if !ok {
@@ -103,12 +99,38 @@ func checkAllowlist(a store.Allowlist) (store.Allowlist, error) {
 		}
 		out.Domains = append(out.Domains, d)
 	}
+	for _, raw := range a.GitHubOrgs {
+		o, ok := normaliseGitHubOrg(raw)
+		if !ok {
+			return store.Allowlist{}, invalid(fmt.Sprintf("%q is not a GitHub organisation name like example-org.", clip(raw)))
+		}
+		out.GitHubOrgs = append(out.GitHubOrgs, o)
+	}
 	for _, l := range []*[]string{&out.Emails, &out.Domains, &out.GitHubOrgs} {
 		slices.Sort(*l)
 		*l = slices.Compact(*l)
 	}
 	return out, nil
 }
+
+// maxGitHubOrgBytes is GitHub's limit on organisation names.
+const maxGitHubOrgBytes = 39
+
+// normaliseGitHubOrg returns raw as an allowlist GitHub organisation: its
+// login, lower case (GitHub compares them without case): ASCII letters,
+// digits and single hyphens, neither first nor last, at most 39 bytes.
+func normaliseGitHubOrg(raw string) (string, bool) {
+	o := asciiLower(strings.TrimSpace(raw))
+	if o == "" || len(o) > maxGitHubOrgBytes || o[0] == '-' || o[len(o)-1] == '-' || strings.Contains(o, "--") ||
+		strings.ContainsFunc(o, func(r rune) bool { return !ldh(r) }) {
+		return "", false
+	}
+	return o, true
+}
+
+// errOAuthNeedsAllowlist answers the OAuth method with an empty allowlist
+// to set or keep.
+var errOAuthNeedsAllowlist = &TargetError{Err: ErrInvalidPolicy, Target: "allowlist", Message: "The OAuth method needs at least one allowed address, domain or GitHub organisation."}
 
 // errNeedsAllowlist answers the email method with no addresses or domains
 // to set or keep.

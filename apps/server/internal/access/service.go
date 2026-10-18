@@ -75,6 +75,9 @@ type Config struct {
 	// Secret is the server key (WARDLOCK_SECRET): it signs session cookies
 	// and keys the stored session token hashes.
 	Secret []byte
+	// OAuth is the operator's OAuth and OIDC providers and the origins
+	// their flows run between (A2.5).
+	OAuth OAuthConfig
 	// Limits are the visitor rate limits; zero means DefaultLimits.
 	Limits Limits
 	Now    func() time.Time
@@ -109,6 +112,8 @@ type Service struct {
 	unsubscribe func()
 	// bg tracks background email-code sends.
 	bg sync.WaitGroup
+	// oauth holds OAuth flows and site codes in flight.
+	oauth *oauthState
 
 	mu       sync.Mutex
 	gen      uint64                    // bumped by every invalidation
@@ -140,6 +145,7 @@ func New(cfg Config) (*Service, error) {
 		hashSlots: make(chan struct{}, max(2, runtime.GOMAXPROCS(0)/2)),
 		hashWait:  time.Second,
 		policies:  map[string][]store.Policy{},
+		oauth:     newOAuthState(),
 	}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
@@ -584,6 +590,9 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 	if err := checkRule(r); err != nil {
 		return store.Policy{}, err
 	}
+	if r.OAuth && len(s.c.OAuth.Providers) == 0 {
+		return store.Policy{}, &TargetError{Err: ErrInvalidPolicy, Target: "methods", Message: "No OAuth or OIDC providers are configured on this server."}
+	}
 	site, err := s.ownedSite(ctx, ownerID, siteName)
 	if err != nil {
 		return store.Policy{}, err
@@ -610,8 +619,9 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 		ID: store.NewID(), SiteID: site.ID, PathPrefix: r.PathPrefix,
 		Visibility: r.Visibility, LinksEnabled: r.Links,
 		PasswordEnabled: r.Password, PasswordHash: hash,
-		EmailEnabled: r.Email, Allowlist: allow, KeepAllowlist: keep,
-		UpdatedAt: s.now(),
+		EmailEnabled: r.Email, OAuthEnabled: r.OAuth, Allowlist: allow, KeepAllowlist: keep,
+		KeepGitHubOrgs: !keep && r.Visibility == store.Protected && r.KeepGitHubOrgs,
+		UpdatedAt:      s.now(),
 	})
 	if errors.Is(err, store.ErrNotFound) {
 		return store.Policy{}, fmt.Errorf("set policy: %w", ErrNotFound)
@@ -622,6 +632,9 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 	if errors.Is(err, store.ErrEmailNeedsAllowlist) {
 		return store.Policy{}, errNeedsAllowlist
 	}
+	if errors.Is(err, store.ErrOAuthNeedsAllowlist) {
+		return store.Policy{}, errOAuthNeedsAllowlist
+	}
 	if err != nil {
 		return store.Policy{}, fmt.Errorf("set policy: %w", err)
 	}
@@ -629,7 +642,7 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 	s.log.LogAttrs(ctx, slog.LevelInfo, "policy set",
 		slog.String("site_id", site.ID), slog.String("policy_id", p.ID),
 		slog.String("path", p.PathPrefix), slog.String("visibility", string(p.Visibility)),
-		slog.Bool("password", p.PasswordEnabled), slog.Bool("email", p.EmailEnabled),
+		slog.Bool("password", p.PasswordEnabled), slog.Bool("email", p.EmailEnabled), slog.Bool("oauth", p.OAuthEnabled),
 		slog.Int("allowlist_entries", p.Allowlist.Len()), slog.Int("version", p.Version))
 	return p, nil
 }

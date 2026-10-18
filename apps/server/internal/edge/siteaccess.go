@@ -93,6 +93,8 @@ func (e *Edge) serveReserved(w http.ResponseWriter, r *http.Request, site Served
 		_, _ = w.Write([]byte(`{"status":"ok"}` + "\n"))
 	case ReservedPrefix + "login":
 		e.login(w, r, site)
+	case ReservedPrefix + "callback":
+		e.oauthCallback(w, r, site)
 	case ReservedPrefix + "logout":
 		e.logout(w, r, site)
 	case ReservedPrefix + "view":

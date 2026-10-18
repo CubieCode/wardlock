@@ -70,6 +70,8 @@ type fakeSite struct {
 	pathPolicies int
 	// set records the setPolicy bodies received, as sent.
 	set []map[string]any
+	// allowlist is the "/" policy's allowlist as listed.
+	allowlist apiclient.PolicyAllowlist
 }
 
 const (
@@ -127,7 +129,7 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 			items = append(items, apiclient.Policy{Id: f.id(), Path: fmt.Sprintf("/p%d/", i), Visibility: apiclient.PolicyVisibilityPublic, Methods: []apiclient.PolicyMethod{}, Version: 1})
 		}
 		if s.policy != "" {
-			items = append(items, apiclient.Policy{Id: f.id(), Path: "/", Visibility: s.policy, Methods: []apiclient.PolicyMethod{}, Version: 1})
+			items = append(items, apiclient.Policy{Id: f.id(), Path: "/", Visibility: s.policy, Methods: []apiclient.PolicyMethod{}, Allowlist: s.allowlist, Version: 1})
 		}
 		page, next := paginate(r, items)
 		reply(w, http.StatusOK, apiclient.PolicyPage{Items: page, NextCursor: next})

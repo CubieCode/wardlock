@@ -26,6 +26,7 @@ import (
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/edge"
 	"wardlock.nz/server/internal/mail"
+	"wardlock.nz/server/internal/oauth"
 	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/platform"
 	"wardlock.nz/server/internal/sites"
@@ -110,9 +111,14 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		AccessLog:        db.AccessLog(),
 		EmailCodes:       db.EmailCodes(),
 		Mailer:           mailer,
-		Secret:           cfg.Secret,
-		Now:              time.Now,
-		Log:              log,
+		OAuth: access.OAuthConfig{
+			Providers:  oauthProviders(cfg.OAuth),
+			AuthOrigin: publicOrigin(cfg.AuthHost(), port).String(),
+			SiteOrigin: func(host string) string { return publicOrigin(host, port).String() },
+		},
+		Secret: cfg.Secret,
+		Now:    time.Now,
+		Log:    log,
 	})
 	if err != nil {
 		_ = ln.Close()
@@ -190,6 +196,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 
 	handler, err := edge.New(edge.Config{
 		DashboardHost: cfg.DashboardHost,
+		AuthHost:      cfg.AuthHost(),
 		Dashboard:     dash,
 		Health:        platform.Healthz(),
 		Sites: siteSource{
@@ -369,4 +376,22 @@ func publicOrigin(host string, port int) *url.URL {
 		host = net.JoinHostPort(host, strconv.Itoa(port))
 	}
 	return &url.URL{Scheme: "http", Host: host}
+}
+
+// oauthProviders builds the operator's OAuth and OIDC providers in the
+// order login pages list them.
+func oauthProviders(c platform.OAuthConfig) []access.Provider {
+	var ps []access.Provider
+	if c.GitHubClientID != "" {
+		ps = append(ps, oauth.NewGitHub(oauth.GitHubConfig{ClientID: c.GitHubClientID, ClientSecret: string(c.GitHubClientSecret)}))
+	}
+	if c.GoogleClientID != "" {
+		ps = append(ps, oauth.NewGoogle(c.GoogleClientID, string(c.GoogleClientSecret), nil))
+	}
+	if c.OIDCClientID != "" {
+		ps = append(ps, oauth.NewOIDC(oauth.OIDCConfig{
+			ID: "oidc", Name: c.OIDCName, Issuer: c.OIDCIssuer, ClientID: c.OIDCClientID, ClientSecret: string(c.OIDCClientSecret),
+		}))
+	}
+	return ps
 }

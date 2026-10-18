@@ -88,4 +88,12 @@ type Access interface {
 	// EmailCodeLogin checks an emailed code and returns the session cookie
 	// it earns (A2.4).
 	EmailCodeLogin(ctx context.Context, a access.EmailCodeAttempt) (access.Cookie, error)
+	// OAuthProviders lists the configured OAuth and OIDC providers (A2.5).
+	OAuthProviders() []access.ProviderInfo
+	// StartOAuth begins a provider sign-in from the login form.
+	StartOAuth(ctx context.Context, a access.OAuthStart) (access.OAuthStarted, error)
+	// FinishOAuth completes it at the auth origin and returns where to go.
+	FinishOAuth(ctx context.Context, cb access.OAuthCallback) (access.OAuthFinished, error)
+	// RedeemOAuth exchanges a site code for the session cookie.
+	RedeemOAuth(ctx context.Context, r access.OAuthRedeem) (access.OAuthRedeemed, error)
 }

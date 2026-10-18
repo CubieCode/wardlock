@@ -217,6 +217,20 @@ func (publicAccess) EmailCodeLogin(context.Context, access.EmailCodeAttempt) (ac
 	return access.Cookie{}, access.ErrInvalidCode
 }
 
+func (publicAccess) OAuthProviders() []access.ProviderInfo { return nil }
+
+func (publicAccess) StartOAuth(context.Context, access.OAuthStart) (access.OAuthStarted, error) {
+	return access.OAuthStarted{}, access.ErrUnknownProvider
+}
+
+func (publicAccess) FinishOAuth(context.Context, access.OAuthCallback) (access.OAuthFinished, error) {
+	return access.OAuthFinished{}, access.ErrOAuthState
+}
+
+func (publicAccess) RedeemOAuth(context.Context, access.OAuthRedeem) (access.OAuthRedeemed, error) {
+	return access.OAuthRedeemed{}, access.ErrOAuthCode
+}
+
 type harness struct {
 	edge     *edge.Edge
 	fx       fixtures

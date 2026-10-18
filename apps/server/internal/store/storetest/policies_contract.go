@@ -4,6 +4,7 @@
 package storetest
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -146,6 +147,55 @@ func policiesContract(t *testing.T, open Opener) {
 		bad.LinksEnabled = true
 		_, err = f.r.Policies.Set(t.Context(), a, bad)
 		wantErr(t, err, store.ErrConstraint)
+	})
+	t.Run("SetOAuthAllowlist", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		a := f.owner().ID
+		s := f.site(a).ID
+		ctx := t.Context()
+		at := now
+		set := func(mutate func(*store.Policy)) (store.Policy, error) {
+			at = at.Add(time.Minute)
+			q := f.validPolicy(s)
+			q.LinksEnabled, q.OAuthEnabled, q.UpdatedAt = false, true, at
+			mutate(&q)
+			return f.r.Policies.Set(ctx, a, q)
+		}
+		// The OAuth method needs an entry of some kind; nothing is stored.
+		for name, mutate := range map[string]func(*store.Policy){
+			"empty":           func(q *store.Policy) {},
+			"keep none":       func(q *store.Policy) { q.KeepAllowlist = true },
+			"keep orgs, none": func(q *store.Policy) { q.KeepGitHubOrgs = true },
+		} {
+			if _, err := set(mutate); !errors.Is(err, store.ErrOAuthNeedsAllowlist) {
+				t.Errorf("%s: Set = %v, want ErrOAuthNeedsAllowlist", name, err)
+			}
+		}
+		if ps, err := f.r.Policies.ForSite(ctx, s); err != nil || len(ps) != 0 {
+			t.Fatalf("after refused sets: %+v, %v", ps, err)
+		}
+		// Organisations alone are enough.
+		orgs, err := set(func(q *store.Policy) { q.Allowlist = store.Allowlist{GitHubOrgs: []string{"example-org"}} })
+		f.must(err)
+		if !orgs.OAuthEnabled || !orgs.Allowlist.Equal(store.Allowlist{GitHubOrgs: []string{"example-org"}}) {
+			t.Fatalf("orgs only: %+v", orgs)
+		}
+		// KeepGitHubOrgs keeps them while the addresses and domains are
+		// replaced.
+		kept, err := set(func(q *store.Policy) {
+			q.Allowlist, q.KeepGitHubOrgs = store.Allowlist{Emails: []string{"ana@example.test"}, GitHubOrgs: []string{"ignored"}}, true
+		})
+		f.must(err)
+		want := store.Allowlist{Emails: []string{"ana@example.test"}, GitHubOrgs: []string{"example-org"}}
+		if kept.Version != 2 || !kept.Allowlist.Equal(want) || kept.KeepGitHubOrgs {
+			t.Fatalf("kept orgs: %+v", kept)
+		}
+		stored, err := f.r.Policies.ForSite(ctx, s)
+		f.must(err)
+		if len(stored) != 1 || !stored[0].Allowlist.Equal(want) {
+			t.Fatalf("stored %+v", stored)
+		}
 	})
 	t.Run("Delete", func(t *testing.T) {
 		t.Parallel()

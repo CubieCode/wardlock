@@ -1280,16 +1280,16 @@ export interface components {
      */
     PolicyVisibility: 'public' | 'protected';
     /**
-     * @description A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). `password`: the policy password, entered on the site's login page (A2.3). `email`: a 6-digit code emailed to an address the policy's `allowlist` lets in, entered on the site's login page (A2.4). OAuth joins with A2.5.
+     * @description A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). `password`: the policy password, entered on the site's login page (A2.3). `email`: a 6-digit code emailed to an address the policy's `allowlist` lets in, entered on the site's login page (A2.4). `oauth`: signing in with a GitHub, Google or OIDC account the `allowlist` lets in, through the providers the server's operator configured (A2.5); enabling it on a server with no provider answers `400 invalid_policy`.
      * @enum {string}
      */
-    PolicyMethod: 'links' | 'password' | 'email';
+    PolicyMethod: 'links' | 'password' | 'email' | 'oauth';
     /**
      * @description `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
      * @example /docs/
      */
     PolicyPath: string;
-    /** @description Who the email-code and OAuth methods let in: one list per policy, shared by both. A visitor is allowed when their verified address is listed exactly or is at a listed domain. At most 1,000 entries in all; the server normalises entries (lower case, sorted, without duplicates) and answers `400 invalid_policy` (`target: allowlist`) for an entry it cannot read. */
+    /** @description Who the email-code and OAuth methods let in: one list per policy, shared by both. A visitor is allowed when their verified address is listed exactly or is at a listed domain, or (OAuth with GitHub only) when their GitHub account is an active member of a listed organisation. At most 1,000 entries in all; the server normalises entries (lower case, sorted, without duplicates) and answers `400 invalid_policy` (`target: allowlist`) for an entry it cannot read. */
     PolicyAllowlist: {
       /**
        * @description Exact email addresses, lower case.
@@ -1306,6 +1306,13 @@ export interface components {
        *     ]
        */
       domains: string[];
+      /**
+       * @description GitHub organisation logins, lower case, checked only for visitors signing in with GitHub (A2.5). Always present in responses; in a request, omitted keeps the policy's current organisations while `emails` and `domains` are replaced.
+       * @example [
+       *       "example-org"
+       *     ]
+       */
+      githubOrgs?: string[];
     };
     Policy: {
       id: components['schemas']['Id'];
@@ -1336,7 +1343,7 @@ export interface components {
        * @description The new policy password, with the `password` method only: at least 8 characters and at most 1,024 bytes of UTF-8 (the server enforces the byte limit; JSON Schema lengths count characters). Stored only as an Argon2id hash and never returned. Omitted with the `password` method keeps the current password (`400 invalid_policy` when there is none). Any new password, even the same text, is a change: it increments `version` and ends the policy's password sessions.
        */
       password?: string;
-      /** @description Replaces the policy's allowlist; omitted keeps the current one. The `email` method needs at least one address or domain in it. Must be empty or omitted for a public policy. */
+      /** @description Replaces the policy's allowlist; omitted keeps the current one (and an omitted `githubOrgs` keeps the current organisations). The `email` method needs at least one address or domain in it, and the `oauth` method at least one entry of any kind. Must be empty or omitted for a public policy. */
       allowlist?: components['schemas']['PolicyAllowlist'];
     };
     /**
@@ -3186,12 +3193,16 @@ export interface operations {
            *           "visibility": "protected",
            *           "methods": [
            *             "links",
-           *             "email"
+           *             "email",
+           *             "oauth"
            *           ],
            *           "allowlist": {
            *             "emails": [],
            *             "domains": [
            *               "example.com"
+           *             ],
+           *             "githubOrgs": [
+           *               "example-org"
            *             ]
            *           },
            *           "version": 3,
@@ -3205,7 +3216,8 @@ export interface operations {
            *           "methods": [],
            *           "allowlist": {
            *             "emails": [],
-           *             "domains": []
+           *             "domains": [],
+           *             "githubOrgs": []
            *           },
            *           "version": 1,
            *           "createdAt": 1767225600000,

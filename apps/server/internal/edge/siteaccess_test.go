@@ -62,6 +62,20 @@ func (a *fakeAccess) EmailCodeLogin(context.Context, access.EmailCodeAttempt) (a
 	return access.Cookie{}, access.ErrInvalidCode
 }
 
+func (*fakeAccess) OAuthProviders() []access.ProviderInfo { return nil }
+
+func (*fakeAccess) StartOAuth(context.Context, access.OAuthStart) (access.OAuthStarted, error) {
+	return access.OAuthStarted{}, access.ErrUnknownProvider
+}
+
+func (*fakeAccess) FinishOAuth(context.Context, access.OAuthCallback) (access.OAuthFinished, error) {
+	return access.OAuthFinished{}, access.ErrOAuthState
+}
+
+func (*fakeAccess) RedeemOAuth(context.Context, access.OAuthRedeem) (access.OAuthRedeemed, error) {
+	return access.OAuthRedeemed{}, access.ErrOAuthCode
+}
+
 func (a *fakeAccess) requests() []access.Request {
 	a.mu.Lock()
 	defer a.mu.Unlock()

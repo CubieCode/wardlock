@@ -199,8 +199,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.5: OAuth and OIDC
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: `feat/a2.5-oauth-oidc`
 - PR:
 - Depends on: A2.1, C1.4
 - Scope: Central auth origin `auth.<base domain>`; GitHub, Google and generic OIDC providers configured by the operator; PKCE, `state`, OIDC `nonce`; single-use, 60-second, site-bound codes exchanged at `/.wardlock/callback`; allowlists by verified email, domain and GitHub organisation.

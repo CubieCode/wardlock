@@ -30,6 +30,9 @@ const tlsAskPath = ReservedPrefix + "tls-ask"
 // Config wires the edge.
 type Config struct {
 	DashboardHost string
+	// AuthHost is the auth origin's host, auth.<base domain>, where OAuth
+	// providers return (A2.5); "" serves none.
+	AuthHost string
 	// Dashboard serves the dashboard pages and the owner API.
 	Dashboard http.Handler
 	// Health answers /healthz on every host.
@@ -103,6 +106,10 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	host := canonicalHost(r.Host)
+	if e.cfg.AuthHost != "" && host == e.cfg.AuthHost {
+		e.serveAuthOrigin(w, r)
+		return
+	}
 	if host == e.cfg.DashboardHost {
 		e.cfg.Dashboard.ServeHTTP(w, r)
 		return

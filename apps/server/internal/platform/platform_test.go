@@ -103,6 +103,29 @@ func TestLoadConfig(t *testing.T) {
 		{"padded standard base64 secret", map[string]string{"WARDLOCK_SECRET": strings.Repeat("A+/w", 11) + "=="}, false, func(c platform.Config) bool {
 			return len(c.Secret) == 33
 		}},
+		{"no oauth providers", nil, false, func(c platform.Config) bool {
+			return c.OAuth == (platform.OAuthConfig{OIDCName: "single sign-on"}) && c.AuthHost() == "auth.wardlock.localhost"
+		}},
+		{"oauth providers", map[string]string{
+			"WARDLOCK_GITHUB_CLIENT_ID": "gh-id", "WARDLOCK_GITHUB_CLIENT_SECRET": "gh-secret",
+			"WARDLOCK_GOOGLE_CLIENT_ID": "g-id", "WARDLOCK_GOOGLE_CLIENT_SECRET": "g-secret",
+			"WARDLOCK_OIDC_ISSUER": "https://sso.example.test/realm", "WARDLOCK_OIDC_CLIENT_ID": "o-id",
+			"WARDLOCK_OIDC_CLIENT_SECRET": "o-secret", "WARDLOCK_OIDC_NAME": "Harbour SSO",
+		}, false, func(c platform.Config) bool {
+			o := c.OAuth
+			return o.GitHubClientID == "gh-id" && o.GitHubClientSecret == "gh-secret" && o.GoogleClientID == "g-id" &&
+				o.OIDCIssuer == "https://sso.example.test/realm" && o.OIDCClientSecret == "o-secret" && o.OIDCName == "Harbour SSO"
+		}},
+		{"local OIDC issuer", map[string]string{
+			"WARDLOCK_OIDC_ISSUER": "http://sso.localhost:8081", "WARDLOCK_OIDC_CLIENT_ID": "o-id", "WARDLOCK_OIDC_CLIENT_SECRET": "o-secret",
+		}, false, func(c platform.Config) bool { return c.OAuth.OIDCIssuer == "http://sso.localhost:8081" }},
+		{"client ID without secret", map[string]string{"WARDLOCK_GITHUB_CLIENT_ID": "gh-id"}, true, nil},
+		{"secret without client ID", map[string]string{"WARDLOCK_GOOGLE_CLIENT_SECRET": "g-secret"}, true, nil},
+		{"OIDC client without issuer", map[string]string{"WARDLOCK_OIDC_CLIENT_ID": "o-id", "WARDLOCK_OIDC_CLIENT_SECRET": "o-secret"}, true, nil},
+		{"plain HTTP OIDC issuer", map[string]string{
+			"WARDLOCK_OIDC_ISSUER": "http://sso.example.test", "WARDLOCK_OIDC_CLIENT_ID": "o-id", "WARDLOCK_OIDC_CLIENT_SECRET": "o-secret",
+		}, true, nil},
+		{"dashboard on the auth origin", map[string]string{"WARDLOCK_DASHBOARD_HOST": "auth.wardlock.localhost"}, true, nil},
 		{"short secret", map[string]string{"WARDLOCK_SECRET": "c2hvcnQ"}, true, nil},
 		{"secret not base64", map[string]string{"WARDLOCK_SECRET": strings.Repeat("!", 44)}, true, nil},
 	}

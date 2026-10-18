@@ -50,6 +50,12 @@ type loginData struct {
 	EmailError   string
 	// EmailMinutes is how long a code is valid.
 	EmailMinutes int
+	// OAuth lists the operator's providers when the policy enables OAuth
+	// (A2.5); OAuthError is the notice after a sign-in that did not
+	// complete. See oauth.go.
+	OAuth      []access.ProviderInfo
+	OAuthError string
+	oauth      bool
 }
 
 func newLoginData(r *http.Request, d access.Decision, next string) loginData {
@@ -57,11 +63,12 @@ func newLoginData(r *http.Request, d access.Decision, next string) loginData {
 		Site: canonicalHost(r.Host), Next: next,
 		Links: d.Policy.LinksEnabled, Password: d.Policy.PasswordEnabled,
 		Email: d.Policy.EmailEnabled, EmailMinutes: int(access.EmailCodeValidity / time.Minute),
+		oauth: d.Policy.OAuthEnabled,
 	}
 }
 
 // AnyMethod reports whether the page offers any way in.
-func (l loginData) AnyMethod() bool { return l.Links || l.Password || l.Email }
+func (l loginData) AnyMethod() bool { return l.Links || l.Password || l.Email || len(l.OAuth) > 0 }
 
 // AloneError is the message for a failed method the page has no form for,
 // shown above the methods.
@@ -71,6 +78,9 @@ func (l loginData) AloneError() string {
 		return l.PasswordError
 	case l.EmailError != "" && !l.Email:
 		return l.EmailError
+	case l.OAuthError != "":
+		// OAuth's notice has no form to sit under.
+		return l.OAuthError
 	}
 	return ""
 }
@@ -78,6 +88,9 @@ func (l loginData) AloneError() string {
 // loginPage renders the site's login page with status. It is Wardlock's
 // page, not the site's: never cached, never framed, no scripts.
 func (e *Edge) loginPage(w http.ResponseWriter, r *http.Request, data loginData, status int) {
+	if data.oauth {
+		data.OAuth = e.access.OAuthProviders()
+	}
 	var body bytes.Buffer
 	if err := pages.ExecuteTemplate(&body, "login.html", data); err != nil {
 		e.log.ErrorContext(r.Context(), "render login page", slog.Any("error", err))
@@ -123,6 +136,8 @@ func (e *Edge) login(w http.ResponseWriter, r *http.Request, site ServedSite) {
 			e.passwordLogin(w, r, site, safeNext(r.PostForm.Get("next")))
 		case "email":
 			e.emailLogin(w, r, site, safeNext(r.PostForm.Get("next")))
+		case "oauth":
+			e.oauthLogin(w, r, site, safeNext(r.PostForm.Get("next")))
 		default:
 			http.Error(w, "Bad Request", http.StatusBadRequest)
 		}

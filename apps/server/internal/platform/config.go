@@ -63,6 +63,8 @@ type Config struct {
 	// DNSResolvers are the host:port DNS servers custom-domain verification
 	// asks (WARDLOCK_DNS_RESOLVERS); empty means the system resolvers.
 	DNSResolvers []string
+	// OAuth is the operator's OAuth and OIDC providers (A2.5).
+	OAuth OAuthConfig
 	// Secret is the decoded WARDLOCK_SECRET: the server key for token,
 	// code and session hashes. Empty when unset; commands that need it
 	// call RequireSecret.
@@ -162,6 +164,9 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	if cfg.DNSResolvers, err = parseResolvers(get("WARDLOCK_DNS_RESOLVERS", "")); err != nil {
+		return Config{}, err
+	}
+	if err := cfg.loadOAuth(get); err != nil {
 		return Config{}, err
 	}
 	if raw := get("WARDLOCK_SECRET", ""); raw != "" {

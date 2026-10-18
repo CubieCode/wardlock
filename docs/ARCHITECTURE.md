@@ -380,6 +380,25 @@ Custom domains (C1.9) live in `internal/sites`. `NormaliseHostname` lowercases, 
 
 OAuth and OIDC providers cannot register wildcard redirect URIs, so every provider redirect goes to `https://auth.<base domain>/callback/<provider>`, served by the edge. It validates `state` and PKCE, checks the allowlist, then creates a single-use, 60-second code bound to the target site and path and redirects to `https://<site>/.wardlock/callback?code=…`. The edge on the site host exchanges the code server-side and sets the host-only site cookie. No cookie is ever set on the base domain.
 
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant S as Site host (edge)
+  participant A as Auth origin (edge)
+  participant P as Provider
+  B->>S: POST /.wardlock/login method=oauth, provider, next
+  S-->>B: 303 to P (state, PKCE challenge, nonce), Set-Cookie __Host-wardlock_oauth
+  B->>P: sign in
+  P-->>B: 302 to A /callback/<provider>?code&state
+  B->>A: GET /callback/<provider>
+  A->>P: code + PKCE verifier (server side), ID token or GitHub API
+  A-->>B: 303 to S /.wardlock/callback?code (no cookie)
+  B->>S: GET /.wardlock/callback?code + binding cookie
+  S-->>B: 303 to next, Set-Cookie __Host-wardlock_site, binding cookie cleared
+```
+
+The pieces (A2.5): `internal/oauth` holds the provider clients (GitHub's OAuth app and API, and OIDC through `github.com/coreos/go-oidc/v3` and `golang.org/x/oauth2`, with lazy discovery) and implements the `access.Provider` interface; it decides nothing. `access` holds the flows: `StartOAuth` checks that the policy governing `next` enables OAuth and records the flow (provider, site, host, path, policy, PKCE verifier, nonce and the HMAC of the binding cookie) under the HMAC of its `state`; `FinishOAuth` takes the flow out (single use), has the provider identify the account, matches the allowlist and records a site code under its HMAC; `RedeemOAuth` takes the code out and issues the session through `IssueSession`. Flows (10 minutes) and codes (60 seconds) are in-memory maps with a bounded size, like the rate limiters: a restart drops what is in flight, and several instances would need shared storage for them. The edge answers the auth host before any site lookup, serving only `GET /callback/<provider>` there, and adds `/.wardlock/callback` and the `oauth` login method on sites.
+
 ## Owner API and code generation
 
 ```mermaid

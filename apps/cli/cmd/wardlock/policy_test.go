@@ -210,3 +210,54 @@ func TestPolicySetEmail(t *testing.T) {
 		})
 	}
 }
+
+func TestPolicySetOAuth(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		code int
+		want string
+		sent string
+	}{
+		{"oauth with organisations", []string{"policy", "set", "docs", "--protected", "--oauth", "--allow", "example.com", "--github-org", "Example-Org, ops", "--github-org", "crew"}, 0,
+			"docs / is now protected by OAuth sign-in.",
+			`{"allowlist":{"domains":["example.com"],"emails":[],"githubOrgs":["Example-Org","ops","crew"]},"methods":["oauth"],"path":"/","visibility":"protected"}`},
+		{"--allow alone keeps the organisations", []string{"policy", "set", "docs", "--protected", "--oauth", "--allow", "ana@example.com"}, 0,
+			"protected by OAuth sign-in",
+			`{"allowlist":{"domains":[],"emails":["ana@example.com"]},"methods":["oauth"],"path":"/","visibility":"protected"}`},
+		{"--github-org alone keeps the addresses and domains", []string{"policy", "set", "docs", "--protected", "--oauth", "--github-org", "ops"}, 0,
+			"protected by OAuth sign-in",
+			`{"allowlist":{"domains":["kept.example"],"emails":["kept@example.com"],"githubOrgs":["ops"]},"methods":["oauth"],"path":"/","visibility":"protected"}`},
+		{"emptying the organisations", []string{"policy", "set", "docs", "--protected", "--oauth", "--github-org", ""}, 0,
+			"protected by OAuth sign-in",
+			`{"allowlist":{"domains":["kept.example"],"emails":["kept@example.com"],"githubOrgs":[]},"methods":["oauth"],"path":"/","visibility":"protected"}`},
+		{"oauth keeping everything", []string{"policy", "set", "docs", "--protected", "--links", "--oauth"}, 0,
+			"protected by share links or OAuth sign-in",
+			`{"methods":["links","oauth"],"path":"/","visibility":"protected"}`},
+		{"public with oauth", []string{"policy", "set", "docs", "--public", "--oauth"}, 2, "a public policy takes no methods", ""},
+		{"public with organisations", []string{"policy", "set", "docs", "--public", "--github-org", "ops"}, 2, "a public policy has no allowlist", ""},
+		{"bad organisation", []string{"policy", "set", "docs", "--protected", "--oauth", "--github-org", "not an org"}, 2, "is not a GitHub organisation name", ""},
+		{"organisation with a double hyphen", []string{"policy", "set", "docs", "--protected", "--oauth", "--github-org", "a--b"}, 2, "is not a GitHub organisation name", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newFakeAPI(t)
+			site := srv.addSite("docs", "")
+			site.policy = apiclient.PolicyVisibilityProtected
+			site.allowlist = apiclient.PolicyAllowlist{Emails: []string{"kept@example.com"}, Domains: []string{"kept.example"}, GithubOrgs: &[]string{"old-org"}}
+			a, out, errOut := ciApp(t, srv)
+			err := run(t.Context(), a, tt.args)
+			if code := exitCode(errOut, err); code != tt.code || !strings.Contains(out.String()+errOut.String(), tt.want) {
+				t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
+			}
+			var got string
+			if len(site.set) == 1 {
+				b, _ := json.Marshal(site.set[0])
+				got = string(b)
+			}
+			if got != tt.sent {
+				t.Fatalf("sent %s, want %s", got, tt.sent)
+			}
+		})
+	}
+}

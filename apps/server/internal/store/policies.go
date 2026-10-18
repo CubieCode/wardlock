@@ -40,9 +40,13 @@ type Policy struct {
 	// stored policy's allowlist (read inside Set's transaction) instead of
 	// Allowlist.
 	KeepAllowlist bool
-	Version       int
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// KeepGitHubOrgs, only in a Policy passed to Policies.Set, keeps the
+	// stored policy's GitHub organisations while Allowlist replaces its
+	// addresses and domains (A2.5).
+	KeepGitHubOrgs bool
+	Version        int
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // Allowlist entry kinds, as the policy_allowlist.kind column spells them.
@@ -133,6 +137,10 @@ var ErrNoPasswordToKeep = errors.New("no password to keep")
 // would be enabled with no allowed addresses or domains, as can happen
 // when KeepAllowlist finds none stored.
 var ErrEmailNeedsAllowlist = errors.New("the email method needs allowed addresses or domains")
+
+// ErrOAuthNeedsAllowlist is returned by Policies.Set when the OAuth method
+// would be enabled with an empty allowlist (A2.5).
+var ErrOAuthNeedsAllowlist = errors.New("the oauth method needs an allowlist")
 
 // Policies stores site and path policies, one per site and prefix.
 type Policies interface {
@@ -304,8 +312,14 @@ func (r policiesRepo) Set(ctx context.Context, ownerID string, p Policy) (Policy
 			if out.KeepAllowlist {
 				out.Allowlist, out.KeepAllowlist = Allowlist{}, false
 			}
+			if out.KeepGitHubOrgs {
+				out.Allowlist.GitHubOrgs, out.KeepGitHubOrgs = nil, false
+			}
 			if out.EmailEnabled && len(out.Allowlist.Emails)+len(out.Allowlist.Domains) == 0 {
 				return ErrEmailNeedsAllowlist
+			}
+			if out.OAuthEnabled && out.Allowlist.Len() == 0 {
+				return ErrOAuthNeedsAllowlist
 			}
 			if err := mapErr("create policy", q.CreatePolicy(ctx, sqlcgen.CreatePolicyParams{
 				ID:              out.ID,
@@ -343,8 +357,14 @@ func (r policiesRepo) Set(ctx context.Context, ownerID string, p Policy) (Policy
 		if p.KeepAllowlist {
 			p.Allowlist, p.KeepAllowlist = cur.Allowlist, false
 		}
+		if p.KeepGitHubOrgs {
+			p.Allowlist.GitHubOrgs, p.KeepGitHubOrgs = cur.Allowlist.GitHubOrgs, false
+		}
 		if p.EmailEnabled && len(p.Allowlist.Emails)+len(p.Allowlist.Domains) == 0 {
 			return ErrEmailNeedsAllowlist
+		}
+		if p.OAuthEnabled && p.Allowlist.Len() == 0 {
+			return ErrOAuthNeedsAllowlist
 		}
 		if cur.SameSettings(p) {
 			out = cur

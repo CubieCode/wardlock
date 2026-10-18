@@ -19,8 +19,7 @@ const DefaultPrefix = "/"
 // maxPrefixBytes matches the policies.path_prefix CHECK.
 const maxPrefixBytes = 1024
 
-// Rule is what an owner sets for a path prefix. OAuth settings join it
-// with A2.5.
+// Rule is what an owner sets for a path prefix.
 type Rule struct {
 	// PathPrefix is "/" for the site default, or a directory prefix such
 	// as "/docs/".
@@ -41,6 +40,12 @@ type Rule struct {
 	// the email-code and OAuth methods); nil keeps the current one. A
 	// public policy has none.
 	Allowlist *store.Allowlist
+	// KeepGitHubOrgs keeps the policy's GitHub organisations while
+	// Allowlist replaces its addresses and domains (A2.5).
+	KeepGitHubOrgs bool
+	// OAuth enables sign-in through the operator's OAuth and OIDC
+	// providers (A2.5) for accounts the allowlist lets in.
+	OAuth bool
 }
 
 // newDefault is the policy a site has before its owner sets one: public,
@@ -89,14 +94,14 @@ func checkRule(r Rule) error {
 	}
 	switch r.Visibility {
 	case store.Public:
-		if r.Links || r.Password || r.Email {
+		if r.Links || r.Password || r.Email || r.OAuth {
 			return &TargetError{Err: ErrInvalidPolicy, Target: "methods", Message: "A public policy takes no methods."}
 		}
 		if r.Allowlist != nil && r.Allowlist.Len() > 0 {
 			return &TargetError{Err: ErrInvalidPolicy, Target: "allowlist", Message: "A public policy has no allowlist."}
 		}
 	case store.Protected:
-		if !r.Links && !r.Password && !r.Email {
+		if !r.Links && !r.Password && !r.Email && !r.OAuth {
 			return &TargetError{Err: ErrInvalidPolicy, Target: "methods", Message: "A protected policy needs at least one method."}
 		}
 	default:

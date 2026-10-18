@@ -51,6 +51,15 @@ linters:
               desc: access never imports the HTTP layer
             - pkg: wardlock.nz/server/internal/edge
               desc: access never imports the HTTP layer
+        oauth:
+          files: ['**/apps/server/internal/oauth/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/api
+              desc: oauth only talks to providers; access decides and the edge serves
+            - pkg: wardlock.nz/server/internal/edge
+              desc: oauth only talks to providers; access decides and the edge serves
+            - pkg: wardlock.nz/server/internal/store
+              desc: oauth keeps no state; flows live in access
         mail:
           files: ['**/apps/server/internal/mail/**']
           deny:
@@ -70,6 +79,7 @@ linters:
             - '**/apps/server/internal/tls/**'
             - '**/apps/server/internal/mail/**'
             - '**/apps/server/internal/access/**'
+            - '**/apps/server/internal/oauth/**'
             - '**/apps/server/internal/deploys/**'
             - '**/apps/server/internal/sites/**'
             - '**/apps/server/internal/owners/**'

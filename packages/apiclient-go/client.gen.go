@@ -201,6 +201,7 @@ func (e PasskeyCredentialType) Valid() bool {
 const (
 	PolicyMethodEmail    PolicyMethod = "email"
 	PolicyMethodLinks    PolicyMethod = "links"
+	PolicyMethodOauth    PolicyMethod = "oauth"
 	PolicyMethodPassword PolicyMethod = "password"
 )
 
@@ -210,6 +211,8 @@ func (e PolicyMethod) Valid() bool {
 	case PolicyMethodEmail:
 		return true
 	case PolicyMethodLinks:
+		return true
+	case PolicyMethodOauth:
 		return true
 	case PolicyMethodPassword:
 		return true
@@ -851,7 +854,7 @@ type PasskeySignInRequest struct {
 
 // Policy defines model for Policy.
 type Policy struct {
-	// Allowlist Who the email-code and OAuth methods let in: one list per policy, shared by both. A visitor is allowed when their verified address is listed exactly or is at a listed domain. At most 1,000 entries in all; the server normalises entries (lower case, sorted, without duplicates) and answers `400 invalid_policy` (`target: allowlist`) for an entry it cannot read.
+	// Allowlist Who the email-code and OAuth methods let in: one list per policy, shared by both. A visitor is allowed when their verified address is listed exactly or is at a listed domain, or (OAuth with GitHub only) when their GitHub account is an active member of a listed organisation. At most 1,000 entries in all; the server normalises entries (lower case, sorted, without duplicates) and answers `400 invalid_policy` (`target: allowlist`) for an entry it cannot read.
 	Allowlist PolicyAllowlist `json:"allowlist"`
 
 	// CreatedAt UTC milliseconds since the Unix epoch.
@@ -884,7 +887,7 @@ type Policy struct {
 	Visibility PolicyVisibility `json:"visibility"`
 }
 
-// PolicyAllowlist Who the email-code and OAuth methods let in: one list per policy, shared by both. A visitor is allowed when their verified address is listed exactly or is at a listed domain. At most 1,000 entries in all; the server normalises entries (lower case, sorted, without duplicates) and answers `400 invalid_policy` (`target: allowlist`) for an entry it cannot read.
+// PolicyAllowlist Who the email-code and OAuth methods let in: one list per policy, shared by both. A visitor is allowed when their verified address is listed exactly or is at a listed domain, or (OAuth with GitHub only) when their GitHub account is an active member of a listed organisation. At most 1,000 entries in all; the server normalises entries (lower case, sorted, without duplicates) and answers `400 invalid_policy` (`target: allowlist`) for an entry it cannot read.
 type PolicyAllowlist struct {
 	// Domains Email domains as lower-case A-labels (international names in their `xn--` form): `example.com` matches addresses at that domain only, `*.example.com` addresses at any of its subdomains but not at `example.com` itself (list both for both).
 	//
@@ -895,9 +898,14 @@ type PolicyAllowlist struct {
 	//
 	// Examples: ["ana@example.com"]
 	Emails []string `json:"emails"`
+
+	// GithubOrgs GitHub organisation logins, lower case, checked only for visitors signing in with GitHub (A2.5). Always present in responses; in a request, omitted keeps the policy's current organisations while `emails` and `domains` are replaced.
+	//
+	// Examples: ["example-org"]
+	GithubOrgs *[]string `json:"githubOrgs,omitempty"`
 }
 
-// PolicyMethod A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). `password`: the policy password, entered on the site's login page (A2.3). `email`: a 6-digit code emailed to an address the policy's `allowlist` lets in, entered on the site's login page (A2.4). OAuth joins with A2.5.
+// PolicyMethod A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). `password`: the policy password, entered on the site's login page (A2.3). `email`: a 6-digit code emailed to an address the policy's `allowlist` lets in, entered on the site's login page (A2.4). `oauth`: signing in with a GitHub, Google or OIDC account the `allowlist` lets in, through the providers the server's operator configured (A2.5); enabling it on a server with no provider answers `400 invalid_policy`.
 type PolicyMethod string
 
 // PolicyPage defines model for PolicyPage.
@@ -949,7 +957,7 @@ type SessionPage struct {
 
 // SetPolicyRequest defines model for SetPolicyRequest.
 type SetPolicyRequest struct {
-	// Allowlist Replaces the policy's allowlist; omitted keeps the current one. The `email` method needs at least one address or domain in it. Must be empty or omitted for a public policy.
+	// Allowlist Replaces the policy's allowlist; omitted keeps the current one (and an omitted `githubOrgs` keeps the current organisations). The `email` method needs at least one address or domain in it, and the `oauth` method at least one entry of any kind. Must be empty or omitted for a public policy.
 	Allowlist *PolicyAllowlist `json:"allowlist,omitempty"`
 
 	// Methods Methods to enable on a protected policy; omitted means `[links]` (share links are on by default). Must be empty or omitted for a public policy.
