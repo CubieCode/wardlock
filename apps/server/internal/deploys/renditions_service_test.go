@@ -5,6 +5,7 @@ package deploys_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"sync"
@@ -23,6 +24,15 @@ type vanishingBlobs struct {
 	*deploys.FSBlobStore
 	mu     sync.Mutex
 	vanish map[string]bool
+	puts   int
+	onOpen func() // runs before each Open
+}
+
+func (b *vanishingBlobs) Open(ctx context.Context, h string) (io.ReadSeekCloser, error) {
+	if b.onOpen != nil {
+		b.onOpen()
+	}
+	return b.FSBlobStore.Open(ctx, h)
 }
 
 func (b *vanishingBlobs) Put(ctx context.Context, h string, size int64, r io.Reader) error {
@@ -31,6 +41,7 @@ func (b *vanishingBlobs) Put(ctx context.Context, h string, size int64, r io.Rea
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.puts++
 	if b.vanish != nil && !b.vanish[h] {
 		b.vanish[h] = true
 		return b.Delete(ctx, h)
@@ -46,7 +57,7 @@ type renditionWorld struct {
 	owner store.Owner
 }
 
-func newRenditionWorld(t *testing.T, renditions bool) *renditionWorld {
+func newRenditionWorld(t *testing.T, renditions bool, opts ...func(*deploys.Config)) *renditionWorld {
 	t.Helper()
 	w := &renditionWorld{t: t, db: storetest.New(t), blobs: &vanishingBlobs{FSBlobStore: deploys.NewFSBlobStore(t.TempDir())}}
 	c := deploys.Config{
@@ -56,6 +67,9 @@ func newRenditionWorld(t *testing.T, renditions bool) *renditionWorld {
 	}
 	if renditions {
 		c.Renditions = w.db.Renditions()
+	}
+	for _, o := range opts {
+		o(&c)
 	}
 	w.svc = deploys.NewService(c)
 	w.owner = store.Owner{ID: store.NewID(), Email: "owner@example.test", CreatedAt: gcEpoch}
@@ -172,5 +186,97 @@ func TestActivateWithoutRenditions(t *testing.T) {
 	}
 	if rs, err := w.db.Renditions().List(t.Context(), d.ID); err != nil || len(rs) != 0 {
 		t.Fatalf("renditions = %v, %v; want none", rs, err)
+	}
+}
+
+func (b *vanishingBlobs) putCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.puts
+}
+
+// TestRenditionSizeLimit: a page over the limit keeps only its HTML, and
+// activation still succeeds.
+func TestRenditionSizeLimit(t *testing.T) {
+	small := `<h1>Small</h1>`
+	w := newRenditionWorld(t, true, func(c *deploys.Config) { c.MaxRenditionSource = int64(len(small)) })
+	d := w.deploy("notes", map[string]string{"index.html": small, "big.html": small + "<p>more</p>"})
+	if _, _, err := w.svc.Activate(t.Context(), w.owner.ID, "notes", d.ID); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := w.db.Renditions().List(t.Context(), d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rs) != 2 || rs[0].Path != "index.html" || rs[1].Path != "index.html" {
+		t.Fatalf("renditions = %+v, want index.html's only", rs)
+	}
+}
+
+// TestRenditionsAreStoredOnce: a rendition already in the blob store is
+// not written again.
+func TestRenditionsAreStoredOnce(t *testing.T) {
+	w := newRenditionWorld(t, true)
+	d := w.deploy("notes", renditionPages)
+	if _, _, err := w.svc.Activate(t.Context(), w.owner.ID, "notes", d.ID); err != nil {
+		t.Fatal(err)
+	}
+	d = w.deploy("notes", renditionPages) // same files: uploads re-verify them
+	before := w.blobs.putCount()
+	if _, _, err := w.svc.Activate(t.Context(), w.owner.ID, "notes", d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := w.blobs.putCount() - before; n != 0 {
+		t.Fatalf("activation stored %d blobs again", n)
+	}
+}
+
+// TestRenderStopsWhenCancelled: an activation cancelled while rendering
+// stops before the next page and fails.
+func TestRenderStopsWhenCancelled(t *testing.T) {
+	w := newRenditionWorld(t, true)
+	d := w.deploy("notes", renditionPages)
+	ctx, cancel := context.WithCancel(t.Context())
+	opens := 0
+	w.blobs.onOpen = func() { opens++; cancel() }
+	_, _, err := w.svc.Activate(ctx, w.owner.ID, "notes", d.ID)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Activate = %v, want context.Canceled", err)
+	}
+	if opens != 1 {
+		t.Fatalf("read %d pages after cancellation, want only the first", opens)
+	}
+	if rs, err := w.db.Renditions().List(t.Context(), d.ID); err != nil || len(rs) != 0 {
+		t.Fatalf("renditions = %v, %v; want none", rs, err)
+	}
+}
+
+// TestConcurrentActivationsRender: activations on several sites share the
+// render slots and all finish with their renditions.
+func TestConcurrentActivationsRender(t *testing.T) {
+	w := newRenditionWorld(t, true)
+	ds := map[string]store.Deploy{}
+	for _, site := range []string{"a", "b", "c", "d", "e"} {
+		ds[site] = w.deploy(site, renditionPages)
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, len(ds))
+	for site, d := range ds {
+		wg.Go(func() {
+			_, _, err := w.svc.Activate(t.Context(), w.owner.ID, site, d.ID)
+			errs <- err
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, d := range ds {
+		if rs, err := w.db.Renditions().List(t.Context(), d.ID); err != nil || len(rs) != 4 {
+			t.Fatalf("renditions = %v, %v", rs, err)
+		}
 	}
 }

@@ -9,8 +9,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"wardlock.nz/server/internal/deploys"
 )
@@ -81,6 +84,8 @@ func TestRenditionGoldens(t *testing.T) {
 	}
 }
 
+const tok = "wl_abcdefghij_fakeSecret-fake_secretfakesecretfakesecret00"
+
 func TestRender(t *testing.T) {
 	for _, tc := range []struct {
 		name, origin, path, page, md, txt string
@@ -102,7 +107,7 @@ func TestRender(t *testing.T) {
 		},
 		{
 			name: "tokens in fragments and credentials dropped", origin: "https://s.wardlock.test", path: "index.html",
-			page: `<a href="https://user:pw@o.test/#t=wl_a_b">F</a>`,
+			page: `<a href="https://user:pw@o.test/#t=wl_abcdefghij_s3cr3t">F</a>`,
 			md:   "[F](https://o.test/)\n", txt: "F (https://o.test/)\n",
 		},
 		{
@@ -134,6 +139,48 @@ func TestRender(t *testing.T) {
 			name: "aria-hidden and hidden", path: "index.html",
 			page: `<p aria-hidden="TRUE">x</p><span hidden>y</span><p aria-hidden="false">z</p>`,
 			md:   "z\n", txt: "z\n",
+		},
+		{
+			name: "token nested in another parameter", origin: "https://s.wardlock.test", path: "index.html",
+			page: `<a href="https://o.test/login?next=/a?t=` + tok + `&amp;x=1">L</a>`,
+			md:   "[L](https://o.test/login?x=1)\n", txt: "L (https://o.test/login?x=1)\n",
+		},
+		{
+			name: "percent-encoded token", origin: "https://s.wardlock.test", path: "index.html",
+			page: `<a href="https://o.test/l?next=%2Fa%3Ft%3D` + strings.ReplaceAll(tok, "_", "%5F") + `">L</a> <a href="https://o.test/l?n=%252Fa%253Ft%253D` + tok + `">D</a>`,
+			md:   "[L](https://o.test/l) [D](https://o.test/l)\n", txt: "L (https://o.test/l) D (https://o.test/l)\n",
+		},
+		{
+			name: "token as a parameter name, in the path and in mailto", origin: "https://s.wardlock.test", path: "index.html",
+			page: `<a href="https://o.test/x?` + tok + `=1&amp;k=v">N</a> <a href="/s/` + tok + `/x">P</a> <a href="mailto:a@example.test?subject=` + tok + `">M</a>`,
+			md:   "[N](https://o.test/x?k=v) [P](https://s.wardlock.test/s/wl_abcdefghij_redacted/x) [M](mailto:a@example.test)\n",
+			txt:  "N (https://o.test/x?k=v) P (https://s.wardlock.test/s/wl_abcdefghij_redacted/x) M (mailto:a@example.test)\n",
+		},
+		{
+			name: "link text that is its tokenised URL", origin: "https://s.wardlock.test", path: "index.html",
+			page: `<a href="https://s.wardlock.test/a?t=` + tok + `">https://s.wardlock.test/a?t=` + tok + `</a> <a href="/b?t=` + tok + `">/b?t=` + tok + `</a>`,
+			md:   "<https://s.wardlock.test/a> <https://s.wardlock.test/b>\n", txt: "https://s.wardlock.test/a https://s.wardlock.test/b\n",
+		},
+		{
+			name: "tokens in text, alt text, code and the title", origin: "https://s.wardlock.test", path: "index.html",
+			page: `<title>T ` + tok + `</title><p>Use ` + tok + ` <img src="/i.png" alt="` + tok + `"> <code>` + tok + `</code></p><pre>curl -H 'Authorization: Bearer ` + strings.ToUpper(tok[:3]) + tok[3:] + `'</pre>`,
+			md:   "# T wl\\_abcdefghij\\_redacted\n\nUse wl\\_abcdefghij\\_redacted ![wl\\_abcdefghij\\_redacted](https://s.wardlock.test/i.png) `wl_abcdefghij_redacted`\n\n```\ncurl -H 'Authorization: Bearer wl_abcdefghij_redacted'\n```\n",
+			txt:  "T wl_abcdefghij_redacted\n\nUse wl_abcdefghij_redacted [wl_abcdefghij_redacted] wl_abcdefghij_redacted\n\ncurl -H 'Authorization: Bearer wl_abcdefghij_redacted'\n",
+		},
+		{
+			name: "token split by a comment", path: "index.html",
+			page: `<p>` + tok[:20] + `<!-- x -->` + tok[20:] + `</p>`,
+			md:   "wl\\_abcdefghij\\_redacted\n", txt: "wl_abcdefghij_redacted\n",
+		},
+		{
+			name: "more Markdown escapes", path: "index.html",
+			page: `<p>~5 &amp;copy; &amp;#169; &amp;x</p><p>| a | b</p>`,
+			md:   "\\~5 \\&copy; \\&#169; &x\n\n\\| a | b\n", txt: "~5 &copy; &#169; &x\n\n| a | b\n",
+		},
+		{
+			name: "invalid UTF-8", path: "index.html",
+			page: "<p>a\xff\xfeb</p>",
+			md:   "a\uFFFDb\n", txt: "a\uFFFDb\n",
 		},
 		{
 			name: "table without header cells", path: "index.html",
@@ -172,15 +219,80 @@ func TestRenderDeepNesting(t *testing.T) {
 	}
 }
 
-// FuzzRender checks that any input converts without panicking and that
-// both renditions are empty or end in exactly one newline.
+// deepInline nests each of b, strong, em and a depth times around text.
+func deepInline(depth int) string {
+	var open, closing strings.Builder
+	for i := range depth {
+		tag := []string{"b", "strong", "em", "a"}[i%4]
+		if tag == "a" {
+			open.WriteString(`<a href="/x?t=` + tok + `">`)
+		} else {
+			open.WriteString("<" + tag + ">")
+		}
+		closing.WriteString("</" + tag + ">")
+	}
+	return "<p>" + open.String() + "deep<br>text<br>" + reverse(closing.String()) + "</p>"
+}
+
+// reverse closes tags innermost first.
+func reverse(closing string) string {
+	parts := strings.SplitAfter(closing, ">")
+	slices.Reverse(parts)
+	return strings.Join(parts, "")
+}
+
+// TestRenderDeepInline: nesting inline elements costs linear time, to the
+// recursion bound and beyond it.
+func TestRenderDeepInline(t *testing.T) {
+	u, _ := deploys.PageURL("https://s.wardlock.test", "index.html")
+	for _, page := range []string{
+		strings.Repeat("<b>", 100) + "x" + strings.Repeat("</b>", 100),
+		strings.Repeat("<em>", 500) + "x<br>" + strings.Repeat("</em>", 500),
+		deepInline(128), deepInline(129), deepInline(400),
+	} {
+		done := make(chan [2][]byte, 1)
+		go func() {
+			md, txt := deploys.Render([]byte(page), u)
+			done <- [2][]byte{md, txt}
+		}()
+		select {
+		case out := <-done:
+			for _, r := range out {
+				if !bytes.Contains(r, []byte("deep")) && !bytes.Contains(r, []byte("x")) {
+					t.Errorf("content lost: %q", r)
+				}
+				if bytes.Contains(r, []byte("fakeSecret")) {
+					t.Errorf("token leaked: %q", r)
+				}
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("rendering %d bytes of nested inline elements took over 2s", len(page))
+		}
+	}
+}
+
+// tokenShape matches a token as either rendition prints it; group 1 is the
+// secret.
+var tokenShape = regexp.MustCompile(`(?i)wl\\?_[a-z2-7]{10}\\?_((?:[A-Za-z0-9-]|\\?_)+)`)
+
+// FuzzRender checks that any input converts without panicking, that both
+// renditions are empty or end in exactly one newline, and that every
+// token in them is redacted.
 func FuzzRender(f *testing.F) {
 	f.Add([]byte(`<h1>x</h1><ul><li>a<ol><li>b</li></ol></li></ul><pre>` + "```" + `</pre><table><tr><td>|</td></tr></table>`))
 	f.Add([]byte(`<a href="?t=wl_a_b"><b> </b></a><br><br><code>` + "`" + `</code>`))
+	f.Add([]byte(strings.Repeat("<b>", 40) + "x<br>" + strings.Repeat("</b>", 40)))
+	f.Add([]byte(deepInline(130)))
+	f.Add([]byte(`<a href="/l?next=%2F%3Ft%3D` + tok + `">/l?next=%2F%3Ft%3D` + tok + `</a>`))
 	u, _ := deploys.PageURL("https://s.wardlock.test", "index.html")
 	f.Fuzz(func(t *testing.T, page []byte) {
 		md, txt := deploys.Render(page, u)
 		for _, out := range [][]byte{md, txt} {
+			for _, m := range tokenShape.FindAllSubmatch(out, -1) {
+				if string(bytes.ReplaceAll(m[1], []byte(`\_`), []byte("_"))) != "redacted" {
+					t.Fatalf("token %q leaked: %q", m[0], out)
+				}
+			}
 			if len(out) > 0 && (!bytes.HasSuffix(out, []byte("\n")) || bytes.HasSuffix(out, []byte("\n\n"))) {
 				t.Fatalf("rendition %q does not end in one newline", out)
 			}

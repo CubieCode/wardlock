@@ -5,7 +5,11 @@ package deploys
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"net/url"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -72,10 +76,16 @@ type converter struct {
 	origin *url.URL // the site's address; nil keeps links root-relative
 }
 
-// convert parses page, an HTML document served at pageURL, into blocks.
-// pageURL is absolute when the site's address is known and otherwise
-// root-relative.
+// convert parses page, an HTML document served at pageURL, into blocks
+// with every token redacted. pageURL is absolute when the site's address
+// is known and otherwise root-relative. Invalid UTF-8 becomes U+FFFD.
 func convert(page []byte, pageURL *url.URL) []block {
+	blocks := parse(bytes.ToValidUTF8(page, []byte("\uFFFD")), pageURL)
+	scrubBlocks(blocks)
+	return blocks
+}
+
+func parse(page []byte, pageURL *url.URL) []block {
 	doc, err := html.Parse(bytes.NewReader(page))
 	if err != nil {
 		// The parser refuses pathological nesting (over 512 open elements).
@@ -366,7 +376,8 @@ func (c *converter) table(n *html.Node, depth int) []block {
 						row = append(row, normalise(c.inlines(cell, depth+1)))
 					}
 				}
-				if len(row) > 0 {
+				// Rows with nothing in them would print as blank lines.
+				if slices.ContainsFunc(row, func(cell []inline) bool { return len(cell) > 0 }) {
 					rows = append(rows, row)
 				}
 			}
@@ -418,7 +429,13 @@ func (c *converter) inline(n *html.Node, depth int) []inline {
 		if !ok {
 			return c.inlines(n, depth)
 		}
-		return []inline{{kind: inlineLink, href: c.ref(href), children: c.inlines(n, depth)}}
+		link := inline{kind: inlineLink, href: c.ref(href), children: c.inlines(n, depth)}
+		if link.href != "" && c.showsOwnURL(n, href) {
+			// The text is the URL itself, which may hold what ref removed:
+			// show the cleaned URL instead.
+			link.children = nil
+		}
+		return []inline{link}
 	case atom.Strong, atom.B:
 		return []inline{{kind: inlineStrong, children: c.inlines(n, depth)}}
 	case atom.Em, atom.I:
@@ -436,13 +453,11 @@ func (c *converter) inline(n *html.Node, depth int) []inline {
 // scheme other than http, https, mailto and tel (javascript:, data: and the
 // like). Credentials in the URL are dropped, and so is every share-link
 // token: the t parameter of a link to the site itself, and any parameter
-// whose value is a Wardlock token, wherever the link points.
+// (name or value) or fragment holding a Wardlock token, even
+// percent-encoded, wherever the link points. A token in the path is
+// redacted.
 func (c *converter) ref(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return ""
-	}
-	u, err := c.base.Parse(raw)
+	u, err := c.resolve(raw)
 	if err != nil {
 		return ""
 	}
@@ -461,7 +476,7 @@ func (c *converter) ref(raw string) string {
 		} else {
 			changed := false
 			for k, vs := range q {
-				if (sameSite && k == "t") || anyToken(vs) {
+				if (sameSite && k == "t") || hasToken(k) || slices.ContainsFunc(vs, hasToken) {
 					delete(q, k)
 					changed = true
 				}
@@ -471,21 +486,102 @@ func (c *converter) ref(raw string) string {
 			}
 		}
 	}
-	if u.Fragment != "" && strings.Contains(u.Fragment, "wl_") {
-		u.Fragment = ""
+	if hasToken(u.Fragment) {
+		u.Fragment, u.RawFragment = "", ""
 	}
-	return u.String()
+	if hasToken(u.Path) {
+		u.Path, u.RawPath = scrubTokens(u.Path), ""
+	}
+	if hasToken(u.Opaque) {
+		u.Opaque = scrubTokens(u.Opaque)
+	}
+	return scrubTokens(u.String())
 }
 
-// anyToken reports whether a value looks like a Wardlock token (SPEC
-// "Tokens": wl_<public id>_<secret>).
-func anyToken(vs []string) bool {
-	for _, v := range vs {
-		if strings.HasPrefix(strings.TrimSpace(v), "wl_") {
+// resolve parses raw against the page's base.
+func (c *converter) resolve(raw string) (*url.URL, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, errors.New("empty reference")
+	}
+	u, err := c.base.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse reference: %w", err)
+	}
+	return u, nil
+}
+
+// tokenPattern matches a Wardlock token (SPEC "Tokens": wl_<public id>_<secret>)
+// anywhere, in any letter case, as the access log's scrubber does. The
+// secret runs to the end of the base64url alphabet, which includes "_".
+var tokenPattern = regexp.MustCompile(`(?i)wl_([a-z2-7]{10})_[A-Za-z0-9_-]+`)
+
+// redacted replaces a token's secret, keeping the public ID that names it.
+const redacted = "wl_${1}_redacted"
+
+// scrubTokens redacts every token in s.
+func scrubTokens(s string) string {
+	if !strings.Contains(strings.ToLower(s), "wl") {
+		return s
+	}
+	return tokenPattern.ReplaceAllString(s, redacted)
+}
+
+// hasToken reports whether s holds a token as is or after up to three
+// rounds of percent-decoding.
+func hasToken(s string) bool {
+	for range 4 {
+		if tokenPattern.MatchString(s) {
 			return true
 		}
+		d, err := url.QueryUnescape(s)
+		if err != nil || d == s {
+			return false
+		}
+		s = d
 	}
 	return false
+}
+
+// scrubBlocks redacts tokens in every text of blocks: body text, alt text,
+// code and link targets alike.
+func scrubBlocks(blocks []block) {
+	for i := range blocks {
+		b := &blocks[i]
+		b.code = scrubTokens(b.code)
+		scrubInlines(b.inlines)
+		scrubBlocks(b.children)
+		for _, item := range b.items {
+			scrubBlocks(item)
+		}
+		for _, row := range b.rows {
+			for _, cell := range row {
+				scrubInlines(cell)
+			}
+		}
+	}
+}
+
+func scrubInlines(in []inline) {
+	for i := range in {
+		in[i].text = scrubTokens(in[i].text)
+		in[i].href = scrubTokens(in[i].href)
+		scrubInlines(in[i].children)
+	}
+}
+
+// showsOwnURL reports whether link n's text is its href, as written or
+// resolved.
+func (c *converter) showsOwnURL(n *html.Node, href string) bool {
+	text := collapse(strings.TrimSpace(textContent(n)))
+	if text == "" {
+		return false
+	}
+	if text == strings.TrimSpace(href) {
+		return true
+	}
+	u, err := c.resolve(href)
+	return err == nil && text == u.String()
 }
 
 func attr(n *html.Node, key string) (string, bool) {
@@ -541,48 +637,64 @@ func collapse(s string) string {
 
 // normalise collapses whitespace the way a browser lays out inline
 // content: runs become one space, none at the start or end or around a
-// line break, and empty elements disappear.
+// line break, and empty elements disappear. Each step walks the content,
+// or one path through it, once, so nesting depth costs linear time.
 func normalise(in []inline) []inline {
 	n := normaliser{space: true}
-	out := dropEmpty(n.inlines(in))
-	for {
-		out = trimBreaks(out)
-		trimEnd(out)
-		trimmed := dropEmpty(out)
-		if len(trimmed) == len(out) && !endsInBreak(trimmed) {
-			return trimmed
-		}
-		out = trimmed
-	}
+	return trimTrailing(trimLeading(dropEmpty(n.inlines(in))))
 }
 
-// trimBreaks removes line breaks at the start and end of in, however
-// deeply they are nested.
-func trimBreaks(in []inline) []inline {
-	for len(in) > 0 && in[0].kind == inlineBreak {
-		in = in[1:]
-	}
-	for len(in) > 0 && in[len(in)-1].kind == inlineBreak {
-		in = in[:len(in)-1]
-	}
-	if len(in) > 0 {
-		for _, i := range []int{0, len(in) - 1} {
-			if c := in[i].children; len(c) > 0 {
-				in[i].children = trimBreaks(c)
+// trimLeading removes line breaks at the start of in, however deeply they
+// are nested, and the elements that leaves empty. It descends only into
+// the first element.
+func trimLeading(in []inline) []inline {
+	for len(in) > 0 {
+		x := in[0]
+		switch x.kind {
+		case inlineBreak:
+			in = in[1:]
+			continue
+		case inlineStrong, inlineEm, inlineDel, inlineLink:
+			x.children = trimLeading(x.children)
+			if len(x.children) == 0 && (x.kind != inlineLink || x.href == "") {
+				in = in[1:]
+				continue
 			}
+			in[0] = x
 		}
+		return in
 	}
 	return in
 }
 
-func endsInBreak(in []inline) bool {
-	if len(in) == 0 {
-		return false
+// trimTrailing removes line breaks and spaces at the end of in, however
+// deeply they are nested, and the elements that leaves empty. It descends
+// only into the last element.
+func trimTrailing(in []inline) []inline {
+	for len(in) > 0 {
+		last := len(in) - 1
+		x := in[last]
+		switch x.kind {
+		case inlineBreak:
+			in = in[:last]
+			continue
+		case inlineText:
+			if x.text = strings.TrimRight(x.text, " "); x.text == "" {
+				in = in[:last]
+				continue
+			}
+			in[last] = x
+		case inlineStrong, inlineEm, inlineDel, inlineLink:
+			x.children = trimTrailing(x.children)
+			if len(x.children) == 0 && (x.kind != inlineLink || x.href == "") {
+				in = in[:last]
+				continue
+			}
+			in[last] = x
+		}
+		return in
 	}
-	first, last := in[0], in[len(in)-1]
-	return first.kind == inlineBreak || last.kind == inlineBreak ||
-		(len(first.children) > 0 && endsInBreak(first.children)) ||
-		(len(last.children) > 0 && endsInBreak(last.children))
+	return in
 }
 
 type normaliser struct{ space bool } // the output so far ends in a space, or is empty

@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 
 	"wardlock.nz/server/internal/store"
@@ -36,8 +37,17 @@ func HasRenditions(p string) bool {
 // are absolute when it is.
 func Render(page []byte, pageURL *url.URL) (md, txt []byte) {
 	blocks := convert(page, pageURL)
-	return []byte(markdown(blocks)), []byte(plainText(blocks))
+	// convert redacted every token it read; this catches one the output
+	// joins from separate pieces, such as text either side of a comment.
+	md = []byte(mdTokenPattern.ReplaceAllString(markdown(blocks), "${1}redacted"))
+	txt = []byte(scrubTokens(plainText(blocks)))
+	return md, txt
 }
+
+// mdTokenPattern is tokenPattern as Markdown prints it, where escaping may
+// put a backslash before each underscore; the first group is everything
+// before the secret.
+var mdTokenPattern = regexp.MustCompile(`(?i)(wl\\?_[a-z2-7]{10}\\?_)(?:[A-Za-z0-9-]|\\?_)+`)
 
 // PageURL returns the address of a manifest path on a site at origin (such
 // as https://docs.example.com; "" for a root-relative address). index.html
@@ -55,10 +65,26 @@ func PageURL(origin, p string) (*url.URL, error) {
 	return u, nil
 }
 
-// render generates the renditions of every HTML file in the deploy, stores
-// them as blobs and records them, so the edge can serve them once the
-// deploy is active. It is idempotent: retrying after a failure renders the
-// same bytes again.
+// DefaultMaxRenditionSource is the largest HTML file that gets renditions
+// unless Config.MaxRenditionSource says otherwise. Conversion holds the
+// parsed page in memory, several times its size; a larger page keeps only
+// its HTML.
+const DefaultMaxRenditionSource = 5 << 20
+
+// renderSlots is how many pages one Service converts at once, across every
+// activation, bounding the memory rendering takes.
+const renderSlots = 2
+
+// rendered is one source page and its renditions, Markdown first.
+type rendered struct {
+	source     store.DeployFile
+	renditions []store.Rendition
+}
+
+// render generates the renditions of every HTML file in the deploy up to
+// the size limit, stores them as blobs and records them, so the edge can
+// serve them once the deploy is active. It is idempotent: retrying after a
+// failure renders the same bytes again. It stops when ctx ends.
 func (s *Service) render(ctx context.Context, ownerID string, site store.Site, deployID string) error {
 	if s.c.Renditions == nil {
 		return nil
@@ -71,12 +97,21 @@ func (s *Service) render(ctx context.Context, ownerID string, site store.Site, d
 	if s.c.SiteOrigin != nil {
 		origin = s.c.SiteOrigin(site.Name)
 	}
-	rs := make([]store.Rendition, 0, 2*len(sources))
+	limit := s.c.MaxRenditionSource
+	if limit <= 0 {
+		limit = DefaultMaxRenditionSource
+	}
+	var done []rendered
+	var rs []store.Rendition
 	for _, f := range sources {
+		if f.Size > limit {
+			continue // served as HTML only, even for ?format=
+		}
 		out, err := s.renderFile(ctx, origin, f)
 		if err != nil {
 			return err
 		}
+		done = append(done, rendered{f, out})
 		rs = append(rs, out...)
 	}
 	if err := s.c.Renditions.Put(ctx, ownerID, site.ID, deployID, rs, s.now()); err != nil {
@@ -86,14 +121,14 @@ func (s *Service) render(ctx context.Context, ownerID string, site store.Site, d
 	// no reference, between storing it and recording the rendition. Now that
 	// the rendition references it, it is safe from collection: store again
 	// whatever went missing.
-	for i, f := range sources {
-		for _, rd := range rs[2*i : 2*i+2] {
+	for _, r := range done {
+		for _, rd := range r.renditions {
 			ok, err := s.c.Blobs.Has(ctx, rd.SHA256)
 			if err != nil {
 				return fmt.Errorf("check rendition blob: %w", err)
 			}
 			if !ok {
-				if _, err := s.renderFile(ctx, origin, f); err != nil {
+				if _, err := s.renderFile(ctx, origin, r.source); err != nil {
 					return err
 				}
 				break
@@ -103,9 +138,19 @@ func (s *Service) render(ctx context.Context, ownerID string, site store.Site, d
 	return nil
 }
 
-// renderFile renders one HTML file and stores both renditions, returning
-// them Markdown first.
+// renderFile renders one HTML file and stores both renditions that are not
+// stored yet, returning them Markdown first. It waits for one of the
+// Service's render slots.
 func (s *Service) renderFile(ctx context.Context, origin string, f store.DeployFile) ([]store.Rendition, error) {
+	select {
+	case s.slots <- struct{}{}:
+		defer func() { <-s.slots }()
+	case <-ctx.Done():
+		return nil, fmt.Errorf("render %s: %w", f.Path, ctx.Err())
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("render %s: %w", f.Path, err)
+	}
 	page, err := s.readBlob(ctx, f)
 	if err != nil {
 		return nil, err
@@ -123,8 +168,14 @@ func (s *Service) renderFile(ctx context.Context, origin string, f store.DeployF
 		sum := sha256.Sum256(r.body)
 		h := hex.EncodeToString(sum[:])
 		size := int64(len(r.body))
-		if err := s.c.Blobs.Put(ctx, h, size, bytes.NewReader(r.body)); err != nil {
-			return nil, fmt.Errorf("store rendition: %w", err)
+		held, err := s.c.Blobs.Has(ctx, h)
+		if err != nil {
+			return nil, fmt.Errorf("check rendition: %w", err)
+		}
+		if !held {
+			if err := s.c.Blobs.Put(ctx, h, size, bytes.NewReader(r.body)); err != nil {
+				return nil, fmt.Errorf("store rendition: %w", err)
+			}
 		}
 		out = append(out, store.Rendition{Path: f.Path, Format: r.format, SHA256: h, Size: size})
 	}

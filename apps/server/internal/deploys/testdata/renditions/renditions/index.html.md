@@ -39,3 +39,5 @@ The northern ridge.
 ---
 
 A script link keeps its text. [External search](https://example.test/search?q=moss&t=42) keeps its own t. [A token anywhere](https://example.test/share) loses it. [Write to us](mailto:notes@example.test).
+
+Shared as <https://renditions.wardlock.test/>; the token wl\_abcdefghij\_redacted is redacted wherever it appears, as is [a nested one](https://renditions.wardlock.test/login). Copyright \&copy; stays literal, \~approximately.

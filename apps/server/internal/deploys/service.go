@@ -76,15 +76,21 @@ type Config struct {
 	// from its name, which renditions make links absolute against; nil
 	// leaves them root-relative.
 	SiteOrigin func(siteName string) string
+	// MaxRenditionSource is the largest HTML file, in bytes, that gets
+	// renditions; 0 means DefaultMaxRenditionSource.
+	MaxRenditionSource int64
 }
 
 // Service creates, uploads, activates, lists and rolls back deploys. Every
 // method takes the verified owner ID and addresses sites by name; another
 // owner's site is ErrNotFound.
-type Service struct{ c Config }
+type Service struct {
+	c     Config
+	slots chan struct{} // render slots (renditions.go)
+}
 
 // NewService returns a Service over c.
-func NewService(c Config) *Service { return &Service{c: c} }
+func NewService(c Config) *Service { return &Service{c: c, slots: make(chan struct{}, renderSlots)} }
 
 func (s *Service) site(ctx context.Context, ownerID, name string) (store.Site, error) {
 	site, err := s.c.Sites.GetByOwnerName(ctx, ownerID, name)

@@ -22,6 +22,8 @@ var renditionFiles = map[string]string{
 		`<p>Read the <a href="setup.html?t=` + fakeToken + `&amp;v=2">setup</a>.</p><script>secret()</script>`,
 	"setup.html": `<h1>Setup</h1><pre><code class="language-sh">./install</code></pre>`,
 	"site.css":   "body { color: teal }",
+	"share.html": `<p>Open <a href="/?t=` + fakeToken + `">/?t=` + fakeToken + `</a> or ` +
+		`<a href="/login?next=%2F%3Ft%3D` + fakeToken + `">sign in</a>; the token is <code>` + fakeToken + `</code>.</p>`,
 }
 
 // publishFiles creates a site and activates a deploy of files on it, as the
@@ -79,6 +81,18 @@ func TestRenditionsThroughTheEdge(t *testing.T) {
 	r.expect(t, 200, "Field notes", "")
 	if links := strings.Join(r.h.Values("Link"), ", "); links != `</?format=md>; rel="alternate"; type="text/markdown", </?format=txt>; rel="alternate"; type="text/plain"` {
 		t.Fatalf("Link = %q", links)
+	}
+
+	// Tokens a page itself contains, in link text, nested parameters or
+	// code, never reach its renditions.
+	r = p.do(http.MethodGet, host, "/share?format=md", "", nil)
+	r.expect(t, 200, "Open [/](/)", "fakesecret")
+	if want := "Open [/](/) or [sign in](/login); the token is `wl_abcdefghij_redacted`.\n"; r.body != want {
+		t.Fatalf("markdown = %q, want %q", r.body, want)
+	}
+	r = p.do(http.MethodGet, host, "/share?format=txt", "", nil)
+	if want := "Open / or sign in (/login); the token is wl_abcdefghij_redacted.\n"; r.code != 200 || r.body != want {
+		t.Fatalf("text = %d %q, want %q", r.code, r.body, want)
 	}
 
 	// Protected: no rendition without access, for any client.

@@ -4,6 +4,7 @@
 package deploys
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -205,10 +206,12 @@ func (w *mdWriter) wrap(delim string, children []inline) {
 }
 
 func (w *mdWriter) link(x inline) {
+	if x.href == "" {
+		w.write(oneLine(mdInlines(x.children, w.start)))
+		return
+	}
 	text := oneLine(mdInlines(x.children, false))
 	switch {
-	case x.href == "":
-		w.write(oneLine(mdInlines(x.children, w.start)))
 	case text == "" || text == escapeMD(x.href, false):
 		if strings.Contains(x.href, ":") {
 			w.write("<" + strings.ReplaceAll(x.href, ">", "%3E") + ">")
@@ -253,8 +256,8 @@ func longestRun(s string, c byte) int {
 func escapeMD(s string, atStart bool) string {
 	var b strings.Builder
 	for i := range len(s) {
-		switch c := s[i]; c {
-		case '\\', '`', '*', '_', '[', ']', '<', '>':
+		switch c := s[i]; {
+		case strings.IndexByte("\\`*_[]<>~", c) >= 0, c == '&' && entityAt(s[i:]):
 			b.WriteByte('\\')
 			b.WriteByte(c)
 		default:
@@ -266,7 +269,7 @@ func escapeMD(s string, atStart bool) string {
 		return out
 	}
 	switch {
-	case strings.HasPrefix(out, "#"), strings.HasPrefix(out, "+ "), strings.HasPrefix(out, "- "),
+	case strings.HasPrefix(out, "#"), strings.HasPrefix(out, "|"), strings.HasPrefix(out, "+ "), strings.HasPrefix(out, "- "),
 		strings.HasPrefix(out, "="), out == "-", out == "+":
 		return `\` + out
 	}
@@ -280,6 +283,15 @@ func escapeMD(s string, atStart bool) string {
 	}
 	return out
 }
+
+// entityAt reports whether s starts with what CommonMark reads as an
+// entity or numeric character reference (&copy;, &#169;, &#xA9;), which
+// decoded text such as "&copy;" must not turn back into.
+func entityAt(s string) bool {
+	return entityPattern.MatchString(s)
+}
+
+var entityPattern = regexp.MustCompile(`^&(?:[A-Za-z][A-Za-z0-9]{0,31}|#[0-9]{1,7}|#[xX][0-9A-Fa-f]{1,6});`)
 
 // Plain text.
 
