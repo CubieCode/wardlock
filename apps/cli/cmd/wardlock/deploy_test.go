@@ -610,7 +610,7 @@ func TestDeployToNewHostnameUnderBaseDomain(t *testing.T) {
 		{"not under the base domain", []apiclient.Site{{Name: "docs", Hostname: "docs." + fakeBase}}, "blog.example.com", "not a site address under " + fakeBase + ": to create a site, deploy to its name, such as blog"},
 		{"two labels", []apiclient.Site{{Name: "docs", Hostname: "docs." + fakeBase}}, "a.b." + fakeBase, "not a site address under"},
 		{"label not a site name", []apiclient.Site{{Name: "docs", Hostname: "docs." + fakeBase}}, "x_y." + fakeBase, "not a site address under"},
-		{"sites disagree", []apiclient.Site{{Name: "docs", Hostname: "docs." + fakeBase}, {Name: "old", Hostname: "old.other.test"}}, "blog." + fakeBase, "with no sites to go by"},
+		{"sites disagree", []apiclient.Site{{Name: "docs", Hostname: "docs." + fakeBase}, {Name: "old", Hostname: "old.other.test"}}, "blog." + fakeBase, "your sites are on different base domains"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -661,6 +661,7 @@ func TestUploadRetryPolicy(t *testing.T) {
 	}{
 		{"dropped connection is retried", []int{dropConnection}, true, 1, []time.Duration{time.Second}, ""},
 		{"429 honours Retry-After, capped", []int{http.StatusTooManyRequests}, true, 1, []time.Duration{maxRetryAfter}, ""},
+		{"429 without Retry-After backs off", []int{rateLimitedBare, rateLimitedBare}, true, 1, []time.Duration{time.Second, 2 * time.Second}, ""},
 		{"503 then 504 retried with backoff", []int{503, 504}, true, 1, []time.Duration{time.Second, 2 * time.Second}, ""},
 		{"501 is not retried", []int{http.StatusNotImplemented}, false, 0, nil, "Internal server error."},
 		{"file changed", []int{hashMismatch}, false, 0, nil, "index.html changed while deploying: run wardlock deploy again"},

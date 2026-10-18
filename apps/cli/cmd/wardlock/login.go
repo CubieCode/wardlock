@@ -205,6 +205,13 @@ func runLogout(ctx context.Context, a *app, args []string) error {
 		fs.Usage()
 		return errUsage
 	}
+	if *serverFlag != "" {
+		checked, err := checkServer(*serverFlag)
+		if err != nil {
+			return usageErrorf("%v", err)
+		}
+		*serverFlag = checked
+	}
 	rec, err := a.creds.read()
 	if errors.Is(err, errNotLoggedIn) {
 		if *asJSON {
@@ -217,7 +224,7 @@ func runLogout(ctx context.Context, a *app, args []string) error {
 		return err
 	}
 	server := rec.Server
-	if *serverFlag != "" && normaliseServer(*serverFlag) != server {
+	if *serverFlag != "" && *serverFlag != server {
 		return fmt.Errorf("logged in to %s, not %s: nothing was changed", server, *serverFlag)
 	}
 	warnPlainHTTP(a.stderr, server)

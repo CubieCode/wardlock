@@ -44,7 +44,8 @@ type fakeAPI struct {
 	// status, or dropConnection or hashMismatch.
 	failUploads []int
 	// barrier, when set, holds each upload until that many are in flight
-	// at once (or a second passes), so a test can see real concurrency.
+	// at once, so a test can see real concurrency. A generous fail-safe
+	// releases them anyway, so a broken CLI fails the test, not hangs it.
 	barrier int
 	reached chan struct{}
 	created []apiclient.CreateDeployRequest
@@ -64,6 +65,8 @@ type fakeSite struct {
 const (
 	dropConnection = -1
 	hashMismatch   = -2
+	// rateLimitedBare is a 429 without Retry-After.
+	rateLimitedBare = -3
 	// fakePage is the fake's page size, so short lists still page.
 	fakePage = 2
 )
@@ -285,7 +288,7 @@ func (f *fakeAPI) upload(w http.ResponseWriter, r *http.Request) {
 	if reached != nil {
 		select {
 		case <-reached:
-		case <-time.After(time.Second):
+		case <-time.After(30 * time.Second):
 		}
 	}
 	body, err := io.ReadAll(r.Body)
@@ -309,6 +312,9 @@ func (f *fakeAPI) upload(w http.ResponseWriter, r *http.Request) {
 	case http.StatusTooManyRequests:
 		w.Header().Set("Retry-After", "120")
 		reply(w, fail, apiErr("rate_limited", "Too many requests."))
+		return
+	case rateLimitedBare:
+		reply(w, http.StatusTooManyRequests, apiErr("rate_limited", "Too many requests."))
 		return
 	default:
 		reply(w, fail, apiErr("internal", "Internal server error."))

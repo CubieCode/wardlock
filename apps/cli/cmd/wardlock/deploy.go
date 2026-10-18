@@ -389,8 +389,10 @@ func (c *conn) newSiteName(ctx context.Context, host string) (string, error) {
 	}
 	base, ok := baseDomain(sites)
 	switch {
-	case !ok:
+	case len(sites) == 0:
 		return "", fmt.Errorf("none of your sites on %s is served at %s, and with no sites to go by the CLI cannot tell whether it is under the server's base domain: to create a site, deploy to its name%s", c.server, host, hint)
+	case !ok:
+		return "", fmt.Errorf("none of your sites on %s is served at %s, and your sites are on different base domains, so the CLI cannot tell which is the server's: to create a site, deploy to its name%s", c.server, host, hint)
 	case rest != base || !siteNamePattern.MatchString(label):
 		return "", fmt.Errorf("none of your sites on %s is served at %s, and it is not a site address under %s: to create a site, deploy to its name%s", c.server, host, base, hint)
 	}

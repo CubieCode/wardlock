@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -374,5 +375,27 @@ func TestLogoutRefusesAnotherServer(t *testing.T) {
 	}
 	if server, _, err := a.creds.load(); err != nil || server != srv.URL {
 		t.Fatalf("login forgotten: %q %v", server, err)
+	}
+}
+
+func TestLogoutRejectsMalformedServer(t *testing.T) {
+	srv := newFakeServer(t, http.StatusOK)
+	a, _, errOut := testApp(t)
+	if _, err := a.creds.save(srv.URL, testToken); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"wardlock.example.test", "https://x.example.test/path", "ftp://x.example.test"} {
+		errOut.Reset()
+		err := run(t.Context(), a, []string{"logout", "--server", bad})
+		if code := exitCode(errOut, err); code != 2 || !strings.Contains(errOut.String(), "is not a server address") {
+			t.Fatalf("%q: exit %d, stderr %q", bad, code, errOut)
+		}
+	}
+	if server, _, err := a.creds.load(); err != nil || server != srv.URL {
+		t.Fatalf("login forgotten: %q %v", server, err)
+	}
+	// A matching server with a trailing slash still logs out.
+	if err := run(t.Context(), a, []string{"logout", "--server", srv.URL + "/"}); err != nil || len(srv.signOuts) != 1 {
+		t.Fatalf("logout: %v, sign-outs %d", err, len(srv.signOuts))
 	}
 }
