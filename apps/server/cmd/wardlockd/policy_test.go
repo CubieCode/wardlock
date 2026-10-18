@@ -78,7 +78,7 @@ func newPolicyEdge(t *testing.T) *policyEdge {
 	notifier := deploys.NewLocalNotifier()
 	log := slog.New(slog.NewTextHandler(p.logs, nil))
 	acc, err := access.New(access.Config{
-		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), Notifier: notifier,
+		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), EmailCodes: db.EmailCodes(), Notifier: notifier,
 		Secret: []byte(testSecret), Now: p.now, Log: log,
 	})
 	if err != nil {

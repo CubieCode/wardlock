@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/crypto/argon2"
 
+	"wardlock.nz/server/internal/mail"
 	"wardlock.nz/server/internal/store"
 )
 
@@ -64,7 +65,13 @@ type Config struct {
 	// AccessLog backs LinkAccessLog (D3.3); nil when the caller never reads
 	// the access log.
 	AccessLog store.AccessLog
-	Notifier  notifier
+	// EmailCodes stores visitor email codes and the sessions they earn
+	// (A2.4).
+	EmailCodes store.EmailCodes
+	// Mailer sends visitor email codes; without one, codes are stored but
+	// never sent (an error is logged).
+	Mailer   mail.Mailer
+	Notifier notifier
 	// Secret is the server key (WARDLOCK_SECRET): it signs session cookies
 	// and keys the stored session token hashes.
 	Secret []byte
@@ -94,6 +101,8 @@ type Service struct {
 	hashSlots   chan struct{}
 	hashWait    time.Duration
 	unsubscribe func()
+	// bg tracks background email-code sends.
+	bg sync.WaitGroup
 
 	mu       sync.Mutex
 	gen      uint64                    // bumped by every invalidation
@@ -110,6 +119,9 @@ func New(cfg Config) (*Service, error) {
 	}
 	if cfg.PasswordSessions == nil {
 		return nil, errors.New("access: Config.PasswordSessions is required")
+	}
+	if cfg.EmailCodes == nil {
+		return nil, errors.New("access: Config.EmailCodes is required")
 	}
 	s := &Service{
 		c:      cfg,
@@ -137,8 +149,12 @@ func New(cfg Config) (*Service, error) {
 	return s, nil
 }
 
-// Close stops listening for invalidations.
-func (s *Service) Close() { s.unsubscribe() }
+// Close stops listening for invalidations and waits for background
+// email-code sends to finish.
+func (s *Service) Close() {
+	s.unsubscribe()
+	s.bg.Wait()
+}
 
 func (s *Service) invalidate(siteID string) {
 	s.mu.Lock()
@@ -475,6 +491,14 @@ func (s *Service) IssueSession(ctx context.Context, n NewSession) (Cookie, error
 		if errors.Is(err, store.ErrNotFound) {
 			return Cookie{}, ErrPasswordChanged
 		}
+	case store.SessionEmail:
+		if n.Subject == "" {
+			return Cookie{}, errors.New("issue site session: an email session needs the verified address")
+		}
+		err = s.c.EmailCodes.CreateSession(ctx, row)
+		if errors.Is(err, store.ErrNotFound) {
+			return Cookie{}, ErrPolicyChanged
+		}
 	default:
 		err = s.c.Sessions.CreateSite(ctx, row)
 	}
@@ -546,7 +570,9 @@ func (s *Service) List(ctx context.Context, ownerID, siteName, afterPrefix strin
 // policy's version, which ends every site session bound to it on the next
 // request; setting identical settings changes nothing. A new password
 // always counts as a change, and changing or removing the password also
-// revokes the policy's password sessions outright.
+// revokes the policy's password sessions outright; so does a changed
+// allowlist for the email and OAuth sessions. A public policy's allowlist
+// is cleared.
 func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (store.Policy, error) {
 	if err := checkRule(r); err != nil {
 		return store.Policy{}, err
@@ -562,10 +588,22 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 	if err != nil {
 		return store.Policy{}, err
 	}
+	allow, keep := store.Allowlist{}, false
+	switch {
+	case r.Visibility == store.Public:
+		// A public policy has no allowlist: cleared.
+	case r.Allowlist == nil:
+		keep = true
+	default:
+		if allow, err = checkAllowlist(*r.Allowlist); err != nil {
+			return store.Policy{}, err
+		}
+	}
 	p, err := s.c.Policies.Set(ctx, ownerID, store.Policy{
 		ID: store.NewID(), SiteID: site.ID, PathPrefix: r.PathPrefix,
 		Visibility: r.Visibility, LinksEnabled: r.Links,
 		PasswordEnabled: r.Password, PasswordHash: hash,
+		EmailEnabled: r.Email, Allowlist: allow, KeepAllowlist: keep,
 		UpdatedAt: s.now(),
 	})
 	if errors.Is(err, store.ErrNotFound) {
@@ -574,6 +612,9 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 	if errors.Is(err, store.ErrNoPasswordToKeep) {
 		return store.Policy{}, errNeedsPassword
 	}
+	if errors.Is(err, store.ErrEmailNeedsAllowlist) {
+		return store.Policy{}, errNeedsAllowlist
+	}
 	if err != nil {
 		return store.Policy{}, fmt.Errorf("set policy: %w", err)
 	}
@@ -581,7 +622,8 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 	s.log.LogAttrs(ctx, slog.LevelInfo, "policy set",
 		slog.String("site_id", site.ID), slog.String("policy_id", p.ID),
 		slog.String("path", p.PathPrefix), slog.String("visibility", string(p.Visibility)),
-		slog.Bool("password", p.PasswordEnabled), slog.Int("version", p.Version))
+		slog.Bool("password", p.PasswordEnabled), slog.Bool("email", p.EmailEnabled),
+		slog.Int("allowlist_entries", p.Allowlist.Len()), slog.Int("version", p.Version))
 	return p, nil
 }
 

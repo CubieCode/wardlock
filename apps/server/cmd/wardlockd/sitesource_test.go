@@ -36,7 +36,7 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 		Now:    func() time.Time { clock = clock.Add(time.Minute); return clock },
 	})
 	acc, err := access.New(access.Config{
-		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), Notifier: notifier,
+		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), EmailCodes: db.EmailCodes(), Notifier: notifier,
 		Secret: []byte(testSecret), Now: time.Now,
 	})
 	if err != nil {

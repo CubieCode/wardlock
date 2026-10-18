@@ -89,7 +89,7 @@ func newRealLimiterHarness(t *testing.T, limits access.Limits) *passwordHarness 
 	rv := &racingSessions{PasswordSessions: db.PasswordSessions()}
 	wr := &racingPolicies{Policies: h.policies}
 	svc, err := access.New(access.Config{
-		Sites: db.Sites(), Policies: wr, Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: rv,
+		Sites: db.Sites(), Policies: wr, Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: rv, EmailCodes: db.EmailCodes(),
 		Notifier: &notifier{}, Secret: secret, Now: h.clock.Now,
 		Log:    slog.New(slog.NewTextHandler(h.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		Limits: limits,

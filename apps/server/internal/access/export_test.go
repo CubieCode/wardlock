@@ -6,6 +6,8 @@ package access
 import (
 	"sync"
 	"time"
+
+	"wardlock.nz/server/internal/mail"
 )
 
 // FakeLimiter is a fixed-window attemptLimiter on a test clock that
@@ -73,3 +75,9 @@ func SetDerive(s *Service, fn func(password, salt []byte, time, memory uint32, t
 func SetHashSlots(s *Service, n int, wait time.Duration) {
 	s.hashSlots, s.hashWait = make(chan struct{}, n), wait
 }
+
+// SetMailer makes s send visitor email codes with m.
+func SetMailer(s *Service, m mail.Mailer) { s.c.Mailer = m }
+
+// WaitSends waits for s's background email-code sends.
+func WaitSends(s *Service) { s.bg.Wait() }

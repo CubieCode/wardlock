@@ -89,7 +89,7 @@ func fullIPTable(t *testing.T) (s *Service, siteID, token string) {
 	t.Helper()
 	db := storetest.New(t)
 	s, err := New(Config{
-		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), Notifier: &syncNotifier{},
+		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), EmailCodes: db.EmailCodes(), Notifier: &syncNotifier{},
 		Secret: []byte("limit-test-server-key-0123456789abcdef"), Now: time.Now,
 	})
 	if err != nil {

@@ -214,7 +214,9 @@ func emailCodesContract(t *testing.T, open Opener) {
 		// A second code replaces the first, attempts and all.
 		_, err = f.r.EmailCodes.AddAttempt(ctx, first.ID, 5, now)
 		f.must(err)
-		second := code(func(c *store.VisitorEmailCode) { c.CreatedAt, c.ExpiresAt = now.Add(time.Minute), now.Add(11*time.Minute) })
+		second := code(func(c *store.VisitorEmailCode) {
+			c.CreatedAt, c.ExpiresAt = now.Add(time.Minute), now.Add(11*time.Minute)
+		})
 		f.must(f.r.EmailCodes.Put(ctx, second))
 		got, err = f.r.EmailCodes.Get(ctx, p.SiteID, p.ID, "address-1")
 		f.must(err)
