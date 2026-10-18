@@ -188,7 +188,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.4: Email-code policy
 
-- Status: `review`
+- Status: `done`
 - Owner: feat/a2.4-email-code-policy
 - PR: https://github.com/CubieCode/wardlock/pull/52
 - Depends on: A2.1, F0.4
