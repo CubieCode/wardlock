@@ -24,13 +24,18 @@ import (
 var version = "dev"
 
 // command is one subcommand. Add a command here only once it works end to
-// end; help lists exactly these.
+// end; help lists exactly these, in this order. Each command lives in its
+// own file and needs only its line here.
 type command struct {
 	name, summary string
 	run           func(ctx context.Context, a *app, args []string) error
 }
 
 var commands = []command{
+	{"deploy", "Publish a directory to a site", runDeploy},
+	{"list", "List your sites, or one site's deploys", runList},
+	{"rollback", "Reactivate an earlier deploy of a site", runRollback},
+	{"teardown", "Delete a site with all its deploys", runTeardown},
 	{"login", "Log in to a Wardlock server in your browser", runLogin},
 	{"logout", "Revoke and forget the stored token", runLogout},
 	{"version", "Print the CLI version, and the server's with --server", runVersion},
@@ -43,25 +48,46 @@ func usage() string {
 		fmt.Fprintf(&b, "  %-9s %s\n", c.name, c.summary)
 	}
 	fmt.Fprintf(&b, "  %-9s %s\n", "help", "Show this help")
-	b.WriteString("\nRun \"wardlock <command> --help\" for a command's flags.\n" +
-		"WARDLOCK_TOKEN, when set, is used instead of the stored token.\n")
+	b.WriteString("\nRun \"wardlock <command> --help\" for a command's flags. Every command\n" +
+		"takes --json for machine-readable output, and never prompts with it or\n" +
+		"without a terminal. WARDLOCK_TOKEN, when set, is used instead of the\n" +
+		"stored token. Exit status: 0 success, 1 failure, 2 usage error.\n")
 	return b.String()
 }
 
+// errUsage is a usage error: exit status 2. Commands that print their own
+// message return it bare; usageErrorf carries a message for main to print.
 var errUsage = errors.New("usage")
+
+type usageError struct{ msg string }
+
+func (e *usageError) Error() string        { return e.msg }
+func (e *usageError) Is(target error) bool { return target == errUsage }
+
+func usageErrorf(format string, args ...any) error {
+	return &usageError{fmt.Sprintf(format, args...)}
+}
 
 // app is everything a command touches outside its arguments, so tests can
 // replace it.
 type app struct {
 	getenv         func(string) string
+	getwd          func() (string, error)
+	stdin          io.Reader
 	stdout, stderr io.Writer
 	// interactive is true when stdout is a terminal: only then may the
 	// CLI open a browser.
 	interactive bool
-	http        *http.Client
-	creds       credentialStore
-	openBrowser func(url string) error
-	hostname    func() (string, error)
+	// canPrompt is true when stdin and stderr are terminals: only then
+	// may a command ask a question (and never with --json).
+	canPrompt bool
+	// liveProgress is true when stderr is a terminal, so progress can
+	// redraw one line.
+	liveProgress bool
+	http         *http.Client
+	creds        credentialStore
+	openBrowser  func(url string) error
+	hostname     func() (string, error)
 	// sleep waits for d or until ctx ends.
 	sleep func(ctx context.Context, d time.Duration) error
 	now   func() time.Time
@@ -70,25 +96,41 @@ type app struct {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	a := &app{
-		getenv:      os.Getenv,
-		stdout:      os.Stdout,
-		stderr:      os.Stderr,
-		interactive: isTerminal(os.Stdout),
-		http:        &http.Client{Timeout: 30 * time.Second},
-		creds:       credentialStore{keyring: systemKeyring{}, dir: func() (string, error) { return configDir(os.Getenv) }},
-		openBrowser: openBrowser,
-		hostname:    os.Hostname,
-		sleep:       sleep,
-		now:         time.Now,
+		getenv:       os.Getenv,
+		getwd:        os.Getwd,
+		stdin:        os.Stdin,
+		stdout:       os.Stdout,
+		stderr:       os.Stderr,
+		interactive:  isTerminal(os.Stdout),
+		canPrompt:    isTerminal(os.Stdin) && isTerminal(os.Stderr),
+		liveProgress: isTerminal(os.Stderr),
+		http:         &http.Client{Timeout: 30 * time.Second},
+		creds:        credentialStore{keyring: systemKeyring{}, dir: func() (string, error) { return configDir(os.Getenv) }},
+		openBrowser:  openBrowser,
+		hostname:     os.Hostname,
+		sleep:        sleep,
+		now:          time.Now,
 	}
 	err := run(ctx, a, os.Args[1:])
 	stop()
+	os.Exit(exitCode(os.Stderr, err))
+}
+
+// exitCode prints err and returns the exit status for it (docs/SPEC.md
+// "CLI"): 0 success, 1 failure, 2 usage error.
+func exitCode(stderr io.Writer, err error) int {
 	switch {
+	case err == nil:
+		return 0
 	case errors.Is(err, errUsage):
-		os.Exit(2)
-	case err != nil:
-		fmt.Fprintln(os.Stderr, "wardlock:", err)
-		os.Exit(1)
+		var ue *usageError
+		if errors.As(err, &ue) {
+			fmt.Fprintln(stderr, "wardlock:", err)
+		}
+		return 2
+	default:
+		fmt.Fprintln(stderr, "wardlock:", err)
+		return 1
 	}
 }
 

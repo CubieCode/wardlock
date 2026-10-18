@@ -9,6 +9,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -17,14 +19,21 @@ import (
 )
 
 // testApp returns an app with no environment, a fake keychain, a config
-// directory in t's temporary directory, no browser and an instant clock.
+// directory in t's temporary directory, an empty working directory there
+// too, no terminal, no browser and an instant clock.
 func testApp(t *testing.T) (*app, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
 	var out, errOut bytes.Buffer
 	dir := t.TempDir()
+	wd := filepath.Join(dir, "project")
+	if err := os.Mkdir(wd, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	now := time.UnixMilli(1_800_000_000_000)
 	a := &app{
 		getenv:      noEnv,
+		getwd:       func() (string, error) { return wd, nil },
+		stdin:       strings.NewReader(""),
 		stdout:      &out,
 		stderr:      &errOut,
 		http:        http.DefaultClient,
@@ -60,7 +69,7 @@ func TestHelpListsExactlyTheBuiltCommands(t *testing.T) {
 	for _, m := range listed {
 		got = append(got, m[1])
 	}
-	want := []string{"login", "logout", "version", "help"}
+	want := []string{"deploy", "list", "rollback", "teardown", "login", "logout", "version", "help"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("help lists %q, want %q\n%s", got, want, out)
 	}
@@ -75,7 +84,7 @@ func TestNoArgumentsIsAUsageError(t *testing.T) {
 
 func TestUnknownCommand(t *testing.T) {
 	a, _, _ := testApp(t)
-	if err := run(t.Context(), a, []string{"deploy"}); !errors.Is(err, errUsage) {
+	if err := run(t.Context(), a, []string{"share"}); !errors.Is(err, errUsage) {
 		t.Fatalf("error = %v, want errUsage", err)
 	}
 }
@@ -98,4 +107,60 @@ func TestVersionWithServer(t *testing.T) {
 func contextWithCancel(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Helper()
 	return context.WithCancel(t.Context())
+}
+
+func TestVersionJSON(t *testing.T) {
+	a, out, _ := testApp(t)
+	if err := run(t.Context(), a, []string{"version", "--json"}); err != nil {
+		t.Fatal(err)
+	}
+	assertJSONKeys(t, out.Bytes(), "version")
+}
+
+func TestExitCodes(t *testing.T) {
+	tests := []struct {
+		err      error
+		code     int
+		printed  string
+		silenced bool
+	}{
+		{err: nil, code: 0, silenced: true},
+		{err: errUsage, code: 2, silenced: true},
+		{err: usageErrorf("which site?"), code: 2, printed: "wardlock: which site?\n"},
+		{err: errors.New("could not reach x"), code: 1, printed: "wardlock: could not reach x\n"},
+	}
+	for _, tt := range tests {
+		var errOut bytes.Buffer
+		if got := exitCode(&errOut, tt.err); got != tt.code {
+			t.Errorf("exitCode(%v) = %d, want %d", tt.err, got, tt.code)
+		}
+		if tt.silenced && errOut.Len() > 0 || !tt.silenced && errOut.String() != tt.printed {
+			t.Errorf("exitCode(%v) printed %q", tt.err, errOut.String())
+		}
+	}
+}
+
+func TestParseArgsAllowsFlagsAnywhere(t *testing.T) {
+	a, _, _ := testApp(t)
+	tests := []struct {
+		args    []string
+		pos     []string
+		message string
+	}{
+		{[]string{"dist", "docs", "--message", "m"}, []string{"dist", "docs"}, "m"},
+		{[]string{"--message=m", "dist"}, []string{"dist"}, "m"},
+		{[]string{"dist", "--", "--message"}, []string{"dist", "--message"}, ""},
+	}
+	for _, tt := range tests {
+		fs := newFlagSet(a, "t", "")
+		msg := fs.String("message", "", "")
+		pos, err := parseArgs(fs, tt.args)
+		if err != nil || !slices.Equal(pos, tt.pos) || *msg != tt.message {
+			t.Errorf("parseArgs(%q) = %q, %v with message %q", tt.args, pos, err, *msg)
+		}
+	}
+	fs := newFlagSet(a, "t", "")
+	if _, err := parseArgs(fs, []string{"--nope"}); !errors.Is(err, errUsage) {
+		t.Errorf("unknown flag: %v", err)
+	}
 }

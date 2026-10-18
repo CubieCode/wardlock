@@ -227,7 +227,7 @@ func (a *app) resolveCredential(serverFlag string) (credential, error) {
 			}
 		}
 		if server == "" {
-			return credential{}, fmt.Errorf("WARDLOCK_TOKEN is set but no server is: pass --server or set WARDLOCK_SERVER: %w", errUsage)
+			return credential{}, usageErrorf("WARDLOCK_TOKEN is set but no server is: pass --server or set WARDLOCK_SERVER")
 		}
 		return credential{server: server, token: tok, fromEnv: true}, nil
 	}

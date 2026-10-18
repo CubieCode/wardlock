@@ -4,6 +4,7 @@ go 1.27.0
 
 require (
 	github.com/zalando/go-keyring v0.2.8
+	golang.org/x/text v0.42.0
 	wardlock.nz/apiclient v0.0.0-00010101000000-000000000000
 )
 

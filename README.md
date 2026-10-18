@@ -4,7 +4,7 @@ Wardlock ([wardlock.nz](https://wardlock.nz)) is a free, open-source, self-hosta
 
 It is pronounced "ward-lock", not "warlock". A warded lock has internal obstructions, called wards, that only a key cut to the right shape can pass.
 
-> **Status: pre-alpha.** This repository holds the foundation only. The server starts and serves a dashboard with owner sign-in, health endpoints and the static files of each site's active deploy; the CLI prints its version. Deploys, share links and every other feature below are planned in the [roadmap](ROADMAP.md) and are not built yet. Do not use Wardlock for anything real.
+> **Status: pre-alpha.** This repository holds the foundation only. The server starts and serves a dashboard with owner sign-in, health endpoints and the static files of each site's active deploy; the CLI logs in, deploys, lists, rolls back and tears down sites. Share links and every other feature below are planned in the [roadmap](ROADMAP.md) and are not built yet. Do not use Wardlock for anything real.
 
 ## What it will do
 
