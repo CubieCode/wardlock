@@ -89,6 +89,10 @@ type Provider interface {
 	// GitHub reports whether the provider is GitHub, the only one whose
 	// identities carry organisations.
 	GitHub() bool
+	// Origin is the scheme and host its sign-in page is expected on (the
+	// configured authorisation URL or issuer), which the login page's
+	// form-action must allow the redirect to.
+	Origin() string
 	// AuthCodeURL is where the visitor's browser goes to sign in.
 	AuthCodeURL(ctx context.Context, a AuthRequest) (string, error)
 	// Identify exchanges the provider's code and returns the verified
@@ -135,6 +139,8 @@ type Identity struct {
 type ProviderInfo struct {
 	ID   string
 	Name string
+	// Origin is Provider.Origin.
+	Origin string
 }
 
 // OAuthConfig configures OAuth sign-in. Without providers the method is
@@ -249,7 +255,7 @@ func pkceChallenge(verifier string) string {
 func (s *Service) OAuthProviders() []ProviderInfo {
 	out := make([]ProviderInfo, 0, len(s.c.OAuth.Providers))
 	for _, p := range s.c.OAuth.Providers {
-		out = append(out, ProviderInfo{ID: p.ID(), Name: p.Name()})
+		out = append(out, ProviderInfo{ID: p.ID(), Name: p.Name(), Origin: p.Origin()})
 	}
 	return out
 }

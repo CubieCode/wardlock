@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -82,6 +83,15 @@ func safeText(s string) string {
 		return "unknown error"
 	}
 	return s
+}
+
+// origin returns raw's scheme and host, or "" when it has none.
+func origin(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // normaliseEmail lowercases and trims an address; "" if it has no @.

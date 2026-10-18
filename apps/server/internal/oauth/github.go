@@ -77,6 +77,9 @@ func (*GitHub) ID() string   { return "github" }
 func (*GitHub) Name() string { return "GitHub" }
 func (*GitHub) GitHub() bool { return true }
 
+// Origin implements access.Provider.
+func (g *GitHub) Origin() string { return origin(g.cfg.Endpoint.AuthURL) }
+
 // AuthCodeURL implements access.Provider.
 func (g *GitHub) AuthCodeURL(_ context.Context, a access.AuthRequest) (string, error) {
 	cfg := g.cfg

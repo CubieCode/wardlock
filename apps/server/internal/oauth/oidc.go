@@ -67,6 +67,11 @@ func (o *OIDC) ID() string   { return o.c.ID }
 func (o *OIDC) Name() string { return o.c.Name }
 func (*OIDC) GitHub() bool   { return false }
 
+// Origin implements access.Provider: the issuer's, which hosts the
+// authorisation endpoint for every provider Wardlock is known to work
+// with; the login page also allows any https: origin.
+func (o *OIDC) Origin() string { return origin(o.c.Issuer) }
+
 func (o *OIDC) ctx(ctx context.Context) context.Context {
 	return oidc.ClientContext(context.WithValue(ctx, oauth2.HTTPClient, o.client), o.client)
 }

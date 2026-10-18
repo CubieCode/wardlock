@@ -203,3 +203,21 @@ func (e *Edge) loginAgain(w http.ResponseWriter, r *http.Request, site ServedSit
 	data.OAuthError = msg
 	e.loginPage(w, r, data, status)
 }
+
+// formAction is the login page's CSP form-action: its own origin and, when
+// it lists OAuth providers, where their buttons redirect (browsers apply
+// form-action to a form's redirects too): any https: origin, since an OIDC
+// issuer's discovery may name another host, and a plain-HTTP provider's
+// own origin (a local issuer in development).
+func formAction(providers []access.ProviderInfo) string {
+	if len(providers) == 0 {
+		return "'self'"
+	}
+	out := "'self' https:"
+	for _, p := range providers {
+		if strings.HasPrefix(p.Origin, "http://") && !strings.ContainsAny(p.Origin, " ;,'") {
+			out += " " + p.Origin
+		}
+	}
+	return out
+}

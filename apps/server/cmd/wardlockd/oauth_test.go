@@ -314,6 +314,13 @@ func TestOAuthFlows(t *testing.T) {
 					t.Fatalf("login page lacks %s", want)
 				}
 			}
+			// Browsers apply form-action to the button's redirect to the
+			// provider, so the login page must allow it.
+			csp := r.h.Get("Content-Security-Policy")
+			wantAction := "form-action 'self' https: " + o.github.URL() + " " + o.google.URL() + " " + o.oidc.URL() + ";"
+			if !strings.Contains(csp, wantAction) {
+				t.Fatalf("login page CSP %q lacks %q", csp, wantAction)
+			}
 
 			hops := b.signIn(host, tt.provider, "/internal/")
 			// Start, provider, auth origin, site callback.

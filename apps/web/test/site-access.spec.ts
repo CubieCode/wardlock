@@ -3,8 +3,9 @@
 
 // A visitor's way in, in a real browser against a real server: the
 // password form on the login page (A2.3), the "Click to view" button of a
-// use-limited share link (A2.2) and the email-code forms (A2.4), with the
-// code read from the dev:// mail sink. These pages send Referrer-Policy:
+// use-limited share link (A2.2), the email-code forms (A2.4), with the
+// code read from the dev:// mail sink, and the OAuth buttons (A2.5) up to
+// the provider, which the browser never reaches. These pages send Referrer-Policy:
 // no-referrer, so the browser posts them with Origin: null; this proves the
 // edge's same-origin check still lets them through. The password and
 // addresses are synthetic.
@@ -207,6 +208,107 @@ for (const scheme of schemes) {
       });
     } finally {
       await reader.close();
+    }
+
+    await test.step('the owner enables OAuth for a GitHub organisation', async () => {
+      const res = await page.request.put(
+        `${origin}/api/v0/sites/${site}/policies`,
+        {
+          data: {
+            path: '/',
+            visibility: 'protected',
+            methods: ['links', 'password', 'email', 'oauth'],
+            allowlist: {
+              emails: [visitorEmail],
+              domains: [],
+              githubOrgs: ['example-org'],
+            },
+          },
+          headers,
+        },
+      );
+      expect(res.status()).toBe(200);
+    });
+
+    // The provider is never reached: everything off localhost goes to a
+    // proxy that is not there.
+    const member = await browser.newContext({
+      colorScheme: scheme,
+      proxy: {
+        server: 'http://127.0.0.1:9',
+        bypass: 'localhost,.localhost,127.0.0.1',
+      },
+    });
+    try {
+      const m = await member.newPage();
+      await m.setViewportSize(page.viewportSize()!);
+      const accounts = m.getByRole('region', { name: 'Your account' });
+
+      await test.step('the login page lists the providers', async () => {
+        const res = await m.goto(`${siteURL}/`);
+        expect(res?.status()).toBe(401);
+        await expect(
+          accounts.getByRole('button', { name: 'Continue with GitHub' }),
+        ).toBeVisible();
+        await expect(
+          accounts.getByRole('button', { name: 'Continue with Google' }),
+        ).toBeVisible();
+        await check(m, info, `access-oauth-${scheme}`);
+      });
+
+      await test.step('a provider button goes to the provider with PKCE', async () => {
+        const toProvider = m.waitForRequest((r) =>
+          r.url().startsWith('https://github.com/'),
+        );
+        await accounts
+          .getByRole('button', { name: 'Continue with GitHub' })
+          .click({ noWaitAfter: true });
+        const authorise = new URL((await toProvider).url());
+        expect(authorise.origin + authorise.pathname).toBe(
+          'https://github.com/login/oauth/authorize',
+        );
+        const q = authorise.searchParams;
+        expect(q.get('redirect_uri')).toBe(
+          `http://auth.wardlock.localhost:${port}/callback/github`,
+        );
+        expect(q.get('code_challenge_method')).toBe('S256');
+        expect(q.get('scope')).toBe('user:email read:org');
+        expect(q.get('state')).toBeTruthy();
+        const names = (await member.cookies(siteURL)).map((c) => c.name);
+        expect(names).toContain('__Host-wardlock_oauth');
+      });
+
+      // A fresh tab: the first is still failing to reach the provider.
+      const e = await member.newPage();
+      await e.setViewportSize(page.viewportSize()!);
+      await test.step('a stale sign-in shows the auth origin error page', async () => {
+        const res = await e.goto(
+          `http://auth.wardlock.localhost:${port}/callback/github?state=stale&code=stale`,
+        );
+        expect(res?.status()).toBe(400);
+        expect(res?.headers()['set-cookie']).toBeUndefined();
+        await expect(
+          e.getByRole('heading', {
+            level: 1,
+            name: 'Sign-in did not complete',
+          }),
+        ).toBeVisible();
+        await check(e, info, `access-oauth-auth-error-${scheme}`);
+      });
+
+      await test.step('a stale code at the site shows the login page again', async () => {
+        const res = await e.goto(`${siteURL}/.wardlock/callback?code=stale`);
+        expect(res?.status()).toBe(400);
+        await expect(e.getByRole('alert')).toHaveText(
+          'That sign-in has expired or was already used. Sign in again.',
+        );
+        await check(e, info, `access-oauth-callback-error-${scheme}`);
+        const names = (await member.cookies(siteURL)).map((c) => c.name);
+        expect(names).not.toContain('__Host-wardlock_oauth');
+        expect(names).not.toContain('__Host-wardlock_site');
+      });
+    } finally {
+      await member.close();
     }
   });
 }
