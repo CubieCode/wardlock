@@ -25,6 +25,12 @@ type Limits struct {
 	// Sessions already issued keep working.
 	TokenFailuresPerIP   Rate
 	TokenFailuresPerSite Rate
+	// PasswordPerIP and PasswordPerSite count password sign-in attempts
+	// (A2.3), right or wrong: per client across every site, and per site
+	// from all clients. Over either, even the right password is refused
+	// until the window ends.
+	PasswordPerIP   Rate
+	PasswordPerSite Rate
 }
 
 // DefaultLimits are the limits used when Config.Limits is zero.
@@ -32,6 +38,8 @@ func DefaultLimits() Limits {
 	return Limits{
 		TokenFailuresPerIP:   Rate{N: 30, Per: 15 * time.Minute},
 		TokenFailuresPerSite: Rate{N: 300, Per: 15 * time.Minute},
+		PasswordPerIP:        Rate{N: 10, Per: 15 * time.Minute},
+		PasswordPerSite:      Rate{N: 100, Per: 15 * time.Minute},
 	}
 }
 

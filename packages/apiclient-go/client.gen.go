@@ -169,13 +169,16 @@ func (e PasskeyCredentialType) Valid() bool {
 
 // Defines values for PolicyMethod.
 const (
-	PolicyMethodLinks PolicyMethod = "links"
+	PolicyMethodLinks    PolicyMethod = "links"
+	PolicyMethodPassword PolicyMethod = "password"
 )
 
 // Valid indicates whether the value is a known member of the PolicyMethod enum.
 func (e PolicyMethod) Valid() bool {
 	switch e {
 	case PolicyMethodLinks:
+		return true
+	case PolicyMethodPassword:
 		return true
 	default:
 		return false
@@ -796,7 +799,7 @@ type Policy struct {
 	Visibility PolicyVisibility `json:"visibility"`
 }
 
-// PolicyMethod A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). Password, email code and OAuth join with A2.3, A2.4 and A2.5.
+// PolicyMethod A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). `password`: the policy password, entered on the site's login page (A2.3). Email code and OAuth join with A2.4 and A2.5.
 type PolicyMethod string
 
 // PolicyPage defines model for PolicyPage.
@@ -850,6 +853,9 @@ type SessionPage struct {
 type SetPolicyRequest struct {
 	// Methods Methods to enable on a protected policy; omitted means `[links]` (share links are on by default). Must be empty or omitted for a public policy.
 	Methods *[]PolicyMethod `json:"methods,omitempty"`
+
+	// Password The new policy password, with the `password` method only: 8 to 1,024 bytes of UTF-8 and at least 8 characters. Stored only as an Argon2id hash and never returned. Omitted with the `password` method keeps the current password (`400 invalid_policy` when there is none). Any new password, even the same text, is a change: it increments `version` and ends the policy's password sessions.
+	Password *string `json:"password,omitempty"`
 
 	// Path `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
 	//
@@ -1805,7 +1811,7 @@ type ClientInterface interface {
 
 	// SetPolicyWithBody Set the default or a path policy.
 	//
-	// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+	// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`, as does the `password` method without a password to set or keep (`target: password`). The password is write-only: no response includes it or its hash.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1814,7 +1820,7 @@ type ClientInterface interface {
 
 	// SetPolicy Set the default or a path policy.
 	//
-	// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+	// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`, as does the `password` method without a password to set or keep (`target: password`). The password is write-only: no response includes it or its hash.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2838,7 +2844,7 @@ func (c *Client) ListPolicies(ctx context.Context, site SiteName, params *ListPo
 
 // SetPolicyWithBody Set the default or a path policy.
 //
-// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`, as does the `password` method without a password to set or keep (`target: password`). The password is write-only: no response includes it or its hash.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2857,7 +2863,7 @@ func (c *Client) SetPolicyWithBody(ctx context.Context, site SiteName, contentTy
 
 // SetPolicy Set the default or a path policy.
 //
-// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`, as does the `password` method without a password to set or keep (`target: password`). The password is write-only: no response includes it or its hash.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -5444,7 +5450,7 @@ type ClientWithResponsesInterface interface {
 
 	// SetPolicyWithBodyWithResponse Set the default or a path policy.
 	//
-	// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+	// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`, as does the `password` method without a password to set or keep (`target: password`). The password is write-only: no response includes it or its hash.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5453,7 +5459,7 @@ type ClientWithResponsesInterface interface {
 
 	// SetPolicyWithResponse Set the default or a path policy.
 	//
-	// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+	// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`, as does the `password` method without a password to set or keep (`target: password`). The password is write-only: no response includes it or its hash.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -9428,7 +9434,7 @@ func (c *ClientWithResponses) ListPoliciesWithResponse(ctx context.Context, site
 
 // SetPolicyWithBodyWithResponse Set the default or a path policy.
 //
-// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`, as does the `password` method without a password to set or keep (`target: password`). The password is write-only: no response includes it or its hash.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9443,7 +9449,7 @@ func (c *ClientWithResponses) SetPolicyWithBodyWithResponse(ctx context.Context,
 
 // SetPolicyWithResponse Set the default or a path policy.
 //
-// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`.
+// Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`, as does the `password` method without a password to set or keep (`target: password`). The password is write-only: no response includes it or its hash.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //

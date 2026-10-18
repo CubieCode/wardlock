@@ -1,0 +1,157 @@
+// SPDX-FileCopyrightText: 2026 CubieCode
+// SPDX-License-Identifier: MIT
+
+package main
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+
+	"wardlock.nz/apiclient"
+)
+
+// setPolicy stores nothing but answers as the server does: methods default
+// to [links] on a protected policy and must be empty on a public one.
+func (f *fakeAPI) setPolicy(w http.ResponseWriter, r *http.Request, s *fakeSite) {
+	raw, _ := io.ReadAll(r.Body)
+	var sent map[string]any
+	var body apiclient.SetPolicyRequest
+	if json.Unmarshal(raw, &sent) != nil || json.Unmarshal(raw, &body) != nil {
+		reply(w, http.StatusBadRequest, apiErr("invalid_request", "Bad JSON."))
+		return
+	}
+	s.set = append(s.set, sent)
+	methods := []apiclient.PolicyMethod{}
+	if body.Methods != nil {
+		methods = *body.Methods
+	}
+	if body.Visibility == apiclient.PolicyVisibilityProtected && body.Methods == nil {
+		methods = []apiclient.PolicyMethod{apiclient.PolicyMethodLinks}
+	}
+	if body.Visibility == apiclient.PolicyVisibilityPublic && len(methods) > 0 {
+		reply(w, http.StatusBadRequest, apiErr("invalid_policy", "A public policy takes no methods."))
+		return
+	}
+	reply(w, http.StatusOK, apiclient.Policy{Id: f.id(), Path: body.Path, Visibility: body.Visibility, Methods: methods, Version: int32(len(s.set))})
+}
+
+func TestPolicySet(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		code int
+		want string
+		sent string // the JSON body the server received, or "" for none
+	}{
+		{"protected default", []string{"policy", "set", "docs", "--protected"}, 0, "docs / is now protected by share links.", `{"path":"/","visibility":"protected"}`},
+		{"protected with links", []string{"policy", "set", "docs", "--protected", "--links", "--path", "/internal/"}, 0, "docs /internal/ is now protected by share links.", `{"methods":["links"],"path":"/internal/","visibility":"protected"}`},
+		{"public", []string{"policy", "set", "docs." + fakeBase, "--public"}, 0, "docs / is now public.", `{"path":"/","visibility":"public"}`},
+		{"public with a method", []string{"policy", "set", "docs", "--public", "--links"}, 2, "a public policy takes no methods", ""},
+		{"neither", []string{"policy", "set", "docs"}, 2, "exactly one of --public or --protected", ""},
+		{"both", []string{"policy", "set", "docs", "--public", "--protected"}, 2, "exactly one of --public or --protected", ""},
+		{"no domain", []string{"policy", "set", "--public"}, 2, "Usage: wardlock policy set", ""},
+		{"no subcommand", []string{"policy"}, 2, "Usage: wardlock policy set", ""},
+		{"missing site", []string{"policy", "set", "nope", "--public"}, 1, "no site nope", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newFakeAPI(t)
+			site := srv.addSite("docs", "")
+			a, out, errOut := ciApp(t, srv)
+			err := run(t.Context(), a, tt.args)
+			if code := exitCode(errOut, err); code != tt.code || !strings.Contains(out.String()+errOut.String(), tt.want) {
+				t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
+			}
+			var got string
+			if len(site.set) == 1 {
+				b, _ := json.Marshal(site.set[0])
+				got = string(b)
+			}
+			if got != tt.sent {
+				t.Fatalf("sent %s, want %s", got, tt.sent)
+			}
+		})
+	}
+}
+
+func TestPolicySetJSONAndScope(t *testing.T) {
+	srv := newFakeAPI(t)
+	srv.addSite("docs", "")
+	a, out, errOut := ciApp(t, srv)
+	if err := run(t.Context(), a, []string{"policy", "set", "docs", "--protected", "--json"}); err != nil {
+		t.Fatalf("policy set: %v\n%s", err, errOut)
+	}
+	assertJSONKeys(t, out.Bytes(), "createdAt", "id", "methods", "path", "updatedAt", "version", "visibility")
+
+	srv.scopes = []string{"deploy"}
+	a, _, errOut = ciApp(t, srv)
+	if code := exitCode(errOut, run(t.Context(), a, []string{"policy", "set", "docs", "--public"})); code != 1 || !strings.Contains(errOut.String(), "scope") {
+		t.Fatalf("without manage: exit %d, stderr %q", code, errOut)
+	}
+}
+
+// cliPassword is a synthetic password for tests only.
+const cliPassword = "harbour-lights-7"
+
+func TestPolicySetPassword(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		canPrompt bool
+		stdin     string
+		typed     []string // what the no-echo prompt returns, in order
+		code      int
+		want      string
+		sent      string
+	}{
+		{"from stdin", []string{"policy", "set", "docs", "--protected", "--password"}, false, cliPassword + "\n", nil, 0, "docs / is now protected by a password.",
+			`{"methods":["password"],"password":"` + cliPassword + `","path":"/","visibility":"protected"}`},
+		{"from stdin with CRLF and links", []string{"policy", "set", "docs", "--protected", "--links", "--password"}, false, cliPassword + "\r\nignored\n", nil, 0, "protected by share links or a password.",
+			`{"methods":["links","password"],"password":"` + cliPassword + `","path":"/","visibility":"protected"}`},
+		{"--json reads stdin, never prompts", []string{"policy", "set", "docs", "--protected", "--password", "--json"}, true, cliPassword, nil, 0, `"visibility": "protected"`,
+			`{"methods":["password"],"password":"` + cliPassword + `","path":"/","visibility":"protected"}`},
+		{"prompted twice", []string{"policy", "set", "docs", "--protected", "--password"}, true, "", []string{cliPassword, cliPassword}, 0, "New password: \nAgain: \n",
+			`{"methods":["password"],"password":"` + cliPassword + `","path":"/","visibility":"protected"}`},
+		{"prompted, no match", []string{"policy", "set", "docs", "--protected", "--password"}, true, "", []string{cliPassword, cliPassword + "8"}, 1, "do not match", ""},
+		{"empty stdin", []string{"policy", "set", "docs", "--protected", "--password"}, false, "", nil, 2, "--password needs a password", ""},
+		{"too short", []string{"policy", "set", "docs", "--protected", "--password"}, false, "short\n", nil, 2, "at least 8 characters", ""},
+		{"public with a password", []string{"policy", "set", "docs", "--public", "--password"}, false, cliPassword + "\n", nil, 2, "a public policy takes no methods", ""},
+		{"no password value flag", []string{"policy", "set", "docs", "--protected", "--password=" + cliPassword}, false, "", nil, 2, "--password takes no value", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newFakeAPI(t)
+			site := srv.addSite("docs", "")
+			a, out, errOut := ciApp(t, srv)
+			a.canPrompt = tt.canPrompt
+			a.stdin = strings.NewReader(tt.stdin)
+			typed := tt.typed
+			a.readPassword = func() (string, error) {
+				if len(typed) == 0 {
+					t.Fatal("prompted more often than expected")
+				}
+				pw := typed[0]
+				typed = typed[1:]
+				return pw, nil
+			}
+			err := run(t.Context(), a, tt.args)
+			if code := exitCode(errOut, err); code != tt.code || !strings.Contains(out.String()+errOut.String(), tt.want) {
+				t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
+			}
+			if strings.Contains(out.String()+errOut.String(), cliPassword) {
+				t.Fatalf("output shows the password: stdout %q, stderr %q", out, errOut)
+			}
+			var got string
+			if len(site.set) == 1 {
+				b, _ := json.Marshal(site.set[0])
+				got = string(b)
+			}
+			if got != tt.sent {
+				t.Fatalf("sent %s, want %s", got, tt.sent)
+			}
+		})
+	}
+}

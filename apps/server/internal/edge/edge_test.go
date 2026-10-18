@@ -207,6 +207,10 @@ func (publicAccess) View(context.Context, string, string) (access.Viewed, error)
 	return access.Viewed{}, access.ErrTicket
 }
 
+func (publicAccess) PasswordLogin(context.Context, access.PasswordAttempt) (access.Cookie, error) {
+	return access.Cookie{}, access.ErrWrongPassword
+}
+
 type harness struct {
 	edge     *edge.Edge
 	fx       fixtures

@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/argon2"
+
 	"wardlock.nz/server/internal/store"
 )
 
@@ -55,7 +57,10 @@ type Config struct {
 	Policies store.Policies
 	Sessions store.Sessions
 	Links    store.Links
-	Notifier notifier
+	// PasswordSessions ends a policy's password sessions when its password
+	// changes or is removed (A2.3).
+	PasswordSessions store.PasswordSessions
+	Notifier         notifier
 	// Secret is the server key (WARDLOCK_SECRET): it signs session cookies
 	// and keys the stored session token hashes.
 	Secret []byte
@@ -76,7 +81,11 @@ type Service struct {
 	limits      Limits
 	limiter     *limiter // client keys (IPs), bounded
 	siteLimiter *limiter // server keys (sites, policies), unbounded
-	unsubscribe func()
+	// ipAttempts and siteAttempts count password attempts: limiter and
+	// siteLimiter, or fakes in tests.
+	ipAttempts, siteAttempts attemptLimiter
+	derive                   deriveFunc
+	unsubscribe              func()
 
 	mu       sync.Mutex
 	gen      uint64                    // bumped by every invalidation
@@ -91,11 +100,15 @@ func New(cfg Config) (*Service, error) {
 	if cfg.Links == nil {
 		return nil, errors.New("access: Config.Links is required")
 	}
+	if cfg.PasswordSessions == nil {
+		return nil, errors.New("access: Config.PasswordSessions is required")
+	}
 	s := &Service{
 		c:        cfg,
 		key:      keyed{secret: cfg.Secret},
 		now:      func() time.Time { return cfg.Now().UTC().Truncate(time.Millisecond) },
 		log:      cfg.Log,
+		derive:   argon2.IDKey,
 		policies: map[string][]store.Policy{},
 	}
 	if s.log == nil {
@@ -107,6 +120,7 @@ func New(cfg Config) (*Service, error) {
 	}
 	s.limiter = newLimiter(s.now)
 	s.siteLimiter = newServerKeyLimiter(s.now)
+	s.ipAttempts, s.siteAttempts = s.limiter, s.siteLimiter
 	s.unsubscribe = cfg.Notifier.Subscribe(s.invalidate)
 	return s, nil
 }
@@ -504,7 +518,9 @@ func (s *Service) List(ctx context.Context, ownerID, siteName, afterPrefix strin
 // Set makes r the policy for its path prefix on ownerID's site called
 // name, creating it or replacing its settings. A change increments the
 // policy's version, which ends every site session bound to it on the next
-// request; setting identical settings changes nothing.
+// request; setting identical settings changes nothing. A new password
+// always counts as a change, and changing or removing the password also
+// revokes the policy's password sessions outright.
 func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (store.Policy, error) {
 	if err := checkRule(r); err != nil {
 		return store.Policy{}, err
@@ -513,12 +529,24 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 	if err != nil {
 		return store.Policy{}, err
 	}
-	if _, err := s.sitePolicies(ctx, site.ID); err != nil {
+	ps, err := s.loadPolicies(ctx, site.ID)
+	if err != nil {
+		return store.Policy{}, err
+	}
+	var cur store.Policy
+	for _, p := range ps {
+		if p.PathPrefix == r.PathPrefix {
+			cur = p
+		}
+	}
+	hash, err := s.passwordHash(r, cur)
+	if err != nil {
 		return store.Policy{}, err
 	}
 	p, err := s.c.Policies.Set(ctx, ownerID, store.Policy{
 		ID: store.NewID(), SiteID: site.ID, PathPrefix: r.PathPrefix,
 		Visibility: r.Visibility, LinksEnabled: r.Links,
+		PasswordEnabled: r.Password, PasswordHash: hash,
 		UpdatedAt: s.now(),
 	})
 	if errors.Is(err, store.ErrNotFound) {
@@ -527,11 +555,16 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 	if err != nil {
 		return store.Policy{}, fmt.Errorf("set policy: %w", err)
 	}
+	if cur.PasswordHash != "" && cur.PasswordHash != p.PasswordHash {
+		if _, err := s.c.PasswordSessions.RevokeForPolicy(ctx, site.ID, p.ID, s.now()); err != nil {
+			return store.Policy{}, fmt.Errorf("set policy: %w", err)
+		}
+	}
 	s.c.Notifier.Notify(ctx, site.ID)
 	s.log.LogAttrs(ctx, slog.LevelInfo, "policy set",
 		slog.String("site_id", site.ID), slog.String("policy_id", p.ID),
 		slog.String("path", p.PathPrefix), slog.String("visibility", string(p.Visibility)),
-		slog.Int("version", p.Version))
+		slog.Bool("password", p.PasswordEnabled), slog.Int("version", p.Version))
 	return p, nil
 }
 

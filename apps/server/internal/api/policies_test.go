@@ -91,7 +91,7 @@ func TestPolicies(t *testing.T) {
 		{"reserved path", http.MethodPut, "/sites/docs/policies", map[string]any{"path": "/.wardlock/", "visibility": "public"}, 400, "invalid_policy_path"},
 		{"public with methods", http.MethodPut, "/sites/docs/policies", map[string]any{"path": "/", "visibility": "public", "methods": []string{"links"}}, 400, "invalid_policy"},
 		{"protected with no methods", http.MethodPut, "/sites/docs/policies", map[string]any{"path": "/", "visibility": "protected", "methods": []string{}}, 400, "invalid_policy"},
-		{"unknown method", http.MethodPut, "/sites/docs/policies", map[string]any{"path": "/", "visibility": "protected", "methods": []string{"password"}}, 400, "invalid_request"},
+		{"unknown method", http.MethodPut, "/sites/docs/policies", map[string]any{"path": "/", "visibility": "protected", "methods": []string{"telepathy"}}, 400, "invalid_request"},
 		{"duplicate method", http.MethodPut, "/sites/docs/policies", map[string]any{"path": "/", "visibility": "protected", "methods": []string{"links", "links"}}, 400, "invalid_request"},
 		{"unknown visibility", http.MethodPut, "/sites/docs/policies", map[string]any{"path": "/", "visibility": "secret"}, 400, "invalid_request"},
 		{"bad cursor", http.MethodGet, "/sites/docs/policies?cursor=bm90LWEtcHJlZml4", nil, 400, "invalid_request"},

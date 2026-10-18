@@ -99,9 +99,11 @@ func newHarnessKey(t *testing.T, db *store.DB, key []byte) *harness {
 		Sessions: db.Sessions(),
 		Links:    db.Links(),
 		Notifier: &notifier{},
-		Secret:   key,
-		Now:      h.clock.Now,
-		Log:      slog.New(slog.NewTextHandler(h.log, nil)),
+
+		PasswordSessions: db.PasswordSessions(),
+		Secret:           key,
+		Now:              h.clock.Now,
+		Log:              slog.New(slog.NewTextHandler(h.log, nil)),
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -37,6 +37,7 @@ var commands = []command{
 	{"list", "List your sites, or one site's deploys", runList},
 	{"rollback", "Reactivate an earlier deploy of a site", runRollback},
 	{"teardown", "Delete a site with all its deploys", runTeardown},
+	{"policy", "Set who may open a site or a path", runPolicy},
 	{"share", "Create, list, revoke and rotate share links", runShare},
 	{"login", "Log in to a Wardlock server in your browser", runLogin},
 	{"logout", "Revoke and forget the stored token", runLogout},
@@ -90,6 +91,9 @@ type app struct {
 	creds        credentialStore
 	openBrowser  func(url string) error
 	hostname     func() (string, error)
+	// readPassword reads a line from the terminal without echoing it;
+	// call it only when canPrompt.
+	readPassword func() (string, error)
 	// sleep waits for d or until ctx ends.
 	sleep func(ctx context.Context, d time.Duration) error
 	now   func() time.Time
@@ -110,6 +114,7 @@ func main() {
 		creds:        credentialStore{keyring: systemKeyring{}, dir: func() (string, error) { return configDir(os.Getenv) }},
 		openBrowser:  openBrowser,
 		hostname:     os.Hostname,
+		readPassword: readTerminalPassword,
 		sleep:        sleep,
 		now:          time.Now,
 	}
@@ -190,6 +195,11 @@ func leadingGlobalFlags(args []string) (global, rest []string, err error) {
 // character devices are not.
 func isTerminal(f *os.File) bool {
 	return term.IsTerminal(int(f.Fd()))
+}
+
+func readTerminalPassword() (string, error) {
+	b, err := term.ReadPassword(int(os.Stdin.Fd()))
+	return string(b), err
 }
 
 func sleep(ctx context.Context, d time.Duration) error {

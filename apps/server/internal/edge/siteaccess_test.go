@@ -52,6 +52,10 @@ func (a *fakeAccess) View(context.Context, string, string) (access.Viewed, error
 	return access.Viewed{}, access.ErrTicket
 }
 
+func (a *fakeAccess) PasswordLogin(context.Context, access.PasswordAttempt) (access.Cookie, error) {
+	return access.Cookie{}, access.ErrWrongPassword
+}
+
 func (a *fakeAccess) requests() []access.Request {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -212,7 +216,9 @@ func TestReservedPathIgnoresPolicies(t *testing.T) {
 		{name: "health via dot segments", target: "/docs/../.wardlock/health", status: 200, body: `{"status":"ok"}`},
 		{name: "deployed reserved file", target: "/.wardlock/index.html", status: 404, body: "404 page not found"},
 		{name: "login page", target: "/.wardlock/login", header: browser, status: 200, body: "This page is private", headers: map[string]string{"X-Frame-Options": "DENY"}},
-		{name: "login is GET only", method: http.MethodPost, target: "/.wardlock/login", status: 405, headers: map[string]string{"Allow": "GET, HEAD"}},
+		{name: "login takes GET, HEAD and POST", method: http.MethodPut, target: "/.wardlock/login", status: 405, headers: map[string]string{"Allow": "GET, HEAD, POST"}},
+		{name: "login from another site", method: http.MethodPost, target: "/.wardlock/login", header: sameSite(http.Header{}, "Origin", "https://evil.example"), status: 403, headers: map[string]string{"Set-Cookie": ""}},
+		{name: "login with no origin information", method: http.MethodPost, target: "/.wardlock/login", status: 403},
 		{name: "logout", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Origin", "http://basic."+base), status: 303, headers: map[string]string{"Location": "/", "Set-Cookie": clearValue}},
 		{name: "logout by fetch metadata", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Sec-Fetch-Site", "same-origin"), status: 303, headers: map[string]string{"Set-Cookie": clearValue}},
 		{name: "logout from another site", method: http.MethodPost, target: "/.wardlock/logout", header: sameSite(withCookie, "Origin", "https://evil.example"), status: 403, headers: map[string]string{"Set-Cookie": ""}},

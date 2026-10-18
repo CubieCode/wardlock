@@ -67,6 +67,10 @@ func (publicSite) View(context.Context, string, string) (access.Viewed, error) {
 	return access.Viewed{}, access.ErrTicket
 }
 
+func (publicSite) PasswordLogin(context.Context, access.PasswordAttempt) (access.Cookie, error) {
+	return access.Cookie{}, access.ErrWrongPassword
+}
+
 type noInvalidations struct{}
 
 func (noInvalidations) Subscribe(func(string)) func() { return func() {} }

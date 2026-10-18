@@ -23,6 +23,8 @@ type Repos struct {
 	AccessLog  store.AccessLog
 	GC         store.GC
 	Renditions store.Renditions
+	// PasswordSessions creates and ends password sessions (A2.3).
+	PasswordSessions store.PasswordSessions
 }
 
 // Opener returns repositories over a fresh, empty, migrated database that
@@ -47,6 +49,8 @@ func ReposOf(db *store.DB) Repos {
 		AccessLog:  db.AccessLog(),
 		GC:         db.GC(),
 		Renditions: db.Renditions(),
+
+		PasswordSessions: db.PasswordSessions(),
 	}
 }
 
@@ -71,6 +75,7 @@ func suites() []suite {
 		{"AccessLog", accessLogContract},
 		{"GC", gcContract},
 		{"Renditions", renditionsContract},
+		{"PasswordSessions", passwordSessionsContract},
 	}
 }
 

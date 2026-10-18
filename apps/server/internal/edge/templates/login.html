@@ -8,12 +8,13 @@
   only. Colours mirror packages/ui/styles/tokens.css.
 
   Each sign-in method is one <section class="method"> inside .methods; CSS
-  draws an "or" divider between consecutive methods, so A2.3 (password),
-  A2.4 (email code) and A2.5 (OAuth) each add a field to edge.loginData and
-  one guarded section, with forms posting to /.wardlock/login. The notice
-  under the methods is written for a links-only policy; the first item to
-  add a method makes it say only "Ask the site's owner for access" whenever
-  any method is shown, and the else branch covers no method at all.
+  draws an "or" divider between consecutive methods. A method adds its
+  fields to edge.loginData (and to loginData.AnyMethod) and one guarded
+  section here. Its form posts to /.wardlock/login with a hidden "method"
+  field naming it (edge.login dispatches on it) and the hidden "next" path;
+  its error, if any, sits inside its own section. Share links (A2.2) and
+  the password (A2.3) are here; email code (A2.4) and OAuth (A2.5) join the
+  same way. The else branch covers a page with no method at all.
 -->
 <html lang="en">
   <head>
@@ -31,6 +32,12 @@
         --text: light-dark(#1b2430, #e8ebee);
         --muted: light-dark(#4f5a66, #a7b0ba);
         --border: light-dark(#d9dad4, #2e3742);
+        --border-strong: light-dark(#7d858e, #6b7682);
+        --primary: light-dark(#1f4f5c, #7fc1cf);
+        --primary-hover: light-dark(#183f4a, #9fd2dc);
+        --primary-text: light-dark(#ffffff, #0f1a1f);
+        --focus: light-dark(#2f6fb0, #8fbfff);
+        --danger: light-dark(#a3302a, #f0a39c);
         --accent: light-dark(#a8741f, #d7a756);
         --warning: light-dark(#7d5200, #e8c06d);
         --warning-surface: light-dark(#fbf1dc, #2a2213);
@@ -124,6 +131,50 @@
       .method + .method {
         margin-top: 0.75rem;
       }
+      .method form {
+        display: grid;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+      }
+      label {
+        font-size: 0.875rem;
+        font-weight: 500;
+      }
+      input {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+      }
+      input:focus-visible,
+      button:focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+      input[aria-invalid='true'] {
+        border-color: var(--danger);
+      }
+      .error {
+        color: var(--danger);
+        font-size: 0.875rem;
+      }
+      button {
+        margin-top: 0.25rem;
+        padding: 0.5rem 1rem;
+        border: 0;
+        border-radius: 6px;
+        background: var(--primary);
+        color: var(--primary-text);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:hover {
+        background: var(--primary-hover);
+      }
       .notice {
         margin-top: 1.5rem;
         padding-top: 1rem;
@@ -157,8 +208,25 @@
       </p>
       <h1>This page is private</h1>
       <p class="lead">Only people the site's owner has let in can open it.</p>
-      {{if .Links}}
+      {{if .AnyMethod}}
       <div class="methods">
+        {{if .Password}}
+        <section class="method" aria-labelledby="method-password">
+          <h2 id="method-password">Password</h2>
+          <p>Enter the password the site's owner gave you.</p>
+          <form method="post" action="/.wardlock/login">
+            <input type="hidden" name="method" value="password" />
+            <input type="hidden" name="next" value="{{.Next}}" />
+            <label for="password">Password</label>
+            <!-- prettier-ignore -->
+            <input id="password" name="password" type="password" autocomplete="current-password" required{{if .PasswordError}} aria-invalid="true" aria-describedby="password-error" autofocus{{end}} />
+            {{with .PasswordError}}
+            <p class="error" id="password-error" role="alert">{{.}}</p>
+            {{end}}
+            <button type="submit">Continue</button>
+          </form>
+        </section>
+        {{end}} {{if .Links}}
         <section class="method" aria-labelledby="method-links">
           <h2 id="method-links">Share link</h2>
           <p>
@@ -166,11 +234,9 @@
             this device.
           </p>
         </section>
+        {{end}}
       </div>
-      <p class="notice">
-        No other way to sign in is available. Ask the site's owner for a share
-        link.
-      </p>
+      <p class="notice">Ask the site's owner for access.</p>
       {{else}}
       <p class="notice">
         No way to sign in is available for this page. Ask the site's owner for

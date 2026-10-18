@@ -4,7 +4,6 @@
 package edge
 
 import (
-	"bytes"
 	"embed"
 	"html/template"
 	"log/slog"
@@ -69,7 +68,7 @@ func (e *Edge) challenge(w http.ResponseWriter, r *http.Request, site ServedSite
 	// Browsers get the page, other clients the bare 401.
 	addVary(h, "Accept")
 	if d.Outcome == access.Login {
-		e.loginPage(w, r, d.Policy.LinksEnabled, http.StatusUnauthorized)
+		e.loginPage(w, r, newLoginData(r, d, cleanPath(r.URL.Path)), http.StatusUnauthorized)
 		return
 	}
 	// Share-link tokens are also accepted as Bearer credentials.
@@ -78,35 +77,6 @@ func (e *Edge) challenge(w http.ResponseWriter, r *http.Request, site ServedSite
 	w.WriteHeader(http.StatusUnauthorized)
 	if r.Method != http.MethodHead {
 		_, _ = w.Write([]byte("This site is protected.\n"))
-	}
-}
-
-// loginData is what the login page shows. A2.3, A2.4 and A2.5 add their
-// methods (password, email code, OAuth providers) as fields here and one
-// <section class="method"> each in templates/login.html.
-type loginData struct {
-	// Site is the host the visitor asked for.
-	Site  string
-	Links bool
-}
-
-// loginPage renders the site's login page with status. It is Wardlock's
-// page, not the site's: never cached, never framed, no scripts.
-func (e *Edge) loginPage(w http.ResponseWriter, r *http.Request, links bool, status int) {
-	var body bytes.Buffer
-	if err := pages.ExecuteTemplate(&body, "login.html", loginData{Site: canonicalHost(r.Host), Links: links}); err != nil {
-		e.log.ErrorContext(r.Context(), "render login page", slog.Any("error", err))
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	h := w.Header()
-	h.Set("Cache-Control", "no-store")
-	h.Set("Content-Type", "text/html; charset=utf-8")
-	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
-	h.Set("X-Frame-Options", "DENY")
-	w.WriteHeader(status)
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body.Bytes())
 	}
 }
 
@@ -122,16 +92,7 @@ func (e *Edge) serveReserved(w http.ResponseWriter, r *http.Request, site Served
 		h.Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}` + "\n"))
 	case ReservedPrefix + "login":
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			h.Set("Allow", "GET, HEAD")
-			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		d, ok := e.decide(w, r, access.Request{SiteID: site.ID, Path: "/"})
-		if !ok {
-			return
-		}
-		e.loginPage(w, r, d.Policy.LinksEnabled, http.StatusOK)
+		e.login(w, r, site)
 	case ReservedPrefix + "logout":
 		e.logout(w, r, site)
 	case ReservedPrefix + "view":
