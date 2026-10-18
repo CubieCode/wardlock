@@ -57,6 +57,7 @@ function policy(path: string, visibility: Policy['visibility']): Policy {
     path,
     visibility,
     methods: visibility === 'public' ? [] : ['links'],
+    allowlist: { emails: [], domains: [] },
     version: 1,
     createdAt: now,
     updatedAt: now,

@@ -9,20 +9,26 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/mail"
 	"strings"
 	"unicode/utf8"
 
 	"wardlock.nz/apiclient"
 )
 
-const policyUsage = "Usage: wardlock policy set DOMAIN [--path P] (--public | --protected [--links] [--password])\n\n" +
+const policyUsage = "Usage: wardlock policy set DOMAIN [--path P] (--public | --protected [--links] [--password] [--email] [--allow LIST])\n\n" +
 	"Sets the site default policy, or with --path the policy for a directory\n" +
 	"prefix such as /docs/. The longest matching prefix decides each request.\n" +
 	"--public lets anyone in; --protected needs one of the methods given:\n" +
 	"--links for share links (the default when none is given), --password\n" +
-	"for a password visitors enter on the site's login page. The password is\n" +
+	"for a password visitors enter on the site's login page, --email for a\n" +
+	"code emailed to an address the allowlist lets in. The password is\n" +
 	"asked for without echo on a terminal, and otherwise read from the first\n" +
-	"line of standard input; it is never a flag. A change ends every visitor\n" +
+	"line of standard input; it is never a flag. --allow replaces the\n" +
+	"policy's allowlist with comma-separated addresses (ana@example.com) and\n" +
+	"domains (example.com for that domain only, *.example.com for its\n" +
+	"subdomains); it may be repeated, and --allow '' empties it. Without\n" +
+	"--allow the current allowlist is kept. A change ends every visitor\n" +
 	"session of that policy. Needs a token with the manage scope."
 
 func runPolicy(ctx context.Context, a *app, args []string) error {
@@ -45,6 +51,14 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 	protected := fs.Bool("protected", false, "let in only visitors who satisfy one of the methods given")
 	links := fs.Bool("links", false, "with --protected: share links let visitors in")
 	password := fs.Bool("password", false, "with --protected: a password lets visitors in (asked for, or read from stdin)")
+	email := fs.Bool("email", false, "with --protected: a code emailed to an allowed address lets visitors in")
+	var allow *apiclient.PolicyAllowlist
+	fs.Func("allow", "replace the allowlist with these comma-separated addresses and domains (repeatable; '' empties it)", func(v string) error {
+		if allow == nil {
+			allow = &apiclient.PolicyAllowlist{Emails: []string{}, Domains: []string{}}
+		}
+		return addAllowed(allow, v)
+	})
 	// A value given to --password is most likely the password itself:
 	// refuse it before the flag package repeats it in an error.
 	for _, arg := range args {
@@ -88,11 +102,16 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 	if *password {
 		methods = append(methods, apiclient.PolicyMethodPassword)
 	}
+	if *email {
+		methods = append(methods, apiclient.PolicyMethodEmail)
+	}
 	switch {
 	case *public == *protected:
 		return usageErrorf("pass exactly one of --public or --protected")
 	case *public && len(methods) > 0:
-		return usageErrorf("a public policy takes no methods: drop --links and --password, or use --protected")
+		return usageErrorf("a public policy takes no methods: drop --links, --password and --email, or use --protected")
+	case *public && allow != nil && len(allow.Emails)+len(allow.Domains) > 0:
+		return usageErrorf("a public policy has no allowlist: drop --allow, or use --protected")
 	case *public:
 		body.Visibility = apiclient.PolicyVisibilityPublic
 	default:
@@ -100,6 +119,7 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 		if len(methods) > 0 {
 			body.Methods = &methods
 		}
+		body.Allowlist = allow
 	}
 
 	if *password {
@@ -144,7 +164,57 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 		return writeJSON(a.stdout, p)
 	}
 	fmt.Fprintf(a.stdout, "%s %s is now %s.\n", name, p.Path, describePolicy(p))
+	if allowed := append(append([]string{}, p.Allowlist.Emails...), p.Allowlist.Domains...); len(allowed) > 0 {
+		fmt.Fprintf(a.stdout, "Allowed: %s\n", strings.Join(allowed, ", "))
+	}
 	return nil
+}
+
+// addAllowed adds the comma-separated entries of v to l: those with an @
+// are addresses, the rest domains. Each is checked as the server would
+// (docs/SPEC.md "Email code"), so a typo fails before any request; the
+// server normalises them.
+func addAllowed(l *apiclient.PolicyAllowlist, v string) error {
+	for entry := range strings.SplitSeq(v, ",") {
+		entry = strings.TrimSpace(entry)
+		switch {
+		case entry == "":
+		case strings.Contains(entry, "@"):
+			if a, err := mail.ParseAddress(entry); err != nil || a.Name != "" || a.Address != entry || len(entry) > 254 {
+				return fmt.Errorf("%q is not an email address like ana@example.com", entry)
+			}
+			l.Emails = append(l.Emails, entry)
+		default:
+			if !allowedDomain(entry) {
+				return fmt.Errorf("%q is not an address or a domain like example.com or *.example.com (international names in their xn-- form)", entry)
+			}
+			l.Domains = append(l.Domains, entry)
+		}
+	}
+	return nil
+}
+
+// allowedDomain reports whether d is a DNS name of at least two ASCII
+// labels, optionally after "*." and with one trailing dot, not ending in a
+// numeric label.
+func allowedDomain(d string) bool {
+	name, _ := strings.CutPrefix(strings.TrimSuffix(d, "."), "*.")
+	labels := strings.Split(name, ".")
+	if len(name) > 253 || len(labels) < 2 || strings.Trim(labels[len(labels)-1], "0123456789") == "" {
+		return false
+	}
+	for _, l := range labels {
+		if l == "" || len(l) > 63 || l[0] == '-' || l[len(l)-1] == '-' {
+			return false
+		}
+		for i := range len(l) {
+			c := l[i] | 0x20 // ASCII lower case; leaves digits and '-' alone
+			if !('a' <= c && c <= 'z' || '0' <= l[i] && l[i] <= '9' || l[i] == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // describePolicy says who a policy lets in, as in "protected by share
@@ -160,6 +230,8 @@ func describePolicy(p apiclient.Policy) string {
 			ms = append(ms, "share links")
 		case apiclient.PolicyMethodPassword:
 			ms = append(ms, "a password")
+		case apiclient.PolicyMethodEmail:
+			ms = append(ms, "email codes")
 		default:
 			ms = append(ms, string(m))
 		}

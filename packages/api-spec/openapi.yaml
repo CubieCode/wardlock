@@ -2968,7 +2968,17 @@ components:
     Policy:
       type: object
       additionalProperties: false
-      required: [id, path, visibility, methods, allowlist, version, createdAt, updatedAt]
+      required:
+        [
+          id,
+          path,
+          visibility,
+          methods,
+          allowlist,
+          version,
+          createdAt,
+          updatedAt,
+        ]
       properties:
         id:
           $ref: '#/components/schemas/Id'

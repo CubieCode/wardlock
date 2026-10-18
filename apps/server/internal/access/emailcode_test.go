@@ -522,7 +522,7 @@ func TestEmailCodeSetValidation(t *testing.T) {
 		{"inner wildcard", emailRule("/", *list("a.*.test")), "allowlist"},
 		{"hyphen edge", emailRule("/", *list("-crew.test")), "allowlist"},
 		{"empty label", emailRule("/", *list("crew..test")), "allowlist"},
-		{"long label", emailRule("/", *list(strings.Repeat("a", 64)+".test")), "allowlist"},
+		{"long label", emailRule("/", *list(strings.Repeat("a", 64) + ".test")), "allowlist"},
 	} {
 		_, err := h.svc.Set(t.Context(), a, "harbour", tc.rule)
 		var te *access.TargetError

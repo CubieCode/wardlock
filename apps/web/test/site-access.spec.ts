@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // A visitor's way in, in a real browser against a real server: the
-// password form on the login page (A2.3) and the "Click to view" button of
-// a use-limited share link (A2.2). Both pages send Referrer-Policy:
+// password form on the login page (A2.3), the "Click to view" button of a
+// use-limited share link (A2.2) and the email-code forms (A2.4), with the
+// code read from the dev:// mail sink. These pages send Referrer-Policy:
 // no-referrer, so the browser posts them with Origin: null; this proves the
-// edge's same-origin check still lets them through. The password is
-// synthetic.
+// edge's same-origin check still lets them through. The password and
+// addresses are synthetic.
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { accessOwnerFor, mailbox, schemes } from './mail.js';
 import { createSite, publish } from './publish.js';
@@ -136,6 +137,76 @@ for (const scheme of schemes) {
       });
     } finally {
       await guest.close();
+    }
+
+    const visitorEmail = `visitor-${info.project.name}-${scheme}@example.test`;
+    const visitorInbox = mailbox(visitorEmail);
+    await test.step('the owner enables email codes for one address', async () => {
+      const res = await page.request.put(
+        `${origin}/api/v0/sites/${site}/policies`,
+        {
+          data: {
+            path: '/',
+            visibility: 'protected',
+            methods: ['links', 'password', 'email'],
+            allowlist: { emails: [visitorEmail], domains: [] },
+          },
+          headers,
+        },
+      );
+      expect(res.status()).toBe(200);
+    });
+
+    const reader = await browser.newContext({ colorScheme: scheme });
+    try {
+      const r = await reader.newPage();
+      await r.setViewportSize(page.viewportSize()!);
+      const emailForm = r.getByRole('region', { name: 'Email code' });
+
+      await test.step('an address that is not allowed gets the same answer', async () => {
+        await r.goto(`${siteURL}/`);
+        await check(r, info, `access-email-${scheme}`);
+        await emailForm
+          .getByRole('textbox', { name: 'Email address' })
+          .fill('stranger@example.test');
+        await emailForm.getByRole('button', { name: 'Send code' }).click();
+        await expect(emailForm).toContainText(
+          "If stranger@example.test may open this page, we've sent a 6-digit code to it.",
+        );
+        await emailForm
+          .getByRole('link', { name: 'Use another address' })
+          .click();
+      });
+
+      await test.step('a wrong code shows the error', async () => {
+        await emailForm
+          .getByRole('textbox', { name: 'Email address' })
+          .fill(visitorEmail);
+        await emailForm.getByRole('button', { name: 'Send code' }).click();
+        await expect(emailForm).toContainText(
+          `If ${visitorEmail} may open this page, we've sent a 6-digit code to it.`,
+        );
+        await check(r, info, `access-email-sent-${scheme}`);
+        const code = await visitorInbox.code();
+        await emailForm
+          .getByRole('textbox', { name: 'Code' })
+          .fill(code === '000000' ? '000001' : '000000');
+        await emailForm.getByRole('button', { name: 'Continue' }).click();
+        await expect(emailForm.getByRole('alert')).toHaveText(
+          'That code is not right, or it has expired. Check it, or send a new code.',
+        );
+        await check(r, info, `access-email-error-${scheme}`);
+
+        await test.step('the right code opens the site', async () => {
+          await emailForm.getByRole('textbox', { name: 'Code' }).fill(code);
+          await emailForm.getByRole('button', { name: 'Continue' }).click();
+          await expect(r.getByText('Harbour plans')).toBeVisible();
+          const cookies = await reader.cookies(siteURL);
+          expect(cookies.map((c) => c.name)).toContain('__Host-wardlock_site');
+        });
+      });
+    } finally {
+      await reader.close();
     }
   });
 }
