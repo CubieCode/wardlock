@@ -98,8 +98,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.5: CLI deploy and site commands
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: `feat/c1.5-cli-deploy-commands`
 - PR:
 - Depends on: C1.2, C1.7
 - Scope: `wardlock deploy`, `list`, `rollback`, `teardown`; `wardlock.json` and `.wardlockignore` (gitignore syntax, documented defaults); parallel bounded uploads with progress output; `--json` output for every command, no prompts without a TTY; `WARDLOCK_TOKEN` for CI; exit codes per SPEC.
