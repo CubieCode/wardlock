@@ -78,7 +78,7 @@ func (p *policyEdge) advance(d time.Duration) {
 	p.clock = p.clock.Add(d)
 }
 
-func newPolicyEdge(t *testing.T) *policyEdge {
+func newPolicyEdge(t *testing.T, opts ...func(*access.Config)) *policyEdge {
 	t.Helper()
 	db := storetest.New(t)
 	p := &policyEdge{t: t, db: db, logs: &bytes.Buffer{}, clock: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC), mailDir: t.TempDir(), mailLogs: &bytes.Buffer{}}
@@ -86,11 +86,15 @@ func newPolicyEdge(t *testing.T) *policyEdge {
 	notifier := deploys.NewLocalNotifier()
 	log := slog.New(slog.NewTextHandler(p.logs, nil))
 	p.notifier, p.log, p.blobs = notifier, log, blobs
-	acc, err := access.New(access.Config{
+	cfg := access.Config{
 		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), EmailCodes: db.EmailCodes(), Notifier: notifier,
 		Mailer: mail.NewDevSink(mail.Config{DevDir: p.mailDir, Logger: slog.New(slog.NewTextHandler(p.mailLogs, nil)), Now: p.now}),
 		Secret: []byte(testSecret), Now: p.now, Log: log,
-	})
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	acc, err := access.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +106,7 @@ func newPolicyEdge(t *testing.T) *policyEdge {
 	})
 	p.e, err = edge.New(edge.Config{
 		DashboardHost: "wardlock.localhost",
+		AuthHost:      "auth.wardlock.localhost",
 		Dashboard:     http.HandlerFunc(func(http.ResponseWriter, *http.Request) { p.dashboardHits++ }),
 		Health:        http.NotFoundHandler(),
 		Sites:         siteSource{baseDomain: "wardlock.localhost", sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(), renditions: db.Renditions()},

@@ -24,6 +24,7 @@ import (
 	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/api"
 	"wardlock.nz/server/internal/deploys"
+	"wardlock.nz/server/internal/oauth"
 	"wardlock.nz/server/internal/sites"
 	"wardlock.nz/server/internal/sites/sitestest"
 	"wardlock.nz/server/internal/store"
@@ -85,6 +86,8 @@ func newHarness(t *testing.T, limits deploys.Limits) *harness {
 	policies, err := access.New(access.Config{
 		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), AccessLog: db.AccessLog(), EmailCodes: db.EmailCodes(), Notifier: notifier,
 		Secret: []byte("api-test-server-key-0123456789abcdef-01"), Now: time.Now,
+		// A provider, so policies may enable OAuth; the API never signs in.
+		OAuth: access.OAuthConfig{Providers: []access.Provider{oauth.NewGitHub(oauth.GitHubConfig{ClientID: "id", ClientSecret: "unused"})}},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -45,6 +45,15 @@ const server = spawn(resolve('.local/bin/wardlockd'), ['serve'], {
     // A fresh server key per run; nothing persists past the throwaway data
     // directory.
     WARDLOCK_SECRET: randomBytes(32).toString('base64url'),
+    // OAuth providers (A2.5) with synthetic clients, so login pages list
+    // them; the browser test stops at the provider and never reaches it.
+    WARDLOCK_GITHUB_CLIENT_ID: 'acceptance-github-client',
+    WARDLOCK_GITHUB_CLIENT_SECRET: randomBytes(16).toString('hex'),
+    WARDLOCK_GOOGLE_CLIENT_ID: 'acceptance-google-client',
+    WARDLOCK_GOOGLE_CLIENT_SECRET: randomBytes(16).toString('hex'),
+    WARDLOCK_OIDC_ISSUER: '',
+    WARDLOCK_OIDC_CLIENT_ID: '',
+    WARDLOCK_OIDC_CLIENT_SECRET: '',
   },
 });
 

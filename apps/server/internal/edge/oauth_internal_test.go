@@ -1,0 +1,36 @@
+// SPDX-FileCopyrightText: 2026 CubieCode
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package edge
+
+import (
+	"testing"
+
+	"wardlock.nz/server/internal/access"
+)
+
+func TestFormAction(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		providers []access.ProviderInfo
+		want      string
+	}{
+		{"no providers", nil, "'self'"},
+		{"providers and the auth origin, once each", []access.ProviderInfo{
+			{ID: "github", Origins: []string{"https://github.com", "https://auth.example-sites.net"}},
+			{ID: "google", Origins: []string{"https://accounts.google.com", "https://auth.example-sites.net"}},
+		}, "'self' https://github.com https://auth.example-sites.net https://accounts.google.com"},
+		{"discovered endpoint on another host", []access.ProviderInfo{
+			{ID: "oidc", Origins: []string{"https://sso.example.test", "https://login.example.test:8443"}},
+		}, "'self' https://sso.example.test https://login.example.test:8443"},
+		{"anything but a plain origin is dropped", []access.ProviderInfo{
+			{ID: "oidc", Origins: []string{"https:", "https://", "javascript:x", "https://a.test; script-src *", "https://a.test/path", "*", "", "http://127.0.0.1:9999"}},
+		}, "'self' http://127.0.0.1:9999"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formAction(tt.providers); got != tt.want {
+				t.Fatalf("formAction = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

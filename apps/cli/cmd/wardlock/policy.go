@@ -16,20 +16,25 @@ import (
 	"wardlock.nz/apiclient"
 )
 
-const policyUsage = "Usage: wardlock policy set DOMAIN [--path P] (--public | --protected [--links] [--password] [--email] [--allow LIST])\n\n" +
+const policyUsage = "Usage: wardlock policy set DOMAIN [--path P] (--public | --protected [--links] [--password] [--email] [--oauth] [--allow LIST] [--github-org LIST])\n\n" +
 	"Sets the site default policy, or with --path the policy for a directory\n" +
 	"prefix such as /docs/. The longest matching prefix decides each request.\n" +
 	"--public lets anyone in; --protected needs one of the methods given:\n" +
 	"--links for share links (the default when none is given), --password\n" +
 	"for a password visitors enter on the site's login page, --email for a\n" +
-	"code emailed to an address the allowlist lets in. The password is\n" +
+	"code emailed to an address the allowlist lets in, --oauth for signing\n" +
+	"in with a GitHub, Google or OIDC account the allowlist lets in (the\n" +
+	"server's operator configures the providers). The password is\n" +
 	"asked for without echo on a terminal, and otherwise read from the first\n" +
 	"line of standard input; it is never a flag. --allow replaces the\n" +
 	"policy's allowlist with comma-separated addresses (ana@example.com) and\n" +
 	"domains (example.com for that domain only, *.example.com for its\n" +
 	"subdomains); it may be repeated, and --allow '' empties it. Without\n" +
-	"--allow the current allowlist is kept. A change ends every visitor\n" +
-	"session of that policy. Needs a token with the manage scope."
+	"--allow the current allowlist is kept. --github-org replaces the GitHub\n" +
+	"organisations (members signing in with GitHub are let in), likewise\n" +
+	"comma-separated and repeatable; without it they are kept. A change\n" +
+	"ends every visitor session of that policy. Needs a token with the\n" +
+	"manage scope."
 
 func runPolicy(ctx context.Context, a *app, args []string) error {
 	if len(args) > 0 && args[0] == "set" {
@@ -52,6 +57,14 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 	links := fs.Bool("links", false, "with --protected: share links let visitors in")
 	password := fs.Bool("password", false, "with --protected: a password lets visitors in (asked for, or read from stdin)")
 	email := fs.Bool("email", false, "with --protected: a code emailed to an allowed address lets visitors in")
+	oauth := fs.Bool("oauth", false, "with --protected: signing in with an allowed GitHub, Google or OIDC account lets visitors in")
+	var orgs *[]string
+	fs.Func("github-org", "replace the allowed GitHub organisations with these comma-separated names (repeatable; '' empties them)", func(v string) error {
+		if orgs == nil {
+			orgs = &[]string{}
+		}
+		return addOrgs(orgs, v)
+	})
 	var allow *apiclient.PolicyAllowlist
 	fs.Func("allow", "replace the allowlist with these comma-separated addresses and domains (repeatable; '' empties it)", func(v string) error {
 		if allow == nil {
@@ -105,13 +118,16 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 	if *email {
 		methods = append(methods, apiclient.PolicyMethodEmail)
 	}
+	if *oauth {
+		methods = append(methods, apiclient.PolicyMethodOauth)
+	}
 	switch {
 	case *public == *protected:
 		return usageErrorf("pass exactly one of --public or --protected")
 	case *public && len(methods) > 0:
-		return usageErrorf("a public policy takes no methods: drop --links, --password and --email, or use --protected")
-	case *public && allow != nil && len(allow.Emails)+len(allow.Domains) > 0:
-		return usageErrorf("a public policy has no allowlist: drop --allow, or use --protected")
+		return usageErrorf("a public policy takes no methods: drop --links, --password, --email and --oauth, or use --protected")
+	case *public && (allow != nil && len(allow.Emails)+len(allow.Domains) > 0 || orgs != nil && len(*orgs) > 0):
+		return usageErrorf("a public policy has no allowlist: drop --allow and --github-org, or use --protected")
 	case *public:
 		body.Visibility = apiclient.PolicyVisibilityPublic
 	default:
@@ -120,6 +136,10 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 			body.Methods = &methods
 		}
 		body.Allowlist = allow
+		if allow != nil {
+			// Without --github-org, githubOrgs is omitted and kept.
+			allow.GithubOrgs = orgs
+		}
 	}
 
 	if *password {
@@ -149,6 +169,15 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 		}
 		name = site.Name
 	}
+	if body.Allowlist == nil && orgs != nil && body.Visibility == apiclient.PolicyVisibilityProtected {
+		// The API replaces addresses and domains with the allowlist, so
+		// --github-org alone sends the current ones back unchanged.
+		cur, err := c.policyAllowlist(ctx, name, *path)
+		if err != nil {
+			return err
+		}
+		body.Allowlist = &apiclient.PolicyAllowlist{Emails: cur.Emails, Domains: cur.Domains, GithubOrgs: orgs}
+	}
 	res, err := c.api.SetPolicyWithResponse(ctx, name, body, c.auth)
 	if err != nil {
 		return c.unreachable(ctx, err)
@@ -166,6 +195,51 @@ func runPolicySet(ctx context.Context, a *app, args []string) error {
 	fmt.Fprintf(a.stdout, "%s %s is now %s.\n", name, p.Path, describePolicy(p))
 	if allowed := append(append([]string{}, p.Allowlist.Emails...), p.Allowlist.Domains...); len(allowed) > 0 {
 		fmt.Fprintf(a.stdout, "Allowed: %s\n", strings.Join(allowed, ", "))
+	}
+	if o := p.Allowlist.GithubOrgs; o != nil && len(*o) > 0 {
+		fmt.Fprintf(a.stdout, "GitHub organisations: %s\n", strings.Join(*o, ", "))
+	}
+	return nil
+}
+
+// policyAllowlist returns the allowlist of site name's policy for path,
+// empty when it has none yet.
+func (c *conn) policyAllowlist(ctx context.Context, name, path string) (apiclient.PolicyAllowlist, error) {
+	params := &apiclient.ListPoliciesParams{}
+	for {
+		res, err := c.api.ListPoliciesWithResponse(ctx, name, params, c.auth)
+		if err != nil {
+			return apiclient.PolicyAllowlist{}, c.unreachable(ctx, err)
+		}
+		if res.JSON200 == nil {
+			return apiclient.PolicyAllowlist{}, c.failed(res.HTTPResponse, res.Body)
+		}
+		for _, p := range res.JSON200.Items {
+			if p.Path == path {
+				return p.Allowlist, nil
+			}
+		}
+		if res.JSON200.NextCursor == nil {
+			return apiclient.PolicyAllowlist{Emails: []string{}, Domains: []string{}}, nil
+		}
+		params.Cursor = res.JSON200.NextCursor
+	}
+}
+
+// addOrgs adds the comma-separated GitHub organisation names of v to l,
+// checked as the server would: letters, digits and single hyphens, not at
+// either end, at most 39 characters.
+func addOrgs(l *[]string, v string) error {
+	for o := range strings.SplitSeq(v, ",") {
+		o = strings.TrimSpace(o)
+		if o == "" {
+			continue
+		}
+		if len(o) > 39 || o[0] == '-' || o[len(o)-1] == '-' || strings.Contains(o, "--") ||
+			strings.ContainsFunc(o, func(r rune) bool { return !ldh(r) }) {
+			return fmt.Errorf("%q is not a GitHub organisation name like example-org", o)
+		}
+		*l = append(*l, o)
 	}
 	return nil
 }
@@ -236,6 +310,8 @@ func describePolicy(p apiclient.Policy) string {
 			ms = append(ms, "a password")
 		case apiclient.PolicyMethodEmail:
 			ms = append(ms, "email codes")
+		case apiclient.PolicyMethodOauth:
+			ms = append(ms, "OAuth sign-in")
 		default:
 			ms = append(ms, string(m))
 		}

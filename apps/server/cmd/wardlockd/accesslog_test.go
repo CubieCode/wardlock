@@ -77,6 +77,20 @@ func (publicSite) EmailCodeLogin(context.Context, access.EmailCodeAttempt) (acce
 	return access.Cookie{}, access.ErrInvalidCode
 }
 
+func (publicSite) OAuthProviders() []access.ProviderInfo { return nil }
+
+func (publicSite) StartOAuth(context.Context, access.OAuthStart) (access.OAuthStarted, error) {
+	return access.OAuthStarted{}, access.ErrUnknownProvider
+}
+
+func (publicSite) FinishOAuth(context.Context, access.OAuthCallback) (access.OAuthFinished, error) {
+	return access.OAuthFinished{}, access.ErrOAuthState
+}
+
+func (publicSite) RedeemOAuth(context.Context, access.OAuthRedeem) (access.OAuthRedeemed, error) {
+	return access.OAuthRedeemed{}, access.ErrOAuthCode
+}
+
 type noInvalidations struct{}
 
 func (noInvalidations) Subscribe(func(string)) func() { return func() {} }

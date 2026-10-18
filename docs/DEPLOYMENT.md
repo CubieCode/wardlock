@@ -156,6 +156,24 @@ If something else already terminates TLS on the machine, run Wardlock in proxy m
 
 The server certificate is always verified against the system roots. Percent-encode special characters in the user name and password (`@` is `%40`). Credentials never appear in logs or errors, which show the server as `smtp://[redacted]@host:port`. `WARDLOCK_SMTP_FROM` sets the sender (`Wardlock <no-reply@example.com>`); it defaults to `Wardlock <wardlock@<dashboard host>>`. Configure SPF, DKIM and DMARC for the sending domain or codes will land in spam.
 
+## OAuth and OIDC
+
+Visitors can sign in to protected sites with GitHub, Google or one generic OpenID Connect provider (A2.5), once the operator registers Wardlock with the provider and an owner enables the OAuth method on a policy with an allowlist. Each provider is configured when its client ID is set; the secret is then required, and setting only one of the pair is a startup error. None configured leaves the method unavailable: enabling it is refused.
+
+| Variable                                                     | Meaning                                                                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `WARDLOCK_GITHUB_CLIENT_ID`, `WARDLOCK_GITHUB_CLIENT_SECRET` | A GitHub OAuth app (not a GitHub App)                                                            |
+| `WARDLOCK_GOOGLE_CLIENT_ID`, `WARDLOCK_GOOGLE_CLIENT_SECRET` | A Google Cloud OAuth client of type "Web application"                                            |
+| `WARDLOCK_OIDC_ISSUER`                                       | The issuer URL (`https://`; `http://` only for `localhost`), whose discovery document is fetched |
+| `WARDLOCK_OIDC_CLIENT_ID`, `WARDLOCK_OIDC_CLIENT_SECRET`     | The client registered with that issuer (confidential, authorisation code flow)                   |
+| `WARDLOCK_OIDC_NAME`                                         | The button label, as in "Continue with …"; default `single sign-on`, at most 40 characters       |
+
+Register exactly one redirect (callback) URL per provider on the auth origin: `https://auth.<base domain>/callback/github`, `/callback/google` or `/callback/oidc` (in local mode `http://auth.wardlock.localhost:<port>/callback/…`). Providers never redirect to sites themselves, so one registration covers every site. The auth origin is covered by the sites' wildcard DNS record and certificate; `WARDLOCK_DASHBOARD_HOST` cannot be the auth origin, and `auth` cannot be a site name.
+
+Wardlock asks GitHub for `user:email`, plus `read:org` only when the policy lists organisations; for an organisation with OAuth app access restrictions, an organisation owner must approve the app before memberships count. OIDC providers (Google included) are asked for `openid email`; an account counts only when the ID token (or the userinfo endpoint) says `email_verified` is true, so a provider that never asserts verification cannot be used. Discovery runs on the first sign-in, not at startup, so a provider outage does not stop the server.
+
+Sign-ins in progress (up to 10 minutes at the provider) and the 60-second codes that hand them to sites are kept in memory: a restart drops the sign-ins in flight, and visitors simply sign in again. Behind a reverse proxy, keep `code` and `state` out of access logs as Wardlock does in its own.
+
 ## Deploy storage and limits
 
 Deploy file bodies are stored once per content hash under `WARDLOCK_BLOB_DIR` (default `<WARDLOCK_DATA_DIR>/blobs`, laid out as `sha256/ab/cdef…`). Each upload is written to a temporary file in the same directory, fsynced and renamed into place, so put the blob directory on the same local filesystem as its parent, and give it room for every deploy you keep. Unreferenced blobs are removed by garbage collection (see below).

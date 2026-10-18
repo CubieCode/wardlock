@@ -42,6 +42,9 @@ type Limits struct {
 	EmailVerifyPerIP      Rate
 	EmailVerifyPerAddress Rate
 	EmailVerifyPerSite    Rate
+	// OAuthStartsPerIP counts OAuth sign-ins started per client (A2.5):
+	// each holds a pending flow in memory until the provider answers.
+	OAuthStartsPerIP Rate
 }
 
 // DefaultLimits are the limits used when Config.Limits is zero.
@@ -57,6 +60,7 @@ func DefaultLimits() Limits {
 		EmailVerifyPerIP:      Rate{N: 30, Per: 15 * time.Minute},
 		EmailVerifyPerAddress: Rate{N: 10, Per: 15 * time.Minute},
 		EmailVerifyPerSite:    Rate{N: 300, Per: 15 * time.Minute},
+		OAuthStartsPerIP:      Rate{N: 30, Per: 15 * time.Minute},
 	}
 }
 

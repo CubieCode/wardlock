@@ -1,0 +1,26 @@
+<!-- SPDX-FileCopyrightText: 2026 CubieCode -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!--
+  The OAuth and OIDC method of the login page (A2.5), included by
+  login.html: one button per provider the operator configured, each its own
+  form posting method=oauth and the provider's ID to /.wardlock/login, which
+  sets the flow's binding cookie and sends the visitor to the provider.
+  Buttons are text only: no provider logos or brand colours. Their styles
+  (.providers) are in login.html.
+-->
+{{define "oauth-method"}}
+<section class="method" aria-labelledby="method-oauth">
+  <h2 id="method-oauth">Your account</h2>
+  <p>Sign in with an account the site's owner has allowed.</p>
+  <div class="providers">
+    {{range .OAuth}}
+    <form method="post" action="/.wardlock/login">
+      <input type="hidden" name="method" value="oauth" />
+      <input type="hidden" name="provider" value="{{.ID}}" />
+      <input type="hidden" name="next" value="{{$.Next}}" />
+      <button type="submit">Continue with {{.Name}}</button>
+    </form>
+    {{end}}
+  </div>
+</section>
+{{end}}

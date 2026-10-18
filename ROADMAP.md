@@ -199,9 +199,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.5: OAuth and OIDC
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/a2.5-oauth-oidc`
+- PR: https://github.com/CubieCode/wardlock/pull/55
 - Depends on: A2.1, C1.4
 - Scope: Central auth origin `auth.<base domain>`; GitHub, Google and generic OIDC providers configured by the operator; PKCE, `state`, OIDC `nonce`; single-use, 60-second, site-bound codes exchanged at `/.wardlock/callback`; allowlists by verified email, domain and GitHub organisation.
 - Acceptance: Tests against in-process fake providers cover the full flow, replayed and expired codes, wrong-site codes, `state` and PKCE failures, unverified emails and each allowlist type; no cookie is ever set on the base domain.

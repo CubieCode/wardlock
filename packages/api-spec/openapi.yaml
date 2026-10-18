@@ -1521,10 +1521,11 @@ paths:
                   - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40
                     path: /
                     visibility: protected
-                    methods: [links, email]
+                    methods: [links, email, oauth]
                     allowlist:
                       emails: []
                       domains: [example.com]
+                      githubOrgs: [example-org]
                     version: 3
                     createdAt: 1767225600000
                     updatedAt: 1767312000000
@@ -1535,6 +1536,7 @@ paths:
                     allowlist:
                       emails: []
                       domains: []
+                      githubOrgs: []
                     version: 1
                     createdAt: 1767225600000
                     updatedAt: 1767225600000
@@ -2138,6 +2140,7 @@ components:
         allowlist:
           emails: []
           domains: []
+          githubOrgs: []
         version: 1
         createdAt: 1767225600000
         updatedAt: 1767225600000
@@ -2921,9 +2924,12 @@ components:
         alternatives, not layers. `links`: share links (A2.2). `password`:
         the policy password, entered on the site's login page (A2.3).
         `email`: a 6-digit code emailed to an address the policy's
-        `allowlist` lets in, entered on the site's login page (A2.4). OAuth
-        joins with A2.5.
-      enum: [links, password, email]
+        `allowlist` lets in, entered on the site's login page (A2.4).
+        `oauth`: signing in with a GitHub, Google or OIDC account the
+        `allowlist` lets in, through the providers the server's operator
+        configured (A2.5); enabling it on a server with no provider answers
+        `400 invalid_policy`.
+      enum: [links, password, email, oauth]
     PolicyPath:
       type: string
       description: >-
@@ -2941,10 +2947,11 @@ components:
       description: >-
         Who the email-code and OAuth methods let in: one list per policy,
         shared by both. A visitor is allowed when their verified address is
-        listed exactly or is at a listed domain. At most 1,000 entries in
-        all; the server normalises entries (lower case, sorted, without
-        duplicates) and answers `400 invalid_policy` (`target: allowlist`)
-        for an entry it cannot read.
+        listed exactly or is at a listed domain, or (OAuth with GitHub only)
+        when their GitHub account is an active member of a listed
+        organisation. At most 1,000 entries in all; the server normalises
+        entries (lower case, sorted, without duplicates) and answers `400
+        invalid_policy` (`target: allowlist`) for an entry it cannot read.
       required: [emails, domains]
       properties:
         emails:
@@ -2965,6 +2972,17 @@ components:
             type: string
             maxLength: 255
           examples: [[example.com, '*.example.com']]
+        githubOrgs:
+          type: array
+          description: >-
+            GitHub organisation logins, lower case, checked only for visitors
+            signing in with GitHub (A2.5). Always present in responses; in a
+            request, omitted keeps the policy's current organisations while
+            `emails` and `domains` are replaced.
+          items:
+            type: string
+            maxLength: 39
+          examples: [[example-org]]
     Policy:
       type: object
       additionalProperties: false
@@ -3051,9 +3069,11 @@ components:
         allowlist:
           $ref: '#/components/schemas/PolicyAllowlist'
           description: >-
-            Replaces the policy's allowlist; omitted keeps the current one.
-            The `email` method needs at least one address or domain in it.
-            Must be empty or omitted for a public policy.
+            Replaces the policy's allowlist; omitted keeps the current one
+            (and an omitted `githubOrgs` keeps the current organisations).
+            The `email` method needs at least one address or domain in it,
+            and the `oauth` method at least one entry of any kind. Must be
+            empty or omitted for a public policy.
 
     LinkPublicId:
       type: string
