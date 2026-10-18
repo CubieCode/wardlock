@@ -188,8 +188,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.4: Email-code policy
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: feat/a2.4-email-code-policy
 - PR:
 - Depends on: A2.1, F0.4
 - Scope: Email-code method with address and domain allowlists, neutral responses, 6-digit codes, send and verify rate limits, use of the F0.4 mailer and dev sink.
