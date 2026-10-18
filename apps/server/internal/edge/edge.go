@@ -48,7 +48,7 @@ type Config struct {
 	// TLSAsk answers /.wardlock/tls-ask on every host in proxy TLS mode
 	// (C1.9); nil, in other modes, answers it 404 everywhere.
 	TLSAsk http.Handler
-	Log      *slog.Logger
+	Log    *slog.Logger
 }
 
 // Edge is the edge handler.

@@ -39,6 +39,7 @@ var commands = []command{
 	{"teardown", "Delete a site with all its deploys", runTeardown},
 	{"policy", "Set who may open a site or a path", runPolicy},
 	{"share", "Create, list, revoke and rotate share links", runShare},
+	{"domain", "Add, list, check and remove custom domains", runDomain},
 	{"login", "Log in to a Wardlock server in your browser", runLogin},
 	{"logout", "Revoke and forget the stored token", runLogout},
 	{"version", "Print the CLI version, and the server's with --server", runVersion},
