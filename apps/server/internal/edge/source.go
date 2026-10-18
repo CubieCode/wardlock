@@ -82,4 +82,10 @@ type Access interface {
 	// PasswordLogin checks a password sign-in and returns the session
 	// cookie it earns (A2.3).
 	PasswordLogin(ctx context.Context, a access.PasswordAttempt) (access.Cookie, error)
+	// SendEmailCode emails a code if the address may sign in, answering
+	// the same either way (A2.4).
+	SendEmailCode(ctx context.Context, r access.EmailCodeRequest) error
+	// EmailCodeLogin checks an emailed code and returns the session cookie
+	// it earns (A2.4).
+	EmailCodeLogin(ctx context.Context, a access.EmailCodeAttempt) (access.Cookie, error)
 }

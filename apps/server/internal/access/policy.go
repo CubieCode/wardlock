@@ -19,8 +19,8 @@ const DefaultPrefix = "/"
 // maxPrefixBytes matches the policies.path_prefix CHECK.
 const maxPrefixBytes = 1024
 
-// Rule is what an owner sets for a path prefix. Email-code and OAuth
-// settings join it with A2.4 and A2.5.
+// Rule is what an owner sets for a path prefix. OAuth settings join it
+// with A2.5.
 type Rule struct {
 	// PathPrefix is "/" for the site default, or a directory prefix such
 	// as "/docs/".
@@ -34,6 +34,13 @@ type Rule struct {
 	// hashed with Argon2id and never stored, logged or returned. Without
 	// it an enabled password keeps the current one, which must exist.
 	NewPassword string
+	// Email enables email codes (A2.4) for the allowlist's addresses and
+	// domains.
+	Email bool
+	// Allowlist, when not nil, replaces the policy's allowlist (shared by
+	// the email-code and OAuth methods); nil keeps the current one. A
+	// public policy has none.
+	Allowlist *store.Allowlist
 }
 
 // newDefault is the policy a site has before its owner sets one: public,
@@ -82,11 +89,14 @@ func checkRule(r Rule) error {
 	}
 	switch r.Visibility {
 	case store.Public:
-		if r.Links || r.Password {
+		if r.Links || r.Password || r.Email {
 			return &TargetError{Err: ErrInvalidPolicy, Target: "methods", Message: "A public policy takes no methods."}
 		}
+		if r.Allowlist != nil && r.Allowlist.Len() > 0 {
+			return &TargetError{Err: ErrInvalidPolicy, Target: "allowlist", Message: "A public policy has no allowlist."}
+		}
 	case store.Protected:
-		if !r.Links && !r.Password {
+		if !r.Links && !r.Password && !r.Email {
 			return &TargetError{Err: ErrInvalidPolicy, Target: "methods", Message: "A protected policy needs at least one method."}
 		}
 	default:

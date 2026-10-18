@@ -4,7 +4,7 @@
 package storetest
 
 import (
-	"slices"
+	"reflect"
 	"testing"
 	"time"
 
@@ -13,6 +13,7 @@ import (
 
 func policiesContract(t *testing.T, open Opener) {
 	policiesSetPassword(t, open)
+	policiesSetAllowlist(t, open)
 	t.Run("Create", func(t *testing.T) {
 		t.Parallel()
 		policiesCreate(t, open)
@@ -31,7 +32,7 @@ func policiesContract(t *testing.T, open Opener) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if want := []store.Policy{def, docs}; !slices.Equal(got, want) {
+		if want := []store.Policy{def, docs}; !reflect.DeepEqual(got, want) {
 			t.Fatalf("ForSite() = %+v, want %+v", got, want)
 		}
 		got, err = f.r.Policies.ForSite(t.Context(), store.NewID())
@@ -53,7 +54,7 @@ func policiesContract(t *testing.T, open Opener) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got) != 1 || got[0] != p {
+		if len(got) != 1 || !reflect.DeepEqual(got[0], p) {
 			t.Fatalf("after EnsureDefault twice: %+v, want only %+v", got, p)
 		}
 		wantErr(t, f.r.Policies.EnsureDefault(t.Context(), f.validPolicy(store.NewID())), store.ErrConstraint)
@@ -86,7 +87,7 @@ func policiesContract(t *testing.T, open Opener) {
 			}
 			after = page[len(page)-1].PathPrefix
 		}
-		if !slices.Equal(got, want) {
+		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("List pages = %v, want %v", got, want)
 		}
 		page, err := f.r.Policies.List(t.Context(), b, s, "", 10)
@@ -115,7 +116,7 @@ func policiesContract(t *testing.T, open Opener) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got != created {
+		if !reflect.DeepEqual(got, created) {
 			t.Fatalf("Set(same settings) = %+v, want unchanged %+v", got, created)
 		}
 
@@ -127,14 +128,14 @@ func policiesContract(t *testing.T, open Opener) {
 		}
 		want := changed
 		want.ID, want.CreatedAt, want.Version = created.ID, created.CreatedAt, 2
-		if got != want {
+		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("Set(changed) = %+v, want %+v", got, want)
 		}
 		stored, err := f.r.Policies.ForSite(t.Context(), s)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(stored) != 1 || stored[0] != want {
+		if len(stored) != 1 || !reflect.DeepEqual(stored[0], want) {
 			t.Fatalf("stored %+v, want %+v", stored, want)
 		}
 

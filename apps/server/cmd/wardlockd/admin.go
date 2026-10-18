@@ -12,6 +12,7 @@ import (
 	"net"
 	"strconv"
 
+	"wardlock.nz/server/internal/mail"
 	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/platform"
 )
@@ -69,7 +70,11 @@ func admin(ctx context.Context, args []string, getenv func(string) string, stdou
 	if err != nil {
 		return fmt.Errorf("%w: WARDLOCK_HTTP_ADDR port %q", platform.ErrInvalidConfig, portStr)
 	}
-	svc, err := newOwners(cfg, log, db, publicOrigin(cfg.DashboardHost, port))
+	mailer, err := mail.New(mail.Config{SMTP: cfg.SMTP, Logger: log})
+	if err != nil {
+		return err
+	}
+	svc, err := newOwners(cfg, log, db, publicOrigin(cfg.DashboardHost, port), mailer)
 	if err != nil {
 		return err
 	}

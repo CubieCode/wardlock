@@ -74,7 +74,12 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 	dashURL := publicOrigin(cfg.DashboardHost, port)
-	ownerSvc, err := newOwners(cfg, log, db, dashURL)
+	mailer, err := mail.New(mail.Config{SMTP: cfg.SMTP, Logger: log})
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
+	ownerSvc, err := newOwners(cfg, log, db, dashURL, mailer)
 	if err != nil {
 		_ = ln.Close()
 		return err
@@ -102,6 +107,8 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 
 		PasswordSessions: db.PasswordSessions(),
 		AccessLog:        db.AccessLog(),
+		EmailCodes:       db.EmailCodes(),
+		Mailer:           mailer,
 		Secret:           cfg.Secret,
 		Now:              time.Now,
 		Log:              log,
@@ -292,11 +299,7 @@ func openStore(ctx context.Context, cfg platform.Config, log *slog.Logger) (*sto
 	return db, nil
 }
 
-func newOwners(cfg platform.Config, log *slog.Logger, db *store.DB, dashURL *url.URL) (*owners.Service, error) {
-	mailer, err := mail.New(mail.Config{SMTP: cfg.SMTP, Logger: log})
-	if err != nil {
-		return nil, err
-	}
+func newOwners(cfg platform.Config, log *slog.Logger, db *store.DB, dashURL *url.URL, mailer mail.Mailer) (*owners.Service, error) {
 	return owners.New(owners.Config{
 		Owners:       db.Owners(),
 		Sessions:     db.Sessions(),

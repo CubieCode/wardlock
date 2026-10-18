@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"time"
 
 	"wardlock.nz/server/internal/store/sqlcgen"
@@ -32,17 +33,90 @@ type Policy struct {
 	EmailEnabled    bool
 	OAuthEnabled    bool
 	PasswordHash    string // Argon2id
-	Version         int
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// Allowlist is the policy's one allowlist, shared by the email-code
+	// and OAuth methods (A2.4).
+	Allowlist Allowlist
+	// KeepAllowlist, only in a Policy passed to Policies.Set, keeps the
+	// stored policy's allowlist (read inside Set's transaction) instead of
+	// Allowlist.
+	KeepAllowlist bool
+	Version       int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+// Allowlist entry kinds, as the policy_allowlist.kind column spells them.
+const (
+	AllowEmail     = "email"
+	AllowDomain    = "domain"
+	AllowGitHubOrg = "github_org"
+)
+
+// Allowlist holds who an email-code or OAuth sign-in may be: normalised,
+// sorted and distinct entries of each kind.
+type Allowlist struct {
+	// Emails are exact addresses, lower case.
+	Emails []string
+	// Domains are email domains, example.com (that domain only) or
+	// *.example.com (its subdomains), lower-case A-labels.
+	Domains []string
+	// GitHubOrgs are GitHub organisation logins, lower case (A2.5).
+	GitHubOrgs []string
+}
+
+// Equal reports whether a and b hold the same entries.
+func (a Allowlist) Equal(b Allowlist) bool {
+	same := func(x, y []string) bool {
+		x, y = slices.Clone(x), slices.Clone(y)
+		slices.Sort(x)
+		slices.Sort(y)
+		return slices.Equal(x, y)
+	}
+	return same(a.Emails, b.Emails) && same(a.Domains, b.Domains) && same(a.GitHubOrgs, b.GitHubOrgs)
+}
+
+// Len is the number of entries of every kind.
+func (a Allowlist) Len() int { return len(a.Emails) + len(a.Domains) + len(a.GitHubOrgs) }
+
+func (a Allowlist) entries() [][2]string {
+	var out [][2]string
+	for _, kv := range []struct {
+		kind   string
+		values []string
+	}{{AllowEmail, a.Emails}, {AllowDomain, a.Domains}, {AllowGitHubOrg, a.GitHubOrgs}} {
+		for _, v := range kv.values {
+			out = append(out, [2]string{kv.kind, v})
+		}
+	}
+	return out
+}
+
+// allowlistsFromRows groups rows by policy ID.
+func allowlistsFromRows(rows []sqlcgen.PolicyAllowlist) map[string]Allowlist {
+	out := map[string]Allowlist{}
+	for _, row := range rows {
+		a := out[row.PolicyID]
+		switch row.Kind {
+		case AllowEmail:
+			a.Emails = append(a.Emails, row.Value)
+		case AllowDomain:
+			a.Domains = append(a.Domains, row.Value)
+		case AllowGitHubOrg:
+			a.GitHubOrgs = append(a.GitHubOrgs, row.Value)
+		}
+		out[row.PolicyID] = a
+	}
+	return out
 }
 
 // SameSettings reports whether p and q decide alike: the same visibility,
-// methods and password hash. Version, IDs and times are ignored.
+// methods, password hash and allowlist. Version, IDs and times are
+// ignored.
 func (p Policy) SameSettings(q Policy) bool {
 	return p.Visibility == q.Visibility && p.LinksEnabled == q.LinksEnabled &&
 		p.PasswordEnabled == q.PasswordEnabled && p.EmailEnabled == q.EmailEnabled &&
-		p.OAuthEnabled == q.OAuthEnabled && p.PasswordHash == q.PasswordHash
+		p.OAuthEnabled == q.OAuthEnabled && p.PasswordHash == q.PasswordHash &&
+		p.Allowlist.Equal(q.Allowlist)
 }
 
 // KeepPasswordHash, as a Policy's PasswordHash passed to Policies.Set, keeps
@@ -54,6 +128,11 @@ const KeepPasswordHash = "keep:"
 // ErrNoPasswordToKeep is returned by Policies.Set for KeepPasswordHash when
 // the policy has no password enabled.
 var ErrNoPasswordToKeep = errors.New("no password to keep")
+
+// ErrEmailNeedsAllowlist is returned by Policies.Set when the email method
+// would be enabled with no allowed addresses or domains, as can happen
+// when KeepAllowlist finds none stored.
+var ErrEmailNeedsAllowlist = errors.New("the email method needs allowed addresses or domains")
 
 // Policies stores site and path policies, one per site and prefix.
 type Policies interface {
@@ -78,7 +157,9 @@ type Policies interface {
 	// to the old version; a changed or removed password hash also revokes
 	// the policy's password sessions. With identical settings it changes
 	// nothing. A PasswordHash of KeepPasswordHash keeps the stored one (see
-	// there). It returns the stored policy.
+	// there), and so does KeepAllowlist for the allowlist; a changed
+	// allowlist also revokes the policy's email and OAuth sessions. It
+	// returns the stored policy.
 	Set(ctx context.Context, ownerID string, p Policy) (Policy, error)
 	// Delete removes policy id of ownerID's site siteID together with the
 	// site sessions bound to it.
@@ -95,7 +176,7 @@ func (r policiesRepo) Create(ctx context.Context, ownerID string, p Policy) erro
 		if err := requireSite(ctx, q, ownerID, p.SiteID); err != nil {
 			return err
 		}
-		return mapErr("create policy", q.CreatePolicy(ctx, sqlcgen.CreatePolicyParams{
+		if err := mapErr("create policy", q.CreatePolicy(ctx, sqlcgen.CreatePolicyParams{
 			ID:              p.ID,
 			SiteID:          p.SiteID,
 			PathPrefix:      p.PathPrefix,
@@ -108,8 +189,32 @@ func (r policiesRepo) Create(ctx context.Context, ownerID string, p Policy) erro
 			Version:         int64(p.Version),
 			CreatedAt:       ms(p.CreatedAt),
 			UpdatedAt:       ms(p.UpdatedAt),
-		}))
+		})); err != nil {
+			return err
+		}
+		return addAllowlist(ctx, q, p)
 	})
+}
+
+// addAllowlist stores p's allowlist entries.
+func addAllowlist(ctx context.Context, q *sqlcgen.Queries, p Policy) error {
+	for _, e := range p.Allowlist.entries() {
+		if err := q.AddAllowlistEntry(ctx, sqlcgen.AddAllowlistEntryParams{
+			PolicyID: p.ID, SiteID: p.SiteID, Kind: e[0], Value: e[1],
+		}); err != nil {
+			return mapErr("add allowlist entry", err)
+		}
+	}
+	return nil
+}
+
+// withAllowlists attaches each policy's allowlist from rows.
+func withAllowlists(ps []Policy, rows []sqlcgen.PolicyAllowlist) []Policy {
+	lists := allowlistsFromRows(rows)
+	for i := range ps {
+		ps[i].Allowlist = lists[ps[i].ID]
+	}
+	return ps
 }
 
 func policyFromRow(row sqlcgen.Policy) Policy {
@@ -138,11 +243,17 @@ func policiesFromRows(rows []sqlcgen.Policy) []Policy {
 }
 
 func (r policiesRepo) ForSite(ctx context.Context, siteID string) ([]Policy, error) {
+	// Two reads, outside a transaction (which would take the write lock):
+	// a concurrent Set notifies, so its caller drops what was read.
 	rows, err := r.db.q.ListSitePolicies(ctx, siteID)
 	if err != nil {
 		return nil, mapErr("list site policies", err)
 	}
-	return policiesFromRows(rows), nil
+	entries, err := r.db.q.ListSiteAllowlist(ctx, siteID)
+	if err != nil {
+		return nil, mapErr("list site allowlist", err)
+	}
+	return withAllowlists(policiesFromRows(rows), entries), nil
 }
 
 func (r policiesRepo) EnsureDefault(ctx context.Context, p Policy) error {
@@ -169,7 +280,11 @@ func (r policiesRepo) List(ctx context.Context, ownerID, siteID, afterPrefix str
 	if err != nil {
 		return nil, mapErr("list policies", err)
 	}
-	return policiesFromRows(rows), nil
+	entries, err := r.db.q.ListOwnerSiteAllowlist(ctx, sqlcgen.ListOwnerSiteAllowlistParams{OwnerID: ownerID, SiteID: siteID})
+	if err != nil {
+		return nil, mapErr("list allowlist", err)
+	}
+	return withAllowlists(policiesFromRows(rows), entries), nil
 }
 
 func (r policiesRepo) Set(ctx context.Context, ownerID string, p Policy) (Policy, error) {
@@ -186,7 +301,13 @@ func (r policiesRepo) Set(ctx context.Context, ownerID string, p Policy) (Policy
 			out = p
 			out.Version = 1
 			out.CreatedAt = p.UpdatedAt
-			return mapErr("create policy", q.CreatePolicy(ctx, sqlcgen.CreatePolicyParams{
+			if out.KeepAllowlist {
+				out.Allowlist, out.KeepAllowlist = Allowlist{}, false
+			}
+			if out.EmailEnabled && len(out.Allowlist.Emails)+len(out.Allowlist.Domains) == 0 {
+				return ErrEmailNeedsAllowlist
+			}
+			if err := mapErr("create policy", q.CreatePolicy(ctx, sqlcgen.CreatePolicyParams{
 				ID:              out.ID,
 				SiteID:          out.SiteID,
 				PathPrefix:      out.PathPrefix,
@@ -199,17 +320,31 @@ func (r policiesRepo) Set(ctx context.Context, ownerID string, p Policy) (Policy
 				Version:         1,
 				CreatedAt:       ms(out.CreatedAt),
 				UpdatedAt:       ms(out.UpdatedAt),
-			}))
+			})); err != nil {
+				return err
+			}
+			return addAllowlist(ctx, q, out)
 		}
 		if err != nil {
 			return mapErr("get policy", err)
 		}
 		cur := policyFromRow(row)
+		entries, err := q.ListPolicyAllowlist(ctx, sqlcgen.ListPolicyAllowlistParams{SiteID: cur.SiteID, PolicyID: cur.ID})
+		if err != nil {
+			return mapErr("get allowlist", err)
+		}
+		cur.Allowlist = allowlistsFromRows(entries)[cur.ID]
 		if p.PasswordHash == KeepPasswordHash {
 			if !cur.PasswordEnabled || cur.PasswordHash == "" {
 				return ErrNoPasswordToKeep
 			}
 			p.PasswordHash = cur.PasswordHash
+		}
+		if p.KeepAllowlist {
+			p.Allowlist, p.KeepAllowlist = cur.Allowlist, false
+		}
+		if p.EmailEnabled && len(p.Allowlist.Emails)+len(p.Allowlist.Domains) == 0 {
+			return ErrEmailNeedsAllowlist
 		}
 		if cur.SameSettings(p) {
 			out = cur
@@ -224,6 +359,21 @@ func (r policiesRepo) Set(ctx context.Context, ownerID string, p Policy) (Policy
 				RevokedAt: nullMs(out.UpdatedAt), SiteID: out.SiteID, PolicyID: out.ID,
 			}); err != nil {
 				return mapErr("revoke password sessions", err)
+			}
+		}
+		if !cur.Allowlist.Equal(out.Allowlist) {
+			// A changed allowlist ends the sessions it let in outright,
+			// in the same transaction (A2.4).
+			if err := q.RevokePolicyAllowlistSessions(ctx, sqlcgen.RevokePolicyAllowlistSessionsParams{
+				RevokedAt: nullMs(out.UpdatedAt), SiteID: out.SiteID, PolicyID: out.ID,
+			}); err != nil {
+				return mapErr("revoke allowlist sessions", err)
+			}
+			if err := q.ClearPolicyAllowlist(ctx, sqlcgen.ClearPolicyAllowlistParams{SiteID: out.SiteID, PolicyID: out.ID}); err != nil {
+				return mapErr("clear allowlist", err)
+			}
+			if err := addAllowlist(ctx, q, out); err != nil {
+				return err
 			}
 		}
 		return mapErr("update policy", q.UpdatePolicy(ctx, sqlcgen.UpdatePolicyParams{

@@ -211,6 +211,12 @@ func (publicAccess) PasswordLogin(context.Context, access.PasswordAttempt) (acce
 	return access.Cookie{}, access.ErrWrongPassword
 }
 
+func (publicAccess) SendEmailCode(context.Context, access.EmailCodeRequest) error { return nil }
+
+func (publicAccess) EmailCodeLogin(context.Context, access.EmailCodeAttempt) (access.Cookie, error) {
+	return access.Cookie{}, access.ErrInvalidCode
+}
+
 type harness struct {
 	edge     *edge.Edge
 	fx       fixtures

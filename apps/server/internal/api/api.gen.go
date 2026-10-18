@@ -200,6 +200,7 @@ func (e PasskeyCredentialType) Valid() bool {
 
 // Defines values for PolicyMethod.
 const (
+	PolicyMethodEmail    PolicyMethod = "email"
 	PolicyMethodLinks    PolicyMethod = "links"
 	PolicyMethodPassword PolicyMethod = "password"
 )
@@ -207,6 +208,8 @@ const (
 // Valid indicates whether the value is a known member of the PolicyMethod enum.
 func (e PolicyMethod) Valid() bool {
 	switch e {
+	case PolicyMethodEmail:
+		return true
 	case PolicyMethodLinks:
 		return true
 	case PolicyMethodPassword:
@@ -849,6 +852,9 @@ type PasskeySignInRequest struct {
 
 // Policy defines model for Policy.
 type Policy struct {
+	// Allowlist Who the email-code and OAuth methods let in: one list per policy, shared by both. A visitor is allowed when their verified address is listed exactly or is at a listed domain. At most 1,000 entries in all; the server normalises entries (lower case, sorted, without duplicates) and answers `400 invalid_policy` (`target: allowlist`) for an entry it cannot read.
+	Allowlist PolicyAllowlist `json:"allowlist"`
+
 	// CreatedAt UTC milliseconds since the Unix epoch.
 	//
 	// Examples: 1767225600000
@@ -879,7 +885,20 @@ type Policy struct {
 	Visibility PolicyVisibility `json:"visibility"`
 }
 
-// PolicyMethod A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). `password`: the policy password, entered on the site's login page (A2.3). Email code and OAuth join with A2.4 and A2.5.
+// PolicyAllowlist Who the email-code and OAuth methods let in: one list per policy, shared by both. A visitor is allowed when their verified address is listed exactly or is at a listed domain. At most 1,000 entries in all; the server normalises entries (lower case, sorted, without duplicates) and answers `400 invalid_policy` (`target: allowlist`) for an entry it cannot read.
+type PolicyAllowlist struct {
+	// Domains Email domains as lower-case A-labels (international names in their `xn--` form): `example.com` matches addresses at that domain only, `*.example.com` addresses at any of its subdomains but not at `example.com` itself (list both for both).
+	//
+	// Examples: ["example.com","*.example.com"]
+	Domains []string `json:"domains"`
+
+	// Emails Exact email addresses, lower case.
+	//
+	// Examples: ["ana@example.com"]
+	Emails []string `json:"emails"`
+}
+
+// PolicyMethod A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). `password`: the policy password, entered on the site's login page (A2.3). `email`: a 6-digit code emailed to an address the policy's `allowlist` lets in, entered on the site's login page (A2.4). OAuth joins with A2.5.
 type PolicyMethod string
 
 // PolicyPage defines model for PolicyPage.
@@ -931,6 +950,9 @@ type SessionPage struct {
 
 // SetPolicyRequest defines model for SetPolicyRequest.
 type SetPolicyRequest struct {
+	// Allowlist Replaces the policy's allowlist; omitted keeps the current one. The `email` method needs at least one address or domain in it. Must be empty or omitted for a public policy.
+	Allowlist *PolicyAllowlist `json:"allowlist,omitempty"`
+
 	// Methods Methods to enable on a protected policy; omitted means `[links]` (share links are on by default). Must be empty or omitted for a public policy.
 	Methods *[]PolicyMethod `json:"methods,omitempty"`
 

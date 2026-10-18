@@ -12,9 +12,16 @@
   fields to edge.loginData (and to loginData.AnyMethod) and one guarded
   section here. Its form posts to /.wardlock/login with a hidden "method"
   field naming it (edge.login dispatches on it) and the hidden "next" path;
-  its error, if any, sits inside its own section. Share links (A2.2) and
-  the password (A2.3) are here; email code (A2.4) and OAuth (A2.5) join the
-  same way. The else branch covers a page with no method at all.
+  its error, if any, sits inside its own section. Share links (A2.2), the
+  password (A2.3) and email code (A2.4) are here; OAuth (A2.5) joins the
+  same way. The else branch covers a page with no method at all. An error
+  for a method the page has no section for is shown above the methods
+  (loginData.AloneError).
+
+  The email-code section has two steps, each a form with a hidden "step":
+  "send" asks for the address; "verify" asks for the code sent to it, and
+  offers sending a new code or starting again with another address. The
+  "sent" text is the same whether or not the address may sign in.
 -->
 <html lang="en">
   <head>
@@ -178,6 +185,41 @@
       button:hover {
         background: var(--primary-hover);
       }
+      .secondary {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.25rem 1rem;
+        margin-top: 0.75rem;
+        font-size: 0.875rem;
+      }
+      .secondary form {
+        display: inline;
+        margin: 0;
+      }
+      .secondary button,
+      .secondary a {
+        margin: 0;
+        padding: 0;
+        background: none;
+        color: var(--primary);
+        font-weight: 500;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .secondary button:hover,
+      .secondary a:hover {
+        background: none;
+        color: var(--primary-hover);
+      }
+      .secondary a:focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+      .address {
+        overflow-wrap: anywhere;
+        font-weight: 600;
+      }
       .notice {
         margin-top: 1.5rem;
         padding-top: 1rem;
@@ -211,8 +253,8 @@
       </p>
       <h1>This page is private</h1>
       <p class="lead">Only people the site's owner has let in can open it.</p>
-      {{if and .PasswordError (not .Password)}}
-      <p class="error alone" role="alert">{{.PasswordError}}</p>
+      {{with .AloneError}}
+      <p class="error alone" role="alert">{{.}}</p>
       {{end}} {{if .AnyMethod}}
       <div class="methods">
         {{if .Password}}
@@ -230,6 +272,57 @@
             {{end}}
             <button type="submit">Continue</button>
           </form>
+        </section>
+        {{end}} {{if .Email}}
+        <section class="method" aria-labelledby="method-email">
+          <h2 id="method-email">Email code</h2>
+          {{if .EmailSent}}
+          <p>
+            If <span class="address">{{.EmailAddress}}</span> may open this
+            page, we've sent a 6-digit code to it. It expires in
+            {{.EmailMinutes}} minutes.
+          </p>
+          <form method="post" action="/.wardlock/login">
+            <input type="hidden" name="method" value="email" />
+            <input type="hidden" name="step" value="verify" />
+            <input type="hidden" name="next" value="{{.Next}}" />
+            <input type="hidden" name="email" value="{{.EmailAddress}}" />
+            <label for="code">Code</label>
+            <!-- prettier-ignore -->
+            <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus{{if .EmailError}} aria-invalid="true" aria-describedby="email-error"{{end}} />
+            {{with .EmailError}}
+            <p class="error" id="email-error" role="alert">{{.}}</p>
+            {{end}}
+            <button type="submit">Continue</button>
+          </form>
+          <div class="secondary">
+            <form method="post" action="/.wardlock/login">
+              <input type="hidden" name="method" value="email" />
+              <input type="hidden" name="step" value="send" />
+              <input type="hidden" name="next" value="{{.Next}}" />
+              <input type="hidden" name="email" value="{{.EmailAddress}}" />
+              <button type="submit">Send a new code</button>
+            </form>
+            <a href="/.wardlock/login?next={{.Next}}">Use another address</a>
+          </div>
+          {{else}}
+          <p>
+            Get a one-time code by email, if the site's owner has let your
+            address in.
+          </p>
+          <form method="post" action="/.wardlock/login">
+            <input type="hidden" name="method" value="email" />
+            <input type="hidden" name="step" value="send" />
+            <input type="hidden" name="next" value="{{.Next}}" />
+            <label for="email">Email address</label>
+            <!-- prettier-ignore -->
+            <input id="email" name="email" type="email" autocomplete="email" value="{{.EmailAddress}}" required{{if .EmailError}} aria-invalid="true" aria-describedby="email-error" autofocus{{end}} />
+            {{with .EmailError}}
+            <p class="error" id="email-error" role="alert">{{.}}</p>
+            {{end}}
+            <button type="submit">Send code</button>
+          </form>
+          {{end}}
         </section>
         {{end}} {{if .Links}}
         <section class="method" aria-labelledby="method-links">

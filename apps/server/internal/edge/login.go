@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"wardlock.nz/server/internal/access"
 )
@@ -38,17 +39,41 @@ type loginData struct {
 	// the page's policy has no password form to put it under.
 	Password      bool
 	PasswordError string
+	// Email shows the email-code form (A2.4): first the address, then,
+	// once EmailSent, the code sent to EmailAddress (as the visitor typed
+	// it, whether or not it may sign in). EmailError is the message under
+	// the form, or above the methods when the page's policy has no email
+	// form to put it under.
+	Email        bool
+	EmailSent    bool
+	EmailAddress string
+	EmailError   string
+	// EmailMinutes is how long a code is valid.
+	EmailMinutes int
 }
 
 func newLoginData(r *http.Request, d access.Decision, next string) loginData {
 	return loginData{
 		Site: canonicalHost(r.Host), Next: next,
 		Links: d.Policy.LinksEnabled, Password: d.Policy.PasswordEnabled,
+		Email: d.Policy.EmailEnabled, EmailMinutes: int(access.EmailCodeValidity / time.Minute),
 	}
 }
 
 // AnyMethod reports whether the page offers any way in.
-func (l loginData) AnyMethod() bool { return l.Links || l.Password }
+func (l loginData) AnyMethod() bool { return l.Links || l.Password || l.Email }
+
+// AloneError is the message for a failed method the page has no form for,
+// shown above the methods.
+func (l loginData) AloneError() string {
+	switch {
+	case l.PasswordError != "" && !l.Password:
+		return l.PasswordError
+	case l.EmailError != "" && !l.Email:
+		return l.EmailError
+	}
+	return ""
+}
 
 // loginPage renders the site's login page with status. It is Wardlock's
 // page, not the site's: never cached, never framed, no scripts.
@@ -96,6 +121,8 @@ func (e *Edge) login(w http.ResponseWriter, r *http.Request, site ServedSite) {
 		switch r.PostForm.Get("method") {
 		case "password":
 			e.passwordLogin(w, r, site, safeNext(r.PostForm.Get("next")))
+		case "email":
+			e.emailLogin(w, r, site, safeNext(r.PostForm.Get("next")))
 		default:
 			http.Error(w, "Bad Request", http.StatusBadRequest)
 		}
@@ -140,6 +167,88 @@ func (e *Edge) passwordLogin(w http.ResponseWriter, r *http.Request, site Served
 	data := newLoginData(r, d, next)
 	data.PasswordError = msg
 	e.loginPage(w, r, data, status)
+}
+
+// maxAddressField bounds the address echoed back on the page.
+const maxAddressField = 254
+
+// emailLogin runs a step of the email-code form: "send" emails a code to
+// the form's address for next's policy, "verify" checks the code entered.
+// Sending answers the same page and status whether or not the address may
+// sign in, so the allowlist cannot be probed; a wrong, expired or used-up
+// code shows the code form again with one message and 401; too many
+// requests answer 429 with Retry-After. Success sets the session cookie and
+// returns to next. Neither the address nor the code is logged.
+func (e *Edge) emailLogin(w http.ResponseWriter, r *http.Request, site ServedSite, next string) {
+	addr := r.PostForm.Get("email")
+	if len(addr) > maxAddressField || !utf8.ValidString(addr) {
+		addr = ""
+	}
+	var (
+		err    error
+		status = http.StatusOK
+		data   func(access.Decision) loginData
+	)
+	switch r.PostForm.Get("step") {
+	case "send":
+		err = e.access.SendEmailCode(r.Context(), access.EmailCodeRequest{
+			SiteID: site.ID, Site: canonicalHost(r.Host), Path: next, IP: clientIP(r), Address: addr,
+		})
+		data = func(d access.Decision) loginData {
+			l := newLoginData(r, d, next)
+			l.EmailAddress, l.EmailSent = addr, err == nil
+			return l
+		}
+	case "verify":
+		var c access.Cookie
+		c, err = e.access.EmailCodeLogin(r.Context(), access.EmailCodeAttempt{
+			SiteID: site.ID, Path: next, IP: clientIP(r), Address: addr, Code: strings.TrimSpace(r.PostForm.Get("code")),
+		})
+		if err == nil {
+			h := w.Header()
+			h.Set("Cache-Control", "no-store")
+			h.Add("Set-Cookie", SessionCookie(c).String())
+			h.Set("Location", (&url.URL{Path: next}).EscapedPath())
+			w.WriteHeader(http.StatusSeeOther)
+			return
+		}
+		data = func(d access.Decision) loginData {
+			l := newLoginData(r, d, next)
+			l.EmailAddress, l.EmailSent = addr, true
+			return l
+		}
+	default:
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	msg := ""
+	var limited *access.RateLimitError
+	switch {
+	case err == nil:
+	case errors.As(err, &limited):
+		wait := max(time.Second, limited.RetryAfter.Round(time.Second))
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())))
+		status, msg = http.StatusTooManyRequests, fmt.Sprintf("Too many attempts. Try again in %s.", waitText(wait))
+	case errors.Is(err, access.ErrInvalidAddress):
+		status, msg = http.StatusBadRequest, "Enter an email address like name@example.com."
+	case errors.Is(err, access.ErrInvalidCode):
+		status, msg = http.StatusUnauthorized, "That code is not right, or it has expired. Check it, or send a new code."
+	default:
+		e.log.ErrorContext(r.Context(), "email-code sign-in", slog.String("site_id", site.ID), slog.Any("error", err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	d, ok := e.decide(w, r, access.Request{SiteID: site.ID, Path: next})
+	if !ok {
+		return
+	}
+	l := data(d)
+	if !l.Email && msg == "" {
+		// The policy has no email form to show the sent state in.
+		status, msg = http.StatusBadRequest, "Email codes are not available for this page."
+	}
+	l.EmailError = msg
+	e.loginPage(w, r, l, status)
 }
 
 // waitText says how long to wait in whole minutes, or seconds under one.

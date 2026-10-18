@@ -35,7 +35,11 @@ func (f *fakeAPI) setPolicy(w http.ResponseWriter, r *http.Request, s *fakeSite)
 		reply(w, http.StatusBadRequest, apiErr("invalid_policy", "A public policy takes no methods."))
 		return
 	}
-	reply(w, http.StatusOK, apiclient.Policy{Id: f.id(), Path: body.Path, Visibility: body.Visibility, Methods: methods, Version: int32(len(s.set))})
+	allow := apiclient.PolicyAllowlist{Emails: []string{}, Domains: []string{}}
+	if body.Allowlist != nil {
+		allow = *body.Allowlist
+	}
+	reply(w, http.StatusOK, apiclient.Policy{Id: f.id(), Path: body.Path, Visibility: body.Visibility, Methods: methods, Allowlist: allow, Version: int32(len(s.set))})
 }
 
 func TestPolicySet(t *testing.T) {
@@ -84,7 +88,7 @@ func TestPolicySetJSONAndScope(t *testing.T) {
 	if err := run(t.Context(), a, []string{"policy", "set", "docs", "--protected", "--json"}); err != nil {
 		t.Fatalf("policy set: %v\n%s", err, errOut)
 	}
-	assertJSONKeys(t, out.Bytes(), "createdAt", "id", "methods", "path", "updatedAt", "version", "visibility")
+	assertJSONKeys(t, out.Bytes(), "allowlist", "createdAt", "id", "methods", "path", "updatedAt", "version", "visibility")
 
 	srv.scopes = []string{"deploy"}
 	a, _, errOut = ciApp(t, srv)
@@ -148,6 +152,52 @@ func TestPolicySetPassword(t *testing.T) {
 			}
 			if strings.Contains(out.String()+errOut.String(), cliPassword) {
 				t.Fatalf("output shows the password: stdout %q, stderr %q", out, errOut)
+			}
+			var got string
+			if len(site.set) == 1 {
+				b, _ := json.Marshal(site.set[0])
+				got = string(b)
+			}
+			if got != tt.sent {
+				t.Fatalf("sent %s, want %s", got, tt.sent)
+			}
+		})
+	}
+}
+
+func TestPolicySetEmail(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		code int
+		want string
+		sent string
+	}{
+		{"email with an allowlist", []string{"policy", "set", "docs", "--protected", "--email", "--allow", "Ana@Example.com, example.com", "--allow", "*.example.com"}, 0,
+			"docs / is now protected by email codes.\nAllowed: Ana@Example.com, example.com, *.example.com\n",
+			`{"allowlist":{"domains":["example.com","*.example.com"],"emails":["Ana@Example.com"]},"methods":["email"],"path":"/","visibility":"protected"}`},
+		{"email keeping the allowlist", []string{"policy", "set", "docs", "--protected", "--links", "--email"}, 0,
+			"docs / is now protected by share links or email codes.",
+			`{"methods":["links","email"],"path":"/","visibility":"protected"}`},
+		{"emptying the allowlist", []string{"policy", "set", "docs", "--protected", "--links", "--allow", ""}, 0,
+			"docs / is now protected by share links.",
+			`{"allowlist":{"domains":[],"emails":[]},"methods":["links"],"path":"/","visibility":"protected"}`},
+		{"public with email", []string{"policy", "set", "docs", "--public", "--email"}, 2, "a public policy takes no methods", ""},
+		{"public with an allowlist", []string{"policy", "set", "docs", "--public", "--allow", "example.com"}, 2, "a public policy has no allowlist", ""},
+		{"bad address", []string{"policy", "set", "docs", "--protected", "--email", "--allow", "Ana <ana@example.com>"}, 2, "is not an email address", ""},
+		{"bad domain", []string{"policy", "set", "docs", "--protected", "--email", "--allow", "localhost"}, 2, "is not an address or a domain", ""},
+		{"wildcard alone", []string{"policy", "set", "docs", "--protected", "--email", "--allow", "*.com"}, 2, "is not an address or a domain", ""},
+		{"long wildcard", []string{"policy", "set", "docs", "--protected", "--email", "--allow", "*." + strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("a", 56) + ".test"}, 2, "is not an address or a domain", ""},
+		{"Unicode domain", []string{"policy", "set", "docs", "--protected", "--email", "--allow", "bücher.example"}, 2, "xn-- form", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newFakeAPI(t)
+			site := srv.addSite("docs", "")
+			a, out, errOut := ciApp(t, srv)
+			err := run(t.Context(), a, tt.args)
+			if code := exitCode(errOut, err); code != tt.code || !strings.Contains(out.String()+errOut.String(), tt.want) {
+				t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
 			}
 			var got string
 			if len(site.set) == 1 {

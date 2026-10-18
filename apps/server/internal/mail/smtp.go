@@ -122,23 +122,34 @@ func (m *SMTP) send(ctx context.Context, to string, data []byte) error {
 	}
 
 	if err := c.Mail(m.cfg.From.Address); err != nil {
-		return fmt.Errorf("mail from: %w", err)
+		return stageError("mail from", err)
 	}
 	if err := c.Rcpt(to); err != nil {
-		return fmt.Errorf("rcpt to: %w", err)
+		return stageError("rcpt to", err)
 	}
 	w, err := c.Data()
 	if err != nil {
-		return fmt.Errorf("data: %w", err)
+		return stageError("data", err)
 	}
 	if _, err := w.Write(data); err != nil {
-		return fmt.Errorf("data: %w", err)
+		return stageError("data", err)
 	}
 	if err := w.Close(); err != nil {
-		return fmt.Errorf("data: %w", err)
+		return stageError("data", err)
 	}
 	if err := c.Quit(); err != nil {
-		return fmt.Errorf("quit: %w", err)
+		return stageError("quit", err)
 	}
 	return nil
+}
+
+// stageError names the SMTP stage that failed. A server reply is reduced
+// to its code: servers often echo the recipient (a visitor's address) in
+// their text, and errors end up in logs.
+func stageError(stage string, err error) error {
+	var tpErr *textproto.Error
+	if errors.As(err, &tpErr) {
+		return fmt.Errorf("%s: server replied %d", stage, tpErr.Code)
+	}
+	return fmt.Errorf("%s: %w", stage, err)
 }

@@ -31,15 +31,32 @@ type Limits struct {
 	// until the window ends.
 	PasswordPerIP   Rate
 	PasswordPerSite Rate
+	// EmailSend* count email-code requests (A2.4), allowed addresses or
+	// not, so a limit says nothing about the allowlist: per client, per
+	// address (across every site, so no inbox is flooded) and per site.
+	EmailSendPerIP      Rate
+	EmailSendPerAddress Rate
+	EmailSendPerSite    Rate
+	// EmailVerify* count code entries the same ways, on top of the
+	// EmailCodeAttempts each code allows.
+	EmailVerifyPerIP      Rate
+	EmailVerifyPerAddress Rate
+	EmailVerifyPerSite    Rate
 }
 
 // DefaultLimits are the limits used when Config.Limits is zero.
 func DefaultLimits() Limits {
 	return Limits{
-		TokenFailuresPerIP:   Rate{N: 30, Per: 15 * time.Minute},
-		TokenFailuresPerSite: Rate{N: 300, Per: 15 * time.Minute},
-		PasswordPerIP:        Rate{N: 10, Per: 15 * time.Minute},
-		PasswordPerSite:      Rate{N: 100, Per: 15 * time.Minute},
+		TokenFailuresPerIP:    Rate{N: 30, Per: 15 * time.Minute},
+		TokenFailuresPerSite:  Rate{N: 300, Per: 15 * time.Minute},
+		PasswordPerIP:         Rate{N: 10, Per: 15 * time.Minute},
+		PasswordPerSite:       Rate{N: 100, Per: 15 * time.Minute},
+		EmailSendPerIP:        Rate{N: 20, Per: time.Hour},
+		EmailSendPerAddress:   Rate{N: 5, Per: time.Hour},
+		EmailSendPerSite:      Rate{N: 200, Per: time.Hour},
+		EmailVerifyPerIP:      Rate{N: 30, Per: 15 * time.Minute},
+		EmailVerifyPerAddress: Rate{N: 10, Per: 15 * time.Minute},
+		EmailVerifyPerSite:    Rate{N: 300, Per: 15 * time.Minute},
 	}
 }
 

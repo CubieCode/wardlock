@@ -161,6 +161,13 @@ type Policy struct {
 	UpdatedAt       int64
 }
 
+type PolicyAllowlist struct {
+	PolicyID string
+	SiteID   string
+	Kind     string
+	Value    string
+}
+
 type SchemaMigration struct {
 	Version   int64
 	Name      string
@@ -203,4 +210,16 @@ type SiteSession struct {
 	CreatedAt     int64
 	ExpiresAt     int64
 	RevokedAt     sql.NullInt64
+}
+
+type VisitorEmailCode struct {
+	ID            string
+	SiteID        string
+	PolicyID      string
+	PolicyVersion int64
+	AddressHash   string
+	CodeHash      string
+	Attempts      int64
+	CreatedAt     int64
+	ExpiresAt     int64
 }

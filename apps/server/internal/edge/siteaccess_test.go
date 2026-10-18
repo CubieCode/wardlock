@@ -56,6 +56,12 @@ func (a *fakeAccess) PasswordLogin(context.Context, access.PasswordAttempt) (acc
 	return access.Cookie{}, access.ErrWrongPassword
 }
 
+func (a *fakeAccess) SendEmailCode(context.Context, access.EmailCodeRequest) error { return nil }
+
+func (a *fakeAccess) EmailCodeLogin(context.Context, access.EmailCodeAttempt) (access.Cookie, error) {
+	return access.Cookie{}, access.ErrInvalidCode
+}
+
 func (a *fakeAccess) requests() []access.Request {
 	a.mu.Lock()
 	defer a.mu.Unlock()

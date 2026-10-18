@@ -71,6 +71,12 @@ func (publicSite) PasswordLogin(context.Context, access.PasswordAttempt) (access
 	return access.Cookie{}, access.ErrWrongPassword
 }
 
+func (publicSite) SendEmailCode(context.Context, access.EmailCodeRequest) error { return nil }
+
+func (publicSite) EmailCodeLogin(context.Context, access.EmailCodeAttempt) (access.Cookie, error) {
+	return access.Cookie{}, access.ErrInvalidCode
+}
+
 type noInvalidations struct{}
 
 func (noInvalidations) Subscribe(func(string)) func() { return func() {} }

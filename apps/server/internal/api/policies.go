@@ -43,6 +43,7 @@ func policyBody(p store.Policy) Policy {
 		Path:       p.PathPrefix,
 		Visibility: PolicyVisibility(p.Visibility),
 		Methods:    []PolicyMethod{},
+		Allowlist:  PolicyAllowlist{Emails: []string{}, Domains: []string{}},
 		Version:    math.MaxInt32, // a policy changed two billion times stays valid
 		CreatedAt:  p.CreatedAt.UnixMilli(),
 		UpdatedAt:  p.UpdatedAt.UnixMilli(),
@@ -56,6 +57,11 @@ func policyBody(p store.Policy) Policy {
 	if p.PasswordEnabled {
 		out.Methods = append(out.Methods, PolicyMethodPassword)
 	}
+	if p.EmailEnabled {
+		out.Methods = append(out.Methods, PolicyMethodEmail)
+	}
+	out.Allowlist.Emails = append(out.Allowlist.Emails, p.Allowlist.Emails...)
+	out.Allowlist.Domains = append(out.Allowlist.Domains, p.Allowlist.Domains...)
 	return out
 }
 
@@ -116,12 +122,18 @@ func (s *Server) SetPolicy(ctx context.Context, req SetPolicyRequestObject) (Set
 		seen := map[PolicyMethod]bool{}
 		for _, m := range *req.Body.Methods {
 			if !m.Valid() || seen[m] {
-				return SetPolicydefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_request", "methods must be distinct, from: links, password.", "methods")), nil
+				return SetPolicydefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_request", "methods must be distinct, from: links, password, email.", "methods")), nil
 			}
 			seen[m] = true
 		}
 		rule.Links = seen[PolicyMethodLinks]
 		rule.Password = seen[PolicyMethodPassword]
+		rule.Email = seen[PolicyMethodEmail]
+	}
+	if a := req.Body.Allowlist; a != nil {
+		// The API sets addresses and domains; anything else the policy
+		// holds (GitHub organisations, A2.5) is not part of it yet.
+		rule.Allowlist = &store.Allowlist{Emails: a.Emails, Domains: a.Domains}
 	}
 	// Write-only: hashed by Set, never echoed, logged or returned.
 	if req.Body.Password != nil {

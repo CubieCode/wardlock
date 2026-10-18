@@ -737,7 +737,7 @@ export interface paths {
     get: operations['listPolicies'];
     /**
      * Set the default or a path policy.
-     * @description Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`, as does the `password` method without a password to set or keep (`target: password`). The password is write-only: no response includes it or its hash.
+     * @description Creates the policy for `path` or replaces its settings. The policy for a request is the one with the longest path matching it, falling back to the default (`/`); policies do not stack. A change takes effect on the next request and increments `version`, which ends every visitor session created under the old version. Setting the same settings again changes nothing. A path that is not `/` or a clean directory prefix such as `/docs/` answers `400 invalid_policy_path`; methods on a public policy, or none on a protected one, answer `400 invalid_policy`, as does the `password` method without a password to set or keep (`target: password`), and the `email` method without an allowed address or domain to set or keep (`target: allowlist`). The password is write-only: no response includes it or its hash. The `allowlist` is shared by the email-code and OAuth methods; omitting it keeps the current one, any change to it increments `version` (ending the sessions it let in), and a public policy has none (setting a policy public clears it).
      */
     put: operations['setPolicy'];
     post?: never;
@@ -1280,21 +1280,40 @@ export interface components {
      */
     PolicyVisibility: 'public' | 'protected';
     /**
-     * @description A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). `password`: the policy password, entered on the site's login page (A2.3). Email code and OAuth join with A2.4 and A2.5.
+     * @description A way for a visitor to satisfy a protected policy. Methods are alternatives, not layers. `links`: share links (A2.2). `password`: the policy password, entered on the site's login page (A2.3). `email`: a 6-digit code emailed to an address the policy's `allowlist` lets in, entered on the site's login page (A2.4). OAuth joins with A2.5.
      * @enum {string}
      */
-    PolicyMethod: 'links' | 'password';
+    PolicyMethod: 'links' | 'password' | 'email';
     /**
      * @description `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
      * @example /docs/
      */
     PolicyPath: string;
+    /** @description Who the email-code and OAuth methods let in: one list per policy, shared by both. A visitor is allowed when their verified address is listed exactly or is at a listed domain. At most 1,000 entries in all; the server normalises entries (lower case, sorted, without duplicates) and answers `400 invalid_policy` (`target: allowlist`) for an entry it cannot read. */
+    PolicyAllowlist: {
+      /**
+       * @description Exact email addresses, lower case.
+       * @example [
+       *       "ana@example.com"
+       *     ]
+       */
+      emails: string[];
+      /**
+       * @description Email domains as lower-case A-labels (international names in their `xn--` form): `example.com` matches addresses at that domain only, `*.example.com` addresses at any of its subdomains but not at `example.com` itself (list both for both).
+       * @example [
+       *       "example.com",
+       *       "*.example.com"
+       *     ]
+       */
+      domains: string[];
+    };
     Policy: {
       id: components['schemas']['Id'];
       path: components['schemas']['PolicyPath'];
       visibility: components['schemas']['PolicyVisibility'];
       /** @description Enabled methods; empty exactly when the policy is public. */
       methods: components['schemas']['PolicyMethod'][];
+      allowlist: components['schemas']['PolicyAllowlist'];
       /**
        * Format: int32
        * @description Starts at 1 and increases with every change. Visitor sessions are bound to the version they were created under.
@@ -1317,6 +1336,8 @@ export interface components {
        * @description The new policy password, with the `password` method only: at least 8 characters and at most 1,024 bytes of UTF-8 (the server enforces the byte limit; JSON Schema lengths count characters). Stored only as an Argon2id hash and never returned. Omitted with the `password` method keeps the current password (`400 invalid_policy` when there is none). Any new password, even the same text, is a change: it increments `version` and ends the policy's password sessions.
        */
       password?: string;
+      /** @description Replaces the policy's allowlist; omitted keeps the current one. The `email` method needs at least one address or domain in it. Must be empty or omitted for a public policy. */
+      allowlist?: components['schemas']['PolicyAllowlist'];
     };
     /**
      * @description A share link's public ID: it names the link in listings, the access log and the CLI without revealing the token.
@@ -3164,8 +3185,15 @@ export interface operations {
            *           "path": "/",
            *           "visibility": "protected",
            *           "methods": [
-           *             "links"
+           *             "links",
+           *             "email"
            *           ],
+           *           "allowlist": {
+           *             "emails": [],
+           *             "domains": [
+           *               "example.com"
+           *             ]
+           *           },
            *           "version": 3,
            *           "createdAt": 1767225600000,
            *           "updatedAt": 1767312000000
@@ -3175,6 +3203,10 @@ export interface operations {
            *           "path": "/assets/",
            *           "visibility": "public",
            *           "methods": [],
+           *           "allowlist": {
+           *             "emails": [],
+           *             "domains": []
+           *           },
            *           "version": 1,
            *           "createdAt": 1767225600000,
            *           "updatedAt": 1767225600000

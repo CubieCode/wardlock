@@ -18,6 +18,7 @@ import (
 	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/edge"
+	"wardlock.nz/server/internal/mail"
 	"wardlock.nz/server/internal/store"
 	"wardlock.nz/server/internal/store/storetest"
 )
@@ -40,6 +41,10 @@ type policyEdge struct {
 	records []edge.AccessRecord
 	// tokens are every share-link token minted, for log assertions.
 	tokens []string
+	// mailDir is where the dev:// mail sink writes visitor email codes;
+	// mailLogs is the sink's own log, kept apart from logs.
+	mailDir  string
+	mailLogs *bytes.Buffer
 }
 
 // Record keeps the edge's access records for assertions.
@@ -73,12 +78,13 @@ func (p *policyEdge) advance(d time.Duration) {
 func newPolicyEdge(t *testing.T) *policyEdge {
 	t.Helper()
 	db := storetest.New(t)
-	p := &policyEdge{t: t, db: db, logs: &bytes.Buffer{}, clock: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)}
+	p := &policyEdge{t: t, db: db, logs: &bytes.Buffer{}, clock: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC), mailDir: t.TempDir(), mailLogs: &bytes.Buffer{}}
 	blobs := deploys.NewFSBlobStore(t.TempDir())
 	notifier := deploys.NewLocalNotifier()
 	log := slog.New(slog.NewTextHandler(p.logs, nil))
 	acc, err := access.New(access.Config{
-		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), Notifier: notifier,
+		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), EmailCodes: db.EmailCodes(), Notifier: notifier,
+		Mailer: mail.NewDevSink(mail.Config{DevDir: p.mailDir, Logger: slog.New(slog.NewTextHandler(p.mailLogs, nil)), Now: p.now}),
 		Secret: []byte(testSecret), Now: p.now, Log: log,
 	})
 	if err != nil {

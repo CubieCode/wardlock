@@ -145,6 +145,8 @@ erDiagram
   sites ||--o{ site_sessions : "site_id"
   share_links |o--o{ site_sessions : "(site_id, share_link_id)"
   policies ||--o{ site_sessions : "(site_id, policy_id)"
+  policies ||--o{ policy_allowlist : "(site_id, policy_id)"
+  policies ||--o{ visitor_email_codes : "(site_id, policy_id)"
 
   owners {
     TEXT id PK
@@ -277,6 +279,23 @@ erDiagram
     INTEGER created_at
     INTEGER updated_at
   }
+  policy_allowlist {
+    TEXT policy_id PK, FK
+    TEXT site_id FK
+    TEXT kind PK "email, domain, github_org"
+    TEXT value PK "lowercase"
+  }
+  visitor_email_codes {
+    TEXT id PK
+    TEXT site_id FK "UK with policy_id, address_hash"
+    TEXT policy_id FK
+    INTEGER policy_version
+    TEXT address_hash "HMAC"
+    TEXT code_hash "HMAC"
+    INTEGER attempts
+    INTEGER created_at
+    INTEGER expires_at
+  }
   share_links {
     TEXT id PK
     TEXT site_id FK
@@ -319,7 +338,7 @@ erDiagram
   }
 ```
 
-Columns follow the portable-SQL rules: text IDs (UUIDv7, `store.NewID`) generated in Go, timestamps as UTC Unix milliseconds in `INTEGER` (Postgres `BIGINT`), booleans as `INTEGER` with `CHECK (x IN (0, 1))`, upserts with `ON CONFLICT … DO UPDATE` (or `DO NOTHING`). Token, session and code columns hold only HMAC hashes, and the policy password only an Argon2id hash; the domain verification token is stored as is because it is published in DNS. `access_log` has no foreign keys, so it can later move to a separate store and outlive the sites it mentions. A site session's link and policy are composite foreign keys `(site_id, share_link_id)` and `(site_id, policy_id)` onto `UNIQUE (site_id, id)` in `share_links` and `policies`, so a session can never name another site's link or policy. Deleting a site cascades to its domains, deploys and their manifests, policies, share links and site sessions; the active deploy cannot be deleted on its own.
+Columns follow the portable-SQL rules: text IDs (UUIDv7, `store.NewID`) generated in Go, timestamps as UTC Unix milliseconds in `INTEGER` (Postgres `BIGINT`), booleans as `INTEGER` with `CHECK (x IN (0, 1))`, upserts with `ON CONFLICT … DO UPDATE` (or `DO NOTHING`). Token, session and code columns hold only HMAC hashes (a visitor email code's address too), and the policy password only an Argon2id hash; the domain verification token is stored as is because it is published in DNS. `access_log` has no foreign keys, so it can later move to a separate store and outlive the sites it mentions. A site session's link and policy are composite foreign keys `(site_id, share_link_id)` and `(site_id, policy_id)` onto `UNIQUE (site_id, id)` in `share_links` and `policies`, so a session can never name another site's link or policy. A policy's allowlist entries and visitor email codes (A2.4) use the same `(site_id, policy_id)` key and go with the policy. Deleting a site cascades to its domains, deploys and their manifests, policies (with their allowlists and email codes), share links and site sessions; the active deploy cannot be deleted on its own.
 
 Names chosen for C1.1: one-time owner credentials live in `owner_login_codes` (`purpose` is `setup` for the first-start setup URL with no owner, `signin_url` for the `admin create` or invite sign-in URL, `email_code` for the 6-digit code). An invite is an `owners` row with `invited_by` set and `accepted_at` NULL plus a `signin_url` code; `accepted_at` is set on first sign-in. CLI login (C1.7) is `cli_login_requests`: the CLI polls with a hashed device code and the API token is minted only when an approved request is redeemed. `client_name` holds what the CLI called itself until approval, then the name of the token it will receive. Poll intervals and API-token failure limits are kept in memory (`internal/owners`), like the sign-in limits; a restart only resets them early.
 
