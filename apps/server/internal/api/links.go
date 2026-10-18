@@ -43,7 +43,7 @@ func (s *Server) shareLinkBody(l store.ShareLink) ShareLink {
 		PublicId:       l.PublicID,
 		Path:           l.PathPrefix,
 		Status:         ShareLinkStatus(s.Access.Status(l)),
-		Uses:           int32(min(l.UseCount, math.MaxInt32)),
+		Uses:           clampInt32(l.UseCount),
 		CreatedAt:      l.CreatedAt.UnixMilli(),
 		ExpiresAt:      optionalMillis(l.ExpiresAt),
 		LastAccessedAt: optionalMillis(l.LastAccessedAt),
@@ -53,10 +53,18 @@ func (s *Server) shareLinkBody(l store.ShareLink) ShareLink {
 		out.Label = &l.Label
 	}
 	if l.MaxUses > 0 {
-		n := int32(min(l.MaxUses, access.MaxLinkUses))
+		n := clampInt32(l.MaxUses)
 		out.MaxUses = &n
 	}
 	return out
+}
+
+// clampInt32 converts a non-negative count, saturating at math.MaxInt32.
+func clampInt32(n int) int32 {
+	if n >= 0 && n <= math.MaxInt32 {
+		return int32(n)
+	}
+	return math.MaxInt32
 }
 
 // optionalMillis is millis, or nil (absent) for the zero time.

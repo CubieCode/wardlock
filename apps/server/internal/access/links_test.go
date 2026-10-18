@@ -30,7 +30,7 @@ func TestCreateLink(t *testing.T) {
 		{name: "200-character label", n: access.NewLink{Label: strings.Repeat("é", 200)}},
 		{name: "201-character label", n: access.NewLink{Label: strings.Repeat("l", 201)}, target: "label"},
 		{name: "control character", n: access.NewLink{Label: "sent to\nAlice"}, target: "label"},
-		{name: "invisible character", n: access.NewLink{Label: "sent​to"}, target: "label"},
+		{name: "invisible character", n: access.NewLink{Label: "sent\u200bto"}, target: "label"},
 		{name: "past expiry", n: access.NewLink{ExpiresAt: start}, target: "expiresAt"},
 		{name: "negative uses", n: access.NewLink{MaxUses: -1}, target: "maxUses"},
 		{name: "too many uses", n: access.NewLink{MaxUses: access.MaxLinkUses + 1}, target: "maxUses"},
