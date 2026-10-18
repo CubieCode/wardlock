@@ -32,6 +32,9 @@
   --color-accent: light-dark(#a8741f, #d7a756);
   --color-focus: light-dark(#2f6fb0, #8fbfff);
 
+  /* Behind a modal dialog; drawn at partial opacity */
+  --color-backdrop: light-dark(#1b2430, #05080b);
+
   /* Status: text, surface and border are used together */
   --color-success: light-dark(#1e6b3a, #8fd3a5);
   --color-success-surface: light-dark(#e6f2ea, #16271d);

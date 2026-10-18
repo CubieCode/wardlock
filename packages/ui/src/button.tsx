@@ -4,12 +4,15 @@
 import type { ButtonHTMLAttributes } from 'react';
 import { cx } from './cx.js';
 
-export type ButtonVariant = 'primary' | 'secondary';
+export type ButtonVariant = 'primary' | 'secondary' | 'danger';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** Required so a button inside a form never submits by accident. */
   type: 'button' | 'submit' | 'reset';
-  /** One primary button per area. */
+  /**
+   * One primary button per area. `danger` is only for the confirming button
+   * of a destructive action, inside its confirmation.
+   */
   variant?: ButtonVariant;
 }
 

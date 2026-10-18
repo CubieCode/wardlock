@@ -50,7 +50,7 @@ export function Shell({
               <NavItem
                 key={route.path}
                 href={route.path}
-                current={matchPath(route.path, pathname) !== null}
+                current={isCurrent(route.path, pathname)}
               >
                 {route.nav}
               </NavItem>
@@ -78,6 +78,12 @@ export function Shell({
       {children}
     </AppShell>
   );
+}
+
+/** A sidebar entry is current on its own page and on the pages under it. */
+function isCurrent(path: string, pathname: string) {
+  if (matchPath(path, pathname) !== null) return true;
+  return path !== '/' && pathname.startsWith(`${path}/`);
 }
 
 /** Any path inside the shell that matches no screen. */

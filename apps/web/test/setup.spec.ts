@@ -3,11 +3,14 @@
 import { expect, test } from '@playwright/test';
 import {
   cliOwnerFor,
+  foreignSite,
   ownerFor,
   passkeyOwnerFor,
   projects,
   schemes,
+  sitesOwnerFor,
 } from './mail.js';
+import { createSite } from './publish.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 const setupURL = process.env.WARDLOCK_ACCEPTANCE_SETUP_URL;
@@ -59,6 +62,7 @@ test('the setup URL creates the first owner', async ({
         ownerFor(project, scheme),
         passkeyOwnerFor(project, scheme),
         cliOwnerFor(project, scheme),
+        sitesOwnerFor(project, scheme),
       ]) {
         const res = await page.request.post(`${origin}/api/v0/owners`, {
           data: { email },
@@ -66,6 +70,7 @@ test('the setup URL creates the first owner', async ({
         });
         expect(res.status()).toBe(202);
       }
+  await createSite(page.request, foreignSite);
 
   // The URL worked once: a browser without the new owner's session is
   // refused by the server, not just redirected by the dashboard.

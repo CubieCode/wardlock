@@ -9,10 +9,13 @@ export {
   type NoticeTone,
   type StatusTone,
 } from './feedback.js';
+export { CopyField } from './copy.js';
+export { Dialog } from './dialog.js';
 export { TextField, type TextFieldProps } from './form.js';
 export {
   AppShell,
   Card,
+  EmptyState,
   Mark,
   NavItem,
   NavList,
