@@ -98,9 +98,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.5: CLI deploy and site commands
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/c1.5-cli-deploy-commands`
+- PR: https://github.com/CubieCode/wardlock/pull/41
 - Depends on: C1.2, C1.7
 - Scope: `wardlock deploy`, `list`, `rollback`, `teardown`; `wardlock.json` and `.wardlockignore` (gitignore syntax, documented defaults); parallel bounded uploads with progress output; `--json` output for every command, no prompts without a TTY; `WARDLOCK_TOKEN` for CI; exit codes per SPEC.
 - Acceptance: Tests against an in-process `wardlockd` (or the generated client's test server) cover a first deploy, a no-change deploy, ignore rules, every `wardlock.json` field and unknown-field rejection, rollback, teardown confirmation, `--json` schemas (documented), and network failure messages; `--help` lists exactly the built commands; works on Linux, macOS and Windows path separators (unit tests).

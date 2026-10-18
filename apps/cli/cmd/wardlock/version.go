@@ -14,17 +14,26 @@ import (
 )
 
 func runVersion(ctx context.Context, a *app, args []string) error {
-	fs := flag.NewFlagSet("version", flag.ContinueOnError)
-	fs.SetOutput(a.stderr)
+	fs := newFlagSet(a, "version", "Usage: wardlock version [--server URL] [--json]\n\n"+
+		"Prints the CLI's version and, with a server, the server's.")
 	server := fs.String("server", a.getenv("WARDLOCK_SERVER"), "also report this server's version (default $WARDLOCK_SERVER), e.g. https://wardlock.example.com")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
+	asJSON := fs.Bool("json", false, "print the result as JSON")
+	pos, err := parseArgs(fs, args)
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if len(pos) > 0 {
+		fs.Usage()
 		return errUsage
 	}
-	fmt.Fprintln(a.stdout, "wardlock", version)
 	if *server == "" {
+		if *asJSON {
+			return writeJSON(a.stdout, versionResult{Version: version})
+		}
+		fmt.Fprintln(a.stdout, "wardlock", version)
 		return nil
 	}
 
@@ -41,6 +50,21 @@ func runVersion(ctx context.Context, a *app, args []string) error {
 	if res.JSON200 == nil {
 		return fmt.Errorf("server %s: unexpected response %s", *server, res.Status())
 	}
+	if *asJSON {
+		return writeJSON(a.stdout, versionResult{Version: version, Server: &serverVersion{URL: *server, Version: res.JSON200.Version}})
+	}
+	fmt.Fprintln(a.stdout, "wardlock", version)
 	fmt.Fprintln(a.stdout, "wardlockd", res.JSON200.Version, "at", *server)
 	return nil
+}
+
+// versionResult is version's --json output.
+type versionResult struct {
+	Version string         `json:"version"`
+	Server  *serverVersion `json:"server,omitempty"`
+}
+
+type serverVersion struct {
+	URL     string `json:"url"`
+	Version string `json:"version"`
 }
