@@ -107,9 +107,17 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		return err
 	}
 	defer accessSvc.Close()
+	tokenSvc, err := owners.NewTokens(owners.TokensConfig{
+		Tokens: db.APITokens(), Logger: log, Secret: cfg.Secret, DashboardURL: dashURL,
+	})
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
 	apiServer := &api.Server{
 		Version: platform.Version,
 		Owners:  ownerSvc,
+		Tokens:  tokenSvc,
 		Access:  accessSvc,
 		// Passkey sign-in and management (C1.6).
 		Passkeys: passkeys,

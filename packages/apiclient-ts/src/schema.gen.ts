@@ -978,7 +978,7 @@ export interface components {
       token: string;
     };
     StartCliLoginRequest: {
-      /** @description Shown to the owner on the approval page. */
+      /** @description How the CLI describes itself, such as `wardlock 0.1.0 on build-laptop`. It becomes the default name of the API token the login creates, unless the approving owner names the token. It is not shown on the approval page. */
       clientName?: string;
     };
     CliLogin: {
@@ -1017,7 +1017,7 @@ export interface components {
     ApproveCliLoginRequest: {
       userCode: components['schemas']['UserCode'];
       scopes: components['schemas']['Scopes'];
-      /** @description The new token's name; defaults to the CLI's `clientName`. */
+      /** @description The new token's name; defaults to the CLI's `clientName`, or `wardlock CLI` when it sent none. */
       name?: string;
     };
     DenyCliLoginRequest: {

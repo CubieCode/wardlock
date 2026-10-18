@@ -120,9 +120,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.7: API tokens and CLI browser login
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/c1.7-api-tokens-cli-login`
+- PR: https://github.com/CubieCode/wardlock/pull/35
 - Depends on: C1.1
 - Scope: Scoped, named, revocable API tokens (`deploy`, `manage`) in the shared token format; `Bearer` authentication for the API; device-code CLI login (`wardlock login`, `logout`), approval page on the dashboard host; token storage in the OS keychain with a 0600 file fallback; `WARDLOCK_TOKEN` override.
 - Acceptance: Tests cover token hashing and constant-time compare, scope enforcement on every C1 operation, revocation, expired login requests, polling rate limits, keychain fallback file permissions; tokens never logged (asserted); `wardlock login`/`logout` appear in `--help`.

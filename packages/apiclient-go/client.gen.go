@@ -274,7 +274,7 @@ type ApiTokenPage struct {
 
 // ApproveCliLoginRequest defines model for ApproveCliLoginRequest.
 type ApproveCliLoginRequest struct {
-	// Name The new token's name; defaults to the CLI's `clientName`.
+	// Name The new token's name; defaults to the CLI's `clientName`, or `wardlock CLI` when it sent none.
 	Name *string `json:"name,omitempty"`
 
 	// Scopes Examples: ["deploy","manage"]
@@ -877,7 +877,7 @@ type SitePage struct {
 
 // StartCliLoginRequest defines model for StartCliLoginRequest.
 type StartCliLoginRequest struct {
-	// ClientName Shown to the owner on the approval page.
+	// ClientName How the CLI describes itself, such as `wardlock 0.1.0 on build-laptop`. It becomes the default name of the API token the login creates, unless the approving owner names the token. It is not shown on the approval page.
 	ClientName *string `json:"clientName,omitempty"`
 }
 

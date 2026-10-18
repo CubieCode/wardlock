@@ -47,6 +47,9 @@ type Server struct {
 	Owners *owners.Service
 	// Passkeys serves passkey sign-in and management (C1.6).
 	Passkeys *owners.Passkeys
+	// Tokens authenticates API tokens and serves the token and CLI login
+	// operations (C1.7).
+	Tokens *owners.Tokens
 	// Logger receives unmapped errors (500 internal); nil discards them.
 	Logger *slog.Logger
 }
@@ -70,7 +73,7 @@ func newHandler(ssi StrictServerInterface) http.Handler {
 }
 
 func newLoggedHandler(ssi StrictServerInterface, log *slog.Logger) http.Handler {
-	strict := NewStrictHandlerWithOptions(ssi, nil, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(ssi, []StrictMiddlewareFunc{requireTokenScopes}, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  badRequest,
 		ResponseErrorHandlerFunc: responseError(log),
 	})
@@ -99,6 +102,10 @@ func responseError(log *slog.Logger) func(http.ResponseWriter, *http.Request, er
 	return func(w http.ResponseWriter, r *http.Request, err error) {
 		if errors.Is(err, ErrNotImplemented) {
 			writeError(w, http.StatusNotImplemented, "not_implemented", "This operation is not implemented yet.")
+			return
+		}
+		if errors.Is(err, errTokenScope) {
+			writeError(w, http.StatusForbidden, "forbidden", "This API token does not have the scope this operation needs.")
 			return
 		}
 		logInternal(log, r, r.Pattern, err)

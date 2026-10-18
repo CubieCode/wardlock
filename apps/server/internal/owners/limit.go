@@ -121,3 +121,16 @@ func ipKey(ip string) string {
 	}
 	return p.String()
 }
+
+// exceeded reports whether key's current window under r is already full,
+// without counting an event, and how long until it resets.
+func (l *limiter) exceeded(key string, r Rate) (bool, time.Duration) {
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	w, ok := l.windows[key]
+	if !ok || !now.Before(w.end) || w.n < r.N {
+		return false, 0
+	}
+	return true, w.end.Sub(now)
+}

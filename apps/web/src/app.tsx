@@ -5,6 +5,7 @@ import { Button, Notice, PanelLayout } from '@wardlock/ui';
 import { SessionProvider, useSession } from './auth/session.js';
 import { SetupPage } from './auth/setup.js';
 import { SignInPage, signInPath } from './auth/sign-in.js';
+import { CliLoginPage, cliLoginPath } from './cli-login/cli-login.js';
 import { Redirect } from './shell/page.js';
 import { matchPath, useLinkInterception, useLocation } from './shell/router.js';
 import { shellRoutes } from './shell/routes.js';
@@ -52,6 +53,9 @@ function Routes() {
     const here = pathname + (params.size ? `?${params}` : '');
     return <Redirect to={signInPath(here)} />;
   }
+
+  // A focused page outside the shell, like sign-in: `wardlock login` opens it.
+  if (pathname === cliLoginPath) return <CliLoginPage />;
 
   for (const route of shellRoutes) {
     const routeParams = matchPath(route.path, pathname);

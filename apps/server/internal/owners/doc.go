@@ -4,7 +4,8 @@
 // Package owners owns dashboard and API authentication: owner accounts,
 // bootstrap (the setup URL and `wardlockd admin create`), invitations,
 // email-code sign-in and owner sessions (C1.1); passkeys (C1.6,
-// passkeys.go); API tokens and CLI browser login follow in C1.7.
+// passkeys.go); API tokens in the shared wl_<public id>_<secret> format and
+// the CLI device login (C1.7, Tokens).
 //
 // It works on plain values. internal/api reads cookies and headers, passes
 // the raw cookie token and the client address in, and turns the sentinel

@@ -62,6 +62,15 @@ var implemented = map[string]bool{
 	"StartPasskeyRegistration": true,
 	"CreatePasskey":            true,
 	"DeletePasskey":            true,
+
+	// C1.7 API tokens and CLI login.
+	"ListApiTokens":   true,
+	"CreateApiToken":  true,
+	"RevokeApiToken":  true,
+	"StartCliLogin":   true,
+	"PollCliLogin":    true,
+	"ApproveCliLogin": true,
+	"DenyCliLogin":    true,
 }
 
 // pathValues are valid values for every path parameter in the contract.
@@ -130,7 +139,7 @@ func TestUnimplementedAnswers501(t *testing.T) {
 }
 
 func TestServerRoutesEveryOperation(t *testing.T) {
-	h := (&Server{Version: "test", Passkeys: bareOwnerServices(t)}).Handler()
+	h := (&Server{Version: "test", Passkeys: bareOwnerServices(t), Tokens: newTestTokens(t)}).Handler()
 	for _, op := range operations {
 		t.Run(op.id, func(t *testing.T) {
 			if implemented[op.id] {

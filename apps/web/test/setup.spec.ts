@@ -1,7 +1,13 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
 import { expect, test } from '@playwright/test';
-import { ownerFor, passkeyOwnerFor, projects, schemes } from './mail.js';
+import {
+  cliOwnerFor,
+  ownerFor,
+  passkeyOwnerFor,
+  projects,
+  schemes,
+} from './mail.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 const setupURL = process.env.WARDLOCK_ACCEPTANCE_SETUP_URL;
@@ -52,6 +58,7 @@ test('the setup URL creates the first owner', async ({
       for (const email of [
         ownerFor(project, scheme),
         passkeyOwnerFor(project, scheme),
+        cliOwnerFor(project, scheme),
       ]) {
         const res = await page.request.post(`${origin}/api/v0/owners`, {
           data: { email },
