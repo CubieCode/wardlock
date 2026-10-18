@@ -166,7 +166,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.2: Share links
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: `feat/a2.2-share-links`
 - PR: https://github.com/CubieCode/wardlock/pull/43
 - Depends on: A2.1, A2.8, C1.7
