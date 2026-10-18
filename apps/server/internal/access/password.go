@@ -99,7 +99,7 @@ func parseHash(encoded string) (argonHash, bool) {
 	if h.salt, err = base64.RawStdEncoding.Strict().DecodeString(f[4]); err != nil || len(h.salt) < 8 {
 		return argonHash{}, false
 	}
-	if h.key, err = base64.RawStdEncoding.Strict().DecodeString(f[5]); err != nil || len(h.key) < 16 || len(h.key) > 64 {
+	if h.key, err = base64.RawStdEncoding.Strict().DecodeString(f[5]); err != nil || len(h.key) != argonKeyLen {
 		return argonHash{}, false
 	}
 	return h, true
@@ -117,7 +117,7 @@ func verifyPassword(derive deriveFunc, encoded, pw string) bool {
 	if !ok {
 		h = argonHash{memory: argonMemory, time: argonTime, threads: argonThreads, salt: dummySalt, key: make([]byte, argonKeyLen)}
 	}
-	got := derive([]byte(pw), h.salt, h.time, h.memory, h.threads, uint32(len(h.key)))
+	got := derive([]byte(pw), h.salt, h.time, h.memory, h.threads, argonKeyLen)
 	return subtle.ConstantTimeCompare(got, h.key) == 1 && ok
 }
 
