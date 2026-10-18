@@ -142,8 +142,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.9: Custom domains
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: feat/c1.9-custom-domains
 - PR:
 - Depends on: C1.3, C1.4, C1.5
 - Scope: Custom domains per SPEC "Custom domains": hostname normalisation and rejection rules in `internal/sites`; add, list, get, verify and remove behind the F0.2 operations; a `Resolver` interface (CNAME chain, TXT) with a `net.Resolver` implementation honouring `WARDLOCK_DNS_RESOLVERS` and an in-test fake; a verification worker (initial backoff, 24-hour re-checks, 72-hour lapse, automatic recovery) started from `cmd/wardlockd`; `Notifier` events so the edge and the on-demand TLS decision see status changes immediately; certificate removal on detach; `/.wardlock/tls-ask` for behind-a-proxy mode; `wardlock domain add|list|verify|remove`; the on-demand block in `deploy/Caddyfile.example`; DEPLOYMENT "Custom domains". Implement the `Domains` repository methods.
