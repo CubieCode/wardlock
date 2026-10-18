@@ -190,7 +190,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: feat/a2.4-email-code-policy
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/52
 - Depends on: A2.1, F0.4
 - Scope: Email-code method with address and domain allowlists, neutral responses, 6-digit codes, send and verify rate limits, use of the F0.4 mailer and dev sink.
 - Acceptance: Tests cover allowlist matching (exact, domain, `*.domain`), neutral responses for disallowed addresses, expiry, attempts, rate limits per IP, address and site, and codes never logged outside the dev sink.
