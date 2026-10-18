@@ -5,6 +5,12 @@
 # Run wardlockd with WARDLOCK_TLS_MODE=proxy and WARDLOCK_TRUSTED_PROXIES=127.0.0.1,::1.
 # Replace the domains. Wildcard certificates need a Caddy DNS plugin.
 {
+	# Custom domains (C1.9): before obtaining a certificate on demand, Caddy
+	# asks wardlockd, which answers 200 only for active custom domains and
+	# only to a trusted proxy (WARDLOCK_TRUSTED_PROXIES).
+	on_demand_tls {
+		ask http://127.0.0.1:8080/.wardlock/tls-ask
+	}
 	# Query strings carry share-link tokens; keep them out of access logs.
 	log default {
 		format filter {
@@ -21,6 +27,19 @@
 wardlock.example.com, *.example-sites.net {
 	tls {
 		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	}
+	request_body {
+		max_size 32MB
+	}
+	reverse_proxy 127.0.0.1:8080
+}
+
+# Owners' custom domains: any other hostname, with a certificate obtained on
+# demand (HTTP-01 or TLS-ALPN-01, so ports 80 and 443 must be reachable)
+# once the ask above allows it.
+https:// {
+	tls {
+		on_demand
 	}
 	request_body {
 		max_size 32MB
