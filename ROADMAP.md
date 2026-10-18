@@ -166,8 +166,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.2: Share links
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: `feat/a2.2-share-links`
 - PR:
 - Depends on: A2.1, A2.8, C1.7
 - Scope: Everything in [wardlock-access](.agents/skills/wardlock-access/SKILL.md) for links: create with label, expiry or never, use limit and path scope; `?t=` and `Authorization: Bearer`; 200 on first request with `Set-Cookie`; HTML-only `history.replaceState` strip; check on every request; revoke and rotate; use-limited interstitial counting uses on POST; access log entries per access; API operations and `wardlock share create|list|revoke|rotate`.
