@@ -33,6 +33,9 @@ type policyEdge struct {
 	deploys       *deploys.Service
 	owner         store.Owner
 	logs          *bytes.Buffer
+	log           *slog.Logger
+	notifier      *deploys.LocalNotifier
+	blobs         *deploys.FSBlobStore
 	dashboardHits int
 
 	mu      sync.Mutex
@@ -82,6 +85,7 @@ func newPolicyEdge(t *testing.T) *policyEdge {
 	blobs := deploys.NewFSBlobStore(t.TempDir())
 	notifier := deploys.NewLocalNotifier()
 	log := slog.New(slog.NewTextHandler(p.logs, nil))
+	p.notifier, p.log, p.blobs = notifier, log, blobs
 	acc, err := access.New(access.Config{
 		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), EmailCodes: db.EmailCodes(), Notifier: notifier,
 		Mailer: mail.NewDevSink(mail.Config{DevDir: p.mailDir, Logger: slog.New(slog.NewTextHandler(p.mailLogs, nil)), Now: p.now}),

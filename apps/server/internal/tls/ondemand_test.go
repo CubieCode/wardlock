@@ -35,6 +35,12 @@ func (f *fakeDomains) GetActiveByHostname(_ context.Context, hostname string) (s
 	return store.Domain{Hostname: hostname, Status: store.DomainActive}, nil
 }
 
+func (f *fakeDomains) set(hostname string, active bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.active[hostname] = active
+}
+
 func (f *fakeDomains) seen() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()

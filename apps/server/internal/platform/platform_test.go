@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -77,6 +78,17 @@ func TestLoadConfig(t *testing.T) {
 		{"zero history", map[string]string{"WARDLOCK_DEPLOY_HISTORY": "0"}, true, nil},
 		{"negative interval", map[string]string{"WARDLOCK_GC_INTERVAL_MINUTES": "-1"}, true, nil},
 		{"interval with unit", map[string]string{"WARDLOCK_GC_INTERVAL_MINUTES": "1h"}, true, nil},
+		{"system DNS resolvers by default", nil, false, func(c platform.Config) bool { return c.DNSResolvers == nil }},
+		{"DNS resolvers", map[string]string{"WARDLOCK_DNS_RESOLVERS": "9.9.9.9:53, [2620:fe::fe]:53,ns.example.net:5353"}, false,
+			func(c platform.Config) bool {
+				return slices.Equal(c.DNSResolvers, []string{"9.9.9.9:53", "[2620:fe::fe]:53", "ns.example.net:5353"})
+			}},
+		{"DNS resolver without a port", map[string]string{"WARDLOCK_DNS_RESOLVERS": "9.9.9.9"}, true, nil},
+		{"DNS resolver port 0", map[string]string{"WARDLOCK_DNS_RESOLVERS": "9.9.9.9:0"}, true, nil},
+		{"empty DNS resolver", map[string]string{"WARDLOCK_DNS_RESOLVERS": "9.9.9.9:53,,1.1.1.1:53"}, true, nil},
+		{"DNS resolvers outside auto mode are fine", map[string]string{
+			"WARDLOCK_TLS_MODE": "proxy", "WARDLOCK_BASE_DOMAIN": "sites.example", "WARDLOCK_DNS_RESOLVERS": "1.1.1.1:53",
+		}, false, func(c platform.Config) bool { return len(c.DNSResolvers) == 1 }},
 		{"bad address", map[string]string{"WARDLOCK_HTTP_ADDR": "8080"}, true, nil},
 		{"bad base domain", map[string]string{"WARDLOCK_BASE_DOMAIN": "under_score.example"}, true, nil},
 		{"bad log level", map[string]string{"WARDLOCK_LOG_LEVEL": "loud"}, true, nil},

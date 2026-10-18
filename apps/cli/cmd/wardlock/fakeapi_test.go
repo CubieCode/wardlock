@@ -52,6 +52,12 @@ type fakeAPI struct {
 	nextID  int
 	// links are each site's share links, newest first (share_test.go).
 	links map[string][]*apiclient.ShareLink
+	// domains are each site's custom domains (domain_test.go).
+	domains map[string][]*apiclient.Domain
+	// verifyPasses is how many more verify calls fail before one passes;
+	// verifyCalls counts them; throttle answers the next verify 429.
+	verifyPasses, verifyCalls int
+	throttle                  bool
 }
 
 type fakeSite struct {
@@ -133,6 +139,7 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 	handle("POST /api/v0/sites/{site}/deploys/{deployId}/activate", "deploy", f.withSite(f.activate))
 	handle("POST /api/v0/sites/{site}/rollback", "deploy", f.withSite(f.rollback))
 	f.handleLinks(handle)
+	f.handleDomains(handle)
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f

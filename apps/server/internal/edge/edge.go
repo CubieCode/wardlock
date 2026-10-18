@@ -23,6 +23,10 @@ import (
 // it are never served.
 const ReservedPrefix = "/.wardlock/"
 
+// tlsAskPath is where a TLS-terminating proxy asks whether a hostname may
+// have a certificate.
+const tlsAskPath = ReservedPrefix + "tls-ask"
+
 // Config wires the edge.
 type Config struct {
 	DashboardHost string
@@ -41,7 +45,10 @@ type Config struct {
 	Access Access
 	// Recorder receives one record per site access; nil records nothing.
 	Recorder AccessRecorder
-	Log      *slog.Logger
+	// TLSAsk answers /.wardlock/tls-ask on every host in proxy TLS mode
+	// (C1.9); nil, in other modes, answers it 404 everywhere.
+	TLSAsk http.Handler
+	Log    *slog.Logger
 }
 
 // Edge is the edge handler.
@@ -82,6 +89,17 @@ func (e *Edge) Close() { e.unsubscribe() }
 func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/healthz" {
 		e.cfg.Health.ServeHTTP(w, r)
+		return
+	}
+	// The proxy asks before it has a certificate for the host, so the
+	// question is answered whatever the Host, before routing.
+	if cleanPath(r.URL.Path) == tlsAskPath {
+		if e.cfg.TLSAsk == nil {
+			w.Header().Set("Cache-Control", "no-store")
+			http.NotFound(w, r)
+			return
+		}
+		e.cfg.TLSAsk.ServeHTTP(w, r)
 		return
 	}
 	host := canonicalHost(r.Host)

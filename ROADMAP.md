@@ -142,9 +142,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.9: Custom domains
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: feat/c1.9-custom-domains
+- PR: https://github.com/CubieCode/wardlock/pull/51
 - Depends on: C1.3, C1.4, C1.5
 - Scope: Custom domains per SPEC "Custom domains": hostname normalisation and rejection rules in `internal/sites`; add, list, get, verify and remove behind the F0.2 operations; a `Resolver` interface (CNAME chain, TXT) with a `net.Resolver` implementation honouring `WARDLOCK_DNS_RESOLVERS` and an in-test fake; a verification worker (initial backoff, 24-hour re-checks, 72-hour lapse, automatic recovery) started from `cmd/wardlockd`; `Notifier` events so the edge and the on-demand TLS decision see status changes immediately; certificate removal on detach; `/.wardlock/tls-ask` for behind-a-proxy mode; `wardlock domain add|list|verify|remove`; the on-demand block in `deploy/Caddyfile.example`; DEPLOYMENT "Custom domains". Implement the `Domains` repository methods.
 - Acceptance: Table-driven tests over the fake resolver cover CNAME direct and chained, CNAME to another site or elsewhere, TXT fallback (apex, proxied), wrong and stale tokens, DNS errors and timeouts, backoff timing, lapse after 72 hours and recovery, all with an injected clock; normalisation tests (case, trailing dot, IDN to A-label, IPs, wildcards, base domain, dashboard and auth hosts); `domain_taken` reveals no site or owner; two-owner isolation (owner B cannot list, verify, remove or see owner A's domains: same 404); a re-claim after removal needs a new token; end-to-end `httptest` proving pending and lapsed hosts are not served and the on-demand decision denies them; `tls-ask` answers only trusted-proxy sources in proxy mode; CLI tests including `--json` and `--wait`; contract tests for every new repository method; verification tokens never logged.
