@@ -187,7 +187,7 @@ func (e *Edge) emailLogin(w http.ResponseWriter, r *http.Request, site ServedSit
 	var (
 		err    error
 		status = http.StatusOK
-		data   = func(d access.Decision) loginData { return newLoginData(r, d, next) }
+		data   func(access.Decision) loginData
 	)
 	switch r.PostForm.Get("step") {
 	case "send":

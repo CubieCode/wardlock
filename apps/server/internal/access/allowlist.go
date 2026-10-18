@@ -55,10 +55,8 @@ func normaliseDomain(raw string) (string, bool) {
 		if l == "" || len(l) > maxLabelBytes || l[0] == '-' || l[len(l)-1] == '-' {
 			return "", false
 		}
-		for i := range len(l) {
-			if c := l[i]; !('a' <= c && c <= 'z' || '0' <= c && c <= '9' || c == '-') {
-				return "", false
-			}
+		if strings.ContainsFunc(l, func(r rune) bool { return !ldh(r) }) {
+			return "", false
 		}
 	}
 	// A name ending in a numeric label is an IP address, not a domain.
@@ -71,7 +69,7 @@ func normaliseDomain(raw string) (string, bool) {
 	return name, true
 }
 
-// checkAllowlist normalises the addresses and domains of a an owner is
+// checkAllowlist normalises the addresses and domains of a, which an owner is
 // setting, sorted and without duplicates, or returns a TargetError naming
 // the first entry it cannot read. GitHub organisations are kept as given
 // (A2.5 checks them).
@@ -142,6 +140,10 @@ func allows(a store.Allowlist, addr string) bool {
 	}
 	return false
 }
+
+// ldh reports whether r may appear in a lower-case DNS label: an ASCII
+// letter, digit or hyphen.
+func ldh(r rune) bool { return 'a' <= r && r <= 'z' || '0' <= r && r <= '9' || r == '-' }
 
 func asciiLower(s string) string {
 	return strings.Map(func(r rune) rune {

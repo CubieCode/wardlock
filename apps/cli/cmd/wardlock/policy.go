@@ -194,6 +194,12 @@ func addAllowed(l *apiclient.PolicyAllowlist, v string) error {
 	return nil
 }
 
+// ldh reports whether r may appear in a DNS label: an ASCII letter, digit
+// or hyphen.
+func ldh(r rune) bool {
+	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || '0' <= r && r <= '9' || r == '-'
+}
+
 // allowedDomain reports whether d is a DNS name of at least two ASCII
 // labels, optionally after "*." and with one trailing dot, not ending in a
 // numeric label.
@@ -207,11 +213,8 @@ func allowedDomain(d string) bool {
 		if l == "" || len(l) > 63 || l[0] == '-' || l[len(l)-1] == '-' {
 			return false
 		}
-		for i := range len(l) {
-			c := l[i] | 0x20 // ASCII lower case; leaves digits and '-' alone
-			if !('a' <= c && c <= 'z' || '0' <= l[i] && l[i] <= '9' || l[i] == '-') {
-				return false
-			}
+		if strings.ContainsFunc(l, func(r rune) bool { return !ldh(r) }) {
+			return false
 		}
 	}
 	return true

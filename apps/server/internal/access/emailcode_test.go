@@ -112,6 +112,13 @@ func (h *emailHarness) live(ss store.SiteSession) bool {
 	return got.RevokedAt.IsZero()
 }
 
+// count is the number of reads so far.
+func (c *countingPolicies) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.reads
+}
+
 type emailHarness struct {
 	*harness
 	mailer *fakeMailer
@@ -307,10 +314,10 @@ func TestEmailCodeNeutral(t *testing.T) {
 		reads int
 	}
 	try := func(path, addr string) result {
-		reads := h.policies.reads
+		reads := h.policies.count()
 		// The request path, without waiting for the background send.
 		err := h.svc.SendEmailCode(t.Context(), access.EmailCodeRequest{SiteID: s.ID, Site: "harbour.wardlock.test", Path: path, IP: "192.0.2.1", Address: addr})
-		r := result{err: err, keys: limiter.Keys(), reads: h.policies.reads - reads}
+		r := result{err: err, keys: limiter.Keys(), reads: h.policies.count() - reads}
 		access.WaitSends(h.svc)
 		return r
 	}
