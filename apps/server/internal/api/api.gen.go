@@ -21,6 +21,36 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AccessVia.
+const (
+	AccessViaEmail    AccessVia = "email"
+	AccessViaLink     AccessVia = "link"
+	AccessViaNone     AccessVia = "none"
+	AccessViaOauth    AccessVia = "oauth"
+	AccessViaPassword AccessVia = "password"
+	AccessViaPublic   AccessVia = "public"
+)
+
+// Valid indicates whether the value is a known member of the AccessVia enum.
+func (e AccessVia) Valid() bool {
+	switch e {
+	case AccessViaEmail:
+		return true
+	case AccessViaLink:
+		return true
+	case AccessViaNone:
+		return true
+	case AccessViaOauth:
+		return true
+	case AccessViaPassword:
+		return true
+	case AccessViaPublic:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CliLoginPendingStatus.
 const (
 	CliLoginPendingStatusPending CliLoginPendingStatus = "pending"
@@ -242,6 +272,55 @@ func (e ShareLinkStatus) Valid() bool {
 		return false
 	}
 }
+
+// AccessLogEntry defines model for AccessLogEntry.
+type AccessLogEntry struct {
+	// Host The host the request named.
+	Host string `json:"host"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Ip The client IP, truncated as the server is configured (IPv4 /24 and IPv6 /48 by default). Absent when not recorded.
+	Ip *string `json:"ip,omitempty"`
+
+	// LinkPublicId The share link the request came through; absent unless `via` is `link`.
+	//
+	// Examples: q4v7m2xkpa
+	LinkPublicId *LinkPublicId `json:"linkPublicId,omitempty"`
+
+	// OccurredAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	OccurredAt Timestamp `json:"occurredAt"`
+
+	// Path The requested path, without the query string.
+	Path string `json:"path"`
+
+	// Status The HTTP status of the response.
+	Status int32 `json:"status"`
+
+	// UserAgent The User-Agent header; absent when the request sent none.
+	UserAgent *string `json:"userAgent,omitempty"`
+
+	// Via How the request got in: `public` (no protection), `link` (a share link's token or a session from it), `password`, `email`, `oauth`, or `none` when it was refused.
+	Via AccessVia `json:"via"`
+}
+
+// AccessLogPage defines model for AccessLogPage.
+type AccessLogPage struct {
+	Items []AccessLogEntry `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// AccessVia How the request got in: `public` (no protection), `link` (a share link's token or a session from it), `password`, `email`, `oauth`, or `none` when it was refused.
+type AccessVia string
 
 // Activation defines model for Activation.
 type Activation struct {
@@ -1130,6 +1209,15 @@ type ListShareLinksParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListShareLinkAccessLogParams defines parameters for ListShareLinkAccessLog.
+type ListShareLinkAccessLogParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListPoliciesParams defines parameters for ListPolicies.
 type ListPoliciesParams struct {
 	// Limit Page size.
@@ -1419,6 +1507,9 @@ type ServerInterface interface {
 	// RevokeShareLink Revoke a share link.
 	// (DELETE /api/v0/sites/{site}/links/{linkId})
 	RevokeShareLink(w http.ResponseWriter, r *http.Request, site SiteName, linkId LinkId)
+	// ListShareLinkAccessLog List one share link's access log.
+	// (GET /api/v0/sites/{site}/links/{linkId}/access-log)
+	ListShareLinkAccessLog(w http.ResponseWriter, r *http.Request, site SiteName, linkId LinkId, params ListShareLinkAccessLogParams)
 	// RotateShareLink Rotate a share link's token.
 	// (POST /api/v0/sites/{site}/links/{linkId}/rotate)
 	RotateShareLink(w http.ResponseWriter, r *http.Request, site SiteName, linkId LinkId)
@@ -2377,6 +2468,70 @@ func (siw *ServerInterfaceWrapper) RevokeShareLink(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// ListShareLinkAccessLog operation middleware
+func (siw *ServerInterfaceWrapper) ListShareLinkAccessLog(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "linkId" -------------
+	var linkId LinkId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "linkId", r.PathValue("linkId"), &linkId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "linkId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListShareLinkAccessLogParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListShareLinkAccessLog(w, r, site, linkId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RotateShareLink operation middleware
 func (siw *ServerInterfaceWrapper) RotateShareLink(w http.ResponseWriter, r *http.Request) {
 
@@ -2804,6 +2959,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/links", wrapper.CreateShareLink)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/links/{linkId}", wrapper.RevokeShareLink)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/links/{linkId}/rotate", wrapper.RotateShareLink)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/links/{linkId}/access-log", wrapper.ListShareLinkAccessLog)
 
 	return m
 }
@@ -5808,6 +5964,103 @@ func (response RevokeShareLinkdefaultJSONResponse) VisitRevokeShareLinkResponse(
 	return err
 }
 
+type ListShareLinkAccessLogRequestObject struct {
+	Site   SiteName `json:"site"`
+	LinkId LinkId   `json:"linkId"`
+	Params ListShareLinkAccessLogParams
+}
+
+type ListShareLinkAccessLogResponseObject interface {
+	VisitListShareLinkAccessLogResponse(w http.ResponseWriter) error
+}
+
+type ListShareLinkAccessLog200JSONResponse AccessLogPage
+
+func (response ListShareLinkAccessLog200JSONResponse) VisitListShareLinkAccessLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListShareLinkAccessLog400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListShareLinkAccessLog400JSONResponse) VisitListShareLinkAccessLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListShareLinkAccessLog401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListShareLinkAccessLog401JSONResponse) VisitListShareLinkAccessLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListShareLinkAccessLog403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListShareLinkAccessLog403JSONResponse) VisitListShareLinkAccessLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListShareLinkAccessLog404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListShareLinkAccessLog404JSONResponse) VisitListShareLinkAccessLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListShareLinkAccessLogdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListShareLinkAccessLogdefaultJSONResponse) VisitListShareLinkAccessLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RotateShareLinkRequestObject struct {
 	Site   SiteName `json:"site"`
 	LinkId LinkId   `json:"linkId"`
@@ -6615,6 +6868,9 @@ type StrictServerInterface interface {
 	// RevokeShareLink Revoke a share link.
 	// (DELETE /api/v0/sites/{site}/links/{linkId})
 	RevokeShareLink(ctx context.Context, request RevokeShareLinkRequestObject) (RevokeShareLinkResponseObject, error)
+	// ListShareLinkAccessLog List one share link's access log.
+	// (GET /api/v0/sites/{site}/links/{linkId}/access-log)
+	ListShareLinkAccessLog(ctx context.Context, request ListShareLinkAccessLogRequestObject) (ListShareLinkAccessLogResponseObject, error)
 	// RotateShareLink Rotate a share link's token.
 	// (POST /api/v0/sites/{site}/links/{linkId}/rotate)
 	RotateShareLink(ctx context.Context, request RotateShareLinkRequestObject) (RotateShareLinkResponseObject, error)
@@ -7690,6 +7946,34 @@ func (sh *strictHandler) RevokeShareLink(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RevokeShareLinkResponseObject); ok {
 		if err := validResponse.VisitRevokeShareLinkResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListShareLinkAccessLog operation middleware
+func (sh *strictHandler) ListShareLinkAccessLog(w http.ResponseWriter, r *http.Request, site SiteName, linkId LinkId, params ListShareLinkAccessLogParams) {
+	var request ListShareLinkAccessLogRequestObject
+
+	request.Site = site
+	request.LinkId = linkId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListShareLinkAccessLog(ctx, request.(ListShareLinkAccessLogRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListShareLinkAccessLog")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListShareLinkAccessLogResponseObject); ok {
+		if err := validResponse.VisitListShareLinkAccessLogResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

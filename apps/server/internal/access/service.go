@@ -61,7 +61,10 @@ type Config struct {
 	// PasswordSessions stores password sessions only while the password
 	// they were checked against still holds (A2.3).
 	PasswordSessions store.PasswordSessions
-	Notifier         notifier
+	// AccessLog backs LinkAccessLog (D3.3); nil when the caller never reads
+	// the access log.
+	AccessLog store.AccessLog
+	Notifier  notifier
 	// Secret is the server key (WARDLOCK_SECRET): it signs session cookies
 	// and keys the stored session token hashes.
 	Secret []byte

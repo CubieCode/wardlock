@@ -199,6 +199,11 @@ func (Unimplemented) RevokeShareLink(context.Context, RevokeShareLinkRequestObje
 	return nil, ErrNotImplemented
 }
 
+// ListShareLinkAccessLog is not implemented yet.
+func (Unimplemented) ListShareLinkAccessLog(context.Context, ListShareLinkAccessLogRequestObject) (ListShareLinkAccessLogResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // RotateShareLink is not implemented yet.
 func (Unimplemented) RotateShareLink(context.Context, RotateShareLinkRequestObject) (RotateShareLinkResponseObject, error) {
 	return nil, ErrNotImplemented
