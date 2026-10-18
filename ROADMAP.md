@@ -120,7 +120,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.7: API tokens and CLI browser login
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/c1.7-api-tokens-cli-login`
 - PR: https://github.com/CubieCode/wardlock/pull/35
 - Depends on: C1.1
