@@ -168,7 +168,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `in-progress`
 - Owner: `feat/a2.2-share-links`
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/43
 - Depends on: A2.1, A2.8, C1.7
 - Scope: Everything in [wardlock-access](.agents/skills/wardlock-access/SKILL.md) for links: create with label, expiry or never, use limit and path scope; `?t=` and `Authorization: Bearer`; 200 on first request with `Set-Cookie`; HTML-only `history.replaceState` strip; check on every request; revoke and rotate; use-limited interstitial counting uses on POST; access log entries per access; API operations and `wardlock share create|list|revoke|rotate`.
 - Acceptance: The full wardlock-access test matrix passes; fuzz test for token parsing; `curl` and a no-JS, no-cookie client get the content on the first request; links never appear raw in logs or the access log (asserted).
