@@ -44,6 +44,12 @@ var implemented = map[string]bool{
 	"SetPolicy":    true,
 	"DeletePolicy": true,
 
+	// Share links (A2.2).
+	"ListShareLinks":  true,
+	"CreateShareLink": true,
+	"RevokeShareLink": true,
+	"RotateShareLink": true,
+
 	// C1.1 owners.
 	"CompleteSetup":    true,
 	"RedeemSignInLink": true,
@@ -83,6 +89,7 @@ var pathValues = map[string]string{
 	"hostname":  "docs.example.com",
 	"policyId":  "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41",
 	"passkeyId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40",
+	"linkId":    "q4v7m2xkpa",
 }
 
 var pathParam = regexp.MustCompile(`\{(\w+)\}`)

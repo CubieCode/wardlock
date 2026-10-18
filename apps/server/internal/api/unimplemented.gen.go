@@ -184,6 +184,26 @@ func (Unimplemented) VerifyDomain(context.Context, VerifyDomainRequestObject) (V
 	return nil, ErrNotImplemented
 }
 
+// ListShareLinks is not implemented yet.
+func (Unimplemented) ListShareLinks(context.Context, ListShareLinksRequestObject) (ListShareLinksResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// CreateShareLink is not implemented yet.
+func (Unimplemented) CreateShareLink(context.Context, CreateShareLinkRequestObject) (CreateShareLinkResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// RevokeShareLink is not implemented yet.
+func (Unimplemented) RevokeShareLink(context.Context, RevokeShareLinkRequestObject) (RevokeShareLinkResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// RotateShareLink is not implemented yet.
+func (Unimplemented) RotateShareLink(context.Context, RotateShareLinkRequestObject) (RotateShareLinkResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // ListPolicies is not implemented yet.
 func (Unimplemented) ListPolicies(context.Context, ListPoliciesRequestObject) (ListPoliciesResponseObject, error) {
 	return nil, ErrNotImplemented

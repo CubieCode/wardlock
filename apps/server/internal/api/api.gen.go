@@ -219,6 +219,27 @@ func (e Scope) Valid() bool {
 	}
 }
 
+// Defines values for ShareLinkStatus.
+const (
+	ShareLinkStatusActive  ShareLinkStatus = "active"
+	ShareLinkStatusExpired ShareLinkStatus = "expired"
+	ShareLinkStatusUsedUp  ShareLinkStatus = "used_up"
+)
+
+// Valid indicates whether the value is a known member of the ShareLinkStatus enum.
+func (e ShareLinkStatus) Valid() bool {
+	switch e {
+	case ShareLinkStatusActive:
+		return true
+	case ShareLinkStatusExpired:
+		return true
+	case ShareLinkStatusUsedUp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Activation defines model for Activation.
 type Activation struct {
 	Deploy Deploy `json:"deploy"`
@@ -352,6 +373,25 @@ type CreatePasskeyRequest struct {
 	Name *string `json:"name,omitempty"`
 }
 
+// CreateShareLinkRequest defines model for CreateShareLinkRequest.
+type CreateShareLinkRequest struct {
+	// ExpiresAt When the link stops working. Omit for a link that never expires (a first-class choice for permanent references).
+	//
+	// Examples: 1767225600000
+	ExpiresAt *Timestamp `json:"expiresAt,omitempty"`
+
+	// Label Free text up to 200 characters, such as "Linear ENG-123" or "sent to Alice".
+	Label *string `json:"label,omitempty"`
+
+	// MaxUses Limit the uses (1 for a one-time link). Omit for unlimited.
+	MaxUses *int32 `json:"maxUses,omitempty"`
+
+	// Path Scope: `/` (the default) for the whole site, or a directory prefix such as `/docs/`, which also covers `/docs`.
+	//
+	// Examples: /docs/
+	Path *PolicyPath `json:"path,omitempty"`
+}
+
 // CreateSiteRequest defines model for CreateSiteRequest.
 type CreateSiteRequest struct {
 	// Name A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
@@ -374,6 +414,17 @@ type CreatedDeploy struct {
 
 	// Missing Hashes to upload before activating, each once.
 	Missing []Sha256 `json:"missing"`
+}
+
+// CreatedShareLink defines model for CreatedShareLink.
+type CreatedShareLink struct {
+	ShareLink ShareLink `json:"shareLink"`
+
+	// Token The secret token. Shown only in this response.
+	Token string `json:"token"`
+
+	// Url The share link: `https://<site host><path>?t=<token>`. Shown only in this response.
+	Url string `json:"url"`
 }
 
 // Cursor Opaque pagination cursor.
@@ -579,6 +630,11 @@ type InviteOwnerRequest struct {
 	// Email Examples: owner@example.com
 	Email Email `json:"email"`
 }
+
+// LinkPublicId A share link's public ID: it names the link in listings, the access log and the CLI without revealing the token.
+//
+// Examples: q4v7m2xkpa
+type LinkPublicId = string
 
 // ManifestFile defines model for ManifestFile.
 type ManifestFile struct {
@@ -819,6 +875,69 @@ type SetupRequest struct {
 // Examples: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
 type Sha256 = string
 
+// ShareLink defines model for ShareLink.
+type ShareLink struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// ExpiresAt Absent when the link never expires.
+	//
+	// Examples: 1767225600000
+	ExpiresAt *Timestamp `json:"expiresAt,omitempty"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Label Free text for the owner; never part of the URL. Absent when empty.
+	Label *string `json:"label,omitempty"`
+
+	// LastAccessedAt The last request the link (or a session from it) let in, to the minute. Absent until first used.
+	//
+	// Examples: 1767225600000
+	LastAccessedAt *Timestamp `json:"lastAccessedAt,omitempty"`
+
+	// MaxUses Absent when the link has no use limit.
+	MaxUses *int32 `json:"maxUses,omitempty"`
+
+	// Path `/` for the site default, or a directory prefix starting and ending with `/`, such as `/docs/`. A prefix also covers the directory's own path without its slash (`/docs`). Matched case-sensitively against the decoded request path; `/.wardlock/` is never subject to policies.
+	//
+	// Examples: /docs/
+	Path PolicyPath `json:"path"`
+
+	// PublicId A share link's public ID: it names the link in listings, the access log and the CLI without revealing the token.
+	//
+	// Examples: q4v7m2xkpa
+	PublicId LinkPublicId `json:"publicId"`
+
+	// RotatedAt Absent until the token is first rotated.
+	//
+	// Examples: 1767225600000
+	RotatedAt *Timestamp `json:"rotatedAt,omitempty"`
+
+	// Status `active`: the link works. `expired`: past `expiresAt`. `used_up`: `uses` has reached `maxUses`.
+	Status ShareLinkStatus `json:"status"`
+
+	// Uses Uses spent: presses of the "Click to view" button on a link with `maxUses`. Always 0 for a link without a use limit.
+	Uses int32 `json:"uses"`
+}
+
+// ShareLinkPage defines model for ShareLinkPage.
+type ShareLinkPage struct {
+	Items []ShareLink `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// ShareLinkStatus `active`: the link works. `expired`: past `expiresAt`. `used_up`: `uses` has reached `maxUses`.
+type ShareLinkStatus string
+
 // SignInLinkRequest defines model for SignInLinkRequest.
 type SignInLinkRequest struct {
 	// Code The `code` query parameter of the sign-in URL.
@@ -904,6 +1023,11 @@ type DomainHostname = Hostname
 
 // Limit defines model for Limit.
 type Limit = int32
+
+// LinkId A share link's public ID: it names the link in listings, the access log and the CLI without revealing the token.
+//
+// Examples: q4v7m2xkpa
+type LinkId = LinkPublicId
 
 // PasskeyId A lowercase, hyphenated UUIDv7.
 //
@@ -991,6 +1115,15 @@ type ListDomainsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListShareLinksParams defines parameters for ListShareLinks.
+type ListShareLinksParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListPoliciesParams defines parameters for ListPolicies.
 type ListPoliciesParams struct {
 	// Limit Page size.
@@ -1050,6 +1183,9 @@ type CreateDeployJSONRequestBody = CreateDeployRequest
 
 // AddDomainJSONRequestBody defines body for AddDomain for application/json ContentType.
 type AddDomainJSONRequestBody = AddDomainRequest
+
+// CreateShareLinkJSONRequestBody defines body for CreateShareLink for application/json ContentType.
+type CreateShareLinkJSONRequestBody = CreateShareLinkRequest
 
 // SetPolicyJSONRequestBody defines body for SetPolicy for application/json ContentType.
 type SetPolicyJSONRequestBody = SetPolicyRequest
@@ -1268,6 +1404,18 @@ type ServerInterface interface {
 	// VerifyDomain Check a custom domain's DNS now.
 	// (POST /api/v0/sites/{site}/domains/{hostname}/verify)
 	VerifyDomain(w http.ResponseWriter, r *http.Request, site SiteName, hostname DomainHostname)
+	// ListShareLinks List a site's share links.
+	// (GET /api/v0/sites/{site}/links)
+	ListShareLinks(w http.ResponseWriter, r *http.Request, site SiteName, params ListShareLinksParams)
+	// CreateShareLink Create a share link.
+	// (POST /api/v0/sites/{site}/links)
+	CreateShareLink(w http.ResponseWriter, r *http.Request, site SiteName)
+	// RevokeShareLink Revoke a share link.
+	// (DELETE /api/v0/sites/{site}/links/{linkId})
+	RevokeShareLink(w http.ResponseWriter, r *http.Request, site SiteName, linkId LinkId)
+	// RotateShareLink Rotate a share link's token.
+	// (POST /api/v0/sites/{site}/links/{linkId}/rotate)
+	RotateShareLink(w http.ResponseWriter, r *http.Request, site SiteName, linkId LinkId)
 	// ListPolicies List a site's access policies.
 	// (GET /api/v0/sites/{site}/policies)
 	ListPolicies(w http.ResponseWriter, r *http.Request, site SiteName, params ListPoliciesParams)
@@ -2107,6 +2255,157 @@ func (siw *ServerInterfaceWrapper) VerifyDomain(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListShareLinks operation middleware
+func (siw *ServerInterfaceWrapper) ListShareLinks(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListShareLinksParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListShareLinks(w, r, site, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateShareLink operation middleware
+func (siw *ServerInterfaceWrapper) CreateShareLink(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateShareLink(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeShareLink operation middleware
+func (siw *ServerInterfaceWrapper) RevokeShareLink(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "linkId" -------------
+	var linkId LinkId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "linkId", r.PathValue("linkId"), &linkId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "linkId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeShareLink(w, r, site, linkId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RotateShareLink operation middleware
+func (siw *ServerInterfaceWrapper) RotateShareLink(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "linkId" -------------
+	var linkId LinkId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "linkId", r.PathValue("linkId"), &linkId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "linkId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RotateShareLink(w, r, site, linkId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListPolicies operation middleware
 func (siw *ServerInterfaceWrapper) ListPolicies(w http.ResponseWriter, r *http.Request) {
 
@@ -2495,6 +2794,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/policies", wrapper.ListPolicies)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v0/sites/{site}/policies", wrapper.SetPolicy)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/policies/{policyId}", wrapper.DeletePolicy)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/links", wrapper.ListShareLinks)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/links", wrapper.CreateShareLink)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/links/{linkId}", wrapper.RevokeShareLink)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/links/{linkId}/rotate", wrapper.RotateShareLink)
 
 	return m
 }
@@ -5231,6 +5534,356 @@ func (response VerifyDomaindefaultJSONResponse) VisitVerifyDomainResponse(w http
 	return err
 }
 
+type ListShareLinksRequestObject struct {
+	Site   SiteName `json:"site"`
+	Params ListShareLinksParams
+}
+
+type ListShareLinksResponseObject interface {
+	VisitListShareLinksResponse(w http.ResponseWriter) error
+}
+
+type ListShareLinks200JSONResponse ShareLinkPage
+
+func (response ListShareLinks200JSONResponse) VisitListShareLinksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListShareLinks400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListShareLinks400JSONResponse) VisitListShareLinksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListShareLinks401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListShareLinks401JSONResponse) VisitListShareLinksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListShareLinks403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListShareLinks403JSONResponse) VisitListShareLinksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListShareLinks404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListShareLinks404JSONResponse) VisitListShareLinksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListShareLinksdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListShareLinksdefaultJSONResponse) VisitListShareLinksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateShareLinkRequestObject struct {
+	Site SiteName `json:"site"`
+	Body *CreateShareLinkJSONRequestBody
+}
+
+type CreateShareLinkResponseObject interface {
+	VisitCreateShareLinkResponse(w http.ResponseWriter) error
+}
+
+type CreateShareLink201JSONResponse CreatedShareLink
+
+func (response CreateShareLink201JSONResponse) VisitCreateShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateShareLink400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateShareLink400JSONResponse) VisitCreateShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateShareLink401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateShareLink401JSONResponse) VisitCreateShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateShareLink403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateShareLink403JSONResponse) VisitCreateShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateShareLink404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response CreateShareLink404JSONResponse) VisitCreateShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateShareLinkdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateShareLinkdefaultJSONResponse) VisitCreateShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeShareLinkRequestObject struct {
+	Site   SiteName `json:"site"`
+	LinkId LinkId   `json:"linkId"`
+}
+
+type RevokeShareLinkResponseObject interface {
+	VisitRevokeShareLinkResponse(w http.ResponseWriter) error
+}
+
+type RevokeShareLink204Response struct {
+}
+
+func (response RevokeShareLink204Response) VisitRevokeShareLinkResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeShareLink401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RevokeShareLink401JSONResponse) VisitRevokeShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeShareLink403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RevokeShareLink403JSONResponse) VisitRevokeShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeShareLink404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RevokeShareLink404JSONResponse) VisitRevokeShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevokeShareLinkdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RevokeShareLinkdefaultJSONResponse) VisitRevokeShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateShareLinkRequestObject struct {
+	Site   SiteName `json:"site"`
+	LinkId LinkId   `json:"linkId"`
+}
+
+type RotateShareLinkResponseObject interface {
+	VisitRotateShareLinkResponse(w http.ResponseWriter) error
+}
+
+type RotateShareLink200JSONResponse CreatedShareLink
+
+func (response RotateShareLink200JSONResponse) VisitRotateShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateShareLink401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RotateShareLink401JSONResponse) VisitRotateShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateShareLink403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response RotateShareLink403JSONResponse) VisitRotateShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateShareLink404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RotateShareLink404JSONResponse) VisitRotateShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateShareLinkdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RotateShareLinkdefaultJSONResponse) VisitRotateShareLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListPoliciesRequestObject struct {
 	Site   SiteName `json:"site"`
 	Params ListPoliciesParams
@@ -5947,6 +6600,18 @@ type StrictServerInterface interface {
 	// VerifyDomain Check a custom domain's DNS now.
 	// (POST /api/v0/sites/{site}/domains/{hostname}/verify)
 	VerifyDomain(ctx context.Context, request VerifyDomainRequestObject) (VerifyDomainResponseObject, error)
+	// ListShareLinks List a site's share links.
+	// (GET /api/v0/sites/{site}/links)
+	ListShareLinks(ctx context.Context, request ListShareLinksRequestObject) (ListShareLinksResponseObject, error)
+	// CreateShareLink Create a share link.
+	// (POST /api/v0/sites/{site}/links)
+	CreateShareLink(ctx context.Context, request CreateShareLinkRequestObject) (CreateShareLinkResponseObject, error)
+	// RevokeShareLink Revoke a share link.
+	// (DELETE /api/v0/sites/{site}/links/{linkId})
+	RevokeShareLink(ctx context.Context, request RevokeShareLinkRequestObject) (RevokeShareLinkResponseObject, error)
+	// RotateShareLink Rotate a share link's token.
+	// (POST /api/v0/sites/{site}/links/{linkId}/rotate)
+	RotateShareLink(ctx context.Context, request RotateShareLinkRequestObject) (RotateShareLinkResponseObject, error)
 	// ListPolicies List a site's access policies.
 	// (GET /api/v0/sites/{site}/policies)
 	ListPolicies(ctx context.Context, request ListPoliciesRequestObject) (ListPoliciesResponseObject, error)
@@ -6932,6 +7597,120 @@ func (sh *strictHandler) VerifyDomain(w http.ResponseWriter, r *http.Request, si
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(VerifyDomainResponseObject); ok {
 		if err := validResponse.VisitVerifyDomainResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListShareLinks operation middleware
+func (sh *strictHandler) ListShareLinks(w http.ResponseWriter, r *http.Request, site SiteName, params ListShareLinksParams) {
+	var request ListShareLinksRequestObject
+
+	request.Site = site
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListShareLinks(ctx, request.(ListShareLinksRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListShareLinks")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListShareLinksResponseObject); ok {
+		if err := validResponse.VisitListShareLinksResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateShareLink operation middleware
+func (sh *strictHandler) CreateShareLink(w http.ResponseWriter, r *http.Request, site SiteName) {
+	var request CreateShareLinkRequestObject
+
+	request.Site = site
+
+	var body CreateShareLinkJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateShareLink(ctx, request.(CreateShareLinkRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateShareLink")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateShareLinkResponseObject); ok {
+		if err := validResponse.VisitCreateShareLinkResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevokeShareLink operation middleware
+func (sh *strictHandler) RevokeShareLink(w http.ResponseWriter, r *http.Request, site SiteName, linkId LinkId) {
+	var request RevokeShareLinkRequestObject
+
+	request.Site = site
+	request.LinkId = linkId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeShareLink(ctx, request.(RevokeShareLinkRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeShareLink")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeShareLinkResponseObject); ok {
+		if err := validResponse.VisitRevokeShareLinkResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RotateShareLink operation middleware
+func (sh *strictHandler) RotateShareLink(w http.ResponseWriter, r *http.Request, site SiteName, linkId LinkId) {
+	var request RotateShareLinkRequestObject
+
+	request.Site = site
+	request.LinkId = linkId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RotateShareLink(ctx, request.(RotateShareLinkRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RotateShareLink")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RotateShareLinkResponseObject); ok {
+		if err := validResponse.VisitRotateShareLinkResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -31,7 +31,8 @@ info:
       deploys, uploading blobs, activation and rollback. `manage` covers
       deleting sites and managing custom domains. Read operations accept
       either scope. `manage` also covers setting and deleting access
-      policies. Tokens never manage owners, sessions or other tokens.
+      policies and creating, revoking and rotating share links. Tokens never
+      manage owners, sessions or other tokens.
 
     Each operation lists the credentials it accepts; any one of them is
     enough. Operations with no security take no credentials and are
@@ -51,8 +52,9 @@ info:
     - **Owner scoping**: every resource belongs to the signed-in owner. A
       resource that does not exist and one that belongs to another owner get
       the same `404 not_found` with the same body.
-    - **Secrets** (API tokens, CLI device codes) appear in exactly one
-      response, at creation, and are never returned again.
+    - **Secrets** (API tokens, CLI device codes, share-link tokens) appear in
+      exactly one response, at creation (or a share link's rotation), and are
+      never returned again.
 
     ## Errors
 
@@ -63,7 +65,7 @@ info:
 
     | Status | Codes |
     | ------ | ----- |
-    | 400 | `invalid_request` (malformed JSON, missing or invalid field), `invalid_code`, `invalid_site_name`, `reserved_site_name`, `invalid_path`, `invalid_manifest`, `invalid_hostname`, `hash_mismatch`, `unexpected_blob`, `invalid_policy_path`, `invalid_policy`, `invalid_passkey` |
+    | 400 | `invalid_request` (malformed JSON, missing or invalid field), `invalid_code`, `invalid_site_name`, `reserved_site_name`, `invalid_path`, `invalid_manifest`, `invalid_hostname`, `hash_mismatch`, `unexpected_blob`, `invalid_policy_path`, `invalid_policy`, `invalid_share_link`, `invalid_passkey` |
     | 401 | `unauthenticated`: no credential, or an expired, revoked or unknown one |
     | 403 | `forbidden`: the credential lacks the scope, or a cookie request came from another origin |
     | 404 | `not_found` |
@@ -94,6 +96,8 @@ tags:
     description: Custom domains (C1.9).
   - name: policies
     description: Access policies (A2.1).
+  - name: links
+    description: Share links (A2.2).
 security: []
 paths:
   /api/v0/health:
@@ -1615,6 +1619,162 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v0/sites/{site}/links:
+    parameters:
+      - $ref: '#/components/parameters/SiteName'
+    get:
+      operationId: listShareLinks
+      summary: List a site's share links.
+      description: >-
+        Newest first. Revoked links are not listed; expired and used-up links
+        are, with their `status`. Tokens are never returned.
+      tags: [links]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of share links.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareLinkPage'
+              example:
+                items:
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e50
+                    publicId: q4v7m2xkpa
+                    label: Linear ENG-123
+                    path: /
+                    status: active
+                    uses: 0
+                    createdAt: 1767225600000
+                    lastAccessedAt: 1767312000000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createShareLink
+      summary: Create a share link.
+      description: >-
+        The response is the only time the token and its URL are shown. The
+        link lets anyone holding it read the site, or only `path` and below,
+        wherever a protected policy enables share links; it works whatever
+        the site's policies are now, so it starts working if the site is
+        protected later. `url` opens the page directly with status 200 and a
+        site session, with no login page or redirect; `Authorization: Bearer`
+        with the token works too. A link with `maxUses` shows a "Click to
+        view" page and counts a use only when the button is pressed. A label
+        longer than 200 characters or with control characters, an expiry not
+        in the future, a use limit outside 1 to 1000000 or a path that is not
+        `/` or a clean directory prefix answers `400 invalid_share_link`.
+      tags: [links]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateShareLinkRequest'
+            example:
+              label: Linear ENG-123
+              path: /docs/
+              expiresAt: 1767830400000
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedShareLink'
+              examples:
+                createdShareLink:
+                  $ref: '#/components/examples/CreatedShareLink'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/sites/{site}/links/{linkId}:
+    parameters:
+      - $ref: '#/components/parameters/SiteName'
+      - $ref: '#/components/parameters/LinkId'
+    delete:
+      operationId: revokeShareLink
+      summary: Revoke a share link.
+      description: >-
+        Immediate: the token and every site session created from it stop
+        working on their next request. A revoked link is no longer listed,
+        and revoking it again answers `404`.
+      tags: [links]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/sites/{site}/links/{linkId}/rotate:
+    parameters:
+      - $ref: '#/components/parameters/SiteName'
+      - $ref: '#/components/parameters/LinkId'
+    post:
+      operationId: rotateShareLink
+      summary: Rotate a share link's token.
+      description: >-
+        Issues a new token for the same link, keeping its public ID, label,
+        path, expiry and use count. The old token and every site session
+        created from the link stop working on their next request. The
+        response is the only time the new token is shown.
+      tags: [links]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      responses:
+        '200':
+          description: The link with its new token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedShareLink'
+              examples:
+                createdShareLink:
+                  $ref: '#/components/examples/CreatedShareLink'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   securitySchemes:
     sessionCookie:
@@ -1701,6 +1861,14 @@ components:
       schema:
         $ref: '#/components/schemas/Id'
       example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41
+    LinkId:
+      name: linkId
+      in: path
+      required: true
+      description: The share link's public ID.
+      schema:
+        $ref: '#/components/schemas/LinkPublicId'
+      example: q4v7m2xkpa
     DomainHostname:
       name: hostname
       in: path
@@ -1905,6 +2073,20 @@ components:
         version: 1
         createdAt: 1767225600000
         updatedAt: 1767225600000
+    CreatedShareLink:
+      summary: A new share link with its token.
+      value:
+        shareLink:
+          id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e50
+          publicId: q4v7m2xkpa
+          label: Linear ENG-123
+          path: /docs/
+          status: active
+          uses: 0
+          createdAt: 1767225600000
+          expiresAt: 1767830400000
+        token: wl_q4v7m2xkpa_EXAMPLEonlyEXAMPLEonlyEXAMPLEonlyEXAMPLEonl
+        url: https://docs.wardlock.example.net/docs/?t=wl_q4v7m2xkpa_EXAMPLEonlyEXAMPLEonlyEXAMPLEonlyEXAMPLEonl
     PendingDomain:
       summary: A domain waiting for its DNS record.
       value:
@@ -2739,3 +2921,112 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/PolicyMethod'
+
+    LinkPublicId:
+      type: string
+      description: >-
+        A share link's public ID: it names the link in listings, the access
+        log and the CLI without revealing the token.
+      pattern: ^[a-z2-7]{10}$
+      examples: [q4v7m2xkpa]
+    ShareLinkStatus:
+      type: string
+      description: >-
+        `active`: the link works. `expired`: past `expiresAt`. `used_up`:
+        `uses` has reached `maxUses`.
+      enum: [active, expired, used_up]
+    ShareLink:
+      type: object
+      additionalProperties: false
+      required: [id, publicId, path, status, uses, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        publicId:
+          $ref: '#/components/schemas/LinkPublicId'
+        label:
+          type: string
+          description: Free text for the owner; never part of the URL. Absent when empty.
+          maxLength: 200
+        path:
+          $ref: '#/components/schemas/PolicyPath'
+        status:
+          $ref: '#/components/schemas/ShareLinkStatus'
+        uses:
+          type: integer
+          format: int32
+          minimum: 0
+          description: >-
+            Uses spent: presses of the "Click to view" button on a link with
+            `maxUses`. Always 0 for a link without a use limit.
+        maxUses:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1000000
+          description: Absent when the link has no use limit.
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        expiresAt:
+          description: Absent when the link never expires.
+          $ref: '#/components/schemas/Timestamp'
+        lastAccessedAt:
+          description: >-
+            The last request the link (or a session from it) let in, to the
+            minute. Absent until first used.
+          $ref: '#/components/schemas/Timestamp'
+        rotatedAt:
+          description: Absent until the token is first rotated.
+          $ref: '#/components/schemas/Timestamp'
+    ShareLinkPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShareLink'
+        nextCursor:
+          $ref: '#/components/schemas/Cursor'
+    CreateShareLinkRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+          description: Free text up to 200 characters, such as "Linear ENG-123" or "sent to Alice".
+          maxLength: 200
+        path:
+          description: >-
+            Scope: `/` (the default) for the whole site, or a directory
+            prefix such as `/docs/`, which also covers `/docs`.
+          $ref: '#/components/schemas/PolicyPath'
+        expiresAt:
+          description: >-
+            When the link stops working. Omit for a link that never expires
+            (a first-class choice for permanent references).
+          $ref: '#/components/schemas/Timestamp'
+        maxUses:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1000000
+          description: Limit the uses (1 for a one-time link). Omit for unlimited.
+    CreatedShareLink:
+      type: object
+      additionalProperties: false
+      required: [shareLink, token, url]
+      properties:
+        shareLink:
+          $ref: '#/components/schemas/ShareLink'
+        token:
+          type: string
+          description: The secret token. Shown only in this response.
+          pattern: ^wl_[a-z2-7]{10}_[A-Za-z0-9_-]{43}$
+        url:
+          type: string
+          format: uri
+          description: >-
+            The share link: `https://<site host><path>?t=<token>`. Shown only
+            in this response.
