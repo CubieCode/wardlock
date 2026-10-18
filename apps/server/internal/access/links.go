@@ -293,15 +293,15 @@ func tokenSiteKey(siteID string) string { return "link-fail-site:" + siteID }
 // refused, and how long until the later window resets.
 func (s *Service) overTokenLimit(r Request) (bool, time.Duration) {
 	ipOver, ipWait := s.limiter.exceeded(tokenIPKey(r.ClientIP), s.limits.TokenFailuresPerIP)
-	siteOver, siteWait := s.limiter.exceeded(tokenSiteKey(r.SiteID), s.limits.TokenFailuresPerSite)
+	siteOver, siteWait := s.siteLimiter.exceeded(tokenSiteKey(r.SiteID), s.limits.TokenFailuresPerSite)
 	return ipOver || siteOver, max(ipWait, siteWait)
 }
 
 // checkToken finds the usable link r.Token names on r's site. Every other
 // token is errTokenRefused, whatever the reason; malformed, unknown, wrong
 // and other sites' tokens also count against the IP's and site's limits,
-// and the guess that goes over one (or finds the limiter full) is a
-// *limitedError instead.
+// and the guess that goes over one (or finds the IP table full, so it
+// cannot be counted) is a *limitedError instead.
 // Only public IDs are logged, never tokens.
 func (s *Service) checkToken(ctx context.Context, r Request) (store.ShareLink, error) {
 	refuse := func(publicID string, guess bool) (store.ShareLink, error) {
@@ -312,7 +312,7 @@ func (s *Service) checkToken(ctx context.Context, r Request) (store.ShareLink, e
 		s.log.LogAttrs(ctx, slog.LevelInfo, "share link refused", attrs...)
 		if guess {
 			ipOK, ipWait := s.limiter.allow(tokenIPKey(r.ClientIP), s.limits.TokenFailuresPerIP)
-			siteOK, siteWait := s.limiter.allow(tokenSiteKey(r.SiteID), s.limits.TokenFailuresPerSite)
+			siteOK, siteWait := s.siteLimiter.allow(tokenSiteKey(r.SiteID), s.limits.TokenFailuresPerSite)
 			if !ipOK || !siteOK {
 				return store.ShareLink{}, &limitedError{RetryAfter: max(ipWait, siteWait)}
 			}

@@ -37,13 +37,15 @@ func DefaultLimits() Limits {
 
 // limiter is an in-memory fixed-window counter per key, shared by every
 // access method. Counts are lost on restart, which only ever resets a limit
-// early.
+// early. Expired windows are swept at most once per sweepEvery.
 //
-// Memory is bounded: expired windows are swept at most once per sweepEvery,
-// and the table never holds more than maxKeys. When it is full, a key it
-// does not already track is refused (fail closed) until the next sweep
-// frees room, so flooding it with fresh keys can delay new clients by up to
-// one window but never exhaust memory or lift a limit.
+// A limiter for keys a client chooses (IPs) is bounded: its table never
+// holds more than maxKeys. When it is full, allow refuses to count a new
+// key (so a new failure is refused, never silently unlimited), but
+// exceeded never refuses a key it does not hold, so a flood of fresh
+// addresses cannot lock out clients that are not failing. A limiter for
+// keys the server owns (sites, policies) is unbounded (maxKeys 0): its
+// size follows the number of sites, and a full IP table never disables it.
 type limiter struct {
 	now     func() time.Time
 	maxKeys int
@@ -64,9 +66,19 @@ const (
 	sweepEvery     = time.Minute
 )
 
+// newLimiter returns a limiter bounded to defaultMaxKeys, for client keys.
 func newLimiter(now func() time.Time) *limiter {
 	return &limiter{now: now, maxKeys: defaultMaxKeys, windows: map[string]window{}}
 }
+
+// newServerKeyLimiter returns an unbounded limiter, for keys the server
+// owns (site and policy IDs).
+func newServerKeyLimiter(now func() time.Time) *limiter {
+	return &limiter{now: now, windows: map[string]window{}}
+}
+
+// full reports whether a bounded table cannot take a new key.
+func (l *limiter) full() bool { return l.maxKeys > 0 && len(l.windows) >= l.maxKeys }
 
 // allow counts one event for key under r. When the window is full, or the
 // table is full and key is new, it returns false and how long to wait.
@@ -76,7 +88,7 @@ func (l *limiter) allow(key string, r Rate) (bool, time.Duration) {
 	defer l.mu.Unlock()
 	l.sweep(now)
 	w, ok := l.windows[key]
-	if !ok && len(l.windows) >= l.maxKeys {
+	if !ok && l.full() {
 		return false, max(l.nextSweep.Sub(now), time.Second)
 	}
 	if !now.Before(w.end) {
@@ -91,19 +103,14 @@ func (l *limiter) allow(key string, r Rate) (bool, time.Duration) {
 }
 
 // exceeded reports whether key's current window under r is already full,
-// or the table is full and does not hold key, without counting an event,
-// and how long until that changes.
+// without counting an event, and how long until it resets. A key the table
+// does not hold is never over, even when the table is full.
 func (l *limiter) exceeded(key string, r Rate) (bool, time.Duration) {
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.sweep(now)
 	w, ok := l.windows[key]
-	if !ok && len(l.windows) >= l.maxKeys {
-		// Full: a key the table cannot hold cannot be counted, so it is
-		// refused (fail closed) until a sweep frees room.
-		return true, max(l.nextSweep.Sub(now), time.Second)
-	}
 	if !ok || !now.Before(w.end) || w.n < r.N {
 		return false, 0
 	}

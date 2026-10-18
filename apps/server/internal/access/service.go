@@ -74,7 +74,8 @@ type Service struct {
 	now         timeFunc
 	log         *slog.Logger
 	limits      Limits
-	limiter     *limiter
+	limiter     *limiter // client keys (IPs), bounded
+	siteLimiter *limiter // server keys (sites, policies), unbounded
 	unsubscribe func()
 
 	mu       sync.Mutex
@@ -105,6 +106,7 @@ func New(cfg Config) (*Service, error) {
 		s.limits = DefaultLimits()
 	}
 	s.limiter = newLimiter(s.now)
+	s.siteLimiter = newServerKeyLimiter(s.now)
 	s.unsubscribe = cfg.Notifier.Subscribe(s.invalidate)
 	return s, nil
 }

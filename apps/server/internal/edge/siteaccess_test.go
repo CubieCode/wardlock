@@ -19,10 +19,12 @@ import (
 
 // fakeAccess answers with fn and records what the edge asked.
 type fakeAccess struct {
-	fn    func(access.Request) (access.Decision, error)
-	mu    sync.Mutex
-	seen  []access.Request
-	ended []string
+	fn func(access.Request) (access.Decision, error)
+	// issueErr, when set, is what IssueSession answers.
+	issueErr error
+	mu       sync.Mutex
+	seen     []access.Request
+	ended    []string
 }
 
 func (a *fakeAccess) Decide(_ context.Context, r access.Request) (access.Decision, error) {
@@ -40,6 +42,9 @@ func (a *fakeAccess) EndSession(_ context.Context, siteID, cookie string) error 
 }
 
 func (a *fakeAccess) IssueSession(_ context.Context, n access.NewSession) (access.Cookie, error) {
+	if a.issueErr != nil {
+		return access.Cookie{}, a.issueErr
+	}
 	return access.Cookie{Name: access.SessionCookieName, Value: "issued-" + n.ShareLinkID, Expires: time.Now().Add(time.Hour)}, nil
 }
 
