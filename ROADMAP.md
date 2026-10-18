@@ -177,7 +177,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.3: Password policy
 
-- Status: `review`
+- Status: `done`
 - Owner: feat/a2.3-password-policy
 - PR: https://github.com/CubieCode/wardlock/pull/46
 - Depends on: A2.1
