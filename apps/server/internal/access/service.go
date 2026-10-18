@@ -405,6 +405,11 @@ type NewSession struct {
 	// (and is unrevoked and unexpired), so a rotation or revocation that
 	// races the issue cannot leave a live session behind (ErrLinkChanged).
 	LinkTokenHash string
+	// PasswordHash is the policy password hash a password session was
+	// checked against. The session is stored only if the policy still has
+	// it at the same version (ErrPasswordChanged), so a password change
+	// that races the sign-in cannot leave a live session behind.
+	PasswordHash string
 	// Subject is the verified email for email-code and OAuth sessions.
 	Subject string
 	// NotAfter caps the session's lifetime (a link's expiry); zero means
@@ -441,7 +446,8 @@ func (s *Service) IssueSession(ctx context.Context, n NewSession) (Cookie, error
 		ExpiresAt:     expires,
 	}
 	var err error
-	if n.Method == store.SessionLink {
+	switch n.Method {
+	case store.SessionLink:
 		if n.LinkTokenHash == "" {
 			return Cookie{}, errors.New("issue site session: a link session needs the link's token hash")
 		}
@@ -449,7 +455,15 @@ func (s *Service) IssueSession(ctx context.Context, n NewSession) (Cookie, error
 		if errors.Is(err, store.ErrNotFound) {
 			return Cookie{}, ErrLinkChanged
 		}
-	} else {
+	case store.SessionPassword:
+		if n.PasswordHash == "" {
+			return Cookie{}, errors.New("issue site session: a password session needs the password hash")
+		}
+		err = s.c.PasswordSessions.CreateSession(ctx, row, n.PasswordHash)
+		if errors.Is(err, store.ErrNotFound) {
+			return Cookie{}, ErrPasswordChanged
+		}
+	default:
 		err = s.c.Sessions.CreateSite(ctx, row)
 	}
 	if err != nil {

@@ -4,6 +4,7 @@
 package storetest
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -11,6 +12,57 @@ import (
 )
 
 func passwordSessionsContract(t *testing.T, open Opener) {
+	t.Run("CreateSession", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		ctx := t.Context()
+		o := f.owner()
+		s := f.site(o.ID)
+		p := f.validPolicy(s.ID)
+		p.PasswordEnabled, p.PasswordHash = true, "$argon2id$stand-in"
+		f.must(f.r.Policies.Create(ctx, o.ID, p))
+		links := f.validPolicy(s.ID)
+		links.PathPrefix = "/links/"
+		f.must(f.r.Policies.Create(ctx, o.ID, links))
+		other := f.site(o.ID)
+
+		session := func(mutate func(*store.SiteSession)) store.SiteSession {
+			ss := store.SiteSession{
+				ID: store.NewID(), SiteID: s.ID, TokenHash: f.hash(), Method: store.SessionPassword,
+				PolicyID: p.ID, PolicyVersion: p.Version, CreatedAt: now, ExpiresAt: now.Add(7 * 24 * time.Hour),
+			}
+			if mutate != nil {
+				mutate(&ss)
+			}
+			return ss
+		}
+		for _, c := range []struct {
+			name string
+			s    store.SiteSession
+			hash string
+		}{
+			{"another password", session(nil), "$argon2id$other"},
+			{"no password", session(nil), ""},
+			{"another version", session(func(ss *store.SiteSession) { ss.PolicyVersion = p.Version + 1 }), p.PasswordHash},
+			{"policy without the method", session(func(ss *store.SiteSession) { ss.PolicyID = links.ID }), ""},
+			{"another site", session(func(ss *store.SiteSession) { ss.SiteID = other.ID }), p.PasswordHash},
+			{"unknown policy", session(func(ss *store.SiteSession) { ss.PolicyID = store.NewID() }), p.PasswordHash},
+		} {
+			wantErr(t, f.r.PasswordSessions.CreateSession(ctx, c.s, c.hash), store.ErrNotFound)
+			if _, err := f.r.Sessions.GetSiteByTokenHash(ctx, c.s.TokenHash); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("%s: a session was stored: %v", c.name, err)
+			}
+		}
+		ok := session(nil)
+		f.must(f.r.PasswordSessions.CreateSession(ctx, ok, p.PasswordHash))
+		got, err := f.r.Sessions.GetSiteByTokenHash(ctx, ok.TokenHash)
+		f.must(err)
+		if got.ID != ok.ID || got.Method != store.SessionPassword || got.PolicyVersion != p.Version || got.ShareLinkID != "" || !got.ExpiresAt.Equal(ok.ExpiresAt) || !got.RevokedAt.IsZero() {
+			t.Fatalf("stored %+v, want %+v", got, ok)
+		}
+		wantErr(t, f.r.PasswordSessions.CreateSession(ctx, ok, p.PasswordHash), store.ErrConflict)
+	})
+
 	t.Run("RevokeForPolicy", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, open)

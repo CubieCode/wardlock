@@ -24,6 +24,9 @@ var (
 	// ErrWrongPassword covers every failed password sign-in alike: a wrong
 	// password, and a path whose policy has no password at all.
 	ErrWrongPassword = errors.New("wrong password")
+	// ErrPasswordChanged means IssueSession refused a password session
+	// because the policy's password or version changed after the check.
+	ErrPasswordChanged = errors.New("policy password changed")
 	// ErrRateLimited is matched by every *RateLimitError.
 	ErrRateLimited = errors.New("rate limited")
 )
@@ -202,7 +205,13 @@ func (s *Service) PasswordLogin(ctx context.Context, a PasswordAttempt) (Cookie,
 		s.log.LogAttrs(ctx, slog.LevelInfo, "password sign-in refused", slog.String("site_id", a.SiteID), slog.String("policy_id", p.ID))
 		return Cookie{}, ErrWrongPassword
 	}
-	c, err := s.IssueSession(ctx, NewSession{SiteID: a.SiteID, Policy: p, Method: store.SessionPassword})
+	c, err := s.IssueSession(ctx, NewSession{SiteID: a.SiteID, Policy: p, Method: store.SessionPassword, PasswordHash: hash})
+	if errors.Is(err, ErrPasswordChanged) {
+		// Changed while checking: the password just tried is no longer
+		// the policy's, so it is as wrong as any other.
+		s.log.LogAttrs(ctx, slog.LevelInfo, "password sign-in refused", slog.String("site_id", a.SiteID), slog.String("policy_id", p.ID))
+		return Cookie{}, ErrWrongPassword
+	}
 	if err != nil {
 		return Cookie{}, err
 	}

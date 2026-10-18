@@ -13,6 +13,47 @@ import (
 	"database/sql"
 )
 
+const createPasswordSession = `-- name: CreatePasswordSession :execrows
+INSERT INTO site_sessions (id, site_id, token_hash, method, share_link_id, policy_id, policy_version, subject, created_at, expires_at, revoked_at)
+SELECT ?1, policies.site_id, ?2, 'password', NULL, policies.id, policies.version, NULL, ?3, ?4, NULL
+FROM policies
+WHERE policies.id = ?5 AND policies.site_id = ?6
+  AND policies.version = ?7 AND policies.visibility = 'protected'
+  AND policies.password_enabled = 1 AND policies.password_hash = ?8
+`
+
+type CreatePasswordSessionParams struct {
+	ID               string
+	SessionTokenHash string
+	CreatedAt        int64
+	ExpiresAt        int64
+	PolicyID         string
+	SiteID           string
+	PolicyVersion    int64
+	PasswordHash     sql.NullString
+}
+
+// Creates a password session only while its policy is still protected with
+// the password method, the checked password_hash and the same version, in
+// one statement, so a password change that commits first leaves nothing
+// behind (its own session revocation would miss a row inserted after it).
+func (q *Queries) CreatePasswordSession(ctx context.Context, arg CreatePasswordSessionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, createPasswordSession,
+		arg.ID,
+		arg.SessionTokenHash,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+		arg.PolicyID,
+		arg.SiteID,
+		arg.PolicyVersion,
+		arg.PasswordHash,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const revokePolicyPasswordSessions = `-- name: RevokePolicyPasswordSessions :execrows
 UPDATE site_sessions SET revoked_at = ?1
 WHERE site_id = ?2 AND policy_id = ?3

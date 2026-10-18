@@ -30,6 +30,20 @@ type revocations struct {
 	mu    sync.Mutex
 	calls []string
 	n     int
+	// beforeCreate, when set, runs once just before the next
+	// CreateSession, to interleave a password change with a sign-in.
+	beforeCreate func()
+}
+
+func (r *revocations) CreateSession(ctx context.Context, s store.SiteSession, hash string) error {
+	r.mu.Lock()
+	fn := r.beforeCreate
+	r.beforeCreate = nil
+	r.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+	return r.PasswordSessions.CreateSession(ctx, s, hash)
 }
 
 func (r *revocations) RevokeForPolicy(ctx context.Context, siteID, policyID string, at time.Time) (int, error) {
@@ -206,6 +220,37 @@ func testPasswordRateLimits(t *testing.T, h *passwordHarness) {
 	}
 }
 
+// Attempts are counted before the (slow) check, so parallel guesses cannot
+// all slip under the limit while Argon2id runs.
+func TestParallelAttemptsStayWithinTheLimit(t *testing.T) {
+	h := newRealLimiterHarness(t, access.Limits{PasswordPerIP: access.Rate{N: 3, Per: time.Minute}, PasswordPerSite: access.Rate{N: 100, Per: time.Minute}})
+	o := h.owner()
+	s := h.site(o, "harbour")
+	h.set(o, "harbour", passwordRule("/", firstPassword))
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	checked, limited := 0, 0
+	for range 20 {
+		wg.Go(func() {
+			_, err := h.login(s.ID, "/", "192.0.2.1", "wrong-guess")
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case errors.Is(err, access.ErrWrongPassword):
+				checked++
+			case errors.Is(err, access.ErrRateLimited):
+				limited++
+			default:
+				t.Errorf("attempt: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+	if checked != 3 || limited != 17 {
+		t.Fatalf("%d checked, %d limited; want 3 and 17", checked, limited)
+	}
+}
+
 func TestSetPassword(t *testing.T) {
 	h := newPasswordHarness(t, access.Limits{})
 	ctx := t.Context()
@@ -329,6 +374,35 @@ func (h *passwordHarness) allowed(name, siteID, cookie string, want bool) {
 	d := h.decide(access.Request{SiteID: siteID, Path: "/", Cookie: cookie})
 	if got := d.Outcome == access.Allow; got != want {
 		h.t.Fatalf("%s: %+v, want allowed %v", name, d, want)
+	}
+}
+
+// A password change that commits between a sign-in's check and its session
+// insert leaves no session behind: the insert is conditional on the
+// password hash and version that were checked.
+func TestPasswordChangeRacingASignIn(t *testing.T) {
+	h := newPasswordHarness(t, access.Limits{})
+	o := h.owner()
+	s := h.site(o, "harbour")
+	old := h.set(o, "harbour", passwordRule("/", firstPassword))
+	h.revoked.mu.Lock()
+	h.revoked.beforeCreate = func() { h.set(o, "harbour", passwordRule("/", secondPassword)) }
+	h.revoked.mu.Unlock()
+	if _, err := h.login(s.ID, "/", "192.0.2.1", firstPassword); !errors.Is(err, access.ErrWrongPassword) {
+		t.Fatalf("sign-in raced by a change: %v, want ErrWrongPassword", err)
+	}
+	// Issuing directly with the stale policy is refused too.
+	for name, n := range map[string]access.NewSession{
+		"old hash and version":      {SiteID: s.ID, Policy: old, Method: store.SessionPassword, PasswordHash: old.PasswordHash},
+		"current version, old hash": {SiteID: s.ID, Policy: h.policyFor(s.ID, "/"), Method: store.SessionPassword, PasswordHash: old.PasswordHash},
+		"no hash":                   {SiteID: s.ID, Policy: h.policyFor(s.ID, "/"), Method: store.SessionPassword},
+	} {
+		if _, err := h.svc.IssueSession(t.Context(), n); err == nil {
+			t.Errorf("%s: issued a session", name)
+		}
+	}
+	if _, err := h.login(s.ID, "/", "192.0.2.1", secondPassword); err != nil {
+		t.Fatalf("new password: %v", err)
 	}
 }
 
