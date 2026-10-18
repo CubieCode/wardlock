@@ -267,8 +267,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.3: Share links
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: `feat/d3.3-share-links`
 - PR:
 - Depends on: D3.2, A2.2
 - Scope: Create a link (label, expiry or never, use limit, path scope), show the URL once with a copy action, list links, revoke, rotate, per-link access log.
