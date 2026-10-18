@@ -237,6 +237,7 @@
 /* Status badge: always a word, never colour alone */
 .wl-badge {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: var(--space-1);
   width: fit-content;
@@ -501,6 +502,12 @@
 
 .wl-table-mono {
   font-family: var(--font-mono);
+}
+
+@media (min-width: 48rem) {
+  .wl-table-nowrap {
+    white-space: nowrap;
+  }
 }
 
 @media (max-width: 47.99rem) {

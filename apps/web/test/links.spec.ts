@@ -100,6 +100,13 @@ for (const scheme of schemes) {
       expect(url).toMatch(tokenShape);
       expect(url.startsWith(`http://${site}.wardlock.localhost:`)).toBe(true);
       expect(await page.title()).not.toMatch(/wl_/);
+      // The one screenshot with a token on the page: the field is masked,
+      // so the token is never drawn into the image.
+      await page.screenshot({
+        path: info.outputPath(`links-reveal-${scheme}.png`),
+        fullPage: true,
+        mask: [reveal.getByRole('textbox', { name: 'Share link' })],
+      });
       await reveal.getByRole('button', { name: 'Copy share link' }).click();
       await expect(reveal.getByText('Share link copied.')).toBeVisible();
       expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(

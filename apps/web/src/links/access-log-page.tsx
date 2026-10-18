@@ -85,6 +85,7 @@ const fullTime = new Intl.DateTimeFormat(locale, {
 const columns: TableColumn<AccessLogEntry>[] = [
   {
     header: 'Time',
+    nowrap: true,
     cell: (e) => {
       const date = new Date(e.occurredAt);
       return <time dateTime={date.toISOString()}>{fullTime.format(date)}</time>;
@@ -93,6 +94,7 @@ const columns: TableColumn<AccessLogEntry>[] = [
   { header: 'Path', cell: (e) => e.path, mono: true },
   {
     header: 'Result',
+    nowrap: true,
     cell: (e) =>
       e.status < 400 ? (
         <StatusBadge tone="success">Opened · {e.status}</StatusBadge>
@@ -104,6 +106,7 @@ const columns: TableColumn<AccessLogEntry>[] = [
     header: 'IP address',
     cell: (e) => e.ip ?? <span className="link-muted">Not recorded</span>,
     mono: true,
+    nowrap: true,
   },
   {
     header: 'Browser or client',

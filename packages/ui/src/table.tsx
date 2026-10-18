@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ReactNode } from 'react';
+import { cx } from './cx.js';
 
 export interface TableColumn<Row> {
   /** Column heading; also labels the value when rows stack on small screens. */
@@ -9,6 +10,8 @@ export interface TableColumn<Row> {
   cell: (row: Row) => ReactNode;
   /** Monospace values such as paths, IDs and addresses. */
   mono?: boolean;
+  /** Short values (times, statuses, addresses) kept on one line from 48rem. */
+  nowrap?: boolean;
 }
 
 /**
@@ -51,7 +54,12 @@ export function Table<Row>({
                   key={column.header}
                   role="cell"
                   data-label={column.header}
-                  className={column.mono ? 'wl-table-mono' : undefined}
+                  className={
+                    cx(
+                      column.mono ? 'wl-table-mono' : null,
+                      column.nowrap ? 'wl-table-nowrap' : null,
+                    ) || undefined
+                  }
                 >
                   {column.cell(row)}
                 </td>

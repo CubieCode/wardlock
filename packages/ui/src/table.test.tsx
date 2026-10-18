@@ -28,7 +28,11 @@ describe('Table', () => {
         rowKey={(row) => row.id}
         columns={[
           { header: 'Path', cell: (row) => row.path, mono: true },
-          { header: 'Status', cell: (row) => String(row.status) },
+          {
+            header: 'Status',
+            cell: (row) => String(row.status),
+            nowrap: true,
+          },
         ]}
       />,
     );
@@ -44,6 +48,7 @@ describe('Table', () => {
     // Stacked rows label each value from its column.
     expect(cells.map((td) => td.dataset.label)).toEqual(['Path', 'Status']);
     expect(cells[0]!.className).toBe('wl-table-mono');
+    expect(cells[1]!.className).toBe('wl-table-nowrap');
     expect(within(second!).getAllByRole('cell')[1]!.textContent).toBe('404');
   });
 });
