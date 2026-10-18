@@ -142,7 +142,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.9: Custom domains
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: feat/c1.9-custom-domains
 - PR:
 - Depends on: C1.3, C1.4, C1.5
