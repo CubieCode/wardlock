@@ -13,10 +13,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"wardlock.nz/apiclient"
 )
@@ -30,6 +32,9 @@ const (
 	// uploadTimeout bounds one file's upload; the shared client's 30
 	// seconds is too short for a large file on a slow link.
 	uploadTimeout = 10 * time.Minute
+	// maxMessageChars is the API's limit on a deploy message, in
+	// characters (runes), not bytes.
+	maxMessageChars = 500
 )
 
 // deployResult is deploy's --json output (docs/SPEC.md "CLI"): the API's
@@ -50,9 +55,9 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 	fs := newFlagSet(a, "deploy", "Usage: wardlock deploy [DIR] [DOMAIN] [flags]\n\n"+
 		"Uploads DIR (default \"dir\" from wardlock.json, else the current\n"+
 		"directory) to the site DOMAIN (default \"site\" from wardlock.json):\n"+
-		"a site name such as docs, its full hostname or one of its custom\n"+
-		"domains. A new name creates the site. Only files the server does not\n"+
-		"already have are uploaded; then the deploy goes live at once.\n\n"+
+		"a site name such as docs, or its full hostname. A new name creates\n"+
+		"the site. Only files the server does not already have are uploaded;\n"+
+		"then the deploy goes live at once.\n\n"+
 		"Left out: .git/, node_modules/, .DS_Store, .env*, wardlock.json,\n"+
 		"other dotfiles except .well-known/, symbolic links, and whatever\n"+
 		"DIR/.wardlockignore lists in .gitignore syntax (\"!\" re-includes a\n"+
@@ -105,8 +110,8 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 			useSPA = *spa
 		}
 	})
-	if len(*message) > 500 {
-		return usageErrorf("--message is %d characters; the limit is 500", len(*message))
+	if n := utf8.RuneCountInString(*message); n > maxMessageChars {
+		return usageErrorf("--message is %d characters; the limit is %d", n, maxMessageChars)
 	}
 
 	shown := displayDir(wd, dir)
@@ -250,17 +255,21 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 	return nil
 }
 
-// site finds the deploy's site, creating it when DOMAIN is a new name.
+// site finds the deploy's site, creating it when DOMAIN is a new name or
+// <new name>.<base domain>.
 func (d *deployer) site(ctx context.Context, t target) (apiclient.Site, bool, error) {
 	c := d.c
 	site, err := c.findSite(ctx, t)
 	if err == nil || !errors.Is(err, errNoSite) {
 		return site, false, err
 	}
-	if t.name == "" {
-		return site, false, fmt.Errorf("none of your sites on %s is served at %s: to create a site, deploy to its name, such as %s", c.server, t.hostname, firstLabel(t.hostname))
+	name := t.name
+	if name == "" {
+		if name, err = c.newSiteName(ctx, t.hostname); err != nil {
+			return site, false, err
+		}
 	}
-	res, err := c.api.CreateSiteWithResponse(ctx, apiclient.CreateSiteJSONRequestBody{Name: t.name}, c.auth)
+	res, err := c.api.CreateSiteWithResponse(ctx, apiclient.CreateSiteJSONRequestBody{Name: name}, c.auth)
 	if err != nil {
 		return site, false, c.unreachable(ctx, err)
 	}
@@ -282,7 +291,7 @@ func (d *deployer) uploadAll(ctx context.Context, site, deployID string, files [
 	return forEach(ctx, len(files), uploadWorkers, func(ctx context.Context, i int) error {
 		f := files[i]
 		for attempt := 1; ; attempt++ {
-			retry, err := d.upload(ctx, api, site, deployID, f)
+			retry, wait, err := d.upload(ctx, api, site, deployID, f)
 			if err == nil {
 				done()
 				return nil
@@ -290,23 +299,27 @@ func (d *deployer) uploadAll(ctx context.Context, site, deployID string, files [
 			if !retry || attempt == uploadAttempts {
 				return err
 			}
-			if err := d.a.sleep(ctx, time.Duration(attempt)*time.Second); err != nil {
+			if wait == 0 {
+				wait = time.Duration(attempt) * time.Second
+			}
+			if err := d.a.sleep(ctx, wait); err != nil {
 				return errors.New("cancelled")
 			}
 		}
 	})
 }
 
-// upload sends one file and says whether a failure is worth retrying.
-func (d *deployer) upload(ctx context.Context, api *apiclient.ClientWithResponses, site, deployID string, f localFile) (retry bool, err error) {
+// upload sends one file. On failure it says whether a retry is worth
+// trying, and after how long when the server said (otherwise wait is 0).
+func (d *deployer) upload(ctx context.Context, api *apiclient.ClientWithResponses, site, deployID string, f localFile) (retry bool, wait time.Duration, err error) {
 	changed := fmt.Errorf("%s changed while deploying: run wardlock deploy again", f.path)
 	file, err := d.root.Open(f.file)
 	if err != nil {
-		return false, fmt.Errorf("read %s: %w", f.path, err)
+		return false, 0, fmt.Errorf("read %s: %w", f.path, err)
 	}
 	defer func() { _ = file.Close() }()
 	if fi, err := file.Stat(); err != nil || fi.Size() != f.size {
-		return false, changed
+		return false, 0, changed
 	}
 	// sent counts this attempt's bytes, which also show in the live total
 	// until the answer comes; then the total gets the whole file or none.
@@ -322,19 +335,36 @@ func (d *deployer) upload(ctx context.Context, api *apiclient.ClientWithResponse
 	res, err := api.UploadDeployBlobWithBodyWithResponse(ctx, site, deployID, f.sha256, "application/octet-stream", body, d.c.auth, setLength)
 	d.uploaded.Add(-sent.Load())
 	if err != nil {
-		return ctx.Err() == nil, fmt.Errorf("upload %s: %w", f.path, d.c.unreachable(ctx, err))
+		return ctx.Err() == nil, 0, fmt.Errorf("upload %s: %w", f.path, d.c.unreachable(ctx, err))
 	}
-	switch code := res.StatusCode(); {
-	case code == http.StatusNoContent:
+	failed := fmt.Errorf("upload %s: %w", f.path, d.c.failed(res.HTTPResponse, res.Body))
+	switch code := res.StatusCode(); code {
+	case http.StatusNoContent:
 		d.uploaded.Add(f.size)
-		return false, nil
-	case code == http.StatusBadRequest && errorCode(res.Body) == "hash_mismatch":
-		return false, changed
-	case code == http.StatusTooManyRequests || code >= 500:
-		return true, fmt.Errorf("upload %s: %w", f.path, d.c.failed(res.HTTPResponse, res.Body))
-	default:
-		return false, fmt.Errorf("upload %s: %w", f.path, d.c.failed(res.HTTPResponse, res.Body))
+		return false, 0, nil
+	case http.StatusBadRequest:
+		if errorCode(res.Body) == "hash_mismatch" {
+			return false, 0, changed
+		}
+	case http.StatusTooManyRequests:
+		return true, retryAfter(res.HTTPResponse), failed
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true, 0, failed
 	}
+	return false, 0, failed
+}
+
+// maxRetryAfter caps how long a Retry-After header can make an upload wait.
+const maxRetryAfter = 30 * time.Second
+
+// retryAfter reads Retry-After in seconds, capped at maxRetryAfter; 0 when
+// absent or not a number.
+func retryAfter(res *http.Response) time.Duration {
+	secs, err := strconv.Atoi(res.Header.Get("Retry-After"))
+	if err != nil || secs <= 0 {
+		return 0
+	}
+	return min(time.Duration(secs)*time.Second, maxRetryAfter)
 }
 
 func errorCode(body []byte) string {
@@ -343,9 +373,42 @@ func errorCode(body []byte) string {
 	return e.Code
 }
 
-func firstLabel(host string) string {
-	label, _, _ := strings.Cut(host, ".")
-	return label
+// newSiteName returns the name of the site to create for host when it is
+// <name>.<base domain>. The API does not report the base domain, so it is
+// inferred from the owner's sites, whose hostnames are all
+// <name>.<base domain>.
+func (c *conn) newSiteName(ctx context.Context, host string) (string, error) {
+	label, rest, _ := strings.Cut(host, ".")
+	hint := ""
+	if siteNamePattern.MatchString(label) {
+		hint = ", such as " + label
+	}
+	sites, err := c.sites(ctx)
+	if err != nil {
+		return "", err
+	}
+	base, ok := baseDomain(sites)
+	switch {
+	case !ok:
+		return "", fmt.Errorf("none of your sites on %s is served at %s, and with no sites to go by the CLI cannot tell whether it is under the server's base domain: to create a site, deploy to its name%s", c.server, host, hint)
+	case rest != base || !siteNamePattern.MatchString(label):
+		return "", fmt.Errorf("none of your sites on %s is served at %s, and it is not a site address under %s: to create a site, deploy to its name%s", c.server, host, base, hint)
+	}
+	return label, nil
+}
+
+// baseDomain infers the base domain from sites. ok is false when there
+// are none or they disagree.
+func baseDomain(sites []apiclient.Site) (string, bool) {
+	base := ""
+	for _, s := range sites {
+		b, found := strings.CutPrefix(strings.ToLower(s.Hostname), s.Name+".")
+		if !found || b == "" || (base != "" && b != base) {
+			return "", false
+		}
+		base = b
+	}
+	return base, base != ""
 }
 
 // displayDir shows dir relative to wd when it is inside it.
@@ -366,6 +429,8 @@ type progress struct {
 
 	mu   sync.Mutex
 	last time.Time
+	// width is how many characters the redrawn line shows now.
+	width int
 }
 
 func (p *progress) update(format string, args ...any) {
@@ -376,15 +441,27 @@ func (p *progress) update(format string, args ...any) {
 	defer p.mu.Unlock()
 	if now := p.now(); now.Sub(p.last) >= 100*time.Millisecond {
 		p.last = now
-		fmt.Fprintf(p.w, "\r\033[K"+format, args...)
+		p.redraw(fmt.Sprintf(format, args...))
 	}
 }
 
 func (p *progress) done(format string, args ...any) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	line := fmt.Sprintf(format, args...)
 	if p.live {
-		fmt.Fprint(p.w, "\r\033[K")
+		p.redraw(line)
+		p.width = 0
+		fmt.Fprintln(p.w)
+		return
 	}
-	fmt.Fprintf(p.w, format+"\n", args...)
+	fmt.Fprintln(p.w, line)
+}
+
+// redraw replaces the current line with line. It pads with spaces rather
+// than using an erase sequence, which older Windows consoles print as is.
+func (p *progress) redraw(line string) {
+	n := utf8.RuneCountInString(line)
+	fmt.Fprint(p.w, "\r"+line+strings.Repeat(" ", max(p.width-n, 0)))
+	p.width = n
 }

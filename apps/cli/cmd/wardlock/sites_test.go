@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -254,5 +255,124 @@ func TestStoredLoginIsUsed(t *testing.T) {
 	err := run(t.Context(), a, []string{"list"})
 	if code := exitCode(errOut, err); code != 1 || !strings.Contains(errOut.String(), "logged in to "+srv.URL) {
 		t.Fatalf("exit %d, stderr %q", code, errOut)
+	}
+}
+
+func TestGlobalFlagsBeforeTheCommand(t *testing.T) {
+	srv := newFakeAPI(t)
+	srv.addSite("docs", "")
+	tests := []struct {
+		args []string
+		keys []string
+	}{
+		{[]string{"--json", "list"}, []string{"sites"}},
+		{[]string{"-json", "--server", "SERVER", "list", "docs"}, []string{"site", "deploys"}},
+		{[]string{"--server=SERVER", "--json", "list"}, []string{"sites"}},
+		{[]string{"--json", "version"}, []string{"version", "server"}},
+		{[]string{"--json", "teardown", "docs", "--yes"}, []string{"deleted", "site"}},
+	}
+	for _, tt := range tests {
+		a, out, errOut := testApp(t)
+		a.getenv = env(map[string]string{"WARDLOCK_TOKEN": testToken})
+		args := slices.Clone(tt.args)
+		for i := range args {
+			args[i] = strings.ReplaceAll(args[i], "SERVER", srv.URL)
+		}
+		if !slices.ContainsFunc(args, func(s string) bool { return strings.Contains(s, srv.URL) }) {
+			a.getenv = env(map[string]string{"WARDLOCK_TOKEN": testToken, "WARDLOCK_SERVER": srv.URL})
+		}
+		if err := run(t.Context(), a, args); err != nil {
+			t.Fatalf("%q: %v\n%s", args, err, errOut)
+		}
+		assertJSONKeys(t, out.Bytes(), tt.keys...)
+	}
+
+	for _, args := range [][]string{{"--server"}, {"--json"}, {"--json", "--nope", "list"}, {"--json", "teardown", "docs"}} {
+		a, _, errOut := ciApp(t, srv)
+		if code := exitCode(errOut, run(t.Context(), a, args)); code != 2 {
+			t.Errorf("%q: exit %d, stderr %q", args, code, errOut)
+		}
+	}
+}
+
+func TestVersionRejectsArguments(t *testing.T) {
+	a, out, errOut := testApp(t)
+	if code := exitCode(errOut, run(t.Context(), a, []string{"version", "extra"})); code != 2 || out.Len() != 0 || !strings.Contains(errOut.String(), "Usage: wardlock version") {
+		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
+	}
+	out.Reset()
+	if err := run(t.Context(), a, []string{"version", "--json"}); err != nil {
+		t.Fatal(err)
+	}
+	assertJSONKeys(t, out.Bytes(), "version")
+}
+
+func TestPaginationAndShortIDsPastPageOne(t *testing.T) {
+	srv := newFakeAPI(t)
+	ids := deployTimes(t, srv, "docs", 2*fakePage+1)
+	srv.mu.Lock()
+	srv.sites["docs"].policy = apiclient.PolicyVisibilityProtected
+	srv.sites["docs"].pathPolicies = 2 * fakePage // "/" is on page three
+	srv.mu.Unlock()
+	for _, name := range []string{"a", "b", "c", "d"} {
+		srv.addSite(name, "")
+	}
+	a, out, errOut := ciApp(t, srv)
+
+	if err := run(t.Context(), a, []string{"list", "--json"}); err != nil {
+		t.Fatalf("list: %v\n%s", err, errOut)
+	}
+	var sites siteList
+	if err := json.Unmarshal(out.Bytes(), &sites); err != nil || len(sites.Sites) != 5 || sites.Sites[4].Name != "docs" ||
+		sites.Sites[4].Policy != apiclient.PolicyVisibilityProtected {
+		t.Fatalf("sites %+v (%v)", sites, err)
+	}
+
+	out.Reset()
+	if err := run(t.Context(), a, []string{"list", "docs", "--json"}); err != nil {
+		t.Fatal(err)
+	}
+	var deploys deployList
+	if err := json.Unmarshal(out.Bytes(), &deploys); err != nil || len(deploys.Deploys) != len(ids) || deploys.Deploys[len(ids)-1].Id != ids[0] {
+		t.Fatalf("deploys %+v (%v)", deploys, err)
+	}
+
+	// The oldest deploy is on the last page.
+	if err := run(t.Context(), a, []string{"rollback", "docs", shortID(ids[0])}); err != nil || activeDeploy(srv, "docs") != ids[0] {
+		t.Fatalf("rollback: %v, active %s", err, activeDeploy(srv, "docs"))
+	}
+}
+
+func TestTeardownNamesOnlyBuiltFeatures(t *testing.T) {
+	srv := newFakeAPI(t)
+	srv.addSite("docs", "")
+	a, out, errOut := ciApp(t, srv)
+	a.canPrompt = true
+	a.stdin = strings.NewReader("no\n")
+	_ = run(t.Context(), a, []string{"teardown", "docs"})
+	_ = run(t.Context(), a, []string{"teardown", "--help"})
+	text := out.String() + errOut.String()
+	if !strings.Contains(text, "every deploy and access setting") {
+		t.Fatalf("output:\n%s", text)
+	}
+	for _, unbuilt := range []string{"share link", "custom domain"} {
+		if strings.Contains(strings.ToLower(text), unbuilt) {
+			t.Errorf("teardown mentions %s, which is not built:\n%s", unbuilt, text)
+		}
+	}
+}
+
+func TestLogoutRefusesAnotherServer(t *testing.T) {
+	srv := newFakeAPI(t)
+	a, _, errOut := testApp(t)
+	if _, err := a.creds.save(srv.URL, testToken); err != nil {
+		t.Fatal(err)
+	}
+	err := run(t.Context(), a, []string{"--server", "https://other.example.test", "logout"})
+	if code := exitCode(errOut, err); code != 1 || !strings.Contains(errOut.String(), "logged in to "+srv.URL) {
+		t.Fatalf("exit %d, stderr %q", code, errOut)
+	}
+	if server, _, err := a.creds.load(); err != nil || server != srv.URL {
+		t.Fatalf("login forgotten: %q %v", server, err)
 	}
 }

@@ -20,9 +20,9 @@ type teardownResult struct {
 
 func runTeardown(ctx context.Context, a *app, args []string) error {
 	fs := newFlagSet(a, "teardown", "Usage: wardlock teardown DOMAIN [--yes] [flags]\n\n"+
-		"Deletes the site with its deploys, share links, policies and custom\n"+
-		"domains, and frees its name. It stops being served at once and\n"+
-		"cannot be undone. Asks you to type the site's name first; without a\n"+
+		"Deletes the site with every deploy and access setting, and frees its\n"+
+		"name for anyone on the server to claim. It stops being served at once\n"+
+		"and cannot be undone. Asks you to type the site's name first; without a\n"+
 		"terminal, or with --json, pass --yes instead. Needs a token with the\n"+
 		"manage scope.")
 	g := addGlobalFlags(fs)
@@ -58,7 +58,7 @@ func runTeardown(ctx context.Context, a *app, args []string) error {
 		return err
 	}
 	if !*yes {
-		ok, err := a.confirm(fmt.Sprintf("This deletes %s (%s) with all its deploys, share links, policies and custom domains. It cannot be undone.\nType the site name to confirm: ", site.Name, site.Hostname), site.Name)
+		ok, err := a.confirm(fmt.Sprintf("This stops serving %s at once and deletes every deploy and access setting of %s. It cannot be undone.\nType the site name to confirm: ", site.Hostname, site.Name), site.Name)
 		if err != nil {
 			return err
 		}

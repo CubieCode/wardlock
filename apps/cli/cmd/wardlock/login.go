@@ -188,11 +188,12 @@ func runLogout(ctx context.Context, a *app, args []string) error {
 	fs := flag.NewFlagSet("logout", flag.ContinueOnError)
 	fs.SetOutput(a.stderr)
 	fs.Usage = func() {
-		fmt.Fprint(a.stderr, "Usage: wardlock logout [--json]\n\n"+
+		fmt.Fprint(a.stderr, "Usage: wardlock logout [--server URL] [--json]\n\n"+
 			"Revokes the token stored by wardlock login on its server and deletes it\n"+
 			"from this computer. WARDLOCK_TOKEN is not affected.\n\n")
 		fs.PrintDefaults()
 	}
+	serverFlag := fs.String("server", "", "only log out if logged in to this server")
 	asJSON := fs.Bool("json", false, "print the result as JSON")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -216,6 +217,9 @@ func runLogout(ctx context.Context, a *app, args []string) error {
 		return err
 	}
 	server := rec.Server
+	if *serverFlag != "" && normaliseServer(*serverFlag) != server {
+		return fmt.Errorf("logged in to %s, not %s: nothing was changed", server, *serverFlag)
+	}
 	warnPlainHTTP(a.stderr, server)
 	_, token, loadErr := a.creds.load()
 

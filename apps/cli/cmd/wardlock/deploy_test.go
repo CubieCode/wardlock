@@ -5,14 +5,17 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"wardlock.nz/apiclient"
 )
@@ -240,6 +243,33 @@ func TestIgnorePatterns(t *testing.T) {
 		{"*.html\n!keep.html\nkeep.html", "keep.html", false, true},
 		{"résumé.pdf", "résumé.pdf", false, true},
 		{"*.txt\r\n", "a.txt", false, true},
+		// POSIX classes.
+		{"[[:alpha:]].txt", "a.txt", false, true},
+		{"[[:alpha:]].txt", "1.txt", false, false},
+		{"[[:digit:][:upper:]]x", "Bx", false, true},
+		{"[![:digit:]]x", "1x", false, false},
+		{"[![:digit:]]x", "ax", false, true},
+		{"d/a[[:punct:]]b", "d/a.b", false, true},
+		{"d/a[[:punct:]]b", "d/a/b", false, false},
+		// No bracket expression matches "/".
+		{"d/a[!x]b", "d/a/b", false, false},
+		{"d/a[!x]b", "d/ayb", false, true},
+		{"d/a[/]b", "d/a/b", false, false},
+		{"d/a[.-0]b", "d/a/b", false, false},
+		{"d/a[.-0]b", "d/a.b", false, true},
+		{"d/a[.-0]b", "d/a0b", false, true},
+		// Literal "-", "]" and "[" inside classes.
+		{`[a\-z].txt`, "-.txt", false, true},
+		{`[a\-z].txt`, "b.txt", false, false},
+		{"[-a].txt", "-.txt", false, true},
+		{"[]a].txt", "].txt", false, true},
+		{"[āē].txt", "ē.txt", false, true},
+		// An unclosed "[" is a literal, as in Git.
+		{"a[b", "a[b", false, true},
+		{"a[b", "ab", false, false},
+		{"x[", "x[", false, true},
+		// Patterns are normalised like paths: an NFD pattern matches an NFC path.
+		{"re\u0301sume\u0301.pdf", "r\u00e9sum\u00e9.pdf", false, true},
 	}
 	for _, tt := range tests {
 		ig, err := newIgnorer(tt.rules)
@@ -250,7 +280,7 @@ func TestIgnorePatterns(t *testing.T) {
 			t.Errorf("rules %q: ignored(%q, dir=%v) = %v, want %v", tt.rules, tt.path, tt.isDir, got, tt.want)
 		}
 	}
-	if _, err := newIgnorer("ok\n[unclosed"); err == nil || !strings.Contains(err.Error(), "line 2") {
+	if _, err := newIgnorer("ok\n[[:nope:]]"); err == nil || !strings.Contains(err.Error(), "line 2") {
 		t.Errorf("bad pattern error = %v", err)
 	}
 }
@@ -500,6 +530,8 @@ func TestDeployNetworkFailures(t *testing.T) {
 
 func TestUploadsAreParallelAndBounded(t *testing.T) {
 	srv := newFakeAPI(t)
+	// Hold uploads until uploadWorkers are in flight together.
+	srv.barrier, srv.reached = uploadWorkers, make(chan struct{})
 	a, _, errOut := ciApp(t, srv)
 	files := map[string]string{}
 	for i := range 40 {
@@ -509,8 +541,8 @@ func TestUploadsAreParallelAndBounded(t *testing.T) {
 	if err := run(t.Context(), a, []string{"deploy", ".", "docs"}); err != nil {
 		t.Fatalf("deploy: %v\n%s", err, errOut)
 	}
-	if len(srv.uploads) != 40 || srv.maxInFlight > uploadWorkers {
-		t.Fatalf("uploads %d, at most %d at once", len(srv.uploads), srv.maxInFlight)
+	if len(srv.uploads) != 40 || srv.maxInFlight != uploadWorkers {
+		t.Fatalf("uploads %d, at most %d at once; want %d", len(srv.uploads), srv.maxInFlight, uploadWorkers)
 	}
 }
 
@@ -522,7 +554,154 @@ func TestLiveProgressRedrawsOneLine(t *testing.T) {
 	if err := run(t.Context(), a, []string{"deploy", ".", "docs"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errOut.String(), "\r\033[KHashing files: 1 of 2") || !strings.Contains(errOut.String(), "\r\033[KUploaded 2 files") {
+	if !strings.Contains(errOut.String(), "\rHashing files: 1 of 2") || !strings.Contains(errOut.String(), "\rUploaded 2 files") ||
+		strings.Contains(errOut.String(), "\033") {
 		t.Fatalf("progress %q", errOut)
+	}
+	// A shorter line pads over a longer one.
+	var b bytes.Buffer
+	p := &progress{w: &b, live: true, now: time.Now}
+	p.update("Uploading: 10 of 10")
+	p.done("Done.")
+	if b.String() != "\rUploading: 10 of 10\rDone.              \n" {
+		t.Fatalf("redraw %q", b.String())
+	}
+}
+
+func TestDeployMessageCountsCharacters(t *testing.T) {
+	srv := newFakeAPI(t)
+	a, _, errOut := ciApp(t, srv)
+	writeFiles(t, workDir(t, a), map[string]string{"index.html": "x"})
+	// 300 characters, 600 bytes: within the API's 500-character limit.
+	msg := strings.Repeat("ā", 300)
+	if err := run(t.Context(), a, []string{"deploy", ".", "docs", "--message", msg}); err != nil {
+		t.Fatalf("deploy: %v\n%s", err, errOut)
+	}
+	if got := *srv.created[0].Message; got != msg {
+		t.Fatalf("message %q", got)
+	}
+	errOut.Reset()
+	err := run(t.Context(), a, []string{"deploy", ".", "docs", "--message", strings.Repeat("ā", 501)})
+	if code := exitCode(errOut, err); code != 2 || !strings.Contains(errOut.String(), "--message is 501 characters; the limit is 500") {
+		t.Fatalf("exit %d, stderr %q", code, errOut)
+	}
+}
+
+func TestDeployToNewHostnameUnderBaseDomain(t *testing.T) {
+	srv := newFakeAPI(t)
+	srv.addSite("docs", "")
+	a, out, errOut := ciApp(t, srv)
+	writeFiles(t, workDir(t, a), map[string]string{"index.html": "x"})
+	if err := run(t.Context(), a, []string{"deploy", ".", "Blog." + fakeBase, "--json"}); err != nil {
+		t.Fatalf("deploy: %v\n%s", err, errOut)
+	}
+	var res deployResult
+	if err := json.Unmarshal(out.Bytes(), &res); err != nil || !res.SiteCreated || res.Site.Name != "blog" || srv.sites["blog"] == nil {
+		t.Fatalf("result %+v (%v)", res, err)
+	}
+
+	tests := []struct {
+		name   string
+		sites  []apiclient.Site
+		domain string
+		want   string
+	}{
+		{"no sites to infer from", nil, "blog." + fakeBase, "with no sites to go by"},
+		{"not under the base domain", []apiclient.Site{{Name: "docs", Hostname: "docs." + fakeBase}}, "blog.example.com", "not a site address under " + fakeBase + ": to create a site, deploy to its name, such as blog"},
+		{"two labels", []apiclient.Site{{Name: "docs", Hostname: "docs." + fakeBase}}, "a.b." + fakeBase, "not a site address under"},
+		{"label not a site name", []apiclient.Site{{Name: "docs", Hostname: "docs." + fakeBase}}, "x_y." + fakeBase, "not a site address under"},
+		{"sites disagree", []apiclient.Site{{Name: "docs", Hostname: "docs." + fakeBase}, {Name: "old", Hostname: "old.other.test"}}, "blog." + fakeBase, "with no sites to go by"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newFakeAPI(t)
+			for _, s := range tt.sites {
+				srv.addSite(s.Name, "").site.Hostname = s.Hostname
+			}
+			a, _, errOut := ciApp(t, srv)
+			writeFiles(t, workDir(t, a), map[string]string{"index.html": "x"})
+			err := run(t.Context(), a, []string{"deploy", ".", tt.domain})
+			if code := exitCode(errOut, err); code != 1 || !strings.Contains(errOut.String(), tt.want) {
+				t.Fatalf("exit %d, stderr %q", code, errOut)
+			}
+			if len(srv.sites) != len(tt.sites) {
+				t.Fatalf("created a site: %v", slices.Collect(maps.Keys(srv.sites)))
+			}
+		})
+	}
+}
+
+func TestBaseDomain(t *testing.T) {
+	tests := []struct {
+		sites []apiclient.Site
+		want  string
+		ok    bool
+	}{
+		{nil, "", false},
+		{[]apiclient.Site{{Name: "docs", Hostname: "docs.example.test"}}, "example.test", true},
+		{[]apiclient.Site{{Name: "docs", Hostname: "DOCS.Example.test"}, {Name: "a", Hostname: "a.example.test"}}, "example.test", true},
+		{[]apiclient.Site{{Name: "docs", Hostname: "docs.example.test"}, {Name: "a", Hostname: "a.other.test"}}, "", false},
+		{[]apiclient.Site{{Name: "docs", Hostname: "elsewhere.test"}}, "", false},
+	}
+	for _, tt := range tests {
+		if got, ok := baseDomain(tt.sites); got != tt.want || ok != tt.ok {
+			t.Errorf("baseDomain(%v) = %q, %v; want %q, %v", tt.sites, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
+func TestUploadRetryPolicy(t *testing.T) {
+	tests := []struct {
+		name    string
+		fail    []int
+		ok      bool
+		uploads int // PUTs answered after the failures
+		sleeps  []time.Duration
+		want    string
+	}{
+		{"dropped connection is retried", []int{dropConnection}, true, 1, []time.Duration{time.Second}, ""},
+		{"429 honours Retry-After, capped", []int{http.StatusTooManyRequests}, true, 1, []time.Duration{maxRetryAfter}, ""},
+		{"503 then 504 retried with backoff", []int{503, 504}, true, 1, []time.Duration{time.Second, 2 * time.Second}, ""},
+		{"501 is not retried", []int{http.StatusNotImplemented}, false, 0, nil, "Internal server error."},
+		{"file changed", []int{hashMismatch}, false, 0, nil, "index.html changed while deploying: run wardlock deploy again"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newFakeAPI(t)
+			srv.failUploads = tt.fail
+			a, _, errOut := ciApp(t, srv)
+			var sleeps []time.Duration
+			a.sleep = func(_ context.Context, d time.Duration) error {
+				sleeps = append(sleeps, d)
+				return nil
+			}
+			writeFiles(t, workDir(t, a), map[string]string{"index.html": "x"})
+			err := run(t.Context(), a, []string{"deploy", ".", "docs"})
+			if (err == nil) != tt.ok || err != nil && !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err %v, stderr %q", err, errOut)
+			}
+			if len(srv.uploads) != tt.uploads || !slices.Equal(sleeps, tt.sleeps) || len(srv.failUploads) != 0 {
+				t.Fatalf("uploads %v, sleeps %v, unused failures %v", srv.uploads, sleeps, srv.failUploads)
+			}
+			if !tt.ok && srv.sites["docs"].site.ActiveDeployId != nil {
+				t.Fatal("activated after a failed upload")
+			}
+		})
+	}
+}
+
+func TestDeployDirIsASymlink(t *testing.T) {
+	srv := newFakeAPI(t)
+	a, _, errOut := ciApp(t, srv)
+	wd := workDir(t, a)
+	writeFiles(t, filepath.Join(wd, "build-123"), map[string]string{"index.html": "x", "a/b.css": "y"})
+	if err := os.Symlink(filepath.Join(wd, "build-123"), filepath.Join(wd, "dist")); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	if err := run(t.Context(), a, []string{"deploy", "dist", "docs"}); err != nil {
+		t.Fatalf("deploy: %v\n%s", err, errOut)
+	}
+	if got := manifestPaths(srv.created[0]); !slices.Equal(got, []string{"a/b.css", "index.html"}) {
+		t.Fatalf("deployed %q", got)
 	}
 }

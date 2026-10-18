@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"wardlock.nz/apiclient"
 )
@@ -39,10 +40,15 @@ type fakeAPI struct {
 	// concurrency.
 	uploads               map[string]int
 	inFlight, maxInFlight int
-	// failUploads makes the next PUTs answer these statuses, in order.
+	// failUploads makes the next PUTs fail like this, in order: an HTTP
+	// status, or dropConnection or hashMismatch.
 	failUploads []int
-	created     []apiclient.CreateDeployRequest
-	nextID      int
+	// barrier, when set, holds each upload until that many are in flight
+	// at once (or a second passes), so a test can see real concurrency.
+	barrier int
+	reached chan struct{}
+	created []apiclient.CreateDeployRequest
+	nextID  int
 }
 
 type fakeSite struct {
@@ -50,7 +56,17 @@ type fakeSite struct {
 	deploys  []*fakeDeploy // oldest first
 	policy   apiclient.PolicyVisibility
 	previous []string // activation history, newest last
+	// pathPolicies are listed before the "/" policy, to push it past the
+	// first page.
+	pathPolicies int
 }
+
+const (
+	dropConnection = -1
+	hashMismatch   = -2
+	// fakePage is the fake's page size, so short lists still page.
+	fakePage = 2
+)
 
 type fakeDeploy struct {
 	apiclient.Deploy
@@ -80,6 +96,9 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 			h(w, r)
 		})
 	}
+	mux.HandleFunc("GET /api/v0/health", func(w http.ResponseWriter, _ *http.Request) {
+		reply(w, http.StatusOK, apiclient.Health{Status: "ok", Version: "0.0.1"})
+	})
 	handle("GET /api/v0/sites", "", f.listSites)
 	handle("POST /api/v0/sites", "deploy", f.createSite)
 	handle("GET /api/v0/sites/{site}", "", f.withSite(func(w http.ResponseWriter, _ *http.Request, s *fakeSite) {
@@ -89,12 +108,16 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 		delete(f.sites, s.site.Name)
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	handle("GET /api/v0/sites/{site}/policies", "", f.withSite(func(w http.ResponseWriter, _ *http.Request, s *fakeSite) {
+	handle("GET /api/v0/sites/{site}/policies", "", f.withSite(func(w http.ResponseWriter, r *http.Request, s *fakeSite) {
 		items := []apiclient.Policy{}
+		for i := range s.pathPolicies {
+			items = append(items, apiclient.Policy{Id: f.id(), Path: fmt.Sprintf("/p%d/", i), Visibility: apiclient.PolicyVisibilityPublic, Methods: []apiclient.PolicyMethod{}, Version: 1})
+		}
 		if s.policy != "" {
 			items = append(items, apiclient.Policy{Id: f.id(), Path: "/", Visibility: s.policy, Methods: []apiclient.PolicyMethod{}, Version: 1})
 		}
-		reply(w, http.StatusOK, apiclient.PolicyPage{Items: items})
+		page, next := paginate(r, items)
+		reply(w, http.StatusOK, apiclient.PolicyPage{Items: page, NextCursor: next})
 	}))
 	handle("GET /api/v0/sites/{site}/deploys", "", f.withSite(f.listDeploys))
 	handle("POST /api/v0/sites/{site}/deploys", "deploy", f.withSite(f.createDeploy))
@@ -172,16 +195,24 @@ func (f *fakeAPI) listSites(w http.ResponseWriter, r *http.Request) {
 		reply(w, http.StatusOK, apiclient.SitePage{Items: items})
 		return
 	}
-	// Pages of two, to exercise the cursor.
+	var sites []apiclient.Site
+	for _, n := range names {
+		sites = append(sites, f.sites[n].site)
+	}
+	items, next := paginate(r, sites)
+	reply(w, http.StatusOK, apiclient.SitePage{Items: items, NextCursor: next})
+}
+
+// paginate answers one page of fakePage items, with the cursor for the
+// next.
+func paginate[T any](r *http.Request, all []T) ([]T, *string) {
 	start, _ := strconv.Atoi(r.URL.Query().Get("cursor"))
-	page := apiclient.SitePage{Items: []apiclient.Site{}}
-	for _, n := range names[start:min(start+2, len(names))] {
-		page.Items = append(page.Items, f.sites[n].site)
+	start = min(start, len(all))
+	page := append([]T{}, all[start:min(start+fakePage, len(all))]...)
+	if start+fakePage < len(all) {
+		return page, ptr(strconv.Itoa(start + fakePage))
 	}
-	if start+2 < len(names) {
-		page.NextCursor = ptr(strconv.Itoa(start + 2))
-	}
-	reply(w, http.StatusOK, page)
+	return page, nil
 }
 
 func (f *fakeAPI) createSite(w http.ResponseWriter, r *http.Request) {
@@ -199,12 +230,13 @@ func (f *fakeAPI) createSite(w http.ResponseWriter, r *http.Request) {
 	reply(w, http.StatusCreated, f.newSite(body.Name, "").site)
 }
 
-func (f *fakeAPI) listDeploys(w http.ResponseWriter, _ *http.Request, s *fakeSite) {
-	page := apiclient.DeployPage{Items: []apiclient.Deploy{}}
+func (f *fakeAPI) listDeploys(w http.ResponseWriter, r *http.Request, s *fakeSite) {
+	var all []apiclient.Deploy
 	for i := len(s.deploys) - 1; i >= 0; i-- {
-		page.Items = append(page.Items, s.deploys[i].Deploy)
+		all = append(all, s.deploys[i].Deploy)
 	}
-	reply(w, http.StatusOK, page)
+	items, next := paginate(r, all)
+	reply(w, http.StatusOK, apiclient.DeployPage{Items: items, NextCursor: next})
 }
 
 func (f *fakeAPI) createDeploy(w http.ResponseWriter, r *http.Request, s *fakeSite) {
@@ -240,11 +272,22 @@ func (f *fakeAPI) upload(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.inFlight++
 	f.maxInFlight = max(f.maxInFlight, f.inFlight)
+	if f.barrier > 0 && f.inFlight == f.barrier {
+		close(f.reached)
+		f.barrier = 0
+	}
+	reached := f.reached
 	var fail int
 	if len(f.failUploads) > 0 {
 		fail, f.failUploads = f.failUploads[0], f.failUploads[1:]
 	}
 	f.mu.Unlock()
+	if reached != nil {
+		select {
+		case <-reached:
+		case <-time.After(time.Second):
+		}
+	}
 	body, err := io.ReadAll(r.Body)
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -252,7 +295,22 @@ func (f *fakeAPI) upload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	if fail != 0 {
+	switch fail {
+	case 0:
+	case dropConnection:
+		conn, _, err := http.NewResponseController(w).Hijack()
+		if err == nil {
+			_ = conn.Close()
+		}
+		return
+	case hashMismatch:
+		reply(w, http.StatusBadRequest, apiErr("hash_mismatch", "The body does not match its hash."))
+		return
+	case http.StatusTooManyRequests:
+		w.Header().Set("Retry-After", "120")
+		reply(w, fail, apiErr("rate_limited", "Too many requests."))
+		return
+	default:
 		reply(w, fail, apiErr("internal", "Internal server error."))
 		return
 	}

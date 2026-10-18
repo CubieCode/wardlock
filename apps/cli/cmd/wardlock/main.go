@@ -136,24 +136,53 @@ func exitCode(stderr io.Writer, err error) int {
 }
 
 func run(ctx context.Context, a *app, args []string) error {
+	global, args, err := leadingGlobalFlags(args)
+	if err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		fmt.Fprint(a.stderr, usage())
 		return errUsage
 	}
 	switch args[0] {
 	case "--version":
-		return runVersion(ctx, a, args[1:])
+		return runVersion(ctx, a, append(global, args[1:]...))
 	case "help", "--help", "-h":
 		fmt.Fprint(a.stdout, usage())
 		return nil
 	}
 	for _, c := range commands {
 		if c.name == args[0] {
-			return c.run(ctx, a, args[1:])
+			return c.run(ctx, a, append(global, args[1:]...))
 		}
 	}
 	fmt.Fprintf(a.stderr, "wardlock: unknown command %q\n\n%s", args[0], usage())
 	return errUsage
+}
+
+// leadingGlobalFlags splits the global flags --json and --server off the
+// front of args, so "wardlock --json list" works; they are handed to the
+// command like its own flags.
+func leadingGlobalFlags(args []string) (global, rest []string, err error) {
+	for len(args) > 0 {
+		name, _, hasValue := strings.Cut(strings.TrimLeft(args[0], "-"), "=")
+		if !strings.HasPrefix(args[0], "-") {
+			break
+		}
+		switch {
+		case name == "json":
+			global, args = append(global, args[0]), args[1:]
+		case name == "server" && hasValue:
+			global, args = append(global, args[0]), args[1:]
+		case name == "server" && len(args) > 1:
+			global, args = append(global, args[0], args[1]), args[2:]
+		case name == "server":
+			return nil, nil, usageErrorf("--server needs a value, such as --server https://wardlock.example.com")
+		default:
+			return global, args, nil
+		}
+	}
+	return global, args, nil
 }
 
 // isTerminal reports whether f is a terminal. /dev/null and other

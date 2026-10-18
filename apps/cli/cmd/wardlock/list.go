@@ -71,23 +71,12 @@ func runList(ctx context.Context, a *app, args []string) error {
 }
 
 func listSites(ctx context.Context, a *app, c *conn, asJSON bool) error {
-	var sites []apiclient.Site
-	var cursor *string
-	for {
-		res, err := c.api.ListSitesWithResponse(ctx, &apiclient.ListSitesParams{Limit: ptr(pageSize), Cursor: cursor}, c.auth)
-		if err != nil {
-			return c.unreachable(ctx, err)
-		}
-		if res.JSON200 == nil {
-			return c.failed(res.HTTPResponse, res.Body)
-		}
-		sites = append(sites, res.JSON200.Items...)
-		if cursor = res.JSON200.NextCursor; cursor == nil {
-			break
-		}
+	sites, err := c.sites(ctx)
+	if err != nil {
+		return err
 	}
 	out := siteList{Sites: make([]listedSite, len(sites))}
-	err := forEach(ctx, len(sites), 8, func(ctx context.Context, i int) error {
+	err = forEach(ctx, len(sites), 8, func(ctx context.Context, i int) error {
 		p, err := c.defaultPolicy(ctx, sites[i].Name)
 		out.Sites[i] = listedSite{Site: sites[i], Policy: p}
 		return err
@@ -112,6 +101,25 @@ func listSites(ctx context.Context, a *app, c *conn, asJSON bool) error {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", s.Name, s.Policy, last, s.Url)
 	}
 	return tw.Flush()
+}
+
+// sites lists all of the owner's sites, by name.
+func (c *conn) sites(ctx context.Context) ([]apiclient.Site, error) {
+	var all []apiclient.Site
+	var cursor *string
+	for {
+		res, err := c.api.ListSitesWithResponse(ctx, &apiclient.ListSitesParams{Limit: ptr(pageSize), Cursor: cursor}, c.auth)
+		if err != nil {
+			return nil, c.unreachable(ctx, err)
+		}
+		if res.JSON200 == nil {
+			return nil, c.failed(res.HTTPResponse, res.Body)
+		}
+		all = append(all, res.JSON200.Items...)
+		if cursor = res.JSON200.NextCursor; cursor == nil {
+			return all, nil
+		}
+	}
 }
 
 // defaultPolicy is the visibility of the site's "/" policy; a site without

@@ -8,6 +8,9 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 const ignoreFile = ".wardlockignore"
@@ -48,7 +51,8 @@ func newIgnorer(wardlockignore string) (*ignorer, error) {
 		}
 		ig.always = append(ig.always, r)
 	}
-	lines := append(append([]string{}, defaultIgnored...), strings.Split(wardlockignore, "\n")...)
+	// Paths are matched in NFC, so patterns are too.
+	lines := append(append([]string{}, defaultIgnored...), strings.Split(norm.NFC.String(wardlockignore), "\n")...)
 	for i, line := range lines {
 		r, ok, err := parseIgnoreLine(line)
 		if err != nil {
@@ -156,28 +160,117 @@ func globToRegexp(glob string) (string, error) {
 			i++
 			b.WriteString(regexp.QuoteMeta(glob[i : i+1]))
 		case c == '[':
-			end := strings.IndexByte(glob[i+1:], ']')
+			expr, end, err := globClass(glob, i)
+			if err != nil {
+				return "", fmt.Errorf("pattern %q: %w", glob, err)
+			}
 			if end < 0 {
-				return "", fmt.Errorf("pattern %q: unclosed [", glob)
+				// As in Git, an unclosed "[" is a literal.
+				b.WriteString(`\[`)
+				continue
 			}
-			// "[]...]" starts a class with a literal "]".
-			if end == 0 {
-				next := strings.IndexByte(glob[i+2:], ']')
-				if next < 0 {
-					return "", fmt.Errorf("pattern %q: unclosed [", glob)
-				}
-				end = next + 1
-			}
-			class := glob[i+1 : i+1+end]
-			if strings.HasPrefix(class, "!") {
-				class = "^" + class[1:]
-			}
-			b.WriteString("[" + class + "]")
-			i += end + 1
+			b.WriteString(expr)
+			i = end
 		default:
 			b.WriteString(regexp.QuoteMeta(glob[i : i+1]))
 		}
 	}
 	b.WriteString("$")
 	return b.String(), nil
+}
+
+// posixClasses are the "[:name:]" classes a bracket expression may hold,
+// as regexp class contents. None includes "/", which a bracket expression
+// never matches, as in Git.
+var posixClasses = map[string]string{
+	"alnum":  "0-9A-Za-z",
+	"alpha":  "A-Za-z",
+	"ascii":  `\x00-.0-\x7f`,
+	"blank":  `\t `,
+	"cntrl":  `\x00-\x1f\x7f`,
+	"digit":  "0-9",
+	"graph":  "!-.0-~",
+	"lower":  "a-z",
+	"print":  " -.0-~",
+	"punct":  "!-.:-@\\[-`{-~",
+	"space":  `\t-\r `,
+	"upper":  "A-Z",
+	"xdigit": "0-9A-Fa-f",
+}
+
+// globClass translates the bracket expression starting at glob[i] ("[")
+// into a regexp class that never matches "/", and returns the index of
+// its closing "]". end is -1 when it is not closed.
+func globClass(glob string, i int) (expr string, end int, err error) {
+	j := i + 1
+	negate := j < len(glob) && (glob[j] == '!' || glob[j] == '^')
+	if negate {
+		j++
+	}
+	var b strings.Builder
+	for first := true; j < len(glob); first = false {
+		if glob[j] == ']' && !first {
+			if negate {
+				return "[^/" + b.String() + "]", j, nil
+			}
+			if b.Len() == 0 {
+				return `[^\x00-\x{10FFFF}]`, j, nil // only "/": matches nothing
+			}
+			return "[" + b.String() + "]", j, nil
+		}
+		if strings.HasPrefix(glob[j:], "[:") {
+			if k := strings.Index(glob[j+2:], ":]"); k >= 0 {
+				name := glob[j+2 : j+2+k]
+				class, ok := posixClasses[name]
+				if !ok {
+					return "", 0, fmt.Errorf("unknown character class [:%s:]", name)
+				}
+				b.WriteString(class)
+				j += k + 4
+				continue
+			}
+		}
+		lo, next := classRune(glob, j)
+		hi := lo
+		if next+1 < len(glob) && glob[next] == '-' && glob[next+1] != ']' {
+			hi, next = classRune(glob, next+1)
+		}
+		j = next
+		if lo > hi {
+			continue // an empty range, as in Git
+		}
+		// Leave "/" out of the range.
+		if lo < '/' {
+			writeRange(&b, lo, min(hi, '.'))
+		}
+		if hi > '/' {
+			writeRange(&b, max(lo, '0'), hi)
+		}
+	}
+	return "", -1, nil
+}
+
+// classRune decodes one possibly escaped character of a bracket
+// expression at glob[j] and returns it with the index after it.
+func classRune(glob string, j int) (rune, int) {
+	if glob[j] == '\\' && j+1 < len(glob) {
+		j++
+	}
+	r, n := utf8.DecodeRuneInString(glob[j:])
+	return r, j + n
+}
+
+func writeRange(b *strings.Builder, lo, hi rune) {
+	b.WriteString(classLiteral(lo))
+	if hi != lo {
+		b.WriteString("-" + classLiteral(hi))
+	}
+}
+
+// classLiteral writes r so a regexp class reads it as itself.
+func classLiteral(r rune) string {
+	if strings.ContainsRune(`\]-[^`, r) {
+		return `\` + string(r)
+	}
+	return string(r)
 }

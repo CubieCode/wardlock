@@ -14,14 +14,19 @@ import (
 )
 
 func runVersion(ctx context.Context, a *app, args []string) error {
-	fs := flag.NewFlagSet("version", flag.ContinueOnError)
-	fs.SetOutput(a.stderr)
+	fs := newFlagSet(a, "version", "Usage: wardlock version [--server URL] [--json]\n\n"+
+		"Prints the CLI's version and, with a server, the server's.")
 	server := fs.String("server", a.getenv("WARDLOCK_SERVER"), "also report this server's version (default $WARDLOCK_SERVER), e.g. https://wardlock.example.com")
 	asJSON := fs.Bool("json", false, "print the result as JSON")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
+	pos, err := parseArgs(fs, args)
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if len(pos) > 0 {
+		fs.Usage()
 		return errUsage
 	}
 	if *server == "" {
