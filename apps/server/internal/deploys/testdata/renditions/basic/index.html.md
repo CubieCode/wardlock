@@ -1,0 +1,13 @@
+# Harbour Lights quarterly report
+
+A fictional report for testing. [About this report](https://basic.wardlock.test/about).
+
+## Highlights
+
+- Visitor numbers rose 12% on the previous quarter.
+- The new ferry timetable started on 1 July.
+
+| Month | Visitors |
+| --- | --- |
+| July | 1,204 |
+| August | 1,377 |

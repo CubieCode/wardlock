@@ -130,13 +130,21 @@ func cacheControl(protected bool) string {
 	return "public, max-age=0, must-revalidate"
 }
 
-// serveFile writes f (or a precompressed sibling) with status. With strip,
-// an HTML file gets the share-link strip script (serveStripped); other
-// types are never altered.
+// serveFile writes f (or a precompressed sibling, or the rendition
+// ?format= asks for) with status. With strip, an HTML file gets the
+// share-link strip script (serveStripped); other types, renditions
+// included, are never altered.
 func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f ServedFile, status int, protected, strip bool) {
+	if rd, rtype, ok := rendition(r, f); ok {
+		e.serveRendition(w, r, s, rd, rtype, status, protected)
+		return
+	}
 	ctype := mime.TypeByExtension(path.Ext(f.Path))
 	if ctype == "" {
 		ctype = "application/octet-stream" // never sniff
+	}
+	if status == http.StatusOK && strings.HasPrefix(ctype, "text/html") {
+		alternateLinks(w.Header(), r, f)
 	}
 	if strip && strings.HasPrefix(ctype, "text/html") {
 		e.serveStripped(w, r, s, f, status, ctype)

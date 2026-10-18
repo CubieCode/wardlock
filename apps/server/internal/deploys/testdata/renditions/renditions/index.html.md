@@ -1,0 +1,43 @@
+# Kōwhai Valley field notes
+
+An *invented* survey of an **imaginary** valley, written to test renditions. See the [setup notes](https://renditions.wardlock.test/docs/setup.html?lang=en) and the [install section](https://renditions.wardlock.test/docs/setup.html#install).
+
+## Contents
+
+1. [Birds](https://renditions.wardlock.test/#birds)
+2. Plants
+   - Ferns, including `Cyathea dealbata`
+   - Trees
+3. Weather (summer only)
+
+## Birds
+
+Counts per morning walk:\
+totals are approximate.
+
+Morning counts
+
+| Species | Count | Notes |
+| --- | --- | --- |
+| Tūī | 14 | Loud \| busy |
+| Pīwakawaka | 9 | *Followed us* |
+
+![Ridge line at dawn](https://renditions.wardlock.test/images/ridge.jpg)
+
+The northern ridge.
+
+### Not markup
+
+1\. This line starts with a number. Stars like \*these\* and \[brackets\] stay literal, as do \_underscores\_ and \<tags\>.
+
+\# Not a heading either.
+
+> Leave only footprints.
+>
+> — A sign at the track end
+
+---
+
+A script link keeps its text. [External search](https://example.test/search?q=moss&t=42) keeps its own t. [A token anywhere](https://example.test/share) loses it. [Write to us](mailto:notes@example.test).
+
+Shared as <https://renditions.wardlock.test/>; the token wl\_abcdefghij\_redacted is redacted wherever it appears, as is [a nested one](https://renditions.wardlock.test/login). Copyright \&copy; stays literal, \~approximately.

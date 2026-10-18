@@ -88,13 +88,13 @@ func newPolicyEdge(t *testing.T) *policyEdge {
 	p.acc = acc
 	p.deploys = deploys.NewService(deploys.Config{
 		Sites: db.Sites(), Deploys: db.Deploys(), Blobs: blobs, Notifier: notifier,
-		Limits: deploys.DefaultLimits(), Now: p.now,
+		Limits: deploys.DefaultLimits(), Now: p.now, Renditions: db.Renditions(),
 	})
 	p.e, err = edge.New(edge.Config{
 		DashboardHost: "wardlock.localhost",
 		Dashboard:     http.HandlerFunc(func(http.ResponseWriter, *http.Request) { p.dashboardHits++ }),
 		Health:        http.NotFoundHandler(),
-		Sites:         siteSource{baseDomain: "wardlock.localhost", sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys()},
+		Sites:         siteSource{baseDomain: "wardlock.localhost", sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(), renditions: db.Renditions()},
 		Blobs:         blobs,
 		Invalidator:   notifier,
 		Access:        acc,

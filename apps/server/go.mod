@@ -13,6 +13,7 @@ require (
 	github.com/miekg/dns v1.1.73
 	github.com/oapi-codegen/runtime v1.7.0
 	go.uber.org/zap v1.28.0
+	golang.org/x/net v0.60.0
 	modernc.org/sqlite v1.60.1
 	wardlock.nz/apiclient v0.0.0-00010101000000-000000000000
 )
@@ -40,7 +41,6 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	modernc.org/libc v1.77.1 // indirect

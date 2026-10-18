@@ -210,9 +210,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.6: AI-readable renditions
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: feat/a2.6-ai-renditions
+- PR: https://github.com/CubieCode/wardlock/pull/42
 - Depends on: A2.1, C1.2
 - Scope: HTML to Markdown and plain text at deploy time, stored as blobs referenced from the manifest; `?format=md|txt` with correct content types; `Link: rel="alternate"` on HTML; documented conversion contract in SPEC; golden-file fixtures.
 - Acceptance: Golden tests over `fixtures/sites/` (headings, lists, tables, code, links without tokens, images' alt text, scripts and styles removed); `?t=…&format=md` works with no cookies and no JavaScript; protected renditions are denied without access; renditions never leak `t` into links.
