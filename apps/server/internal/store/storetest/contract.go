@@ -25,6 +25,8 @@ type Repos struct {
 	Renditions store.Renditions
 	// PasswordSessions creates and ends password sessions (A2.3).
 	PasswordSessions store.PasswordSessions
+	// EmailCodes stores visitor email codes and their sessions (A2.4).
+	EmailCodes store.EmailCodes
 }
 
 // Opener returns repositories over a fresh, empty, migrated database that
@@ -51,6 +53,7 @@ func ReposOf(db *store.DB) Repos {
 		Renditions: db.Renditions(),
 
 		PasswordSessions: db.PasswordSessions(),
+		EmailCodes:       db.EmailCodes(),
 	}
 }
 
@@ -76,6 +79,7 @@ func suites() []suite {
 		{"GC", gcContract},
 		{"Renditions", renditionsContract},
 		{"PasswordSessions", passwordSessionsContract},
+		{"EmailCodes", emailCodesContract},
 	}
 }
 
