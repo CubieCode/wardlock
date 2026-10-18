@@ -44,6 +44,13 @@ var implemented = map[string]bool{
 	"SetPolicy":    true,
 	"DeletePolicy": true,
 
+	// Custom domains (C1.9).
+	"ListDomains":  true,
+	"AddDomain":    true,
+	"GetDomain":    true,
+	"VerifyDomain": true,
+	"RemoveDomain": true,
+
 	// Share links (A2.2).
 	"ListShareLinks":  true,
 	"CreateShareLink": true,

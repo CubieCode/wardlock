@@ -25,6 +25,7 @@ import (
 	"wardlock.nz/server/internal/api"
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/sites"
+	"wardlock.nz/server/internal/sites/sitestest"
 	"wardlock.nz/server/internal/store"
 	"wardlock.nz/server/internal/store/storetest"
 )
@@ -44,14 +45,29 @@ type harness struct {
 	ownerB   string
 	mu       sync.Mutex
 	notified []string
+	// dns answers custom-domain checks; skew moves the sites clock.
+	dns  *sitestest.Resolver
+	skew time.Duration
 }
 
 const ownerHeader = "X-Test-Owner"
 
+func (hs *harness) now() time.Time {
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+	return time.Now().Add(hs.skew)
+}
+
+func (hs *harness) advance(d time.Duration) {
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+	hs.skew += d
+}
+
 func newHarness(t *testing.T, limits deploys.Limits) *harness {
 	t.Helper()
 	db := storetest.New(t)
-	hs := &harness{t: t, db: db, blobDir: filepath.Join(t.TempDir(), "blobs")}
+	hs := &harness{t: t, db: db, blobDir: filepath.Join(t.TempDir(), "blobs"), dns: sitestest.NewResolver()}
 	hs.blobs = deploys.NewFSBlobStore(hs.blobDir)
 	for _, id := range []*string{&hs.ownerA, &hs.ownerB} {
 		*id = store.NewID()
@@ -78,7 +94,8 @@ func newHarness(t *testing.T, limits deploys.Limits) *harness {
 		Access: policies,
 		Sites: sites.NewService(sites.Config{
 			Sites: db.Sites(), Notifier: notifier, BaseDomain: baseDomain,
-			DashboardHost: "console." + baseDomain, Now: time.Now,
+			DashboardHost: "console." + baseDomain, Now: hs.now,
+			Domains: db.Domains(), Resolver: hs.dns, CheckTimeout: 50 * time.Millisecond,
 		}),
 		Deploys: deploys.NewService(deploys.Config{
 			Sites: db.Sites(), Deploys: db.Deploys(), Blobs: hs.blobs, Notifier: notifier,

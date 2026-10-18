@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -68,7 +69,9 @@ type Manager struct {
 	dashCfg     *certmagic.Config
 	onDemandCfg *certmagic.Config
 	httpIssuer  *certmagic.ACMEIssuer
+	storage     certmagic.Storage
 	baseDomain  string
+	dashboard   string
 	dnsNames    []string
 	httpNames   []string
 }
@@ -92,7 +95,7 @@ func New(cfg Config) (*Manager, error) {
 		return nil, errors.New("tls: logger is required")
 	}
 	zl := zapLogger(cfg.Logger)
-	m := &Manager{baseDomain: cfg.BaseDomain}
+	m := &Manager{baseDomain: cfg.BaseDomain, dashboard: cfg.DashboardHost, storage: cfg.Storage}
 	m.dnsNames, m.httpNames = managedNames(cfg.BaseDomain, cfg.DashboardHost)
 	m.cache = certmagic.NewCache(certmagic.CacheOptions{
 		GetConfigForCert: func(c certmagic.Certificate) (*certmagic.Config, error) {
@@ -188,6 +191,24 @@ func (m *Manager) TLSConfig() *tls.Config {
 // request to next.
 func (m *Manager) HTTPChallenge(next http.Handler) http.Handler {
 	return m.httpIssuer.HTTPChallengeHandler(next)
+}
+
+// RemoveCertificate forgets a custom domain's on-demand certificate: it
+// leaves the in-memory cache, so the next handshake asks the decision
+// again, and its certificate, key and metadata are deleted from storage,
+// so nothing renews or reloads it. Managed names (the base domain's zone
+// and the dashboard host) are never touched.
+func (m *Manager) RemoveCertificate(ctx context.Context, hostname string) error {
+	host := strings.TrimSuffix(strings.ToLower(hostname), ".")
+	if host == "" || host == m.dashboard || m.inBaseZone([]string{host}) {
+		return fmt.Errorf("remove certificate for %q: a managed name", hostname)
+	}
+	issuer := m.httpIssuer.IssuerKey()
+	m.cache.RemoveManaged([]certmagic.SubjectIssuer{{Subject: host, IssuerKey: issuer}})
+	if err := m.storage.Delete(ctx, certmagic.StorageKeys.CertsSitePrefix(issuer, host)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove certificate for %s: %w", host, err)
+	}
+	return nil
 }
 
 // Close stops certificate maintenance.

@@ -51,7 +51,7 @@ func TestNormaliseHostname(t *testing.T) {
 		{"https://docs.example.com", ""},
 		{strings.Repeat("a", 64) + ".com", ""},
 		{strings.Repeat("a.", 126) + "co", ""}, // 254 characters
-		{"xn--zz.example", ""},                  // not valid punycode
+		{"xn--zz.example", ""},                 // not valid punycode
 	}
 	for _, tt := range tests {
 		got, err := sites.NormaliseHostname(tt.in)

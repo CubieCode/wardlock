@@ -49,6 +49,7 @@ func TestIssuance(t *testing.T) {
 	acme, roots := startPebble(t, zone.addr, port(httpLn), port(httpsLn))
 
 	domains := &fakeDomains{active: map[string]bool{"docs.customer.test": true}}
+	storage := &certmagic.FileStorage{Path: t.TempDir()}
 	var logs syncBuffer
 	m, err := New(Config{
 		BaseDomain:    "sites.test",
@@ -56,7 +57,7 @@ func TestIssuance(t *testing.T) {
 		CA:            acme.URL + "/dir",
 		CARoots:       roots.acme,
 		DNS:           zone,
-		Storage:       &certmagic.FileStorage{Path: t.TempDir()},
+		Storage:       storage,
 		Domains:       domains,
 		HTTPPort:      port(httpLn),
 		HTTPSPort:     port(httpsLn),
@@ -140,6 +141,35 @@ func TestIssuance(t *testing.T) {
 		}
 		if !slices.Equal(cert.DNSNames, []string{"docs.customer.test"}) {
 			t.Fatalf("certificate names = %v", cert.DNSNames)
+		}
+	})
+	t.Run("a removed custom domain loses its certificate", func(t *testing.T) {
+		key := certmagic.StorageKeys.SiteCert(m.httpIssuer.IssuerKey(), "docs.customer.test")
+		if !storage.Exists(ctx, key) {
+			t.Fatalf("no stored certificate at %s", key)
+		}
+		domains.set("docs.customer.test", false)
+		if err := m.RemoveCertificate(ctx, "Docs.Customer.Test."); err != nil {
+			t.Fatal(err)
+		}
+		if storage.Exists(ctx, key) {
+			t.Fatal("the certificate is still in storage")
+		}
+		if _, err := handshake("docs.customer.test"); err == nil {
+			t.Fatal("handshake succeeded after removal; the cached certificate was kept")
+		}
+		// Removing again, or a name never issued, is not an error.
+		if err := m.RemoveCertificate(ctx, "docs.customer.test"); err != nil {
+			t.Fatal(err)
+		}
+		// Managed names are refused.
+		for _, name := range []string{"sites.test", "docs.sites.test", "wardlock.example.test"} {
+			if err := m.RemoveCertificate(ctx, name); err == nil {
+				t.Errorf("RemoveCertificate(%s) succeeded", name)
+			}
+		}
+		if _, err := handshake("docs.sites.test"); err != nil {
+			t.Fatalf("the wildcard went too: %v", err)
 		}
 	})
 	t.Run("denied names get no certificate", func(t *testing.T) {
