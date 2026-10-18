@@ -1521,7 +1521,10 @@ paths:
                   - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40
                     path: /
                     visibility: protected
-                    methods: [links]
+                    methods: [links, email]
+                    allowlist:
+                      emails: []
+                      domains: [example.com]
                     version: 3
                     createdAt: 1767225600000
                     updatedAt: 1767312000000
@@ -1529,6 +1532,9 @@ paths:
                     path: /assets/
                     visibility: public
                     methods: []
+                    allowlist:
+                      emails: []
+                      domains: []
                     version: 1
                     createdAt: 1767225600000
                     updatedAt: 1767225600000
@@ -1555,8 +1561,13 @@ paths:
         clean directory prefix such as `/docs/` answers
         `400 invalid_policy_path`; methods on a public policy, or none on a
         protected one, answer `400 invalid_policy`, as does the `password`
-        method without a password to set or keep (`target: password`). The
-        password is write-only: no response includes it or its hash.
+        method without a password to set or keep (`target: password`), and
+        the `email` method without an allowed address or domain to set or
+        keep (`target: allowlist`). The password is write-only: no response
+        includes it or its hash. The `allowlist` is shared by the email-code
+        and OAuth methods; omitting it keeps the current one, any change to
+        it increments `version` (ending the sessions it let in), and a
+        public policy has none (setting a policy public clears it).
       tags: [policies]
       security:
         - sessionCookie: []
@@ -2124,6 +2135,9 @@ components:
         path: /docs/
         visibility: protected
         methods: [links]
+        allowlist:
+          emails: []
+          domains: []
         version: 1
         createdAt: 1767225600000
         updatedAt: 1767225600000
@@ -2905,9 +2919,11 @@ components:
       description: >-
         A way for a visitor to satisfy a protected policy. Methods are
         alternatives, not layers. `links`: share links (A2.2). `password`:
-        the policy password, entered on the site's login page (A2.3). Email
-        code and OAuth join with A2.4 and A2.5.
-      enum: [links, password]
+        the policy password, entered on the site's login page (A2.3).
+        `email`: a 6-digit code emailed to an address the policy's
+        `allowlist` lets in, entered on the site's login page (A2.4). OAuth
+        joins with A2.5.
+      enum: [links, password, email]
     PolicyPath:
       type: string
       description: >-
@@ -2919,10 +2935,40 @@ components:
       minLength: 1
       maxLength: 1024
       examples: [/docs/]
+    PolicyAllowlist:
+      type: object
+      additionalProperties: false
+      description: >-
+        Who the email-code and OAuth methods let in: one list per policy,
+        shared by both. A visitor is allowed when their verified address is
+        listed exactly or is at a listed domain. At most 1,000 entries in
+        all; the server normalises entries (lower case, sorted, without
+        duplicates) and answers `400 invalid_policy` (`target: allowlist`)
+        for an entry it cannot read.
+      required: [emails, domains]
+      properties:
+        emails:
+          type: array
+          description: Exact email addresses, lower case.
+          items:
+            type: string
+            maxLength: 254
+          examples: [[ana@example.com]]
+        domains:
+          type: array
+          description: >-
+            Email domains as lower-case A-labels (international names in
+            their `xn--` form): `example.com` matches addresses at that
+            domain only, `*.example.com` addresses at any of its subdomains
+            but not at `example.com` itself (list both for both).
+          items:
+            type: string
+            maxLength: 255
+          examples: [[example.com, '*.example.com']]
     Policy:
       type: object
       additionalProperties: false
-      required: [id, path, visibility, methods, version, createdAt, updatedAt]
+      required: [id, path, visibility, methods, allowlist, version, createdAt, updatedAt]
       properties:
         id:
           $ref: '#/components/schemas/Id'
@@ -2936,6 +2982,8 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/PolicyMethod'
+        allowlist:
+          $ref: '#/components/schemas/PolicyAllowlist'
         version:
           type: integer
           format: int32
@@ -2990,6 +3038,12 @@ components:
             there is none). Any new password, even the same text, is a
             change: it increments `version` and ends the policy's password
             sessions.
+        allowlist:
+          $ref: '#/components/schemas/PolicyAllowlist'
+          description: >-
+            Replaces the policy's allowlist; omitted keeps the current one.
+            The `email` method needs at least one address or domain in it.
+            Must be empty or omitted for a public policy.
 
     LinkPublicId:
       type: string
