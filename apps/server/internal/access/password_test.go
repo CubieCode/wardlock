@@ -75,8 +75,8 @@ func newRealLimiterHarness(t *testing.T, limits access.Limits) *passwordHarness 
 	svc, err := access.New(access.Config{
 		Sites: db.Sites(), Policies: h.policies, Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: rv,
 		Notifier: &notifier{}, Secret: secret, Now: h.clock.Now,
-		Log:            slog.New(slog.NewTextHandler(h.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
-		Limits:         limits,
+		Log:    slog.New(slog.NewTextHandler(h.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		Limits: limits,
 	})
 	if err != nil {
 		t.Fatal(err)

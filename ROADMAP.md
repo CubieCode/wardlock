@@ -177,7 +177,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.3: Password policy
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: feat/a2.3-password-policy
 - PR:
 - Depends on: A2.1
