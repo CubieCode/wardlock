@@ -7,9 +7,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
+	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/store"
 )
@@ -120,4 +122,130 @@ func siteID(t *testing.T, p *policyEdge, name string) string {
 		t.Fatal(err)
 	}
 	return s.ID
+}
+
+// TestRenditionsWithShareLinks: a share-link token opens a protected
+// page's renditions for clients that keep no cookies, with ?t= or
+// Authorization: Bearer, sets no session for them, never injects the
+// strip script and never echoes the token. Rotated and revoked tokens get
+// nothing.
+func TestRenditionsWithShareLinks(t *testing.T) {
+	p := newPolicyEdge(t)
+	p.publishFiles("docs", renditionFiles)
+	p.set("docs", "/", store.Protected, true)
+	l, token := p.link("docs", access.NewLink{Label: "AI fetch"})
+	want := map[string]struct{ body, ctype string }{
+		"md":  {"# Field notes\n\nRead the [setup](/setup.html?v=2).\n", "text/markdown; charset=utf-8"},
+		"txt": {"Field notes\n\nRead the setup (/setup.html?v=2).\n", "text/plain; charset=utf-8"},
+	}
+	secret := token[len("wl_0123456789_"):]
+	inURL := func(format, tok string) string { return "/?format=" + format + "&t=" + url.QueryEscape(tok) }
+	clean := func(t *testing.T, name string, r result) {
+		t.Helper()
+		for _, s := range append(r.h.Values("Link"), r.body, r.h.Get("Location")) {
+			if strings.Contains(s, secret) {
+				t.Fatalf("%s: the token leaked: %q", name, s)
+			}
+		}
+		for _, l := range r.h.Values("Link") {
+			if strings.Contains(l, "?t=") || strings.Contains(l, "&t=") {
+				t.Fatalf("%s: Link carries t: %q", name, l)
+			}
+		}
+	}
+	for format, w := range want {
+		for name, v := range map[string]visit{
+			"?t= without Accept (curl)":   {target: inURL(format, token)},
+			"?t= asking for its type":     {target: inURL(format, token), header: http.Header{"Accept": {w.ctype}}},
+			"Bearer without Accept":       {target: "/?format=" + format, header: bearer(token)},
+			"Bearer from fetch()":         {target: "/?format=" + format, header: http.Header{"Authorization": {"Bearer " + token}, "Sec-Fetch-Mode": {"cors"}}},
+			"?t= on a clean URL fallback": {target: "/index?format=" + format + "&t=" + url.QueryEscape(token)},
+		} {
+			r := p.visit(v)
+			if r.code != 200 || r.body != w.body || r.h.Get("Content-Type") != w.ctype {
+				t.Fatalf("%s %s = %d %q %v", format, name, r.code, r.body, r.h)
+			}
+			if c := r.h.Values("Set-Cookie"); len(c) != 0 {
+				t.Fatalf("%s %s set a cookie: %v", format, name, c)
+			}
+			if strings.Contains(r.body, stripMarker) || r.h.Get("Link") != "" {
+				t.Fatalf("%s %s: rendition altered or linked: %q %v", format, name, r.body, r.h)
+			}
+			r.protected(t, "private, max-age=0, must-revalidate")
+			clean(t, format+" "+name, r)
+		}
+		// A browser navigation earns its session as for the page, but the
+		// rendition still gets no strip script.
+		r := p.visit(visit{target: inURL(format, token), header: http.Header{"Accept": {"text/html"}, "Sec-Fetch-Mode": {"navigate"}}})
+		if r.code != 200 || r.body != w.body || strings.Contains(r.body, stripMarker) {
+			t.Fatalf("%s navigation = %d %q", format, r.code, r.body)
+		}
+		clean(t, format+" navigation", r)
+	}
+
+	// The HTML a token opens links its renditions without the token.
+	r := p.visit(visit{target: "/?t=" + url.QueryEscape(token)})
+	r.expect(t, 200, "Field notes", "")
+	if links := strings.Join(r.h.Values("Link"), ", "); links != `</?format=md>; rel="alternate"; type="text/markdown", </?format=txt>; rel="alternate"; type="text/plain"` {
+		t.Fatalf("Link = %q", links)
+	}
+	clean(t, "HTML", r)
+
+	denied := func(t *testing.T, tok string) {
+		t.Helper()
+		for _, format := range []string{"md", "txt"} {
+			for _, v := range []visit{{target: inURL(format, tok)}, {target: "/?format=" + format, header: bearer(tok)}} {
+				r := p.visit(v)
+				if r.code != 401 || strings.Contains(r.body, "Field notes") || len(r.h.Values("Set-Cookie")) != 0 {
+					t.Fatalf("%s with a dead token = %d %q %v", v.target, r.code, r.body, r.h)
+				}
+				clean(t, "denied", r)
+			}
+		}
+	}
+	// Rotation: the old token dies at once, the new one works.
+	_, rotated, err := p.acc.RotateLink(t.Context(), p.owner.ID, "docs", l.PublicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.tokens = append(p.tokens, rotated)
+	denied(t, token)
+	if r := p.visit(visit{target: inURL("md", rotated)}); r.code != 200 || r.body != want["md"].body {
+		t.Fatalf("rotated token = %d %q", r.code, r.body)
+	}
+	// Revocation: nothing works any more.
+	if err := p.acc.RevokeLink(t.Context(), p.owner.ID, "docs", l.PublicID); err != nil {
+		t.Fatal(err)
+	}
+	denied(t, rotated)
+	p.noRawTokens(t, p.accessRecords())
+}
+
+// TestTokenPatternMatchesShareLinks pins the renditions' token pattern to
+// the tokens A2.2's generator actually issues (deploys does not import
+// access): every freshly minted or rotated token is redacted wherever a
+// page carries it, keeping its public ID.
+func TestTokenPatternMatchesShareLinks(t *testing.T) {
+	p := newPolicyEdge(t)
+	p.publishFiles("docs", renditionFiles)
+	u, err := deploys.PageURL("https://docs.wardlock.localhost", "index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 64 {
+		l, token := p.link("docs", access.NewLink{Label: "pin"})
+		if i%2 == 1 {
+			if _, token, err = p.acc.RotateLink(t.Context(), p.owner.ID, "docs", l.PublicID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		page := `<title>` + token + `</title><p>Paste ` + token + ` or open <a href="https://elsewhere.test/?next=` + url.QueryEscape("/?t="+token) + `">this</a>.</p><pre>` + token + `</pre>`
+		md, txt := deploys.Render([]byte(page), u)
+		secret := token[len("wl_0123456789_"):]
+		for _, out := range []string{string(md), string(txt)} {
+			if strings.Contains(out, secret) || !strings.Contains(strings.ReplaceAll(out, `\_`, "_"), "wl_"+l.PublicID+"_redacted") {
+				t.Fatalf("token %s not redacted: %q", l.PublicID, out)
+			}
+		}
+	}
 }
