@@ -84,7 +84,10 @@ func TestRenditionGoldens(t *testing.T) {
 	}
 }
 
-const tok = "wl_abcdefghij_fakeSecret-fake_secretfakesecretfakesecret00"
+// mdEscape is s with its underscores escaped, as Markdown text prints it.
+func mdEscape(s string) string { return strings.ReplaceAll(s, "_", `\_`) }
+
+const tok = "wl_abcdefghij_fakeSecret-fake_secretfakesecretfakesecret0"
 
 func TestRender(t *testing.T) {
 	for _, tc := range []struct {
@@ -107,7 +110,7 @@ func TestRender(t *testing.T) {
 		},
 		{
 			name: "tokens in fragments and credentials dropped", origin: "https://s.wardlock.test", path: "index.html",
-			page: `<a href="https://user:pw@o.test/#t=wl_abcdefghij_s3cr3t">F</a>`,
+			page: `<a href="https://user:pw@o.test/#t=wl_abcdefghij_s3cr3ts3cr3ts3cr3t0000000000000000000000000">F</a>`,
 			md:   "[F](https://o.test/)\n", txt: "F (https://o.test/)\n",
 		},
 		{
@@ -164,13 +167,27 @@ func TestRender(t *testing.T) {
 		{
 			name: "tokens in text, alt text, code and the title", origin: "https://s.wardlock.test", path: "index.html",
 			page: `<title>T ` + tok + `</title><p>Use ` + tok + ` <img src="/i.png" alt="` + tok + `"> <code>` + tok + `</code></p><pre>curl -H 'Authorization: Bearer ` + strings.ToUpper(tok[:3]) + tok[3:] + `'</pre>`,
-			md:   "# T wl\\_abcdefghij\\_redacted\n\nUse wl\\_abcdefghij\\_redacted ![wl\\_abcdefghij\\_redacted](https://s.wardlock.test/i.png) `wl_abcdefghij_redacted`\n\n```\ncurl -H 'Authorization: Bearer wl_abcdefghij_redacted'\n```\n",
-			txt:  "T wl_abcdefghij_redacted\n\nUse wl_abcdefghij_redacted [wl_abcdefghij_redacted] wl_abcdefghij_redacted\n\ncurl -H 'Authorization: Bearer wl_abcdefghij_redacted'\n",
+			md:   "# T wl\\_abcdefghij\\_redacted\n\nUse wl\\_abcdefghij\\_redacted ![wl\\_abcdefghij\\_redacted](https://s.wardlock.test/i.png) `wl_abcdefghij_redacted`\n\n```\ncurl -H 'Authorization: Bearer WL_abcdefghij_redacted'\n```\n",
+			txt:  "T wl_abcdefghij_redacted\n\nUse wl_abcdefghij_redacted [wl_abcdefghij_redacted] wl_abcdefghij_redacted\n\ncurl -H 'Authorization: Bearer WL_abcdefghij_redacted'\n",
 		},
 		{
 			name: "token split by a comment", path: "index.html",
 			page: `<p>` + tok[:20] + `<!-- x -->` + tok[20:] + `</p>`,
 			md:   "wl\\_abcdefghij\\_redacted\n", txt: "wl_abcdefghij_redacted\n",
+		},
+		{
+			name: "token split by formatting", path: "index.html",
+			page: `<p>` + tok[:14] + `<b>` + tok[14:] + `</b></p><p><b>` + tok[:13] + `</b>` + tok[13:] + `</p>` +
+				`<p>` + tok[:9] + `<b>` + tok[9:] + `</b></p><p>` + tok[:14] + `<i>` + tok[14:30] + `</i>` + tok[30:] + `</p>` +
+				`<p><a href="/a">` + tok[:20] + `</a><code>` + tok[20:] + `</code></p>`,
+			md:  "wl\\_abcdefghij\\_**redacted**\n\n**wl\\_abcdefghij**\\_redacted\n\nwl\\_abcdef**ghij\\_redacted**\n\nwl\\_abcdefghij\\_*redacted*\n\n[wl\\_abcdefghij\\_redacted](/a)\n",
+			txt: "wl_abcdefghij_redacted\n\nwl_abcdefghij_redacted\n\nwl_abcdefghij_redacted\n\nwl_abcdefghij_redacted\n\nwl_abcdefghij_redacted (/a)\n",
+		},
+		{
+			name: "token-like words are not tokens", path: "index.html",
+			page: `<p>WL_CONNECTION_TIMEOUT wl_connection_x wl_abcdefghij_short wl_ABCDEFGHIJ_` + tok[14:] + ` x` + tok + ` ` + tok + `x ` + tok + `0</p>`,
+			md:   "WL\\_CONNECTION\\_TIMEOUT wl\\_connection\\_x wl\\_abcdefghij\\_short wl\\_ABCDEFGHIJ\\_" + mdEscape(tok[14:]) + " x" + mdEscape(tok) + " " + mdEscape(tok) + "x " + mdEscape(tok) + "0\n",
+			txt:  "WL_CONNECTION_TIMEOUT wl_connection_x wl_abcdefghij_short wl_ABCDEFGHIJ_" + tok[14:] + " x" + tok + " " + tok + "x " + tok + "0\n",
 		},
 		{
 			name: "more Markdown escapes", path: "index.html",
@@ -271,9 +288,41 @@ func TestRenderDeepInline(t *testing.T) {
 	}
 }
 
-// tokenShape matches a token as either rendition prints it; group 1 is the
-// secret.
-var tokenShape = regexp.MustCompile(`(?i)wl\\?_[a-z2-7]{10}\\?_((?:[A-Za-z0-9-]|\\?_)+)`)
+// tokenShape is the token format (SPEC "Tokens"); leaked adds the
+// boundaries the converter uses.
+var tokenShape = regexp.MustCompile(`[wW][lL]_[a-z2-7]{10}_[A-Za-z0-9_-]{43}`)
+
+// leaked returns a token in out as a reader sees it, so a token split by
+// Markdown formatting is found whole; "" when there is none.
+func leaked(out []byte, markdown bool) string {
+	// What the Markdown shows: escaped characters as themselves, emphasis,
+	// strikethrough and code delimiters dropped. Plain text shows itself.
+	var b strings.Builder
+	for i := 0; i < len(out); i++ {
+		if !markdown {
+			b.Write(out)
+			break
+		}
+		switch c := out[i]; {
+		case c == '\\' && i+1 < len(out):
+			i++
+			b.WriteByte(out[i])
+		case c == '*' || c == '~' || c == '`':
+		default:
+			b.WriteByte(c)
+		}
+	}
+	s := b.String()
+	word := func(c byte) bool {
+		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-'
+	}
+	for _, loc := range tokenShape.FindAllStringIndex(s, -1) {
+		if (loc[0] == 0 || !word(s[loc[0]-1])) && (loc[1] == len(s) || !word(s[loc[1]])) {
+			return s[loc[0]:loc[1]]
+		}
+	}
+	return ""
+}
 
 // FuzzRender checks that any input converts without panicking, that both
 // renditions are empty or end in exactly one newline, and that every
@@ -287,11 +336,9 @@ func FuzzRender(f *testing.F) {
 	u, _ := deploys.PageURL("https://s.wardlock.test", "index.html")
 	f.Fuzz(func(t *testing.T, page []byte) {
 		md, txt := deploys.Render(page, u)
-		for _, out := range [][]byte{md, txt} {
-			for _, m := range tokenShape.FindAllSubmatch(out, -1) {
-				if string(bytes.ReplaceAll(m[1], []byte(`\_`), []byte("_"))) != "redacted" {
-					t.Fatalf("token %q leaked: %q", m[0], out)
-				}
+		for i, out := range [][]byte{md, txt} {
+			if tok := leaked(out, i == 0); tok != "" {
+				t.Fatalf("token %q leaked: %q", tok, out)
 			}
 			if len(out) > 0 && (!bytes.HasSuffix(out, []byte("\n")) || bytes.HasSuffix(out, []byte("\n\n"))) {
 				t.Fatalf("rendition %q does not end in one newline", out)

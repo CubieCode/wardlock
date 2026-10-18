@@ -178,7 +178,9 @@ func (w *mdWriter) inlines(in []inline) {
 		case inlineDel:
 			w.wrap("~~", x.children)
 		case inlineCode:
-			w.write(codeSpan(x.text))
+			if x.text != "" { // redaction can empty a span
+				w.write(codeSpan(x.text))
+			}
 		case inlineLink:
 			w.link(x)
 		case inlineImage:

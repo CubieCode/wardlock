@@ -18,7 +18,7 @@ const (
 	pageTxt = "Field notes\n\nSee setup (https://notes.wardlock.localhost/setup).\n"
 	lostMD  = "# Not here\n"
 	notes   = "notes." + base
-	token   = "wl_abcdefghij_fakesecretfakesecretfakesecretfakesecret0"
+	token   = "wl_abcdefghij_fakesecretfakesecretfakesecretfakesecret0fa"
 )
 
 // withRenditions publishes "notes": an index page and a 404.html with

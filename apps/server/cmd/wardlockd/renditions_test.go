@@ -15,7 +15,7 @@ import (
 )
 
 // fakeToken has the share-link format and grants nothing.
-const fakeToken = "wl_abcdefghij_fakesecretfakesecretfakesecretfakesecret0"
+const fakeToken = "wl_abcdefghij_fakesecretfakesecretfakesecretfakesecret0fa"
 
 var renditionFiles = map[string]string{
 	"index.html": `<!doctype html><title>Notes</title><h1>Field notes</h1>` +

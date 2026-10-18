@@ -511,27 +511,58 @@ func (c *converter) resolve(raw string) (*url.URL, error) {
 	return u, nil
 }
 
-// tokenPattern matches a Wardlock token (SPEC "Tokens": wl_<public id>_<secret>)
-// anywhere, in any letter case, as the access log's scrubber does. The
-// secret runs to the end of the base64url alphabet, which includes "_".
-var tokenPattern = regexp.MustCompile(`(?i)wl_([a-z2-7]{10})_[A-Za-z0-9_-]+`)
+// tokenPattern matches a Wardlock token (SPEC "Tokens"): wl_ (the prefix
+// in any letter case), a 10-character lowercase base32 public ID, _ and a
+// 43-character base64url secret. findTokens adds the boundaries.
+var tokenPattern = regexp.MustCompile(`[wW][lL]_[a-z2-7]{10}_[A-Za-z0-9_-]{43}`)
 
-// redacted replaces a token's secret, keeping the public ID that names it.
-const redacted = "wl_${1}_redacted"
+// tokenSecretAt is where the secret starts within a token match.
+const tokenSecretAt = len("wl_") + 10 + 1
 
-// scrubTokens redacts every token in s.
-func scrubTokens(s string) string {
-	if !strings.Contains(strings.ToLower(s), "wl") {
-		return s
+// tokenChar reports whether c can continue a token, so a match running
+// into one (or following one) is part of a longer word, not a token.
+func tokenChar(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-'
+}
+
+// findTokens returns the [start, end) byte offsets of each token in s.
+func findTokens(s string) [][2]int {
+	if !strings.Contains(strings.ToLower(s), "wl_") {
+		return nil
 	}
-	return tokenPattern.ReplaceAllString(s, redacted)
+	var out [][2]int
+	for at := 0; at < len(s); {
+		loc := tokenPattern.FindStringIndex(s[at:])
+		if loc == nil {
+			break
+		}
+		start, end := at+loc[0], at+loc[1]
+		if (start == 0 || !tokenChar(s[start-1])) && (end == len(s) || !tokenChar(s[end])) {
+			out = append(out, [2]int{start, end})
+			at = end
+		} else {
+			at = start + 1
+		}
+	}
+	return out
+}
+
+// scrubTokens replaces each token's secret in s with "redacted", keeping
+// the prefix and public ID that name it.
+func scrubTokens(s string) string {
+	toks := findTokens(s)
+	for i := len(toks) - 1; i >= 0; i-- {
+		t := toks[i]
+		s = s[:t[0]+tokenSecretAt] + "redacted" + s[t[1]:]
+	}
+	return s
 }
 
 // hasToken reports whether s holds a token as is or after up to three
 // rounds of percent-decoding.
 func hasToken(s string) bool {
 	for range 4 {
-		if tokenPattern.MatchString(s) {
+		if len(findTokens(s)) > 0 {
 			return true
 		}
 		d, err := url.QueryUnescape(s)
@@ -544,30 +575,86 @@ func hasToken(s string) bool {
 }
 
 // scrubBlocks redacts tokens in every text of blocks: body text, alt text,
-// code and link targets alike.
+// code and link targets alike. Inline content is scrubbed a run at a time,
+// so a token split by formatting (wl_<b>…</b>) or a comment is found too.
 func scrubBlocks(blocks []block) {
 	for i := range blocks {
 		b := &blocks[i]
 		b.code = scrubTokens(b.code)
-		scrubInlines(b.inlines)
+		scrubRun(b.inlines)
 		scrubBlocks(b.children)
 		for _, item := range b.items {
 			scrubBlocks(item)
 		}
 		for _, row := range b.rows {
 			for _, cell := range row {
-				scrubInlines(cell)
+				scrubRun(cell)
 			}
 		}
 	}
 }
 
-func scrubInlines(in []inline) {
-	for i := range in {
-		in[i].text = scrubTokens(in[i].text)
-		in[i].href = scrubTokens(in[i].href)
-		scrubInlines(in[i].children)
+// scrubRun redacts tokens in the text of an inline run as it reads: the
+// texts and code spans in order, across element boundaries, with a line
+// break ending a stretch. A token's secret becomes "redacted" in the piece
+// where the secret starts and is removed from the pieces after it. Alt
+// texts and link targets are scrubbed on their own.
+func scrubRun(in []inline) {
+	var pieces []*string
+	flush := func() {
+		if len(pieces) == 0 {
+			return
+		}
+		var joined strings.Builder
+		starts := make([]int, len(pieces))
+		for i, p := range pieces {
+			starts[i] = joined.Len()
+			joined.WriteString(*p)
+		}
+		text := joined.String()
+		toks := findTokens(text)
+		// Apply edits from the end so earlier offsets stay valid.
+		for t := len(toks) - 1; t >= 0; t-- {
+			from, to := toks[t][0]+tokenSecretAt, toks[t][1]
+			for i := len(pieces) - 1; i >= 0; i-- {
+				p, lo := pieces[i], starts[i]
+				hi := lo + len(*p)
+				a, b := max(from, lo), min(to, hi)
+				if a >= b {
+					continue
+				}
+				repl := ""
+				if a == from {
+					repl = "redacted"
+				}
+				*p = (*p)[:a-lo] + repl + (*p)[b-lo:]
+			}
+		}
+		pieces = pieces[:0]
 	}
+	var walk func(in []inline)
+	walk = func(in []inline) {
+		for i := range in {
+			x := &in[i]
+			switch x.kind {
+			case inlineText, inlineCode:
+				// A whole token in one piece counts even when the next
+				// piece continues it into a longer word.
+				x.text = scrubTokens(x.text)
+				pieces = append(pieces, &x.text)
+			case inlineBreak:
+				flush()
+			case inlineImage:
+				x.text = scrubTokens(x.text)
+				x.href = scrubTokens(x.href)
+			default:
+				x.href = scrubTokens(x.href)
+				walk(x.children)
+			}
+		}
+	}
+	walk(in)
+	flush()
 }
 
 // showsOwnURL reports whether link n's text is its href, as written or

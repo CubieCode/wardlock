@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/url"
 	"path"
-	"regexp"
 	"strings"
 
 	"wardlock.nz/server/internal/store"
@@ -37,17 +36,44 @@ func HasRenditions(p string) bool {
 // are absolute when it is.
 func Render(page []byte, pageURL *url.URL) (md, txt []byte) {
 	blocks := convert(page, pageURL)
-	// convert redacted every token it read; this catches one the output
-	// joins from separate pieces, such as text either side of a comment.
-	md = []byte(mdTokenPattern.ReplaceAllString(markdown(blocks), "${1}redacted"))
-	txt = []byte(scrubTokens(plainText(blocks)))
-	return md, txt
+	// convert redacted every token the page holds; these passes also catch
+	// a token-shaped string the output only forms by joining pieces, such as
+	// text followed by a bare link.
+	return []byte(scrubMarkdown(markdown(blocks))), []byte(scrubTokens(plainText(blocks)))
 }
 
-// mdTokenPattern is tokenPattern as Markdown prints it, where escaping may
-// put a backslash before each underscore; the first group is everything
-// before the secret.
-var mdTokenPattern = regexp.MustCompile(`(?i)(wl\\?_[a-z2-7]{10}\\?_)(?:[A-Za-z0-9-]|\\?_)+`)
+// scrubMarkdown redacts tokens in md as a reader sees it: backslash
+// escapes stand for the character they escape, and emphasis,
+// strikethrough and code delimiters (*, ~, `) are not shown. A token's
+// secret, with any delimiters inside it, becomes "redacted".
+func scrubMarkdown(md string) string {
+	if !strings.Contains(strings.ToLower(md), "wl") {
+		return md
+	}
+	var view strings.Builder
+	at := make([]int, 0, len(md)) // at[i] is where view byte i starts in md
+	for i := 0; i < len(md); i++ {
+		switch c := md[i]; {
+		case c == '\\' && i+1 < len(md) && md[i+1] < 0x80 && md[i+1] > ' ':
+			at = append(at, i)
+			i++
+			view.WriteByte(md[i])
+		case c == '*' || c == '~' || c == '`':
+		default:
+			at = append(at, i)
+			view.WriteByte(c)
+		}
+	}
+	toks := findTokens(view.String())
+	for t := len(toks) - 1; t >= 0; t-- {
+		from, to := at[toks[t][0]+tokenSecretAt], at[toks[t][1]-1]+1
+		if md[to-1] == '\\' { // the last character was escaped
+			to++
+		}
+		md = md[:from] + "redacted" + md[to:]
+	}
+	return md
+}
 
 // PageURL returns the address of a manifest path on a site at origin (such
 // as https://docs.example.com; "" for a root-relative address). index.html
