@@ -11,17 +11,18 @@ import (
 
 // Repos is one backend's set of repositories, as domain packages see them.
 type Repos struct {
-	Owners    store.Owners
-	Sessions  store.Sessions
-	Passkeys  store.Passkeys
-	APITokens store.APITokens
-	Sites     store.Sites
-	Domains   store.Domains
-	Deploys   store.Deploys
-	Policies  store.Policies
-	Links     store.Links
-	AccessLog store.AccessLog
-	GC        store.GC
+	Owners     store.Owners
+	Sessions   store.Sessions
+	Passkeys   store.Passkeys
+	APITokens  store.APITokens
+	Sites      store.Sites
+	Domains    store.Domains
+	Deploys    store.Deploys
+	Policies   store.Policies
+	Links      store.Links
+	AccessLog  store.AccessLog
+	GC         store.GC
+	Renditions store.Renditions
 }
 
 // Opener returns repositories over a fresh, empty, migrated database that
@@ -34,17 +35,18 @@ func SQLite(t testing.TB) Repos { return ReposOf(New(t)) }
 // ReposOf returns db's repositories.
 func ReposOf(db *store.DB) Repos {
 	return Repos{
-		Owners:    db.Owners(),
-		Sessions:  db.Sessions(),
-		Passkeys:  db.Passkeys(),
-		APITokens: db.APITokens(),
-		Sites:     db.Sites(),
-		Domains:   db.Domains(),
-		Deploys:   db.Deploys(),
-		Policies:  db.Policies(),
-		Links:     db.Links(),
-		AccessLog: db.AccessLog(),
-		GC:        db.GC(),
+		Owners:     db.Owners(),
+		Sessions:   db.Sessions(),
+		Passkeys:   db.Passkeys(),
+		APITokens:  db.APITokens(),
+		Sites:      db.Sites(),
+		Domains:    db.Domains(),
+		Deploys:    db.Deploys(),
+		Policies:   db.Policies(),
+		Links:      db.Links(),
+		AccessLog:  db.AccessLog(),
+		GC:         db.GC(),
+		Renditions: db.Renditions(),
 	}
 }
 
@@ -68,6 +70,7 @@ func suites() []suite {
 		{"Links", linksContract},
 		{"AccessLog", accessLogContract},
 		{"GC", gcContract},
+		{"Renditions", renditionsContract},
 	}
 }
 

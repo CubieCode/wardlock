@@ -32,6 +32,16 @@ type ServedFile struct {
 	Path   string // relative, forward slashes, no leading slash
 	SHA256 string // lowercase hex
 	Size   int64
+	// Renditions are an HTML file's AI-readable versions (A2.6) by format
+	// ("md", "txt"); nil for other files and deploys activated before A2.6.
+	Renditions map[string]Rendition
+}
+
+// Rendition is a Markdown or plain-text version of an HTML file, stored as
+// a blob.
+type Rendition struct {
+	SHA256 string // lowercase hex
+	Size   int64
 }
 
 // SiteSource looks up sites for the edge. It is instance-wide, not owner
@@ -41,7 +51,8 @@ type SiteSource interface {
 	// under the base domain, or an active custom domain. ErrNoSite when
 	// there is none.
 	SiteForHost(ctx context.Context, host string) (ServedSite, error)
-	// ActiveFiles returns the manifest of site's active deploy.
+	// ActiveFiles returns the manifest of site's active deploy, with each
+	// HTML file's renditions.
 	ActiveFiles(ctx context.Context, site ServedSite) ([]ServedFile, error)
 }
 

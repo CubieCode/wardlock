@@ -141,6 +141,9 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 				MaxDeploySize: cfg.MaxDeploySize,
 			},
 			Now: time.Now,
+			// Renditions (A2.6) link to the site's base-domain address.
+			Renditions: db.Renditions(),
+			SiteOrigin: func(name string) string { return publicOrigin(name+"."+cfg.BaseDomain, port).String() },
 		}),
 		SiteURL: func(host string) string { return publicOrigin(host, port).String() + "/" },
 	}
@@ -158,6 +161,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			sites:      db.Sites(),
 			domains:    db.Domains(),
 			deploys:    db.Deploys(),
+			renditions: db.Renditions(),
 		},
 		Blobs:       blobs,
 		Invalidator: notifier,

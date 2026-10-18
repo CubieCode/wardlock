@@ -159,6 +159,33 @@ func gcContract(t *testing.T, open Opener) {
 			t.Fatalf("page after b = %v", hashes(got))
 		}
 	})
+	t.Run("RenditionsKeepBlobs", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		cutoff := now.Add(time.Hour)
+		d := deployAt(f, o.ID, s.ID, 0, sha('a'))
+		rs := []store.Rendition{{Path: "index.html", Format: "md", SHA256: sha('b'), Size: 4}}
+		f.must(f.r.Renditions.Put(t.Context(), o.ID, s.ID, d.ID, rs, now))
+		got, err := f.r.GC.UnreferencedBlobs(t.Context(), cutoff, "", 10)
+		wantErr(t, err, nil)
+		if len(got) != 0 {
+			t.Fatalf("unreferenced = %v, want none while a rendition lists b", hashes(got))
+		}
+		_, deleted, err := f.r.GC.DeleteBlob(t.Context(), sha('b'), cutoff, func(context.Context) error { return nil })
+		wantErr(t, err, nil)
+		if deleted {
+			t.Fatal("a rendition's blob was deleted")
+		}
+		// Once the deploy goes, so does the reference.
+		wantErr(t, f.r.Deploys.Delete(t.Context(), o.ID, d.ID), nil)
+		got, err = f.r.GC.UnreferencedBlobs(t.Context(), cutoff, "", 10)
+		wantErr(t, err, nil)
+		if !slices.Equal(hashes(got), []string{sha('b')}) {
+			t.Fatalf("unreferenced after deleting the deploy = %v", hashes(got))
+		}
+	})
 	t.Run("DeleteBlob", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, open)

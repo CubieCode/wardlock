@@ -4,5 +4,6 @@
 // Package deploys owns deploy uploads: manifests and their validation,
 // content-addressed blobs (BlobStore), activation, rollback and the Notifier
 // that tells the edge a site's served state changed, and garbage collection
-// (GC). Renditions (A2.6) will live here too.
+// (GC), and the AI-readable renditions (A2.6) generated from each deploy's
+// HTML files before activation.
 package deploys

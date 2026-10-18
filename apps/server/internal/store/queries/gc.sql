@@ -23,13 +23,14 @@ WHERE deploys.id = sqlc.arg(id)
   AND NOT EXISTS (SELECT 1 FROM sites WHERE sites.active_deploy_id = deploys.id)
   AND (deploys.activated_at IS NOT NULL OR deploys.created_at < sqlc.arg(pending_before));
 
--- Blobs no deploy lists, first stored and last claimed by any owner before
+-- Blobs no deploy lists (as a file or a rendition), first stored and last claimed by any owner before
 -- created_before, in hash order after the cursor.
 -- name: ListUnreferencedBlobs :many
 SELECT blobs.sha256, blobs.size, blobs.created_at FROM blobs
 WHERE blobs.sha256 > sqlc.arg(after_sha256)
   AND blobs.created_at < sqlc.arg(created_before)
   AND NOT EXISTS (SELECT 1 FROM deploy_files WHERE deploy_files.sha256 = blobs.sha256)
+  AND NOT EXISTS (SELECT 1 FROM deploy_renditions WHERE deploy_renditions.sha256 = blobs.sha256)
   AND NOT EXISTS (
     SELECT 1 FROM owner_blobs
     WHERE owner_blobs.sha256 = blobs.sha256 AND owner_blobs.created_at >= sqlc.arg(created_before)
@@ -44,6 +45,7 @@ SELECT blobs.size FROM blobs
 WHERE blobs.sha256 = sqlc.arg(sha256)
   AND blobs.created_at < sqlc.arg(created_before)
   AND NOT EXISTS (SELECT 1 FROM deploy_files WHERE deploy_files.sha256 = blobs.sha256)
+  AND NOT EXISTS (SELECT 1 FROM deploy_renditions WHERE deploy_renditions.sha256 = blobs.sha256)
   AND NOT EXISTS (
     SELECT 1 FROM owner_blobs
     WHERE owner_blobs.sha256 = blobs.sha256 AND owner_blobs.created_at >= sqlc.arg(created_before)

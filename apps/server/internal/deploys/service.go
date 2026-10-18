@@ -69,6 +69,13 @@ type Config struct {
 	Notifier Notifier
 	Limits   Limits
 	Now      func() time.Time
+	// Renditions records the Markdown and plain-text renditions generated
+	// for each HTML file at activation (A2.6); nil generates none.
+	Renditions store.Renditions
+	// SiteOrigin returns a site's address (such as https://docs.example.com)
+	// from its name, which renditions make links absolute against; nil
+	// leaves them root-relative.
+	SiteOrigin func(siteName string) string
 }
 
 // Service creates, uploads, activates, lists and rolls back deploys. Every
@@ -201,8 +208,8 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// Activate makes a pending deploy the site's active deploy atomically and
-// notifies subscribers. It fails with ErrBlobsMissing until the owner has
+// Activate generates the renditions of the deploy's HTML files, then makes
+// it the site's active deploy atomically and notifies subscribers. It fails with ErrBlobsMissing until the owner has
 // uploaded every blob, and ErrNotPending once activated (see Rollback).
 func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID string) (store.Site, store.Deploy, error) {
 	site, err := s.site(ctx, ownerID, siteName)
@@ -225,6 +232,9 @@ func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID stri
 			Err: ErrBlobsMissing, Target: missing[0],
 			Message: fmt.Sprintf("%d blobs have not been uploaded.", len(missing)),
 		}
+	}
+	if err := s.render(ctx, ownerID, site, deployID); err != nil {
+		return store.Site{}, store.Deploy{}, err
 	}
 	// The store re-checks the owner's uploads inside the transaction.
 	d, err = s.c.Deploys.Activate(ctx, ownerID, site.ID, deployID, s.now())

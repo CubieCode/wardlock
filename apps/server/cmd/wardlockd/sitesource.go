@@ -19,6 +19,7 @@ type siteSource struct {
 	sites      store.Sites
 	domains    store.Domains
 	deploys    store.Deploys
+	renditions store.Renditions
 }
 
 func (s siteSource) SiteForHost(ctx context.Context, host string) (edge.ServedSite, error) {
@@ -65,9 +66,20 @@ func (s siteSource) ActiveFiles(ctx context.Context, site edge.ServedSite) ([]ed
 	if err != nil {
 		return nil, err
 	}
+	rs, err := s.renditions.List(ctx, site.ActiveDeployID)
+	if err != nil {
+		return nil, err
+	}
+	byPath := map[string]map[string]edge.Rendition{}
+	for _, r := range rs {
+		if byPath[r.Path] == nil {
+			byPath[r.Path] = map[string]edge.Rendition{}
+		}
+		byPath[r.Path][r.Format] = edge.Rendition{SHA256: r.SHA256, Size: r.Size}
+	}
 	out := make([]edge.ServedFile, len(files))
 	for i, f := range files {
-		out[i] = edge.ServedFile{Path: f.Path, SHA256: f.SHA256, Size: f.Size}
+		out[i] = edge.ServedFile{Path: f.Path, SHA256: f.SHA256, Size: f.Size, Renditions: byPath[f.Path]}
 	}
 	return out, nil
 }

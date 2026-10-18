@@ -9,3 +9,6 @@ coverage
 apps/server/internal/dashboard/ui/dist
 # Verbatim licence texts
 **/LICENSE
+
+# Rendition golden files are byte-exact converter output.
+apps/server/internal/deploys/testdata/renditions

@@ -77,6 +77,14 @@ type DeployFile struct {
 	Size     int64
 }
 
+type DeployRendition struct {
+	DeployID string
+	Path     string
+	Format   string
+	Sha256   string
+	Size     int64
+}
+
 type Domain struct {
 	ID                string
 	SiteID            string

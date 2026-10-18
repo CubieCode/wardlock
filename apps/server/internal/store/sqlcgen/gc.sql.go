@@ -129,6 +129,7 @@ SELECT blobs.sha256, blobs.size, blobs.created_at FROM blobs
 WHERE blobs.sha256 > ?1
   AND blobs.created_at < ?2
   AND NOT EXISTS (SELECT 1 FROM deploy_files WHERE deploy_files.sha256 = blobs.sha256)
+  AND NOT EXISTS (SELECT 1 FROM deploy_renditions WHERE deploy_renditions.sha256 = blobs.sha256)
   AND NOT EXISTS (
     SELECT 1 FROM owner_blobs
     WHERE owner_blobs.sha256 = blobs.sha256 AND owner_blobs.created_at >= ?2
@@ -143,7 +144,7 @@ type ListUnreferencedBlobsParams struct {
 	RowLimit      int64
 }
 
-// Blobs no deploy lists, first stored and last claimed by any owner before
+// Blobs no deploy lists (as a file or a rendition), first stored and last claimed by any owner before
 // created_before, in hash order after the cursor.
 func (q *Queries) ListUnreferencedBlobs(ctx context.Context, arg ListUnreferencedBlobsParams) ([]Blob, error) {
 	rows, err := q.db.QueryContext(ctx, listUnreferencedBlobs, arg.AfterSha256, arg.CreatedBefore, arg.RowLimit)
@@ -173,6 +174,7 @@ SELECT blobs.size FROM blobs
 WHERE blobs.sha256 = ?1
   AND blobs.created_at < ?2
   AND NOT EXISTS (SELECT 1 FROM deploy_files WHERE deploy_files.sha256 = blobs.sha256)
+  AND NOT EXISTS (SELECT 1 FROM deploy_renditions WHERE deploy_renditions.sha256 = blobs.sha256)
   AND NOT EXISTS (
     SELECT 1 FROM owner_blobs
     WHERE owner_blobs.sha256 = blobs.sha256 AND owner_blobs.created_at >= ?2

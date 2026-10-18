@@ -1,0 +1,28 @@
+Setup notes
+
+Install
+
+Run the installer, then check the version:
+
+./install --prefix /opt/kowhai
+kowhai --version   # prints the version
+
+A fence inside code:
+
+Markdown fences look like this:
+```
+code
+```
+
+Steps
+
+3. Unpack the archive.
+
+   Keep the whole folder.
+4. Run make with `backticks`.
+
+Survey
+
+An invented count of things in the valley.
+
+Back to the notes (https://renditions.wardlock.test/) or the docs index (https://renditions.wardlock.test/docs/index.html).
