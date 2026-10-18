@@ -4,7 +4,8 @@
 // Reads the throwaway server's dev:// mail sink (scripts/browser-acceptance.mjs
 // sets WARDLOCK_ACCEPTANCE_MAIL_DIR). Every address is synthetic.
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect } from '@playwright/test';
 
 const dir = process.env.WARDLOCK_ACCEPTANCE_MAIL_DIR;
@@ -91,6 +92,16 @@ export const sitesOwnerFor = (project: string, scheme: string) =>
 /** The synthetic owner the site access spec signs in as. */
 export const accessOwnerFor = (project: string, scheme: string) =>
   `${project}-${scheme}-access@example.test`;
+
+/**
+ * The first owner's signed-in browser state, saved by setup under the
+ * gitignored .local/ for the share-links spec. Email-code sends are limited
+ * per IP, and the other specs already spend most of that limit signing in.
+ */
+export const firstOwnerState = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../.local/browser-state/first-owner.json',
+);
 
 /** A site the first owner creates in setup; every other owner's foreign site. */
 export const foreignSite = 'first-owners-site';

@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 import {
   accessOwnerFor,
   cliOwnerFor,
+  firstOwnerState,
   foreignSite,
   ownerFor,
   passkeyOwnerFor,
@@ -73,6 +74,7 @@ test('the setup URL creates the first owner', async ({
         expect(res.status()).toBe(202);
       }
   await createSite(page.request, foreignSite);
+  await page.context().storageState({ path: firstOwnerState });
 
   // The URL worked once: a browser without the new owner's session is
   // refused by the server, not just redirected by the dashboard.

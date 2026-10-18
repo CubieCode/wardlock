@@ -439,6 +439,10 @@ describe('link access log', () => {
   beforeEach(() => at('/sites/docs/links/q4v7m2xkpa'));
 
   it('shows the visits newest first and loads older ones', async () => {
+    // A refused request with no IP recorded and no User-Agent sent.
+    const refused = entry(2, { status: 401 });
+    delete refused.ip;
+    delete refused.userAgent;
     const { api, calls } = fakeServer({
       [`GET ${base}/links`]: () =>
         Response.json({
@@ -448,10 +452,7 @@ describe('link access log', () => {
         new URL(request.url).searchParams.get('cursor') === 'next'
           ? Response.json({ items: [entry(3)] })
           : Response.json({
-              items: [
-                entry(1),
-                entry(2, { status: 401, ip: undefined, userAgent: undefined }),
-              ],
+              items: [entry(1), refused],
               nextCursor: 'next',
             }),
     });
