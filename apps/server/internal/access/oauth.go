@@ -278,9 +278,9 @@ func (s *Service) StartOAuth(ctx context.Context, a OAuthStart) (OAuthStarted, e
 	if !ok || !enables(p, store.SessionOAuth) {
 		return OAuthStarted{}, ErrOAuthDisabled
 	}
+	now := s.now()
 	// A site holds at most maxOAuthEntriesPerSite flows; while it holds
 	// half, each network may start only its share of them (limit.go).
-	now := s.now()
 	perSite := Rate{N: maxOAuthEntriesPerSite, Per: OAuthFlowLifetime}
 	if ok, wait := s.netLimiter.allow("oauth-start-net:"+a.SiteID+":"+netKey(a.IP), netRate(perSite, s.oauth.flows.siteCount(a.SiteID, now))); !ok {
 		return OAuthStarted{}, &RateLimitError{RetryAfter: wait}

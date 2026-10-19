@@ -7,6 +7,7 @@ import (
 	"hash/maphash"
 	"math"
 	"net/netip"
+	"strings"
 	"sync"
 	"time"
 )
@@ -92,9 +93,22 @@ type limiter struct {
 	mu        sync.Mutex
 	windows   map[string]window
 	nextSweep time.Time
-	// sketches holds one overflow sketch per window length, allocated
-	// when the table first overflows.
-	sketches map[time.Duration]*sketch
+	// sketches holds one overflow sketch per method and window length,
+	// allocated when the table first overflows for that method.
+	sketches map[sketchKey]*sketch
+}
+
+// sketchKey names an overflow sketch: a key's method (the part before its
+// first colon, such as "password-ip") and its window length. Methods never
+// share counters, so a flood of one cannot saturate another's.
+type sketchKey struct {
+	method string
+	per    time.Duration
+}
+
+func newSketchKey(key string, per time.Duration) sketchKey {
+	method, _, _ := strings.Cut(key, ":")
+	return sketchKey{method: method, per: per}
 }
 
 type window struct {
@@ -106,16 +120,16 @@ const (
 	// defaultMaxKeys bounds the table to a few MiB.
 	defaultMaxKeys = 100_000
 	sweepEvery     = time.Minute
-	// defaultSketchWidth gives each sketch 2 x 2^18 two-byte counters
-	// (1 MiB).
-	defaultSketchWidth = 1 << 18
+	// defaultSketchWidth gives each sketch 2 x 2^17 two-byte counters
+	// (512 KiB).
+	defaultSketchWidth = 1 << 17
 )
 
 // newLimiter returns a limiter bounded to defaultMaxKeys, for client keys.
 func newLimiter(now func() time.Time) *limiter {
 	return &limiter{
 		now: now, maxKeys: defaultMaxKeys, sketchWidth: defaultSketchWidth, seed: maphash.MakeSeed(),
-		windows: map[string]window{}, sketches: map[time.Duration]*sketch{},
+		windows: map[string]window{}, sketches: map[sketchKey]*sketch{},
 	}
 }
 
@@ -138,7 +152,7 @@ func (l *limiter) allow(key string, r Rate) (bool, time.Duration) {
 	l.sweep(now)
 	w, ok := l.windows[key]
 	if !ok && l.full() {
-		sk := l.sketch(r.Per, now, true)
+		sk := l.sketch(key, r.Per, now, true)
 		if n := sk.add(l.seed, key); n > r.N {
 			return false, sk.end.Sub(now)
 		}
@@ -149,7 +163,7 @@ func (l *limiter) allow(key string, r Rate) (bool, time.Duration) {
 		if !ok {
 			// A key counted in the sketch while the table was full
 			// keeps that count, so moving into the table resets nothing.
-			if sk := l.sketch(r.Per, now, false); sk != nil {
+			if sk := l.sketch(key, r.Per, now, false); sk != nil {
 				w.n = sk.estimate(l.seed, key)
 			}
 		}
@@ -186,23 +200,24 @@ func (l *limiter) count(key string, r Rate) (int, time.Duration) {
 		}
 		return w.n, w.end.Sub(now)
 	}
-	if sk := l.sketch(r.Per, now, false); sk != nil {
+	if sk := l.sketch(key, r.Per, now, false); sk != nil {
 		return sk.estimate(l.seed, key), sk.end.Sub(now)
 	}
 	return 0, 0
 }
 
-// sketch returns the overflow sketch for windows of length per, starting a
-// new window (all counters zero) when the last one has ended. It allocates
-// one only when create is set.
-func (l *limiter) sketch(per time.Duration, now time.Time, create bool) *sketch {
-	sk := l.sketches[per]
+// sketch returns the overflow sketch for key's method and windows of
+// length per, starting a new window (all counters zero) when the last one
+// has ended. It allocates one only when create is set.
+func (l *limiter) sketch(key string, per time.Duration, now time.Time, create bool) *sketch {
+	k := newSketchKey(key, per)
+	sk := l.sketches[k]
 	if sk == nil {
 		if !create || l.sketches == nil {
 			return nil
 		}
 		sk = newSketch(l.sketchWidth)
-		l.sketches[per] = sk
+		l.sketches[k] = sk
 	}
 	if !now.Before(sk.end) {
 		sk.reset(now.Add(per))

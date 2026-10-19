@@ -171,6 +171,30 @@ func TestSketchSaturation(t *testing.T) {
 	}
 }
 
+// TestOverflowSketchPerMethod: methods keep separate sketches, so
+// saturating one method's counters refuses nobody on another.
+func TestOverflowSketchPerMethod(t *testing.T) {
+	now := time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC)
+	l := newLimiter(func() time.Time { return now })
+	l.maxKeys, l.sketchWidth = 1, 64
+	r := Rate{N: 3, Per: 15 * time.Minute}
+	l.allow("held", r)
+	for i := range 8 * r.N * 64 {
+		l.allow(fmt.Sprintf("link-fail-ip:2001:db8:%x::/64", i), r)
+	}
+	if ok, _ := l.allow("link-fail-ip:192.0.2.1", r); ok {
+		t.Fatal("the saturated method's sketch let an unseen key in")
+	}
+	for i := range 100 {
+		if ok, _ := l.allow(fmt.Sprintf("password-ip:198.51.100.%d", i), r); !ok {
+			t.Fatalf("another method's unseen key %d refused", i)
+		}
+	}
+	if len(l.sketches) != 2 {
+		t.Fatalf("%d sketches, want one per method", len(l.sketches))
+	}
+}
+
 func TestNetKey(t *testing.T) {
 	for _, tc := range []struct{ ip, want string }{
 		{"192.0.2.77", "192.0.2.0/24"},
