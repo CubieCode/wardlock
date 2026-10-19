@@ -317,10 +317,10 @@ func TestAuthenticateRateLimitsGuesses(t *testing.T) {
 	}
 }
 
-// A full limiter table must not let guesses from new addresses go
-// uncounted: they are refused, while valid tokens from new addresses and
-// guesses from tracked ones work as before.
-func TestAuthenticateFailsClosedWhenTheTableIsFull(t *testing.T) {
+// With the limiter's table full, a rejected token from an address it does
+// not hold is counted in the overflow sketch: the address is held to the
+// same limit, and other new addresses keep working.
+func TestAuthenticateCountsNewAddressesWhenTheTableIsFull(t *testing.T) {
 	h := newTokenHarness(t, withLimits(func(l *TokenLimits) { l.FailuresPerIP = Rate{N: 3, Per: time.Minute} }))
 	h.svc.limiter.maxKeys = 1
 	owner := h.owner()
@@ -334,21 +334,27 @@ func TestAuthenticateFailsClosedWhenTheTableIsFull(t *testing.T) {
 		t.Fatalf("first guess = %v", err)
 	}
 	other := Client{IP: "198.51.100.7"}
-	for i := range 5 {
-		_, err := h.svc.Authenticate(t.Context(), other, guess)
-		var rl *RateLimitError
-		if !errors.As(err, &rl) || rl.RetryAfter <= 0 {
-			t.Fatalf("guess %d from a new address with the table full = %v, want *RateLimitError", i+1, err)
+	for i := range 3 {
+		if _, err := h.svc.Authenticate(t.Context(), other, guess); !errors.Is(err, ErrUnauthenticated) {
+			t.Fatalf("guess %d from a new address with the table full = %v", i+1, err)
 		}
 	}
-	if _, err := h.svc.Authenticate(t.Context(), other, valid); err != nil {
-		t.Fatalf("valid token from a new address: %v", err)
+	for _, raw := range []string{guess, valid} {
+		_, err := h.svc.Authenticate(t.Context(), other, raw)
+		var rl *RateLimitError
+		if !errors.As(err, &rl) || rl.RetryAfter <= 0 {
+			t.Fatalf("a new address over its limit = %v, want *RateLimitError", err)
+		}
 	}
-	// Once the window has gone and the table is swept, the new address
-	// is counted again.
+	if _, held := h.svc.limiter.windows["token-fail:"+ipKey(other.IP)]; held {
+		t.Fatal("the full table took a new key")
+	}
+	if _, err := h.svc.Authenticate(t.Context(), Client{IP: "2001:db8:5::1"}, valid); err != nil {
+		t.Fatalf("valid token from another new address: %v", err)
+	}
 	h.advance(time.Minute)
 	if _, err := h.svc.Authenticate(t.Context(), other, guess); !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("after the sweep = %v", err)
+		t.Fatalf("after the window = %v", err)
 	}
 }
 

@@ -317,13 +317,34 @@ func (s *Service) decideToken(ctx context.Context, r Request, p store.Policy, se
 
 func tokenIPKey(ip string) string       { return "link-fail-ip:" + ipKey(ip) }
 func tokenSiteKey(siteID string) string { return "link-fail-site:" + siteID }
+func tokenNetKey(siteID, ip string) string {
+	return "link-fail-net:" + siteID + ":" + netKey(ip)
+}
 
 // overTokenLimit reports whether r's IP or site has had too many tokens
-// refused, and how long until the later window resets.
+// refused, or (while the site is under pressure) r's network has had its
+// share, and how long until the later window resets.
 func (s *Service) overTokenLimit(r Request) (bool, time.Duration) {
 	ipOver, ipWait := s.limiter.exceeded(tokenIPKey(r.ClientIP), s.limits.TokenFailuresPerIP)
 	siteOver, siteWait := s.siteLimiter.exceeded(tokenSiteKey(r.SiteID), s.limits.TokenFailuresPerSite)
-	return ipOver || siteOver, max(ipWait, siteWait)
+	n, _ := s.siteLimiter.count(tokenSiteKey(r.SiteID), s.limits.TokenFailuresPerSite)
+	netOver, netWait := s.netLimiter.exceeded(tokenNetKey(r.SiteID, r.ClientIP), netRate(s.limits.TokenFailuresPerSite, n))
+	return ipOver || siteOver || netOver, max(ipWait, siteWait, netWait)
+}
+
+// countTokenFailure counts one refused token from r against its IP, then
+// its network's share of the site, then the site, stopping at the first
+// that is over: a guess its IP or network may not make spends nothing
+// further.
+func (s *Service) countTokenFailure(r Request) (bool, time.Duration) {
+	if ok, wait := s.limiter.allow(tokenIPKey(r.ClientIP), s.limits.TokenFailuresPerIP); !ok {
+		return false, wait
+	}
+	n, _ := s.siteLimiter.count(tokenSiteKey(r.SiteID), s.limits.TokenFailuresPerSite)
+	if ok, wait := s.netLimiter.allow(tokenNetKey(r.SiteID, r.ClientIP), netRate(s.limits.TokenFailuresPerSite, n)); !ok {
+		return false, wait
+	}
+	return s.siteLimiter.allow(tokenSiteKey(r.SiteID), s.limits.TokenFailuresPerSite)
 }
 
 // checkToken finds the usable link r.Token names on r's site. Every other
@@ -340,10 +361,8 @@ func (s *Service) checkToken(ctx context.Context, r Request) (store.ShareLink, e
 		}
 		s.log.LogAttrs(ctx, slog.LevelInfo, "share link refused", attrs...)
 		if guess {
-			ipOK, ipWait := s.limiter.allow(tokenIPKey(r.ClientIP), s.limits.TokenFailuresPerIP)
-			siteOK, siteWait := s.siteLimiter.allow(tokenSiteKey(r.SiteID), s.limits.TokenFailuresPerSite)
-			if !ipOK || !siteOK {
-				return store.ShareLink{}, &limitedError{RetryAfter: max(ipWait, siteWait)}
+			if ok, wait := s.countTokenFailure(r); !ok {
+				return store.ShareLink{}, &limitedError{RetryAfter: wait}
 			}
 		}
 		return store.ShareLink{}, errTokenRefused

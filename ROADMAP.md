@@ -243,9 +243,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.9: Sign-in limiter tables that resist flooding
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/a2.9-limiter-flooding`
+- PR: https://github.com/CubieCode/wardlock/pull/72
 - Depends on: A2.7
 - Scope: A2.7 found that the visitor per-IP limiter table (`internal/access`, 100,000 keys, IPv6 by /64) is shared by password attempts, email-code sends and entries, OAuth starts and share-link guesses, each counted before any site or credential check: filling it (about two IPv6 /48s) refuses password, email-code and OAuth sign-in for every new client on every site until its windows expire. Separately, anyone can spend a site's per-site password and email-code limits and keep that method shut for the site indefinitely. Likewise, the owner per-address send table (`internal/owners`, 100,000 addresses, kept apart from the owner per-IP table by A2.7) can be filled with invented addresses, which refuses owner email-code sends to addresses it does not yet hold for up to an hour. Decide and implement a design that keeps sign-in available under both floods without lifting any limit (for example per-method tables, coarser keys such as IPv6 /48 under pressure, counting only failures per site, or per-site fallbacks when the IP table is full), and record the decision in docs/SECURITY-MODEL.md, replacing the "Accepted limiter risks" paragraph.
 - Acceptance: Tests prove that filling the IP table from many synthetic addresses neither refuses sign-in for unseen clients beyond what the recorded design allows nor lifts any per-IP, per-address or per-site limit; that filling the owner per-address table does not refuse owner email-code sign-in beyond the recorded bound; that a per-site flood cannot hold a method shut beyond the recorded bound; and that the full wardlock-access test matrix passes. SECURITY-MODEL and SPEC describe the new behaviour.

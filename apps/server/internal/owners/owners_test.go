@@ -65,20 +65,23 @@ func TestLimiterIsBounded(t *testing.T) {
 	l := newLimiter(func() time.Time { return now })
 	l.maxKeys = 1000
 	r := Rate{N: 5, Per: 10 * time.Minute}
-	refused := 0
 	for i := range 5000 {
-		if ok, wait := l.allow(fmt.Sprint("ip-", i), r); !ok {
-			refused++
-			if wait < time.Second {
-				t.Fatalf("wait %v for a full table", wait)
-			}
+		if ok, _ := l.allow(fmt.Sprint("ip-", i), r); !ok {
+			t.Fatalf("new key %d refused: a full table must count it in the sketch", i)
 		}
 		if len(l.windows) > l.maxKeys {
 			t.Fatalf("%d keys, cap %d", len(l.windows), l.maxKeys)
 		}
 	}
-	if refused != 4000 {
-		t.Fatalf("refused %d new keys, want 4000", refused)
+	// Keys counted in the sketch are held to the same limit.
+	for range r.N - 1 {
+		l.allow("ip-4999", r)
+	}
+	if ok, wait := l.allow("ip-4999", r); ok || wait <= 0 || wait > r.Per {
+		t.Fatalf("an overflow key past its limit: %v %v", ok, wait)
+	}
+	if over, _ := l.exceeded("ip-4999", r); !over {
+		t.Fatal("an overflow key over its limit not reported over")
 	}
 	// Known keys are still counted while the table is full.
 	if ok, _ := l.allow("ip-0", r); !ok {

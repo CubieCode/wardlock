@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -57,7 +58,7 @@ func (p *policyEdge) visit(v visit) result {
 	}
 	req.Host = v.host
 	if v.ip != "" {
-		req.RemoteAddr = v.ip + ":4711"
+		req.RemoteAddr = net.JoinHostPort(v.ip, "4711")
 	}
 	for k, vals := range v.header {
 		req.Header[k] = vals
@@ -498,10 +499,10 @@ func TestShareLinkRateLimitsThroughTheEdge(t *testing.T) {
 	p.advance(limits.TokenFailuresPerIP.Per)
 	p.visit(visit{target: withT("/", token), ip: "198.51.100.7"}).expect(t, 200, "Home page", "")
 
-	// Per site: guesses spread over many IPs close the site's tokens,
-	// not other sites'.
+	// Per site: guesses spread over many networks close the site's
+	// tokens, not other sites'.
 	for i := range limits.TokenFailuresPerSite.N {
-		ip := fmt.Sprintf("203.0.113.%d", i/limits.TokenFailuresPerIP.N+1)
+		ip := fmt.Sprintf("2001:db8:%x::1", i/limits.TokenFailuresPerIP.N+1)
 		p.visit(visit{target: withT("/", guess), ip: ip}).expect(t, 401, "protected", "")
 	}
 	if r := p.visit(visit{target: "/", header: bearer(token), ip: "192.0.2.200"}); r.code != http.StatusTooManyRequests {

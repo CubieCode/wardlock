@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -151,7 +152,7 @@ func (b *browser) request(method, raw string, form url.Values) result {
 		}
 		req := httptest.NewRequest(method, u.RequestURI(), body)
 		req.Host = u.Host
-		req.RemoteAddr = b.ip + ":40000"
+		req.RemoteAddr = net.JoinHostPort(b.ip, "40000")
 		req.Header.Set("Accept", "text/html")
 		if method == http.MethodPost {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -705,8 +706,8 @@ func TestAuthOrigin(t *testing.T) {
 }
 
 // TestOAuthFlowsPerSite checks that a flood of starts aimed at one site,
-// from many clients, fills only that site's share of pending sign-ins:
-// another site's visitors can still start.
+// from many clients on many networks, fills only that site's share of
+// pending sign-ins: another site's visitors can still start.
 func TestOAuthFlowsPerSite(t *testing.T) {
 	o := newOAuthEdge(t)
 	o.publish("docs")
@@ -716,8 +717,9 @@ func TestOAuthFlowsPerSite(t *testing.T) {
 	o.protect("other", "/", list)
 	started := 0
 	for i := 0; ; i++ {
-		// 30 starts per client fit under the per-client limit.
-		r := o.browser(fmt.Sprintf("10.0.%d.%d", i/30/250, i/30%250+1)).start(host, "github", "/")
+		// 30 starts per client fit under the per-client limit, and one
+		// client per /48 under its network's share.
+		r := o.browser(fmt.Sprintf("2001:db8:%x::1", i/30+1)).start(host, "github", "/")
 		if r.code != http.StatusSeeOther {
 			r.expect(t, http.StatusTooManyRequests, "Too many sign-in attempts.", "")
 			break

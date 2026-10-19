@@ -101,11 +101,16 @@ type Service struct {
 	// are not, so filling it must never touch the password, share-link or
 	// per-IP limits in limiter.
 	addressLimiter *limiter
+	// netLimiter counts each network's attempts per site and method, for
+	// the network shares that apply while a site is under pressure
+	// (limit.go). Its keys are client-chosen, so it is bounded too.
+	netLimiter *limiter
 	// ipAttempts and siteAttempts count password and email-code attempts,
-	// addressAttempts email-code attempts per address: limiter,
-	// siteLimiter and addressLimiter, or fakes in tests.
-	ipAttempts, siteAttempts, addressAttempts attemptLimiter
-	derive                                    deriveFunc
+	// addressAttempts email-code attempts per address and netAttempts per
+	// network and site: limiter, siteLimiter, addressLimiter and
+	// netLimiter, or fakes in tests.
+	ipAttempts, siteAttempts, addressAttempts, netAttempts attemptLimiter
+	derive                                                 deriveFunc
 	// hashSlots bounds concurrent password checks (each holds 19 MiB);
 	// hashWait is how long an attempt waits for a slot.
 	hashSlots   chan struct{}
@@ -158,7 +163,8 @@ func New(cfg Config) (*Service, error) {
 	s.limiter = newLimiter(s.now)
 	s.siteLimiter = newServerKeyLimiter(s.now)
 	s.addressLimiter = newLimiter(s.now)
-	s.ipAttempts, s.siteAttempts, s.addressAttempts = s.limiter, s.siteLimiter, s.addressLimiter
+	s.netLimiter = newLimiter(s.now)
+	s.ipAttempts, s.siteAttempts, s.addressAttempts, s.netAttempts = s.limiter, s.siteLimiter, s.addressLimiter, s.netLimiter
 	s.unsubscribe = cfg.Notifier.Subscribe(s.invalidate)
 	return s, nil
 }

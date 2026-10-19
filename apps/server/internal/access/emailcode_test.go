@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -597,9 +598,10 @@ func TestEmailCodeSetValidation(t *testing.T) {
 var longDomain = strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("a", 56) + ".test"
 
 // TestEmailCodeAddressTable shows per-address keys live in a bounded
-// table of their own: inventing addresses until it is full refuses only
-// new addresses' email codes, never password attempts, per-IP limits or
-// addresses already counted.
+// table of their own: inventing addresses until it is full leaves new
+// addresses' email codes open (counted in the table's overflow sketch) and
+// never touches password attempts, per-IP limits or addresses already
+// counted.
 func TestEmailCodeAddressTable(t *testing.T) {
 	h := newEmailHarness(t, access.Limits{})
 	access.SetAddressTableSize(h.svc, 3)
@@ -608,22 +610,19 @@ func TestEmailCodeAddressTable(t *testing.T) {
 	other := h.site(o, "tides")
 	h.set(o, "harbour", emailRule("/", store.Allowlist{Domains: []string{"crew.test"}}))
 	h.set(o, "tides", passwordRule("/", firstPassword))
-	limited := func(name string, err error) {
-		t.Helper()
-		var rl *access.RateLimitError
-		if !errors.As(err, &rl) {
-			t.Fatalf("%s: %v, want a RateLimitError", name, err)
-		}
-	}
 	for i, addr := range []string{"a@crew.test", "b@crew.test", "c@crew.test"} {
 		if err := h.send(s.ID, "/", "192.0.2."+string(rune('1'+i)), addr); err != nil {
 			t.Fatalf("send to %s: %v", addr, err)
 		}
 	}
-	// The table is full: a new address is refused, sending and verifying.
-	limited("send to a new address", h.send(s.ID, "/", "192.0.2.9", "d@crew.test"))
-	_, err := h.login(s.ID, "/", "192.0.2.9", "d@crew.test", "123456")
-	limited("verify for a new address", err)
+	// The table is full: a new address can still be sent a code and
+	// enter one.
+	if err := h.send(s.ID, "/", "192.0.2.9", "d@crew.test"); err != nil {
+		t.Fatalf("send to a new address: %v", err)
+	}
+	if _, err := h.login(s.ID, "/", "192.0.2.9", "d@crew.test", "123456"); !errors.Is(err, access.ErrInvalidCode) {
+		t.Fatalf("verify for a new address: %v", err)
+	}
 	// Counted addresses, per-IP keys and password attempts are unaffected.
 	if err := h.send(s.ID, "/", "198.51.100.1", "a@crew.test"); err != nil {
 		t.Fatalf("send to a counted address: %v", err)
@@ -673,7 +672,7 @@ func TestEmailCodeRateLimits(t *testing.T) {
 		}
 		// Across sites, and an IPv6 /64 is one client.
 		limited(t, "fourth send", h.send(other.ID, "/", "2001:db8:1:2::ff", "c@crew.test"))
-		if err := h.send(s.ID, "/", "2001:db8:1:3::1", "c@crew.test"); err != nil {
+		if err := h.send(s.ID, "/", "2001:db8:2:3::1", "c@crew.test"); err != nil {
 			t.Fatalf("another /64: %v", err)
 		}
 		h.clock.advance(time.Hour)
@@ -702,8 +701,9 @@ func TestEmailCodeRateLimits(t *testing.T) {
 	})
 	t.Run("send per site", func(t *testing.T) {
 		h, s, other := setup(t)
+		// From five networks, each within its share of the site.
 		for i := range 5 {
-			if err := h.send(s.ID, "/", "192.0.2."+string(rune('1'+i)), string(rune('a'+i))+"@crew.test"); err != nil {
+			if err := h.send(s.ID, "/", fmt.Sprintf("2001:db8:%x::1", i+1), string(rune('a'+i))+"@crew.test"); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -721,12 +721,12 @@ func TestEmailCodeRateLimits(t *testing.T) {
 		// Over the limit even the right code is refused.
 		_, err := h.login(s.ID, "/", "192.0.2.1", "a@crew.test", code)
 		limited(t, "fourth verify from one IP", err)
-		_, err = h.login(s.ID, "/", "192.0.2.2", "a@crew.test", otherCode(code))
+		_, err = h.login(s.ID, "/", "198.51.100.2", "a@crew.test", otherCode(code))
 		if !errors.Is(err, access.ErrInvalidCode) {
 			t.Fatalf("fourth for the address: %v", err)
 		}
 		// The address's fifth attempt, from a fresh IP, is over its limit.
-		_, err = h.login(s.ID, "/", "192.0.2.3", "a@crew.test", code)
+		_, err = h.login(s.ID, "/", "203.0.113.3", "a@crew.test", code)
 		limited(t, "fifth verify for one address", err)
 		h.clock.advance(15 * time.Minute)
 		if _, err := h.login(s.ID, "/", "192.0.2.1", "b@crew.test", "123456"); !errors.Is(err, access.ErrInvalidCode) {
@@ -736,7 +736,7 @@ func TestEmailCodeRateLimits(t *testing.T) {
 	t.Run("verify per site", func(t *testing.T) {
 		h, s, other := setup(t)
 		for i := range 6 {
-			_, _ = h.login(s.ID, "/", "192.0.2."+string(rune('1'+i)), string(rune('a'+i))+"@crew.test", "123456")
+			_, _ = h.login(s.ID, "/", fmt.Sprintf("2001:db8:%x::1", i+1), string(rune('a'+i))+"@crew.test", "123456")
 		}
 		_, err := h.login(s.ID, "/", "198.51.100.1", "z@crew.test", "123456")
 		limited(t, "seventh verify on the site", err)

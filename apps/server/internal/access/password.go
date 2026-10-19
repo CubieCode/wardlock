@@ -47,10 +47,13 @@ const (
 )
 
 // attemptLimiter is the part of the service's in-memory limiters
-// (limit.go) that password sign-in uses: allow counts one attempt for key
-// under r, or returns false and how long until the window resets.
+// (limit.go) that password and email-code sign-in use: allow counts one
+// attempt for key under r, or returns false and how long until the window
+// resets; count returns key's attempts in its current window without
+// counting one.
 type attemptLimiter interface {
 	allow(key string, r Rate) (bool, time.Duration)
+	count(key string, r Rate) (int, time.Duration)
 }
 
 // Argon2id parameters for new hashes: the OWASP baseline of 19 MiB, two
@@ -186,7 +189,7 @@ func (s *Service) PasswordLogin(ctx context.Context, a PasswordAttempt) (Cookie,
 	if err := allowAttempt(s.ipAttempts, "password-ip:"+ipKey(a.IP), s.limits.PasswordPerIP); err != nil {
 		return Cookie{}, err
 	}
-	if err := allowAttempt(s.siteAttempts, "password-site:"+a.SiteID, s.limits.PasswordPerSite); err != nil {
+	if err := s.allowSiteAttempt("password", a.SiteID, a.IP, s.limits.PasswordPerSite); err != nil {
 		return Cookie{}, err
 	}
 	ps, err := s.sitePolicies(ctx, a.SiteID)
@@ -243,6 +246,22 @@ func (s *Service) checkPassword(ctx context.Context, hash, pw string) (bool, err
 	}
 	defer func() { <-s.hashSlots }()
 	return verifyPassword(s.derive, hash, pw), nil
+}
+
+// allowSiteAttempt counts one attempt at method on siteID from ip: first
+// against the client's network, which is held to its share of r only while
+// the site is under pressure (limit.go), then against the site under r. An
+// attempt its network may not make does not spend the site's limit.
+func (s *Service) allowSiteAttempt(method, siteID, ip string, r Rate) error {
+	if s.siteAttempts == nil {
+		return errors.New("password sign-in: no attempt limiter")
+	}
+	siteKey := method + "-site:" + siteID
+	n, _ := s.siteAttempts.count(siteKey, r)
+	if err := allowAttempt(s.netAttempts, method+"-net:"+siteID+":"+netKey(ip), netRate(r, n)); err != nil {
+		return err
+	}
+	return allowAttempt(s.siteAttempts, siteKey, r)
 }
 
 // allowAttempt counts one password attempt for key on l, or returns a

@@ -200,8 +200,12 @@ func testPasswordRateLimits(t *testing.T, h *passwordHarness) {
 	_, err = h.login(other.ID, "/", "2001:db8:5:6::ff", firstPassword)
 	limited("same IPv6 /64", err)
 
-	// The site limit counts attempts from every client: 3 from 192.0.2.1
-	// and 3 from the /64 already passed it.
+	// The site limit counts attempts from every client: 3 from 192.0.2.1,
+	// 1 from the /64 (its network's share once the site was under
+	// pressure) and 1 from 203.0.113.7 reach it.
+	if _, err := h.login(s.ID, "/", "203.0.113.7", "wrong-guess"); !errors.Is(err, access.ErrWrongPassword) {
+		t.Fatalf("fifth attempt on the site: %v", err)
+	}
 	_, err = h.login(s.ID, "/", "198.51.100.7", firstPassword)
 	limited("site limit", err)
 	if _, err := h.login(other.ID, "/", "198.51.100.8", firstPassword); err != nil {
@@ -210,7 +214,7 @@ func testPasswordRateLimits(t *testing.T, h *passwordHarness) {
 
 	// Keys name the client or the site, never the password.
 	for _, k := range h.limiterKeys() {
-		if !strings.HasPrefix(k, "password-ip:") && !strings.HasPrefix(k, "password-site:") || strings.Contains(k, firstPassword) {
+		if !strings.HasPrefix(k, "password-ip:") && !strings.HasPrefix(k, "password-site:") && !strings.HasPrefix(k, "password-net:") || strings.Contains(k, firstPassword) {
 			t.Fatalf("limiter key %q", k)
 		}
 	}
