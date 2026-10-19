@@ -254,9 +254,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.10: Third-party log hygiene
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/a2.10-third-party-log-hygiene`
+- PR: https://github.com/CubieCode/wardlock/pull/71
 - Depends on: A2.7
 - Scope: A2.7 checked Wardlock's own slog calls; two log paths it did not verify end to end remain. The certmagic log adapter (`internal/tls/log.go`) forwards every field verbatim, so at debug level ACME and DNS-provider details, including provider responses, reach the logs unfiltered. The `dev://` mail sink logs visitor recipient addresses, which is intended for local development but is the default mail mode. Review both: redact or drop sensitive certmagic fields, and warn at startup when `dev://` mail is used outside local mode, or record why not.
 - Acceptance: Tests capture certmagic debug output through the adapter and assert no credential-bearing field survives; a test or documented decision covers the `dev://` warning; SECURITY-MODEL lists what each third-party adapter may log.

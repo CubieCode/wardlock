@@ -55,6 +55,7 @@ func TestIssuance(t *testing.T) {
 		BaseDomain:    "sites.test",
 		DashboardHost: "wardlock.example.test",
 		CA:            acme.URL + "/dir",
+		Email:         acmeContact,
 		CARoots:       roots.acme,
 		DNS:           zone,
 		Storage:       storage,
@@ -201,6 +202,9 @@ func TestIssuance(t *testing.T) {
 			t.Error("a name under the base domain reached Domains")
 		}
 	})
+	t.Run("debug logs carry no credentials", func(t *testing.T) {
+		assertNoCredentials(t, logs.String(), storage.Path, zone.values())
+	})
 	t.Run("plain HTTP redirects to HTTPS", func(t *testing.T) {
 		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+httpLn.Addr().String()+"/a?b=1", nil)
@@ -245,6 +249,7 @@ type fakeZone struct {
 	mu   sync.Mutex
 	txt  map[string][]string
 	seen map[string]bool
+	all  []string // every TXT value ever presented
 }
 
 func newFakeZone(t *testing.T, zone string) *fakeZone {
@@ -313,6 +318,7 @@ func (z *fakeZone) AppendRecords(_ context.Context, zone string, recs []libdns.R
 		name := strings.ToLower(libdns.AbsoluteName(rr.Name, zone))
 		z.txt[name] = append(z.txt[name], rr.Data)
 		z.seen[name] = true
+		z.all = append(z.all, rr.Data)
 	}
 	return recs, nil
 }
@@ -332,6 +338,12 @@ func (z *fakeZone) sawTXT(name string) bool {
 	z.mu.Lock()
 	defer z.mu.Unlock()
 	return z.seen[name]
+}
+
+func (z *fakeZone) values() []string {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	return slices.Clone(z.all)
 }
 
 func (z *fakeZone) liveTXT() int {
