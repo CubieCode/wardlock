@@ -60,7 +60,7 @@ type limiter struct {
 	// sketchWidth is the number of counters per sketch row, a power of
 	// two; seed keys the sketch's hash, so a client cannot aim at the
 	// counters of another.
-	sketchWidth int
+	sketchWidth uint64
 	seed        maphash.Seed
 
 	mu        sync.Mutex
@@ -182,8 +182,8 @@ type sketch struct {
 
 const sketchRows = 2
 
-func newSketch(width int) *sketch {
-	sk := &sketch{mask: uint64(width - 1)}
+func newSketch(width uint64) *sketch {
+	sk := &sketch{mask: width - 1}
 	for i := range sk.rows {
 		sk.rows[i] = make([]uint16, width)
 	}
