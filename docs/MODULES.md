@@ -16,7 +16,7 @@ MIT modules never import AGPL code: depguard denies `wardlock.nz/server` in `app
 
 | Package     | Owns                                                                                                                                 | Must not import                                      |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| `platform`  | Config, logging and redaction, request logging, health, graceful shutdown, version                                                   | any other internal package                           |
+| `platform`  | Config, logging and redaction, request logging, health and readiness, metrics exposition, graceful shutdown, version                 | any other internal package                           |
 | `store`     | SQLite connection, migration runner, sqlc queries, repository interfaces and their SQLite implementations, `storetest`               | domain packages                                      |
 | `edge`      | Host routing, static serving, policy enforcement at request time, `/.wardlock/*`, response headers, renditions selection             | `api`, `database/sql`, `sqlcgen`, SQLite driver      |
 | `access`    | Policies and their evaluation, share links and tokens, site sessions and cookie primitives, password, email code, OAuth              | `net/http`, `api`, `edge`, `database/sql`, `sqlcgen` |

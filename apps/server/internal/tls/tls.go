@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/libdns/cloudflare"
@@ -176,6 +177,23 @@ func (m *Manager) Manage(ctx context.Context) error {
 // on-demand custom domains.
 func (m *Manager) Names() []string {
 	return append(append([]string(nil), m.dnsNames...), m.httpNames...)
+}
+
+// Expiries maps each name in Names to when its cached certificate
+// expires, the latest when several match; the zero time when there is none
+// yet. Readiness and metrics read it.
+func (m *Manager) Expiries() map[string]time.Time {
+	out := make(map[string]time.Time, len(m.dnsNames)+len(m.httpNames))
+	for _, name := range m.Names() {
+		var latest time.Time
+		for _, c := range m.cache.AllMatchingCertificates(name) {
+			if c.Leaf != nil && c.Leaf.NotAfter.After(latest) {
+				latest = c.Leaf.NotAfter
+			}
+		}
+		out[name] = latest
+	}
+	return out
 }
 
 // TLSConfig is the HTTPS listener's configuration: managed and on-demand

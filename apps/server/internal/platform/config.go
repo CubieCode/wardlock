@@ -28,6 +28,9 @@ type Config struct {
 	// HTTPAddr is the listen address for plain HTTP: the edge and API, or
 	// in auto TLS mode ACME HTTP-01 answers and the redirect to HTTPS.
 	HTTPAddr string
+	// OperatorAddr is the listen address for /healthz, /readyz and
+	// /metrics (WARDLOCK_OPERATOR_ADDR); empty serves none of them there.
+	OperatorAddr string
 	// TLS is the TLS mode and its settings.
 	TLS TLSConfig
 	// BaseDomain is the domain sites are published under: <site>.<BaseDomain>.
@@ -122,6 +125,15 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	cfg.HTTPAddr = get("WARDLOCK_HTTP_ADDR", httpDefault)
 	if _, _, err := net.SplitHostPort(cfg.HTTPAddr); err != nil {
 		return Config{}, fmt.Errorf("%w: WARDLOCK_HTTP_ADDR %q: %w", ErrInvalidConfig, cfg.HTTPAddr, err)
+	}
+	if cfg.OperatorAddr = get("WARDLOCK_OPERATOR_ADDR", ""); cfg.OperatorAddr != "" {
+		if _, _, err := net.SplitHostPort(cfg.OperatorAddr); err != nil {
+			return Config{}, fmt.Errorf("%w: WARDLOCK_OPERATOR_ADDR %q: %w", ErrInvalidConfig, cfg.OperatorAddr, err)
+		}
+		// Sharing a listener would put metrics on site and dashboard hosts.
+		if cfg.OperatorAddr == cfg.HTTPAddr || (cfg.TLS.Mode == TLSAuto && cfg.OperatorAddr == cfg.TLS.HTTPSAddr) {
+			return Config{}, fmt.Errorf("%w: WARDLOCK_OPERATOR_ADDR must differ from WARDLOCK_HTTP_ADDR and WARDLOCK_HTTPS_ADDR", ErrInvalidConfig)
+		}
 	}
 	if err := cfg.LogLevel.UnmarshalText([]byte(get("WARDLOCK_LOG_LEVEL", "info"))); err != nil {
 		return Config{}, fmt.Errorf("%w: WARDLOCK_LOG_LEVEL: %w", ErrInvalidConfig, err)

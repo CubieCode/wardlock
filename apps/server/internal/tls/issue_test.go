@@ -79,6 +79,11 @@ func TestIssuance(t *testing.T) {
 	if got, want := m.Names(), []string{"*.sites.test", "wardlock.example.test"}; !slices.Equal(got, want) {
 		t.Fatalf("Names = %v, want %v", got, want)
 	}
+	for name, exp := range m.Expiries() {
+		if !exp.IsZero() {
+			t.Fatalf("Expiries before Manage: %s expires %v", name, exp)
+		}
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	if err := m.Manage(ctx); err != nil {
@@ -132,6 +137,17 @@ func TestIssuance(t *testing.T) {
 		cert := waitFor(t, "wardlock.example.test")
 		if !slices.Equal(cert.DNSNames, []string{"wardlock.example.test"}) {
 			t.Fatalf("certificate names = %v", cert.DNSNames)
+		}
+	})
+	t.Run("expiries report the managed certificates", func(t *testing.T) {
+		exp := m.Expiries()
+		if len(exp) != 2 {
+			t.Fatalf("Expiries = %v, want both managed names", exp)
+		}
+		for name, at := range exp {
+			if !at.After(time.Now()) {
+				t.Errorf("Expiries[%s] = %v, want a future expiry", name, at)
+			}
 		}
 	})
 	t.Run("on demand for an active custom domain", func(t *testing.T) {

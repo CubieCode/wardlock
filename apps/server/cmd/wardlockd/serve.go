@@ -57,6 +57,11 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		return err
 	}
 	defer func() { _ = db.Close() }()
+	// Readiness checks the blob directory, so it exists from the start
+	// rather than from the first upload.
+	if err := os.MkdirAll(cfg.BlobDir, 0o700); err != nil {
+		return fmt.Errorf("create blob directory: %w", err)
+	}
 	recorder, stopAccessLog := startAccessLog(ctx, cfg, log, db)
 	defer stopAccessLog()
 	stopGC := startGC(ctx, cfg, log, db)
@@ -73,6 +78,13 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			return fmt.Errorf("listen: %w", err)
 		}
 		defer func() { _ = tlsLn.Close() }()
+	}
+	var opLn net.Listener
+	if cfg.OperatorAddr != "" {
+		if opLn, err = net.Listen("tcp", cfg.OperatorAddr); err != nil {
+			return fmt.Errorf("listen: %w", err)
+		}
+		defer func() { _ = opLn.Close() }()
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 	dashURL := publicOrigin(cfg.DashboardHost, port)
@@ -139,6 +151,14 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		}
 		defer certs.Close()
 	}
+	var expiries certExpiries
+	if certs != nil {
+		expiries = certs
+	}
+	metrics := platform.NewMetrics(time.Now())
+	collectServerMetrics(metrics, cfg, recorder.w, expiries)
+	readiness := newReadiness(cfg, log, db, expiries)
+
 	sitesCfg := sites.Config{
 		Sites:         db.Sites(),
 		Domains:       db.Domains(),
@@ -220,7 +240,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	defer handler.Close()
 	// Every request first has its client address settled: X-Forwarded-*
 	// is believed only from a trusted proxy and removed otherwise.
-	site := platform.LogRequests(log, wltls.TrustedProxies(cfg.TLS.TrustedProxies).Handler(handler))
+	site := metrics.Instrument(platform.LogRequests(log, wltls.TrustedProxies(cfg.TLS.TrustedProxies).Handler(handler)))
 	if cfg.TLS.Mode == platform.TLSProxy && len(cfg.TLS.TrustedProxies) == 0 {
 		log.Warn("proxy mode without WARDLOCK_TRUSTED_PROXIES: every client appears as the proxy's address, so per-IP limits apply to all clients together; see docs/DEPLOYMENT.md")
 	}
@@ -235,7 +255,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		plain.Handle("/healthz", platform.Healthz())
 		plain.Handle("/", wltls.Redirect(443))
 		// Nothing on it reads a body, so it gets whole-request limits.
-		plainSrv := newHTTPServer(log, platform.LogRequests(log, certs.HTTPChallenge(plain)))
+		plainSrv := newHTTPServer(log, metrics.Instrument(platform.LogRequests(log, certs.HTTPChallenge(plain))))
 		plainSrv.ReadTimeout = 30 * time.Second
 		plainSrv.WriteTimeout = 30 * time.Second
 		httpsSrv := newHTTPServer(log, site)
@@ -245,6 +265,16 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			return err
 		}
 		log.Info("automatic TLS", slog.Any("names", certs.Names()), slog.String("ca", cfg.TLS.ACMECA))
+	}
+	if opLn != nil {
+		// Health, readiness and metrics for the operator only: never
+		// routed through the edge, so no site or dashboard host reaches
+		// them. Scrapes are neither logged nor counted. Last, so it shuts
+		// down last and answers /readyz with 503 while the others drain.
+		opSrv := newHTTPServer(log, platform.OperatorHandler(readiness, metrics))
+		opSrv.ReadTimeout = 30 * time.Second
+		opSrv.WriteTimeout = 30 * time.Second
+		servers = append(servers, platform.Listener{Server: opSrv, Listener: opLn})
 	}
 	log.Info("wardlockd started",
 		slog.String("version", platform.Version),
@@ -260,7 +290,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		log.Info("no owner exists yet: open the setup URL within 60 minutes to create the first owner, or run wardlockd admin create",
 			slog.String("setup_url", setupURL))
 	}
-	return platform.Serve(ctx, log, servers...)
+	return platform.Serve(ctx, log, readiness, servers...)
 }
 
 // tlsAsk answers /.wardlock/tls-ask for the TLS-terminating proxy in proxy

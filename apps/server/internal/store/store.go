@@ -22,6 +22,9 @@ import (
 type DB struct {
 	sql *sql.DB
 	q   *sqlcgen.Queries
+	// backupFault, set only by tests, fails Backup while the copy is open
+	// for checking.
+	backupFault func(tmp string) error
 }
 
 // Open opens (creating if needed) the SQLite database at path in WAL mode

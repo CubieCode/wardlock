@@ -23,3 +23,7 @@ func (db *DB) CountForTest(ctx context.Context, query string) (int, error) {
 	err := db.sql.QueryRowContext(ctx, query).Scan(&n)
 	return n, err
 }
+
+// SetBackupFaultForTest makes Backup call fault, with the temporary copy's
+// path, while the copy is open for checking, and fail if it does.
+func (db *DB) SetBackupFaultForTest(fault func(tmp string) error) { db.backupFault = fault }

@@ -313,9 +313,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.2: Health, metrics, logs and backups
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: feat/o4.2-health-metrics-backups
+- PR: https://github.com/CubieCode/wardlock/pull/62
 - Depends on: C1.2, C1.4
 - Scope: Readiness endpoint (database, blob directory, certificates); Prometheus-format metrics on an operator-only listener; structured log fields reviewed; `wardlockd backup` using SQLite's online backup API; restore documentation and test.
 - Acceptance: A test backs up a live database during writes and restores it into a working instance; metrics are not reachable on site or dashboard hosts; DEPLOYMENT updated.

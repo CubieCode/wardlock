@@ -46,6 +46,12 @@ func TestLoadConfig(t *testing.T) {
 		}, false, func(c platform.Config) bool {
 			return c.BlobDir == "/mnt/blobs" && c.MaxFileSize == 1<<20 && c.MaxDeployFiles == 100 && c.MaxDeploySize == 10<<20
 		}},
+		{"no operator listener by default", nil, false, func(c platform.Config) bool { return c.OperatorAddr == "" }},
+		{"operator listener", map[string]string{"WARDLOCK_OPERATOR_ADDR": "127.0.0.1:9740"}, false, func(c platform.Config) bool {
+			return c.OperatorAddr == "127.0.0.1:9740"
+		}},
+		{"operator address without a port", map[string]string{"WARDLOCK_OPERATOR_ADDR": "127.0.0.1"}, true, nil},
+		{"operator address shared with the edge", map[string]string{"WARDLOCK_OPERATOR_ADDR": "127.0.0.1:8080"}, true, nil},
 		{"zero file size", map[string]string{"WARDLOCK_MAX_FILE_SIZE": "0"}, true, nil},
 		{"negative file count", map[string]string{"WARDLOCK_MAX_DEPLOY_FILES": "-1"}, true, nil},
 		{"file count too large", map[string]string{"WARDLOCK_MAX_DEPLOY_FILES": "99999999999999999999"}, true, nil},
@@ -153,6 +159,20 @@ func TestRedactURL(t *testing.T) {
 	got := platform.RedactURL(u)
 	if strings.Contains(got, "secret") || !strings.Contains(got, "format=md") {
 		t.Fatalf("RedactURL = %q", got)
+	}
+}
+
+func TestRedactURLTokensAnywhere(t *testing.T) {
+	for _, raw := range []string{
+		"/wl_abcdefghij_c2VjcmV0LXZhbHVlLWhlcmU/page",
+		"/p?ref=WL_ABCDEFGHIJ_c2VjcmV0LXZhbHVlLWhlcmU",
+		"/p?token=wl_abcdefghij_c2VjcmV0LXZhbHVlLWhlcmU&x=1",
+	} {
+		u, _ := url.Parse(raw)
+		got := platform.RedactURL(u)
+		if strings.Contains(got, "c2VjcmV0") || !strings.Contains(strings.ToLower(got), "wl_abcdefghij_") && !strings.Contains(got, "token=%5Bredacted%5D") {
+			t.Errorf("RedactURL(%q) = %q", raw, got)
+		}
 	}
 }
 
