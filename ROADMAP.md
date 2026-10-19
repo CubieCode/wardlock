@@ -243,7 +243,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.9: Sign-in limiter tables that resist flooding
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: `feat/a2.9-limiter-flooding`
 - PR:
 - Depends on: A2.7
