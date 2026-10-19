@@ -712,8 +712,9 @@ func wellFormedToken(t string) bool {
 	if len(t) != base64.RawURLEncoding.EncodedLen(tokenBytes) {
 		return false
 	}
-	_, err := base64.RawURLEncoding.Strict().DecodeString(t)
-	return err == nil
+	// Strict still skips CR and LF, so the length is checked too.
+	b, err := base64.RawURLEncoding.Strict().DecodeString(t)
+	return err == nil && len(b) == tokenBytes
 }
 
 func sixDigits() string {

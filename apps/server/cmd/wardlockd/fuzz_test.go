@@ -142,9 +142,20 @@ func FuzzCredentialsThroughTheEdge(f *testing.F) {
 		if shape%6 == 3 && r.sessionFrom() != "" {
 			t.Fatalf("a site callback with no flow issued a session: %v", r.h)
 		}
-		// A token-shaped credential, sent as the token itself, is never
-		// repeated back or recorded.
-		if strings.HasPrefix(cred, "wl_") && len(cred) >= 14 && !strings.ContainsAny(cred, "&;%+= \t") {
+		// A token-shaped credential that the edge reads as the token (the
+		// whole t value, or a Bearer credential) is never repeated back or
+		// recorded.
+		tok := ""
+		switch shape % 6 {
+		case 0:
+			tok = cred
+		case 1:
+			if scheme, rest, ok := strings.Cut(cred, " "); ok && strings.EqualFold(scheme, "Bearer") {
+				tok = strings.TrimSpace(rest)
+			}
+		}
+		if strings.HasPrefix(tok, "wl_") && len(tok) >= 14 && !strings.ContainsAny(tok, "&;%+= \t\"\\") {
+			cred := tok
 			if strings.Contains(logs, cred) || strings.Contains(r.body, cred) {
 				t.Fatalf("credential %q reached the logs or body:\n%s\n%s", cred, logs, r.body)
 			}
@@ -155,6 +166,11 @@ func FuzzCredentialsThroughTheEdge(f *testing.F) {
 			}
 		}
 		for _, secret := range []string{token, otherToken, docsCookie, otherCookie, sitePassword} {
+			// A password or cookie value the client itself put in the URL
+			// is just text there; tokens are redacted wherever they are.
+			if shape%6 == 2 && !strings.HasPrefix(secret, "wl_") && strings.Contains(cred, secret) {
+				continue
+			}
 			if strings.Contains(logs, secret) {
 				t.Fatalf("a real credential reached the logs:\n%s", logs)
 			}

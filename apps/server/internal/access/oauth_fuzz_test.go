@@ -25,7 +25,10 @@ func FuzzOAuthCodes(f *testing.F) {
 		state, code, binding = "c3RhdGUtc3RhdGUtc3RhdGUtc3RhdGUtc3RhdGUtc3Q", "Y29kZS1jb2RlLWNvZGUtY29kZS1jb2RlLWNvZGUtY28", "YmluZC1iaW5kLWJpbmQtYmluZC1iaW5kLWJpbmQtYmk"
 		siteID, siteHost     = "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01", "docs.wardlock.test"
 	)
+	// Each execution starts from a fresh table holding one flow and one
+	// code: re-arming one table at a fixed time would fill its queue bound.
 	arm := func() {
+		s.oauth = newOAuthState()
 		s.oauth.flows.put(s.key.hashOf(purposeOAuthState, state), siteID,
 			oauthFlow{provider: "github", siteID: siteID, host: siteHost, path: "/", expires: now.Add(OAuthFlowLifetime)}, now.Add(OAuthFlowLifetime), now)
 		s.oauth.codes.put(s.key.hashOf(purposeOAuthCode, code), siteID,

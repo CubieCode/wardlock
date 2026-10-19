@@ -17,6 +17,9 @@ import (
 // survives those still has to be a plain path.
 func sameHostTarget(loc string) bool {
 	browser := strings.NewReplacer("\t", "", "\n", "", "\r", "", `\`, "/").Replace(loc)
+	// A stray % stays in the path for a browser; escape it so the parser
+	// below reads it the same way.
+	browser = strings.ReplaceAll(browser, "%", "%25")
 	if !strings.HasPrefix(browser, "/") || strings.HasPrefix(browser, "//") {
 		return false
 	}
