@@ -4,7 +4,14 @@
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SelectField, TextField } from './index.js';
+import {
+  Checkbox,
+  Fieldset,
+  Radio,
+  SelectField,
+  TextAreaField,
+  TextField,
+} from './index.js';
 
 afterEach(cleanup);
 
@@ -141,5 +148,83 @@ describe('SelectField', () => {
     expect(screen.getByRole('alert').textContent).toBe(
       'Choose when the link stops working.',
     );
+  });
+});
+
+describe('TextAreaField', () => {
+  it('labels the text area, describes it and marks errors', () => {
+    render(
+      <TextAreaField
+        label="Allowed people"
+        hint="One per line."
+        error="Add at least one."
+        defaultValue="a@example.test"
+      />,
+    );
+    const area = screen.getByRole('textbox', {
+      name: 'Allowed people',
+      description: 'One per line. Add at least one.',
+    });
+    expect(area.tagName).toBe('TEXTAREA');
+    expect((area as HTMLTextAreaElement).value).toBe('a@example.test');
+    expect(area.getAttribute('aria-invalid')).toBe('true');
+    expect(screen.getByRole('alert').textContent).toBe('Add at least one.');
+  });
+});
+
+describe('Fieldset, Radio and Checkbox', () => {
+  it('groups radios under a legend and reports the choice', () => {
+    let chosen = '';
+    render(
+      <Fieldset legend="Who can open it" hint="Choose one.">
+        <Radio
+          name="who"
+          value="everyone"
+          label="Everyone"
+          hint="No sign-in."
+          defaultChecked
+          onChange={(event) => (chosen = event.target.value)}
+        />
+        <Radio
+          name="who"
+          value="some"
+          label="Some people"
+          onChange={(event) => (chosen = event.target.value)}
+        />
+      </Fieldset>,
+    );
+    expect(
+      screen.getByRole('group', {
+        name: 'Who can open it',
+        description: 'Choose one.',
+      }),
+    ).toBeTruthy();
+    const everyone = screen.getByRole('radio', {
+      name: 'Everyone',
+      description: 'No sign-in.',
+    });
+    expect((everyone as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByText('Some people'));
+    expect(chosen).toBe('some');
+  });
+
+  it('announces a group error and labels checkboxes', () => {
+    render(
+      <Fieldset legend="Ways in" error="Choose at least one.">
+        <Checkbox label="Password" hint="One password for everyone." />
+      </Fieldset>,
+    );
+    const group = screen.getByRole('group', {
+      name: 'Ways in',
+      description: 'Choose at least one.',
+    });
+    expect(group.hasAttribute('aria-invalid')).toBe(false);
+    expect(screen.getByRole('alert').textContent).toBe('Choose at least one.');
+    const box = screen.getByRole('checkbox', {
+      name: 'Password',
+      description: 'One password for everyone.',
+    });
+    fireEvent.click(screen.getByText('Password'));
+    expect((box as HTMLInputElement).checked).toBe(true);
   });
 });

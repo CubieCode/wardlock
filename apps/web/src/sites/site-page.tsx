@@ -13,6 +13,7 @@ import {
 } from '@wardlock/ui';
 import { useEffect, useRef, useState } from 'react';
 import { ShareLinksCard } from '../links/share-links.js';
+import { PoliciesCard } from '../policies/policies.js';
 import { useTitle } from '../shell/page.js';
 import {
   defaultPolicy,
@@ -75,7 +76,11 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
   const [tearingDown, setTearingDown] = useState(false);
   const [rolledBack, setRolledBack] = useState<Deploy | null>(null);
   const [more, setMore] = useState<'idle' | 'loading' | 'error'>('idle');
-  const [refreshFailed, setRefreshFailed] = useState(false);
+  // What a failed in-place refresh was for: the deploy history after a
+  // rollback, or the site's access after a policy change.
+  const [refreshFailed, setRefreshFailed] = useState<
+    'deploys' | 'access' | null
+  >(null);
   // Bumped by every in-place refresh, so a page of older deploys that was
   // requested before it cannot overwrite the fresh history.
   const generation = useRef(0);
@@ -157,17 +162,17 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
   };
 
   /** Reads the site again without leaving the page; a failure says so inline. */
-  const refresh = () => {
+  const refresh = (after: 'deploys' | 'access' = 'deploys') => {
     const started = ++generation.current;
     setMore('idle');
-    setRefreshFailed(false);
+    setRefreshFailed(null);
     loadSite(api, name).then(
       (loaded) => {
         if (started === generation.current)
           setState({ kind: 'ready', ...loaded });
       },
       () => {
-        if (started === generation.current) setRefreshFailed(true);
+        if (started === generation.current) setRefreshFailed(after);
       },
     );
   };
@@ -227,8 +232,20 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
             </ul>
           </>
         )}
+        {refreshFailed === 'access' && (
+          <div className="sites-error">
+            <Notice tone="danger">
+              Saved, but could not refresh the site details. The access shown
+              here may be out of date.
+            </Notice>
+            <Button type="button" onClick={() => refresh('access')}>
+              Refresh
+            </Button>
+          </div>
+        )}
       </Card>
 
+      <PoliciesCard api={api} site={site} onChange={() => refresh('access')} />
       <ShareLinksCard api={api} site={site} />
 
       <Card title="Deploys">
@@ -237,13 +254,13 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
             Rolled back. Deploy <code>{shortId(rolledBack.id)}</code> is live.
           </Notice>
         )}
-        {refreshFailed && (
+        {refreshFailed === 'deploys' && (
           <div className="sites-error">
             <Notice tone="danger">
               Could not refresh the deploy history. The statuses below may be
               out of date.
             </Notice>
-            <Button type="button" onClick={refresh}>
+            <Button type="button" onClick={() => refresh()}>
               Refresh
             </Button>
           </div>

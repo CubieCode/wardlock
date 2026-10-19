@@ -337,6 +337,65 @@
   font-weight: var(--font-weight-medium);
 }
 
+.wl-textarea {
+  min-height: calc(3 * var(--touch-target));
+  padding-block: var(--space-2);
+  resize: vertical;
+}
+
+/* Fieldset: a legend over a group of radios or checkboxes */
+.wl-fieldset {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.wl-fieldset > legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+}
+
+/* Checkbox and radio: the label is the 44px target beside the control */
+.wl-choice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-3);
+  align-items: start;
+}
+
+/* Centred on the label's first line, however many lines it wraps to. */
+.wl-choice-input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: calc((var(--touch-target) - 1.25rem) / 2) 0 0;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.wl-choice-label {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-target);
+  padding-block: var(--space-2);
+  cursor: pointer;
+}
+
+.wl-choice-hint {
+  grid-column: 2;
+  margin-top: calc(-1 * var(--space-2));
+  padding-bottom: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.wl-choice-input:disabled,
+.wl-choice-input:disabled + .wl-choice-label {
+  cursor: not-allowed;
+}
+
 .wl-button-danger {
   border-color: var(--color-danger);
   background: var(--color-danger);

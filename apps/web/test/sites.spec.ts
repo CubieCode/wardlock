@@ -201,6 +201,30 @@ for (const scheme of schemes) {
         seen.push((await page.getByRole('main').textContent()) ?? '');
       }
       expect(seen[0]).toBe(seen[1]);
+      // Policies (D3.4): no editor on the page, and the API reads, sets and
+      // deletes a foreign site's policies exactly as a missing site's.
+      await expect(
+        page.getByRole('region', { name: 'Access policies' }),
+      ).toHaveCount(0);
+      const policyAnswers: string[] = [];
+      for (const site of [foreignSite, 'no-such-site']) {
+        const base = `${origin}/api/v0/sites/${site}/policies`;
+        const headers = { Origin: origin };
+        for (const res of [
+          await page.request.get(base),
+          await page.request.put(base, {
+            data: { path: '/', visibility: 'public' },
+            headers,
+          }),
+          await page.request.delete(
+            `${base}/01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40`,
+            { headers },
+          ),
+        ])
+          policyAnswers.push(`${res.status()} ${await res.text()}`);
+      }
+      expect(policyAnswers.slice(0, 3)).toEqual(policyAnswers.slice(3));
+      expect(policyAnswers.every((a) => a.startsWith('404 '))).toBe(true);
       await shot('not-found');
     });
   });

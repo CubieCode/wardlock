@@ -6,6 +6,7 @@ import {
   type InputHTMLAttributes,
   type ReactNode,
   type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
 } from 'react';
 import { cx } from './cx.js';
 
@@ -27,6 +28,21 @@ export interface SelectFieldProps
   extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'id'>, FieldText {
   /** The `<option>` elements. */
   children: ReactNode;
+}
+
+export interface TextAreaFieldProps
+  extends
+    Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'id' | 'children'>,
+    FieldText {}
+
+export interface ChoiceProps extends Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  'id' | 'type' | 'children'
+> {
+  /** Visible label, beside the control. */
+  label: string;
+  /** Guidance under the label. */
+  hint?: ReactNode;
 }
 
 /**
@@ -141,4 +157,122 @@ export function SelectField({
       )}
     />
   );
+}
+
+/** A labelled multi-line text input with optional hint and error. */
+export function TextAreaField({
+  label,
+  hint,
+  error,
+  className,
+  'aria-describedby': describedBy,
+  'aria-invalid': invalid,
+  ...props
+}: TextAreaFieldProps) {
+  return (
+    <Field
+      label={label}
+      hint={hint}
+      error={error}
+      describedBy={describedBy}
+      invalid={invalid}
+      control={(attrs) => (
+        <textarea
+          {...props}
+          {...attrs}
+          className={cx('wl-input', 'wl-textarea', className)}
+        />
+      )}
+    />
+  );
+}
+
+/**
+ * A group of related controls (radios, checkboxes) under one visible
+ * legend, with optional hint and error. The hint and error describe the
+ * group, and the error is announced. A group takes no aria-invalid (ARIA
+ * 1.2 does not allow it on role=group); mark invalid controls instead.
+ */
+export function Fieldset({
+  legend,
+  hint,
+  error,
+  className,
+  children,
+}: {
+  legend: string;
+  hint?: ReactNode;
+  error?: ReactNode;
+  className?: string;
+  /** The group's controls, usually `Radio`s or `Checkbox`es. */
+  children: ReactNode;
+}) {
+  const id = useId();
+  const describedBy =
+    [hint ? `${id}-hint` : null, error ? `${id}-error` : null]
+      .filter(Boolean)
+      .join(' ') || undefined;
+  return (
+    <fieldset
+      className={cx('wl-fieldset', className)}
+      aria-describedby={describedBy}
+    >
+      <legend className="wl-field-label">{legend}</legend>
+      {hint ? (
+        <p className="wl-field-hint" id={`${id}-hint`}>
+          {hint}
+        </p>
+      ) : null}
+      {children}
+      {error ? (
+        <p className="wl-field-error" id={`${id}-error`} role="alert">
+          {error}
+        </p>
+      ) : null}
+    </fieldset>
+  );
+}
+
+/** A checkbox or radio with its label beside it and its hint below. */
+function Choice({
+  type,
+  label,
+  hint,
+  className,
+  'aria-describedby': describedByProp,
+  ...props
+}: ChoiceProps & { type: 'checkbox' | 'radio' }) {
+  const id = useId();
+  const describedBy =
+    [describedByProp, hint ? `${id}-hint` : null].filter(Boolean).join(' ') ||
+    undefined;
+  return (
+    <div className={cx('wl-choice', className)}>
+      <input
+        {...props}
+        id={id}
+        type={type}
+        className="wl-choice-input"
+        aria-describedby={describedBy}
+      />
+      <label className="wl-choice-label" htmlFor={id}>
+        {label}
+      </label>
+      {hint ? (
+        <p className="wl-choice-hint" id={`${id}-hint`}>
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** A labelled checkbox with optional hint. */
+export function Checkbox(props: ChoiceProps) {
+  return <Choice {...props} type="checkbox" />;
+}
+
+/** A labelled radio; put a set with one `name` inside a `Fieldset`. */
+export function Radio(props: ChoiceProps) {
+  return <Choice {...props} type="radio" />;
 }
