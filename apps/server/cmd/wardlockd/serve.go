@@ -244,6 +244,9 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	if cfg.TLS.Mode == platform.TLSProxy && len(cfg.TLS.TrustedProxies) == 0 {
 		log.Warn("proxy mode without WARDLOCK_TRUSTED_PROXIES: every client appears as the proxy's address, so per-IP limits apply to all clients together; see docs/DEPLOYMENT.md")
 	}
+	if cfg.SMTP.Mode == platform.SMTPDev && cfg.TLS.Mode != platform.TLSLocal {
+		log.Warn("WARDLOCK_SMTP_URL is dev:// outside local mode: sign-in codes and invitations are written to files, not delivered, and every recipient address is logged; set an smtp:// or smtps:// URL, see docs/DEPLOYMENT.md")
+	}
 	var servers []platform.Listener
 	if autoTLS == nil {
 		servers = []platform.Listener{{Server: newHTTPServer(log, site), Listener: ln}}

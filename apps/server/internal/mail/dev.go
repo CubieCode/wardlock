@@ -16,7 +16,8 @@ import (
 
 // DevSink is the dev:// mailer. It writes each message to a directory as an
 // .eml file and logs only the recipient, subject and file. The body, which
-// carries codes, never reaches the log.
+// carries codes, never reaches the log. Because the recipient does,
+// wardlockd warns at startup when it is used outside local mode.
 type DevSink struct {
 	dir  string
 	from netmail.Address
