@@ -379,8 +379,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.5: Test suite stability
 
-- Status: `todo`
-- Owner:
+- Status: `review`
+- Owner: `feat/o4.5-test-stability`
 - PR:
 - Depends on: none
 - Scope: Fix the intermittent test failures seen in CI during waves 7 and 8, each at its root cause (a wrong wait, query or assumption in the test, or a real race in the code) rather than by retrying or lengthening timeouts: `apps/web/src/sites/sites.test.tsx` "site detail > shows the address, access and deploy history" (found multiple elements with the text `/assets/`); `apps/web/src/links/links.test.tsx` "link access log > treats a missing or foreign link as not found" (document title still the access log's); `apps/web/src/app.test.tsx` "checks the session once when the tab comes back" (expected 2 calls, got 1); `apps/server/internal/mail` TestSMTPHonoursContext (i/o timeout instead of deadline exceeded under CPU load). If a failure turns out to be a product bug, fix it with a test and describe it in the PR.

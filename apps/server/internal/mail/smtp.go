@@ -46,6 +46,11 @@ func (m *SMTP) Send(ctx context.Context, msg Message) error {
 	if err != nil {
 		return err
 	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, sendTimeout)
+		defer cancel()
+	}
 	if err := m.send(ctx, msg.To.Address, data); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			err = ctxErr
@@ -72,15 +77,10 @@ func (m *SMTP) send(ctx context.Context, to string, data []byte) error {
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		deadline = time.Now().Add(sendTimeout)
-	}
-	if err := conn.SetDeadline(deadline); err != nil {
-		_ = conn.Close()
-		return fmt.Errorf("connect: %w", err)
-	}
-	// Unblock any pending read or write as soon as ctx is cancelled.
+	// Unblock any pending read or write as soon as ctx is done. This is the
+	// connection's only deadline: a socket deadline at the context's own
+	// deadline can fire first, failing with an i/o timeout while ctx.Err()
+	// is still nil, so Send could not report the deadline.
 	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Unix(1, 0)) })
 	defer stop()
 

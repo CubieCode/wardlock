@@ -10,7 +10,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
-import { StrictMode } from 'react';
+import { StrictMode, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from './app.js';
 
@@ -87,6 +87,17 @@ function type(label: string | RegExp, value: string) {
   });
 }
 
+/**
+ * Runs the effects React still has queued from the last commit. findBy*
+ * resolves as soon as the page is in the DOM, but useEffect callbacks, such as
+ * the session's focus listeners, run in a later scheduler task that can lose
+ * that race under CPU load. React runs them before it starts any new update,
+ * so rendering the same element again flushes them and changes nothing else.
+ */
+function runEffects(rerender: (ui: ReactElement) => void, ui: ReactElement) {
+  act(() => rerender(ui));
+}
+
 beforeEach(() => at('/'));
 afterEach(cleanup);
 
@@ -104,7 +115,7 @@ describe('signed out', () => {
     expect(here()).toBe(
       `/sign-in?next=${encodeURIComponent('/somewhere?tab=1')}`,
     );
-    expect(document.title).toBe('Sign in · Wardlock');
+    await waitFor(() => expect(document.title).toBe('Sign in · Wardlock'));
     expect(screen.queryByRole('navigation')).toBeNull();
   });
 
@@ -307,10 +318,12 @@ describe('signed in', () => {
         return Response.json(owner);
       },
     });
-    render(<App api={api} />);
+    const app = <App api={api} />;
+    const { rerender } = render(app);
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Page not found' }),
     ).toBeTruthy();
+    runEffects(rerender, app);
 
     valid = false;
     act(() => {
@@ -354,8 +367,10 @@ describe('signed in', () => {
         return Response.json(owner);
       },
     });
-    render(<App api={server.api} />);
+    const app = <App api={server.api} />;
+    const { rerender } = render(app);
     await screen.findByRole('heading', { level: 1, name: 'Overview' });
+    runEffects(rerender, app);
 
     // A recheck goes out and stalls.
     const stale = deferred();
@@ -393,8 +408,10 @@ describe('signed in', () => {
 
   it('checks the session once when the tab comes back', async () => {
     const server = fakeServer({ 'GET /api/v0/me': () => Response.json(owner) });
-    render(<App api={server.api} />);
+    const app = <App api={server.api} />;
+    const { rerender } = render(app);
     await screen.findByRole('heading', { level: 1, name: 'Overview' });
+    runEffects(rerender, app);
     const before = server.count('GET /api/v0/me');
     act(() => {
       document.dispatchEvent(new Event('visibilitychange'));
@@ -494,7 +511,7 @@ describe('one-time links', () => {
     });
     render(<App api={server.api} />);
     await screen.findByRole('heading', { name: 'Create the first owner' });
-    expect(here()).toBe('/setup');
+    await waitFor(() => expect(here()).toBe('/setup'));
     type('Email address', 'owner@example.test');
     fireEvent.click(
       screen.getByRole('button', { name: 'Create owner and sign in' }),
