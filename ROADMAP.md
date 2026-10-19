@@ -324,7 +324,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.3: Documentation site on Wardlock
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/o4.3-docs-site`
 - PR: https://github.com/CubieCode/wardlock/pull/58
 - Depends on: C1.5, A2.2
