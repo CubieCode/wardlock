@@ -265,8 +265,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.11: Distinct error code for the domain-check cooldown
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: `feat/a2.11-domain-cooldown-code`
 - PR:
 - Depends on: A2.7
 - Scope: A2.7 found that the domain-check cooldown and a refused API token both answer `429` with code `rate_limited` (`internal/api/domains.go` and the token middleware in `internal/api/owners.go`), so `wardlock domain add --wait` treats a refused-token 429 as a cooldown and keeps polling until its 10-minute deadline without naming the token, and `wardlock domain verify` reports "checked moments ago". Give the cooldown 429 its own error code in `openapi.yaml`, send it from `internal/api/domains.go`, and make `domain add --wait` and `domain verify` retry or report a cooldown only for that code and show the API's error for any other 429.

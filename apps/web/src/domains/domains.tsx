@@ -468,7 +468,7 @@ function DomainRow({
       );
     }
     const status = answer?.response.status;
-    if (status === 429) {
+    if (status === 429 && answer?.error?.code === 'checked_recently') {
       const wait = Number(answer?.response.headers.get('Retry-After'));
       return setResult({
         tone: 'warning',
@@ -481,7 +481,9 @@ function DomainRow({
     if (status === 404) return onGone();
     setResult({
       tone: 'danger',
-      text: 'Could not check the domain. Check your connection, then try again.',
+      text: answer?.error?.message
+        ? `Could not check the domain: ${answer.error.message}`
+        : 'Could not check the domain. Check your connection, then try again.',
     });
   };
 

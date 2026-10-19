@@ -14,6 +14,7 @@ import (
 
 	"wardlock.nz/server/internal/api"
 	"wardlock.nz/server/internal/deploys"
+	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/sites"
 )
 
@@ -24,6 +25,25 @@ func (hs *harness) domain(owner, method, path string, body any, status int) api.
 	var d api.Domain
 	res.decode(hs.t, &d)
 	return d
+}
+
+// TestVerifyDomainRefusedToken checks that a token refused after too many
+// failed guesses answers rate_limited on a domain check, never the
+// cooldown's checked_recently, so clients do not wait it out.
+func TestVerifyDomainRefusedToken(t *testing.T) {
+	limits := owners.DefaultTokenLimits()
+	limits.FailuresPerIP = owners.Rate{N: 1, Per: time.Minute}
+	h := newTokenHarness(t, limits)
+	session := h.owner("owner@example.test")
+	tok := createToken(t, h, session, "CI", api.ScopeManage).Token
+	guess := tok[:len(tok)-43] + strings.Repeat("A", 43)
+	path := "/api/v0/sites/docs/domains/docs.example.com/verify"
+	wantError(t, h.bearer(guess, req{method: http.MethodPost, path: path}), http.StatusUnauthorized, "unauthenticated")
+	rec := h.bearer(tok, req{method: http.MethodPost, path: path})
+	wantError(t, rec, http.StatusTooManyRequests, "rate_limited")
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("no Retry-After")
+	}
 }
 
 func TestDomains(t *testing.T) {
@@ -50,7 +70,7 @@ func TestDomains(t *testing.T) {
 
 	// Checking again at once is refused with Retry-After.
 	res := hs.do(hs.ownerA, http.MethodPost, "/sites/docs/domains/docs.example.com/verify", nil)
-	res.want(t, http.StatusTooManyRequests, "rate_limited")
+	res.want(t, http.StatusTooManyRequests, "checked_recently")
 	if ra := res.header.Get("Retry-After"); ra == "" || ra > "10" {
 		t.Fatalf("Retry-After %q", ra)
 	}

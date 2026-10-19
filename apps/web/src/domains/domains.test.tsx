@@ -287,7 +287,7 @@ describe('custom domains on the site page', () => {
       ...sitePage([domain('p.example.test', 'pending')]),
       [`POST ${base}/domains/p.example.test/verify`]: () =>
         Response.json(
-          { code: 'rate_limited', message: 'Checked moments ago.' },
+          { code: 'checked_recently', message: 'Checked moments ago.' },
           { status: 429, headers: { 'Retry-After': '7' } },
         ),
     });
@@ -300,6 +300,33 @@ describe('custom domains on the site page', () => {
       expect(row('p.example.test').textContent).toContain(
         'Checked moments ago. Try again in 7 seconds.',
       ),
+    );
+  });
+
+  it('shows the server’s error for a 429 that is not the cooldown', async () => {
+    const { api } = fakeServer({
+      ...sitePage([domain('p.example.test', 'pending')]),
+      [`POST ${base}/domains/p.example.test/verify`]: () =>
+        Response.json(
+          {
+            code: 'rate_limited',
+            message: 'Too many attempts. Try again later.',
+          },
+          { status: 429, headers: { 'Retry-After': '600' } },
+        ),
+    });
+    render(<App api={api} />);
+    await screen.findByRole('listitem', { name: 'p.example.test' });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Check p.example.test now' }),
+    );
+    await waitFor(() =>
+      expect(row('p.example.test').textContent).toContain(
+        'Could not check the domain: Too many attempts. Try again later.',
+      ),
+    );
+    expect(row('p.example.test').textContent).not.toContain(
+      'Checked moments ago',
     );
   });
 

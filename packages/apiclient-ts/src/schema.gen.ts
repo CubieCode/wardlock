@@ -708,7 +708,7 @@ export interface paths {
     put?: never;
     /**
      * Check a custom domain's DNS now.
-     * @description Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain.
+     * @description Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain: a check too soon after the last answers `429` with code `checked_recently`. Any other `429` code, such as `rate_limited` for an API token refused after failed attempts, is not a cooldown.
      */
     post: operations['verifyDomain'];
     delete?: never;
@@ -1573,6 +1573,22 @@ export interface components {
          * @example {
          *       "code": "rate_limited",
          *       "message": "Too many attempts. Try again in 30 seconds."
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
+    /** @description The domain was checked moments ago (`checked_recently`); try again after `Retry-After`. A refused API token answers `rate_limited` instead, which waiting out the cooldown does not fix. */
+    CheckedRecently: {
+      headers: {
+        'Retry-After': components['headers']['RetryAfter'];
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "checked_recently",
+         *       "message": "This domain was checked moments ago. Try again shortly."
          *     }
          */
         'application/json': components['schemas']['Error'];
@@ -3148,7 +3164,7 @@ export interface operations {
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
-      429: components['responses']['RateLimited'];
+      429: components['responses']['CheckedRecently'];
       default: components['responses']['Error'];
     };
   };
