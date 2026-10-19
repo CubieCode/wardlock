@@ -221,7 +221,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.7: Access security review
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: `feat/a2.7-access-security-review`
 - PR:
 - Depends on: A2.2, A2.3, A2.4, A2.5, A2.6, D3.3
