@@ -278,8 +278,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.4: Policies editor
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: feat/d3.4-policies-editor
 - PR:
 - Depends on: D3.2, A2.3, A2.4
 - Scope: View and edit the site default and path policies, choose methods, set a password, manage email allowlists, and OAuth allowlists once A2.5 is done.
