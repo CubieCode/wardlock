@@ -44,8 +44,9 @@ func TestSignInRateLimitsThroughTheEdge(t *testing.T) {
 			name:  "password per site",
 			limit: func(l *access.Limits) *access.Rate { return &l.PasswordPerSite },
 			form:  func(string) map[string][]string { return passwordForm("wrong-guess", "/") },
-			nth:   func(i int) attempt { return attempt{host, fmt.Sprintf("192.0.2.%d", i+1), ""} },
-			next:  attempt{host, "198.51.100.1", ""}, other: attempt{otherHost, "198.51.100.1", ""},
+			// One network each, so no network's share (A2.9) is reached.
+			nth:  func(i int) attempt { return attempt{host, fmt.Sprintf("2001:db8:%x::1", i+1), ""} },
+			next: attempt{host, "198.51.100.1", ""}, other: attempt{otherHost, "198.51.100.1", ""},
 		},
 		{
 			name:  "email sends per IP",
@@ -66,7 +67,7 @@ func TestSignInRateLimitsThroughTheEdge(t *testing.T) {
 			limit: func(l *access.Limits) *access.Rate { return &l.EmailSendPerSite },
 			form:  func(a string) map[string][]string { return sendForm(a, "/") },
 			nth: func(i int) attempt {
-				return attempt{host, fmt.Sprintf("192.0.2.%d", i+1), fmt.Sprintf("v%d@example.test", i)}
+				return attempt{host, fmt.Sprintf("2001:db8:%x::1", i+1), fmt.Sprintf("v%d@example.test", i)}
 			},
 			next: attempt{host, "198.51.100.1", "v9@example.test"}, other: attempt{otherHost, "198.51.100.1", "v9@example.test"},
 		},
@@ -89,7 +90,7 @@ func TestSignInRateLimitsThroughTheEdge(t *testing.T) {
 			limit: func(l *access.Limits) *access.Rate { return &l.EmailVerifyPerSite },
 			form:  func(a string) map[string][]string { return verifyForm(a, "000000", "/") },
 			nth: func(i int) attempt {
-				return attempt{host, fmt.Sprintf("192.0.2.%d", i+1), fmt.Sprintf("v%d@example.test", i)}
+				return attempt{host, fmt.Sprintf("2001:db8:%x::1", i+1), fmt.Sprintf("v%d@example.test", i)}
 			},
 			next: attempt{host, "198.51.100.1", "v9@example.test"}, other: attempt{otherHost, "198.51.100.1", "v9@example.test"},
 		},
@@ -160,5 +161,45 @@ func TestSignInRateLimitsThroughTheEdge(t *testing.T) {
 				t.Fatalf("after the window = %d, want the limit reset", r.code)
 			}
 		})
+	}
+}
+
+// TestNetworkShareThroughTheEdge: once a site is under pressure (half its
+// password limit spent), one network gets only its share (a tenth) of the
+// site's attempts, answered 429 with Retry-After beyond it, while clients
+// on other networks still reach the password check (A2.9).
+func TestNetworkShareThroughTheEdge(t *testing.T) {
+	const siteN = 20 // pressure at 10, a share of 2
+	p := newPolicyEdge(t, func(c *access.Config) {
+		c.Limits = access.DefaultLimits()
+		c.Limits.PasswordPerSite.N = siteN
+	})
+	p.publish("docs")
+	if _, err := p.acc.Set(t.Context(), p.owner.ID, "docs", access.Rule{
+		PathPrefix: "/", Visibility: store.Protected, Password: true, NewPassword: sitePassword,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wrong := passwordForm("wrong-guess", "/")
+	for i := range siteN / 2 {
+		if r := p.post(host, fmt.Sprintf("2001:db8:%x::1", i+1), wrong, nil); r.code == http.StatusTooManyRequests {
+			t.Fatalf("attempt %d before the pressure mark refused", i+1)
+		}
+	}
+	for i := range 2 {
+		if r := p.post(host, fmt.Sprintf("2001:db8:aa:%x::1", i), wrong, nil); r.code == http.StatusTooManyRequests {
+			t.Fatalf("attempt %d within the network's share refused", i+1)
+		}
+	}
+	r := p.post(host, "2001:db8:aa:ff::1", wrong, nil)
+	if r.code != http.StatusTooManyRequests || r.h.Get("Retry-After") == "" || r.h.Get("Cache-Control") != "no-store" {
+		t.Fatalf("over the network's share = %d %v, want 429 with Retry-After", r.code, r.h)
+	}
+	if r := p.post(host, "198.51.100.1", passwordForm(sitePassword, "/"), nil); r.code == http.StatusTooManyRequests || r.h.Get("Set-Cookie") == "" {
+		t.Fatalf("another network's right password = %d %v, want a session", r.code, r.h)
+	}
+	p.advance(15 * time.Minute)
+	if r := p.post(host, "2001:db8:aa:ff::1", passwordForm(sitePassword, "/"), nil); r.code == http.StatusTooManyRequests {
+		t.Fatalf("after the window = %d, want the share reset", r.code)
 	}
 }

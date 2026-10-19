@@ -4,6 +4,8 @@
 package owners
 
 import (
+	"hash/maphash"
+	"math"
 	"net/netip"
 	"sync"
 	"time"
@@ -46,18 +48,26 @@ func DefaultLimits() Limits {
 // restart, which only ever resets a limit early.
 //
 // Memory is bounded: expired windows are swept at most once per sweepEvery,
-// and the table never holds more than maxKeys. When it is full, a key it
-// does not already track is refused (fail closed) until the next sweep
-// frees room. Flooding the table with fresh keys can therefore delay
-// sign-in for new clients by up to one window, but can never exhaust
-// memory or lift a limit.
+// and the exact table never holds more than maxKeys. When it is full, a
+// key it does not hold is counted in an overflow sketch instead (see
+// sketch), which never undercounts. Flooding the table with fresh keys
+// therefore neither exhausts memory nor lifts a limit, and refuses clients
+// it does not hold only once the flood has saturated the sketch.
 type limiter struct {
 	now     func() time.Time
 	maxKeys int
+	// sketchWidth is the number of counters per sketch row, a power of
+	// two; seed keys the sketch's hash, so a client cannot aim at the
+	// counters of another.
+	sketchWidth int
+	seed        maphash.Seed
 
 	mu        sync.Mutex
 	windows   map[string]window
 	nextSweep time.Time
+	// sketches holds one overflow sketch per window length, allocated
+	// when the table first overflows.
+	sketches map[time.Duration]*sketch
 }
 
 type window struct {
@@ -69,14 +79,21 @@ const (
 	// defaultMaxKeys bounds the table to a few MiB.
 	defaultMaxKeys = 100_000
 	sweepEvery     = time.Minute
+	// defaultSketchWidth gives each sketch 2 x 2^18 two-byte counters
+	// (1 MiB).
+	defaultSketchWidth = 1 << 18
 )
 
 func newLimiter(now func() time.Time) *limiter {
-	return &limiter{now: now, maxKeys: defaultMaxKeys, windows: map[string]window{}}
+	return &limiter{
+		now: now, maxKeys: defaultMaxKeys, sketchWidth: defaultSketchWidth, seed: maphash.MakeSeed(),
+		windows: map[string]window{}, sketches: map[time.Duration]*sketch{},
+	}
 }
 
-// allow counts one event for key under r. When the window is full, or the
-// table is full and key is new, it returns false and how long to wait.
+// allow counts one event for key under r. When the window is full it
+// returns false and how long to wait. A key the full table does not hold
+// is counted in the overflow sketch instead.
 func (l *limiter) allow(key string, r Rate) (bool, time.Duration) {
 	now := l.now()
 	l.mu.Lock()
@@ -91,10 +108,21 @@ func (l *limiter) allow(key string, r Rate) (bool, time.Duration) {
 	}
 	w, ok := l.windows[key]
 	if !ok && len(l.windows) >= l.maxKeys {
-		return false, max(l.nextSweep.Sub(now), time.Second)
+		sk := l.sketch(r.Per, now, true)
+		if n := sk.add(l.seed, key); n > r.N {
+			return false, sk.end.Sub(now)
+		}
+		return true, 0
 	}
 	if !now.Before(w.end) {
 		w = window{end: now.Add(r.Per)}
+		if !ok {
+			// A key counted in the sketch while the table was full
+			// keeps that count, so moving into the table resets nothing.
+			if sk := l.sketch(r.Per, now, false); sk != nil {
+				w.n = sk.estimate(l.seed, key)
+			}
+		}
 	}
 	w.n++
 	l.windows[key] = w
@@ -102,6 +130,80 @@ func (l *limiter) allow(key string, r Rate) (bool, time.Duration) {
 		return false, w.end.Sub(now)
 	}
 	return true, 0
+}
+
+// sketch returns the overflow sketch for windows of length per, starting a
+// new window (all counters zero) when the last one has ended. It allocates
+// one only when create is set.
+func (l *limiter) sketch(per time.Duration, now time.Time, create bool) *sketch {
+	sk := l.sketches[per]
+	if sk == nil {
+		if !create {
+			return nil
+		}
+		sk = newSketch(l.sketchWidth)
+		l.sketches[per] = sk
+	}
+	if !now.Before(sk.end) {
+		sk.reset(now.Add(per))
+	}
+	return sk
+}
+
+// sketch is a count-min sketch: the keys the full table cannot hold, all
+// counted in one fixed window (until end) in sketchRows rows of saturating
+// counters. A key's estimate is the least of its counters, and each counter
+// holds at least the count of every key hashed to it, so the estimate is
+// never below the key's true count: no limit is lifted, and other keys
+// sharing its counters can only make it refuse early. Updates are
+// conservative (only counters at the estimate rise), so pushing one
+// unknown key to a limit N means raising most of a whole row to N, about
+// N x width events in one window.
+type sketch struct {
+	end  time.Time
+	mask uint64
+	rows [sketchRows][]uint16
+}
+
+const sketchRows = 2
+
+func newSketch(width int) *sketch {
+	sk := &sketch{mask: uint64(width - 1)}
+	for i := range sk.rows {
+		sk.rows[i] = make([]uint16, width)
+	}
+	return sk
+}
+
+func (sk *sketch) reset(end time.Time) {
+	for _, row := range sk.rows {
+		clear(row)
+	}
+	sk.end = end
+}
+
+// slots returns key's counter index in each row: two halves of one hash.
+func (sk *sketch) slots(seed maphash.Seed, key string) [sketchRows]uint64 {
+	h := maphash.String(seed, key)
+	return [sketchRows]uint64{h & sk.mask, (h >> 32) & sk.mask}
+}
+
+func (sk *sketch) estimate(seed maphash.Seed, key string) int {
+	i := sk.slots(seed, key)
+	return int(min(sk.rows[0][i[0]], sk.rows[1][i[1]]))
+}
+
+// add counts one event for key and returns its new estimate.
+func (sk *sketch) add(seed maphash.Seed, key string) int {
+	i := sk.slots(seed, key)
+	e := min(sk.rows[0][i[0]], sk.rows[1][i[1]])
+	if e == math.MaxUint16 {
+		return int(e)
+	}
+	for r, row := range sk.rows {
+		row[i[r]] = max(row[i[r]], e+1)
+	}
+	return int(e) + 1
 }
 
 // ipKey is the rate-limit key for a client address: the address itself for
@@ -123,14 +225,20 @@ func ipKey(ip string) string {
 }
 
 // exceeded reports whether key's current window under r is already full,
-// without counting an event, and how long until it resets.
+// without counting an event, and how long until it resets. A key the table
+// does not hold is over only when its sketch estimate is.
 func (l *limiter) exceeded(key string, r Rate) (bool, time.Duration) {
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	w, ok := l.windows[key]
-	if !ok || !now.Before(w.end) || w.n < r.N {
-		return false, 0
+	if w, ok := l.windows[key]; ok {
+		if !now.Before(w.end) || w.n < r.N {
+			return false, 0
+		}
+		return true, w.end.Sub(now)
 	}
-	return true, w.end.Sub(now)
+	if sk := l.sketch(r.Per, now, false); sk != nil && sk.estimate(l.seed, key) >= r.N {
+		return true, sk.end.Sub(now)
+	}
+	return false, 0
 }

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -39,7 +40,7 @@ func (p *policyEdge) post(h, ip string, form url.Values, header http.Header) res
 	p.t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/.wardlock/login", strings.NewReader(form.Encode()))
 	req.Host = h
-	req.RemoteAddr = ip + ":40000"
+	req.RemoteAddr = net.JoinHostPort(ip, "40000")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "null")
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
