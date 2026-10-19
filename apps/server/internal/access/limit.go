@@ -18,7 +18,9 @@ type Rate struct {
 }
 
 // Limits are the visitor-facing rate limits. Every sign-in method's
-// limits live here, keyed per IP (ipKey) and per site or policy.
+// limits live here, keyed per IP (ipKey) and per site or policy. Each
+// per-site limit also gives each network (netKey) a share of it while the
+// site is under pressure (netRate).
 type Limits struct {
 	// TokenFailuresPerIP and TokenFailuresPerSite count rejected share-link
 	// tokens (malformed, unknown public ID, wrong secret, another site's).
