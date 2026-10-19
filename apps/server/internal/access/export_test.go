@@ -46,6 +46,17 @@ func (f *FakeLimiter) allow(key string, r Rate) (bool, time.Duration) {
 	return true, 0
 }
 
+func (f *FakeLimiter) count(key string, r Rate) (int, time.Duration) {
+	now := f.now()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	w := f.windows[key]
+	if !now.Before(w.end) {
+		return 0, 0
+	}
+	return w.n, w.end.Sub(now)
+}
+
 // Keys returns and forgets the keys counted so far.
 func (f *FakeLimiter) Keys() []string {
 	f.mu.Lock()
@@ -55,14 +66,14 @@ func (f *FakeLimiter) Keys() []string {
 	return k
 }
 
-// SetAttemptLimiter makes s count password attempts, per IP and per site,
-// with l; nil removes both limiters.
+// SetAttemptLimiter makes s count password and email-code attempts, per
+// IP, address, network and site, with l; nil removes every limiter.
 func SetAttemptLimiter(s *Service, l *FakeLimiter) {
 	if l == nil {
-		s.ipAttempts, s.siteAttempts, s.addressAttempts = nil, nil, nil
+		s.ipAttempts, s.siteAttempts, s.addressAttempts, s.netAttempts = nil, nil, nil, nil
 		return
 	}
-	s.ipAttempts, s.siteAttempts, s.addressAttempts = l, l, l
+	s.ipAttempts, s.siteAttempts, s.addressAttempts, s.netAttempts = l, l, l, l
 }
 
 // SetDerive replaces s's Argon2id derivation, for tests that hold or count

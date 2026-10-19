@@ -93,7 +93,7 @@ func (s *Service) SendEmailCode(ctx context.Context, r EmailCodeRequest) error {
 	if err := allowAttempt(s.addressAttempts, "email-send-address:"+addr, s.limits.EmailSendPerAddress); err != nil {
 		return err
 	}
-	if err := allowAttempt(s.siteAttempts, "email-send-site:"+r.SiteID, s.limits.EmailSendPerSite); err != nil {
+	if err := s.allowSiteAttempt("email-send", r.SiteID, r.IP, s.limits.EmailSendPerSite); err != nil {
 		return err
 	}
 	s.background(ctx, addr, func(ctx context.Context) error { return s.sendEmailCode(ctx, r, addr) })
@@ -182,7 +182,7 @@ func (s *Service) EmailCodeLogin(ctx context.Context, a EmailCodeAttempt) (Cooki
 	if err := allowAttempt(s.ipAttempts, "email-verify-ip:"+ipKey(a.IP), s.limits.EmailVerifyPerIP); err != nil {
 		return Cookie{}, err
 	}
-	if err := allowAttempt(s.siteAttempts, "email-verify-site:"+a.SiteID, s.limits.EmailVerifyPerSite); err != nil {
+	if err := s.allowSiteAttempt("email-verify", a.SiteID, a.IP, s.limits.EmailVerifyPerSite); err != nil {
 		return Cookie{}, err
 	}
 	addr, ok := NormaliseAddress(a.Address)

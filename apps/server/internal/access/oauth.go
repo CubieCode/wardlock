@@ -66,8 +66,9 @@ const (
 	OAuthCodeLifetime = 60 * time.Second
 	// maxOAuthEntries bounds flows and codes alike, so a flood of starts
 	// costs bounded memory; maxOAuthEntriesPerSite keeps a flood aimed at
-	// one site from using it all, and the per-IP start limit keeps one
-	// client from filling a site's share.
+	// one site from using it all, the per-IP start limit keeps one client
+	// from filling a site's share, and the network share (limit.go) keeps
+	// fewer than ten networks from filling it.
 	maxOAuthEntries        = 50_000
 	maxOAuthEntriesPerSite = 1_000
 	// maxGitHubOrgChecks bounds the membership lookups one sign-in makes.
@@ -277,7 +278,13 @@ func (s *Service) StartOAuth(ctx context.Context, a OAuthStart) (OAuthStarted, e
 	if !ok || !enables(p, store.SessionOAuth) {
 		return OAuthStarted{}, ErrOAuthDisabled
 	}
+	// A site holds at most maxOAuthEntriesPerSite flows; while it holds
+	// half, each network may start only its share of them (limit.go).
 	now := s.now()
+	perSite := Rate{N: maxOAuthEntriesPerSite, Per: OAuthFlowLifetime}
+	if ok, wait := s.netLimiter.allow("oauth-start-net:"+a.SiteID+":"+netKey(a.IP), netRate(perSite, s.oauth.flows.siteCount(a.SiteID, now))); !ok {
+		return OAuthStarted{}, &RateLimitError{RetryAfter: wait}
+	}
 	state, verifier, nonce, binding := newToken(), newToken(), newToken(), newToken()
 	f := oauthFlow{
 		provider: prov.ID(), siteID: a.SiteID, host: a.Host, path: a.Path, policyID: p.ID,

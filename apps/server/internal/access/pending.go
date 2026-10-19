@@ -86,6 +86,14 @@ func (p *pending[V]) put(key, site string, v V, expires, now time.Time) bool {
 	return true
 }
 
+// siteCount returns how many live entries site holds at now.
+func (p *pending[V]) siteCount(site string, now time.Time) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.expire(now)
+	return p.sites[site]
+}
+
 // take removes and returns the entry under key if it is there and live.
 func (p *pending[V]) take(key string, now time.Time) (V, bool) {
 	p.mu.Lock()
