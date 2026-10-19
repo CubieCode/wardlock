@@ -103,7 +103,11 @@ type Service struct {
 	now      func() time.Time
 	limits   Limits
 	limiter  *limiter
-	bg       sync.WaitGroup
+	// addressLimiter counts email-code sends per address in a bounded
+	// table of its own: addresses cost nothing to invent, so filling it
+	// must never refuse sign-in from IPs the limiter has not yet seen.
+	addressLimiter *limiter
+	bg             sync.WaitGroup
 }
 
 // New returns a Service. Call Close on shutdown to finish queued mail.
@@ -121,15 +125,16 @@ func New(cfg Config) (*Service, error) {
 		cfg.Limits = DefaultLimits()
 	}
 	return &Service{
-		owners:   cfg.Owners,
-		sessions: cfg.Sessions,
-		mailer:   cfg.Mailer,
-		log:      cfg.Logger,
-		secret:   cfg.Secret,
-		dash:     cfg.DashboardURL,
-		now:      cfg.Now,
-		limits:   cfg.Limits,
-		limiter:  newLimiter(cfg.Now),
+		owners:         cfg.Owners,
+		sessions:       cfg.Sessions,
+		mailer:         cfg.Mailer,
+		log:            cfg.Logger,
+		secret:         cfg.Secret,
+		dash:           cfg.DashboardURL,
+		now:            cfg.Now,
+		limits:         cfg.Limits,
+		limiter:        newLimiter(cfg.Now),
+		addressLimiter: newLimiter(cfg.Now),
 	}, nil
 }
 
@@ -343,8 +348,8 @@ func (s *Service) SendEmailCode(ctx context.Context, c Client, email string) err
 	if err := s.allow("send-ip:"+ipKey(c.IP), s.limits.SendPerIP); err != nil {
 		return err
 	}
-	if err := s.allow("send-address:"+email, s.limits.SendPerAddress); err != nil {
-		return err
+	if ok, wait := s.addressLimiter.allow("send-address:"+email, s.limits.SendPerAddress); !ok {
+		return &RateLimitError{RetryAfter: wait}
 	}
 	s.background(ctx, "email code", func(ctx context.Context) error { return s.sendEmailCode(ctx, email) })
 	return nil
@@ -700,12 +705,16 @@ func randomToken() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
+// wellFormedToken reports whether t has the shape of a session token,
+// setup or sign-in code, or device code secret: canonical base64url of
+// tokenBytes, so one value has exactly one spelling.
 func wellFormedToken(t string) bool {
 	if len(t) != base64.RawURLEncoding.EncodedLen(tokenBytes) {
 		return false
 	}
-	_, err := base64.RawURLEncoding.DecodeString(t)
-	return err == nil
+	// Strict still skips CR and LF, so the length is checked too.
+	b, err := base64.RawURLEncoding.Strict().DecodeString(t)
+	return err == nil && len(b) == tokenBytes
 }
 
 func sixDigits() string {

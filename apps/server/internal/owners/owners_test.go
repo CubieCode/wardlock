@@ -4,6 +4,7 @@
 package owners
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -170,8 +171,13 @@ func FuzzDecodeCursor(f *testing.F) {
 func FuzzWellFormedToken(f *testing.F) {
 	f.Add(randomToken())
 	f.Add("")
+	f.Add(strings.Repeat("A", 42) + "B") // trailing bits set
 	f.Fuzz(func(t *testing.T, s string) {
-		if wellFormedToken(s) && len(s) != 43 {
+		if !wellFormedToken(s) {
+			return
+		}
+		b, err := base64.RawURLEncoding.DecodeString(s)
+		if len(s) != 43 || err != nil || base64.RawURLEncoding.EncodeToString(b) != s {
 			t.Fatalf("accepted %q", s)
 		}
 	})

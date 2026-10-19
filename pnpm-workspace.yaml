@@ -2,3 +2,7 @@ packages:
   - apps/*
   - packages/*
   - docs-site
+
+# Refuse package versions published less than a day (in minutes) ago, so a
+# compromised release has time to be noticed before an install picks it up.
+minimumReleaseAge: 1440

@@ -68,6 +68,8 @@ type Options struct {
 	Nonce string
 	// Issuer, when set, replaces the real issuer in ID tokens.
 	Issuer string
+	// UserInfoError, when set, makes userinfo answer 500 with this body.
+	UserInfoError string
 	// Audience, when set, replaces the client ID in ID tokens.
 	Audience string
 	// Expired issues ID tokens that expired an hour ago.
@@ -358,6 +360,10 @@ func (p *Provider) userinfo(w http.ResponseWriter, r *http.Request) {
 	a, ok := p.bearer(r)
 	if !ok || p.Kind != OIDC {
 		http.Error(w, "unauthorised", http.StatusUnauthorized)
+		return
+	}
+	if body := p.options().UserInfoError; body != "" {
+		http.Error(w, body, http.StatusInternalServerError)
 		return
 	}
 	info := map[string]any{"sub": a.Subject}

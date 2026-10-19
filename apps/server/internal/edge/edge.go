@@ -165,6 +165,8 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w, done := e.recordAccess(w, r, s.site, clean, d)
 	defer done()
+	guard := &storeGuard{ResponseWriter: w, protected: d.Protected}
+	w = guard
 	if d.ClearCookie && session == nil {
 		w.Header().Add("Set-Cookie", ClearSessionCookie().String())
 	}
@@ -188,11 +190,12 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	strip := d.TokenAccepted && tokenInURL
 
 	res, ok := resolve(s, strings.TrimPrefix(clean, "/"))
-	if ok && res.redirect == "" && !sameDirectory(clean, res.file.Path) {
+	if ok && res.redirect == "" && (!sameDirectory(clean, res.file.Path) || d.IndexApart && "/"+res.file.Path != clean) {
 		// 404.html, the SPA index or a clean URL's page.html answers from
 		// another path, which may sit behind a stricter policy: it must
 		// allow the visitor too, or they get a plain 404 rather than its
-		// content.
+		// content. So must a directory's index.html when a policy of its
+		// own (on "<dir>index.html/") governs it.
 		req.Path = "/" + res.file.Path
 		if !d.TokenAccepted {
 			// A refused token was counted once already; the fallback
@@ -204,6 +207,7 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		protected = protected || fd.Protected
+		guard.protected = protected
 		if fd.Outcome != access.Allow {
 			ok = false
 		}

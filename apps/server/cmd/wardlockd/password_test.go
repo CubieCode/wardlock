@@ -47,7 +47,7 @@ func (p *policyEdge) post(h, ip string, form url.Values, header http.Header) res
 		req.Header[k] = v
 	}
 	rec := httptest.NewRecorder()
-	p.e.ServeHTTP(rec, req)
+	p.h.ServeHTTP(rec, req)
 	return result{rec.Code, rec.Body.String(), rec.Result().Header}
 }
 

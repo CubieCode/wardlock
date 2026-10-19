@@ -162,6 +162,31 @@ func TestRedactURL(t *testing.T) {
 	}
 }
 
+// Every credential-bearing parameter is redacted however the client
+// spells it; malformed pairs that might hold one are dropped, never kept.
+func TestRedactURLCredentialParameters(t *testing.T) {
+	const secret = "c2VjcmV0LXZhbHVl"
+	for _, raw := range []string{
+		"/.wardlock/callback?code=" + secret,
+		"/callback/github?code=" + secret + "&state=" + secret,
+		"/.wardlock/login?password=" + secret + "&next=/docs/",
+		"/docs/?%74=" + secret,
+		"/docs/?T=1&t=" + secret,
+		"/docs/?t=" + secret + "&t=" + secret,
+		"/docs/?t=" + secret + "%zz",
+		"/docs/?x=1;t=" + secret,
+		"/docs/?token=" + secret,
+	} {
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := platform.RedactURL(u); strings.Contains(got, secret) {
+			t.Errorf("RedactURL(%q) = %q", raw, got)
+		}
+	}
+}
+
 func TestRedactURLTokensAnywhere(t *testing.T) {
 	for _, raw := range []string{
 		"/wl_abcdefghij_c2VjcmV0LXZhbHVlLWhlcmU/page",

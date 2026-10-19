@@ -181,7 +181,7 @@ func (e *Edge) oauthCallback(w http.ResponseWriter, r *http.Request, site Served
 func oauthBindingCookie(c access.Cookie) *http.Cookie {
 	return &http.Cookie{
 		Name: c.Name, Value: c.Value, Path: "/", Expires: c.Expires,
-		MaxAge: max(1, int(time.Until(c.Expires).Seconds())),
+		MaxAge: maxAge(c.Expires),
 		Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	}
 }

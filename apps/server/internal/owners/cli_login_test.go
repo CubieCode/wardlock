@@ -287,6 +287,19 @@ func TestCLILoginStartAndDecideRateLimits(t *testing.T) {
 	if err := h.svc.ApproveCLILogin(t.Context(), owner, logins[1].UserCode, Scopes{Deploy: true}, ""); !errors.As(err, &rl) {
 		t.Fatalf("third decision = %v", err)
 	}
+	// Another owner decides freely.
+	if err := h.svc.DenyCLILogin(t.Context(), h.owner(), "ZZZZ-ZZZZ"); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("another owner's decision = %v", err)
+	}
+	// Both limits reset with their window.
+	h.advance(time.Hour)
+	fresh, err := h.svc.StartCLILogin(t.Context(), client, "")
+	if err != nil {
+		t.Fatalf("start after the window: %v", err)
+	}
+	if err := h.svc.ApproveCLILogin(t.Context(), owner, fresh.UserCode, Scopes{Deploy: true}, ""); err != nil {
+		t.Fatalf("decision after the window: %v", err)
+	}
 }
 
 func TestNormaliseUserCode(t *testing.T) {
@@ -310,4 +323,29 @@ func TestNormaliseUserCode(t *testing.T) {
 			t.Fatalf("newUserCode() = %q", c)
 		}
 	}
+}
+
+func FuzzNormaliseUserCode(f *testing.F) {
+	for _, s := range []string{"BCDF-GHJK", "bcdfghjk", " bcdf - ghjk ", "BCDF-GHJ", "BCDF-GHJKL", "AEIO-UYBC", "ＢＣＤＦ-ＧＨＪＫ", "ß", ""} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, raw string) {
+		code, ok := NormaliseUserCode(raw)
+		if !ok {
+			return
+		}
+		// Accepted codes have the stored shape, from the alphabet only,
+		// and normalise to themselves.
+		if len(code) != userCodeLen+1 || code[4] != '-' {
+			t.Fatalf("NormaliseUserCode(%q) = %q", raw, code)
+		}
+		for i, r := range code {
+			if i != 4 && !strings.ContainsRune(userCodeChars, r) {
+				t.Fatalf("NormaliseUserCode(%q) = %q has %q", raw, code, r)
+			}
+		}
+		if again, ok := NormaliseUserCode(code); !ok || again != code {
+			t.Fatalf("NormaliseUserCode(%q) = %q, %v", code, again, ok)
+		}
+	})
 }

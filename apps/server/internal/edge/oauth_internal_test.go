@@ -5,6 +5,7 @@ package edge
 
 import (
 	"testing"
+	"time"
 
 	"wardlock.nz/server/internal/access"
 )
@@ -32,5 +33,15 @@ func TestFormAction(t *testing.T) {
 				t.Fatalf("formAction = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCookieMaxAge(t *testing.T) {
+	binding := oauthBindingCookie(access.Cookie{Name: access.OAuthBindingCookieName, Value: "v", Expires: time.Now().Add(access.OAuthFlowLifetime)})
+	if binding.MaxAge != int(access.OAuthFlowLifetime/time.Second) {
+		t.Errorf("binding cookie Max-Age = %d, want %d", binding.MaxAge, int(access.OAuthFlowLifetime/time.Second))
+	}
+	if c := SessionCookie(access.Cookie{Name: access.SessionCookieName, Value: "v", Expires: time.Now().Add(-time.Second)}); c.MaxAge != 1 {
+		t.Errorf("expired session cookie Max-Age = %d, want 1", c.MaxAge)
 	}
 }

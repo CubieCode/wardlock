@@ -32,7 +32,7 @@ Read docs/SECURITY-MODEL.md and the access sections of docs/SPEC.md and docs/ARC
 
 **Rate limits** (through `Limiter`, per IP and per site): password attempts, email-code sends, email-code verification, and token guesses (unknown public IDs and bad MACs). Responses must not reveal which part was wrong.
 
-**Response headers on protected sites:** `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer` (or `same-origin`), `Cache-Control: private` (`no-store` on login, interstitial and callback pages). Never block AI fetchers in `robots.txt`; access is the policy's job.
+**Response headers on protected sites:** `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer` (or `same-origin`), `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: private` (`no-store` on login, interstitial and callback pages, server errors and any response that sets or clears a cookie). Never block AI fetchers in `robots.txt`; access is the policy's job.
 
 **Access log.** One entry per access: token public ID (or policy kind), site, path, time, IP (truncated per config) and User-Agent. Never raw tokens. Writes are buffered and batched off the request path; serving never waits on the database.
 

@@ -251,19 +251,26 @@ func (s *Tokens) Revoke(ctx context.Context, ownerID, id string) error {
 // the reason. Rejected guesses count against the client IP; once over
 // TokenLimits.FailuresPerIP every token from that IP is refused with a
 // *RateLimitError until the window ends, so guessing cannot continue
-// behind the limit.
+// behind the limit. When the limiter's table is full, a rejected token
+// from an address it does not hold is refused with a *RateLimitError
+// rather than going uncounted, while valid tokens keep working.
 func (s *Tokens) Authenticate(ctx context.Context, c Client, raw string) (TokenAuth, error) {
 	key := "token-fail:" + ipKey(c.IP)
 	if over, wait := s.limiter.exceeded(key, s.limits.FailuresPerIP); over {
 		return TokenAuth{}, &RateLimitError{RetryAfter: wait}
 	}
 	reject := func(publicID string) (TokenAuth, error) {
-		s.limiter.allow(key, s.limits.FailuresPerIP)
+		counted, wait := s.limiter.allow(key, s.limits.FailuresPerIP)
 		attrs := []slog.Attr{}
 		if publicID != "" {
 			attrs = append(attrs, slog.String("public_id", publicID))
 		}
 		s.log.LogAttrs(ctx, slog.LevelInfo, "api token rejected", attrs...)
+		if !counted {
+			// A full table (or a concurrent guess that filled the
+			// window): fail closed, so guesses never go uncounted.
+			return TokenAuth{}, &RateLimitError{RetryAfter: wait}
+		}
 		return TokenAuth{}, ErrUnauthenticated
 	}
 	publicID, ok := ParseToken(raw)

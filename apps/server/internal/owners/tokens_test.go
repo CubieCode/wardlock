@@ -5,6 +5,7 @@ package owners
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -134,10 +135,19 @@ func FuzzParseToken(f *testing.F) {
 	f.Add(tok)
 	f.Add("")
 	f.Add("wl_aaaaaaaaaa_" + strings.Repeat("A", 43))
+	f.Add("wl_aaaaaaaaaa_" + strings.Repeat("A", 42) + "B") // trailing bits set
 	f.Fuzz(func(t *testing.T, s string) {
 		pid, ok := ParseToken(s)
-		if ok && (len(s) != 57 || len(pid) != 10 || !strings.HasPrefix(s, "wl_"+pid+"_")) {
+		if !ok {
+			return
+		}
+		if len(s) != 57 || len(pid) != 10 || !strings.HasPrefix(s, "wl_"+pid+"_") {
 			t.Fatalf("accepted %q as %q", s, pid)
+		}
+		// One secret, one spelling: the secret re-encodes to itself.
+		secret, err := base64.RawURLEncoding.DecodeString(s[14:])
+		if err != nil || base64.RawURLEncoding.EncodeToString(secret) != s[14:] {
+			t.Fatalf("accepted the non-canonical %q", s)
 		}
 	})
 }
@@ -304,6 +314,41 @@ func TestAuthenticateRateLimitsGuesses(t *testing.T) {
 	h.advance(time.Minute)
 	if _, err := h.svc.Authenticate(t.Context(), client, valid); err != nil {
 		t.Fatalf("after the window: %v", err)
+	}
+}
+
+// A full limiter table must not let guesses from new addresses go
+// uncounted: they are refused, while valid tokens from new addresses and
+// guesses from tracked ones work as before.
+func TestAuthenticateFailsClosedWhenTheTableIsFull(t *testing.T) {
+	h := newTokenHarness(t, withLimits(func(l *TokenLimits) { l.FailuresPerIP = Rate{N: 3, Per: time.Minute} }))
+	h.svc.limiter.maxKeys = 1
+	owner := h.owner()
+	_, valid, err := h.svc.Create(t.Context(), owner, "valid", Scopes{Deploy: true}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guess := valid[:len(valid)-43] + strings.Repeat("B", 43)
+	// The first address takes the table's only slot.
+	if _, err := h.svc.Authenticate(t.Context(), client, guess); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("first guess = %v", err)
+	}
+	other := Client{IP: "198.51.100.7"}
+	for i := range 5 {
+		_, err := h.svc.Authenticate(t.Context(), other, guess)
+		var rl *RateLimitError
+		if !errors.As(err, &rl) || rl.RetryAfter <= 0 {
+			t.Fatalf("guess %d from a new address with the table full = %v, want *RateLimitError", i+1, err)
+		}
+	}
+	if _, err := h.svc.Authenticate(t.Context(), other, valid); err != nil {
+		t.Fatalf("valid token from a new address: %v", err)
+	}
+	// Once the window has gone and the table is swept, the new address
+	// is counted again.
+	h.advance(time.Minute)
+	if _, err := h.svc.Authenticate(t.Context(), other, guess); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("after the sweep = %v", err)
 	}
 }
 

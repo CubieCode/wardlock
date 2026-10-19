@@ -20,9 +20,13 @@ import (
 // Share-link operations (A2.2). Every handler takes the owner from the
 // verified request context, never from the request.
 
-// secretResponses are the operations whose success carries a share-link
-// token: no cache, shared or private, may keep them.
-var secretResponses = map[string]bool{"CreateShareLink": true, "RotateShareLink": true}
+// secretResponses are the operations whose success carries a secret (a
+// share-link token, an API token or a CLI device code): no cache, shared
+// or private, may keep them.
+var secretResponses = map[string]bool{
+	"CreateShareLink": true, "RotateShareLink": true,
+	"CreateApiToken": true, "StartCliLogin": true, "PollCliLogin": true,
+}
 
 // noStoreSecrets sets Cache-Control: no-store on secretResponses.
 func noStoreSecrets(next StrictHandlerFunc, operationID string) StrictHandlerFunc {

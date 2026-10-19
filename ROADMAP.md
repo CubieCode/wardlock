@@ -221,9 +221,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.7: Access security review
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/a2.7-access-security-review`
+- PR: https://github.com/CubieCode/wardlock/pull/65
 - Depends on: A2.2, A2.3, A2.4, A2.5, A2.6, D3.3
 - Scope: Walk docs/SECURITY-MODEL.md against the implementation; fuzz token parsing and cookie decoding; verify every rate limit; check headers on every protected response type; check log hygiene; fix small findings, record larger ones as new roadmap items.
 - Acceptance: A findings table in the PR with each threat's status and evidence; fuzzers committed and run for a recorded duration; no open high-severity finding without an item.
@@ -240,6 +240,39 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Acceptance: Tests prove the request path never blocks on the database (a slow fake store does not slow serving), counts dropped entries, flushes on shutdown, truncates IPv4 and IPv6 as configured and never stores raw tokens.
 - Skills: wardlock-item, wardlock-go-service, wardlock-access
 - Parallel: Wave 3 with C1.6, C1.7 and A2.1. Owns `internal/access/accesslog*` (or a dedicated package agreed in the brief) and access-log queries.
+
+### A2.9: Sign-in limiter tables that resist flooding
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: A2.7
+- Scope: A2.7 found that the visitor per-IP limiter table (`internal/access`, 100,000 keys, IPv6 by /64) is shared by password attempts, email-code sends and entries, OAuth starts and share-link guesses, each counted before any site or credential check: filling it (about two IPv6 /48s) refuses password, email-code and OAuth sign-in for every new client on every site until its windows expire. Separately, anyone can spend a site's per-site password and email-code limits and keep that method shut for the site indefinitely. Likewise, the owner per-address send table (`internal/owners`, 100,000 addresses, kept apart from the owner per-IP table by A2.7) can be filled with invented addresses, which refuses owner email-code sends to addresses it does not yet hold for up to an hour. Decide and implement a design that keeps sign-in available under both floods without lifting any limit (for example per-method tables, coarser keys such as IPv6 /48 under pressure, counting only failures per site, or per-site fallbacks when the IP table is full), and record the decision in docs/SECURITY-MODEL.md, replacing the "Accepted limiter risks" paragraph.
+- Acceptance: Tests prove that filling the IP table from many synthetic addresses neither refuses sign-in for unseen clients beyond what the recorded design allows nor lifts any per-IP, per-address or per-site limit; that filling the owner per-address table does not refuse owner email-code sign-in beyond the recorded bound; that a per-site flood cannot hold a method shut beyond the recorded bound; and that the full wardlock-access test matrix passes. SECURITY-MODEL and SPEC describe the new behaviour.
+- Skills: wardlock-item, wardlock-access, wardlock-go-service
+- Parallel: Runs alone or beside items that do not touch `internal/access/limit*`, the access service's limiter wiring or `internal/edge` rate-limit handling.
+
+### A2.10: Third-party log hygiene
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: A2.7
+- Scope: A2.7 checked Wardlock's own slog calls; two log paths it did not verify end to end remain. The certmagic log adapter (`internal/tls/log.go`) forwards every field verbatim, so at debug level ACME and DNS-provider details, including provider responses, reach the logs unfiltered. The `dev://` mail sink logs visitor recipient addresses, which is intended for local development but is the default mail mode. Review both: redact or drop sensitive certmagic fields, and warn at startup when `dev://` mail is used outside local mode, or record why not.
+- Acceptance: Tests capture certmagic debug output through the adapter and assert no credential-bearing field survives; a test or documented decision covers the `dev://` warning; SECURITY-MODEL lists what each third-party adapter may log.
+- Skills: wardlock-item, wardlock-go-service
+- Parallel: Any wave; touches only `internal/tls/log*`, `internal/mail/dev*` and `cmd/wardlockd` startup checks.
+
+### A2.11: Distinct error code for the domain-check cooldown
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: A2.7
+- Scope: A2.7 found that the domain-check cooldown and a refused API token both answer `429` with code `rate_limited` (`internal/api/domains.go` and the token middleware in `internal/api/owners.go`), so `wardlock domain add --wait` treats a refused-token 429 as a cooldown and keeps polling until its 10-minute deadline without naming the token, and `wardlock domain verify` reports "checked moments ago". Give the cooldown 429 its own error code in `openapi.yaml`, send it from `internal/api/domains.go`, and make `domain add --wait` and `domain verify` retry or report a cooldown only for that code and show the API's error for any other 429.
+- Acceptance: API tests prove the cooldown answers the new code and a refused token answers `rate_limited`; CLI tests prove `domain add --wait` stops at once with the server's message on a `rate_limited` 429 and still waits out a cooldown, and `domain verify` reports each case correctly; regenerated clients committed; SPEC describes the code.
+- Skills: wardlock-item, wardlock-go-service
+- Parallel: Holds the `packages/api-spec` gate; touches `internal/api/domains*`, `apps/cli/cmd/wardlock/domain*` and the generated clients.
 
 ## D3: Dashboard
 
