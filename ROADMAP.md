@@ -390,7 +390,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.6: Alpha documentation refresh
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/o4.6-alpha-docs`
 - PR: https://github.com/CubieCode/wardlock/pull/76
 - Depends on: O4.4, A2.9, A2.10, A2.11
@@ -401,7 +401,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.7: Contributor licence agreement text
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/o4.7-cla-text`
 - PR: https://github.com/CubieCode/wardlock/pull/77
 - Depends on: O4.6
