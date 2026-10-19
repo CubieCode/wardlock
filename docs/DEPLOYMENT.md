@@ -134,6 +134,7 @@ goreleaser release --snapshot --clean   # images ghcr.io/cubiecode/wardlock:<ver
 export WARDLOCK_SECRET=$(openssl rand -base64 32 | tr '+/' '-_')   # keep it; see Backups
 WARDLOCK_IMAGE=ghcr.io/cubiecode/wardlock:<version>-amd64 docker compose -f deploy/compose.yaml up -d
 curl http://127.0.0.1:8080/healthz
+curl http://127.0.0.1:9740/readyz      # the operator listener; see Health, readiness and metrics
 ```
 
 ## Behind Caddy or nginx
@@ -213,13 +214,65 @@ The defaults keep enough of an address to tell networks apart, not individual ho
 
 Entries are written in batches off the request path: serving never waits on the database. If the database falls behind and the buffer fills, new entries are dropped rather than slowing visitors; the server logs a warning (`access log entries dropped`, at most every 10 seconds) with the running total, and a failed batch write is logged and counted the same way. On shutdown the server writes what is buffered within the shutdown timeout. Retention runs at start and hourly beside the writer, deleting entries older than the retention period (including those of deleted sites) 1,000 at a time so the database is never locked for long.
 
+## Health, readiness and metrics
+
+`/healthz` answers `{"status":"ok"}` on every host of the main listener (and the plain-HTTP listener in automatic TLS mode) for as long as the process runs: use it for liveness. Readiness and metrics are served only on a separate operator listener, which is off until `WARDLOCK_OPERATOR_ADDR` names an address:
+
+| Variable                 | Default            | Meaning                                                                           |
+| ------------------------ | ------------------ | --------------------------------------------------------------------------------- |
+| `WARDLOCK_OPERATOR_ADDR` | none (no listener) | listen address for `/healthz`, `/readyz` and `/metrics`, such as `127.0.0.1:9740` |
+
+The operator listener is plain HTTP without authentication, so bind it to loopback or a private network that only the monitoring system reaches, and never proxy it to the internet. It must differ from `WARDLOCK_HTTP_ADDR` and `WARDLOCK_HTTPS_ADDR`. It answers on any `Host` and serves nothing else (`404`); site, dashboard and unknown hosts on the main listeners never reach it, so `/metrics` and `/readyz` there are ordinary site paths or the dashboard. Its requests are neither logged nor counted in the request metrics.
+
+- **`GET /readyz`** runs each check (5 seconds each) and answers `200` with `{"status":"ready","checks":{"database":"ok","blobs":"ok"}}` when all pass, or `503` with `"status":"unready"` and the failing check's reason in place of `ok`. The checks: `database` reads from the database; `blobs` creates and removes a probe file (`.ready-*`) in `WARDLOCK_BLOB_DIR`, so a missing, read-only or full blob directory fails it; `certificates` (automatic TLS mode only) needs an unexpired certificate for every managed name (the sites wildcard and the dashboard host), so it fails until the first certificates arrive and if renewal falls behind until expiry. A check that starts failing is logged once as `readiness check failing` with `check` and `error`, and `readiness check recovered` when it passes again.
+- **`GET /metrics`** is the Prometheus text format (0.0.4). Labels never name hosts, paths, sites or owners:
+
+| Metric                                                                                         | Type           | Meaning                                                                        |
+| ---------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------ |
+| `wardlock_build_info{version}`                                                                 | gauge          | always 1                                                                       |
+| `wardlock_start_time_seconds`                                                                  | gauge          | process start, Unix seconds                                                    |
+| `wardlock_http_requests_total{code}`                                                           | counter        | requests on the main listeners by status class (`2xx` … `5xx`)                 |
+| `wardlock_http_requests_in_flight`                                                             | gauge          | requests being answered                                                        |
+| `wardlock_http_request_duration_seconds`                                                       | histogram      | time to answer, 5 ms to 10 s buckets                                           |
+| `wardlock_ready{check}`                                                                        | gauge          | 1 when the readiness check passes, 0 when it fails (checks run at each scrape) |
+| `wardlock_access_log_dropped_total`                                                            | counter        | access-log entries dropped since start ([Access log](#access-log))             |
+| `wardlock_database_size_bytes`                                                                 | gauge          | `wardlock.db` plus its write-ahead log                                         |
+| `wardlock_certificate_expiry_timestamp_seconds{name}`                                          | gauge          | automatic TLS only: expiry of each managed certificate, Unix seconds           |
+| `go_goroutines`, `go_memstats_heap_alloc_bytes`, `go_memstats_sys_bytes`, `go_gc_cycles_total` | gauge, counter | Go runtime                                                                     |
+
+A Prometheus scrape job needs nothing more than the address: `static_configs: [{targets: ['127.0.0.1:9740']}]`. Alert on `wardlock_ready == 0`, a rising `wardlock_access_log_dropped_total`, and `wardlock_certificate_expiry_timestamp_seconds - time() < 14 * 86400` (renewal starts well before that). For systemd add `WARDLOCK_OPERATOR_ADDR=127.0.0.1:9740` to the env file; the Docker example sets `:9740` inside the container and publishes it on the host's loopback only.
+
+### Logs
+
+Logs are structured (`WARDLOCK_LOG_FORMAT=json` by default, or `text`) on standard error, one line per event, at `WARDLOCK_LOG_LEVEL` (`info` by default). Each request on the main listeners logs `request` with `method`, `host`, `path`, `status` and `duration`. The `path` keeps its query string with credential parameters (`t`, `token`, `code`, `state`, `password`) replaced by `[redacted]`, and any Wardlock token anywhere in the path or query reduced to its public ID (`wl_<public id>_[redacted]`). Events about resources carry IDs (`site_id`, `owner_id`, `policy_id`, `public_id`, `token_id`, `session_id`), never tokens, cookies, passwords, codes or `Authorization` headers; secrets in configuration print as `[redacted]`, SMTP URLs without their credentials. The exceptions are deliberate: the one-time `setup_url` while no owner exists, and with `WARDLOCK_SMTP_URL=dev://` the recipient and subject of each message (never the body or code). No other line names an email address; invitations, for example, log the new owner's ID and the inviter's. Keep logs as private as the data directory.
+
 ## Backups
 
 Everything lives in `WARDLOCK_DATA_DIR`: `wardlock.db` and `blobs/` (or `WARDLOCK_BLOB_DIR` if set; and `certs/`, which can be re-issued).
 
-- **Database:** never copy `wardlock.db` while the server runs. Use the online backup command (O4.2), `wardlockd backup /path/to/backup.db`, which uses SQLite's backup API to write a consistent copy, or stop the service first. As an option, [Litestream](https://litestream.io) can replicate the database continuously to object storage.
+- **Database:** never copy `wardlock.db` (or its `-wal` and `-shm` files) while the server runs. Use `wardlockd backup /path/to/backup.db` with the same environment as the server (it reads `WARDLOCK_DATA_DIR`). It uses SQLite's online backup API to copy the whole database inside one read transaction, so the copy is the database as of one moment while the server keeps reading and writing (WAL mode does not block writers meanwhile). The copy is written to a temporary file beside the destination, checked with `PRAGMA quick_check`, made a single self-contained file (no `-wal` beside it), synced and moved into place with mode 0600. The destination must not exist yet: the command never overwrites a file. It needs no `WARDLOCK_SECRET`. As an option, [Litestream](https://litestream.io) can replicate the database continuously to object storage.
 - **Blobs:** content-addressed and write-once, so a plain `rsync` (after the database backup) is consistent: every blob the backed-up database references already exists, provided garbage collection does not run in between. Schedule backups away from collections, or set `WARDLOCK_GC_INTERVAL_MINUTES=0` and run `wardlockd gc` after each backup.
-- **Restore** (O4.2): stop the server, put the database and `blobs/` back in an empty data directory, start the server. Migrations run automatically; a server older than the database refuses to start.
+
+```sh
+# systemd: as the service user, with the service's environment, into a
+# directory that user can write (mode 0700)
+sudo systemd-run --pipe --wait -p User=wardlock -p EnvironmentFile=/etc/wardlock/wardlock.env \
+  -p Environment=WARDLOCK_DATA_DIR=/var/lib/wardlock \
+  /usr/local/bin/wardlockd backup /var/backups/wardlock/wardlock-$(date +%F).db
+sudo rsync -a /var/lib/wardlock/blobs/ /var/backups/wardlock/blobs/
+# Docker (the example compose file): inside the container's volume, then copy out
+docker compose -f deploy/compose.yaml exec wardlockd wardlockd backup /data/backup.db
+docker compose -f deploy/compose.yaml cp wardlockd:/data/backup.db .
+```
+
+### Restore
+
+1. Stop the server.
+2. Put the backup in an empty data directory as `wardlock.db`, and the blobs under it as `blobs/` (or at `WARDLOCK_BLOB_DIR`). Leave out any `wardlock.db-wal` or `wardlock.db-shm` from elsewhere: they belong to another database. Make both owned by the service user (`chown -R wardlock:wardlock`, mode 0700 for the directory).
+3. Start the server with the same `WARDLOCK_SECRET` and hosts. Migrations run automatically, so a backup from an older release is upgraded; a server older than the backup refuses to start (`database is newer than this server`).
+4. Check `/readyz` on the operator listener and open a site. Owners, sites, policies, share links, API tokens and sessions written before the backup are back; anything written after it is lost.
+
+The server's tests (`TestBackupAndRestore` in `apps/server/cmd/wardlockd`) do exactly this against a running server while it takes writes, and check that the restored instance serves the site, keeps the owner's session and takes new writes.
 
 Keep `WARDLOCK_SECRET` with your backups, separately and securely. Without it, every share link, API token and session stops working after a restore.
 

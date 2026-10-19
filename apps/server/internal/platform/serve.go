@@ -70,7 +70,7 @@ func Serve(ctx context.Context, log *slog.Logger, servers ...Listener) error {
 	return failed
 }
 
-// Healthz reports liveness. Readiness (database, certificates) is O4.2.
+// Healthz reports liveness: the process answers. Readiness is Readiness.
 func Healthz() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

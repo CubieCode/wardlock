@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"time"
 )
 
@@ -31,19 +32,25 @@ func (Secret) LogValue() slog.Value { return slog.StringValue("[redacted]") }
 // links put their token in `t`; never log it.
 var sensitiveParams = []string{"t", "token", "code", "state", "password"}
 
+// tokenPattern matches a share-link or API token (wl_<public id>_<secret>)
+// anywhere, in any letter case, as the access log's scrubber does.
+var tokenPattern = regexp.MustCompile(`(?i)wl_([a-z2-7]{10})_[A-Za-z0-9_-]+`)
+
 // RedactURL returns the path and query of u with credential-bearing query
-// values replaced, suitable for logs.
+// values replaced, suitable for logs. A token pasted anywhere else, in the
+// path or another parameter, keeps only its public ID.
 func RedactURL(u *url.URL) string {
-	if u.RawQuery == "" {
-		return u.EscapedPath()
-	}
-	q := u.Query()
-	for _, key := range sensitiveParams {
-		if q.Has(key) {
-			q.Set(key, "[redacted]")
+	out := u.EscapedPath()
+	if u.RawQuery != "" {
+		q := u.Query()
+		for _, key := range sensitiveParams {
+			if q.Has(key) {
+				q.Set(key, "[redacted]")
+			}
 		}
+		out += "?" + q.Encode()
 	}
-	return u.EscapedPath() + "?" + q.Encode()
+	return tokenPattern.ReplaceAllString(out, "wl_${1}_[redacted]")
 }
 
 // LogRequests logs one line per request with credentials redacted.

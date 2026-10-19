@@ -17,7 +17,7 @@ import (
 // startAccessLog starts the access-log writer. The returned stop flushes
 // what is buffered within platform.ShutdownTimeout; call it after the HTTP
 // server has shut down and before the database closes.
-func startAccessLog(ctx context.Context, cfg platform.Config, log *slog.Logger, db *store.DB) (edge.AccessRecorder, func()) {
+func startAccessLog(ctx context.Context, cfg platform.Config, log *slog.Logger, db *store.DB) (accessRecorder, func()) {
 	w := accesslog.Start(accesslog.Config{
 		Repo: db.AccessLog(),
 		Log:  log,

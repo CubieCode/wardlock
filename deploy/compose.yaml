@@ -13,10 +13,14 @@ services:
     restart: unless-stopped
     ports:
       - '127.0.0.1:${WARDLOCK_PORT:-8080}:8080'
+      # Operator listener: /healthz, /readyz and /metrics. Publish it on
+      # loopback only, or scrape it over a private Docker network.
+      - '127.0.0.1:${WARDLOCK_OPERATOR_PORT:-9740}:9740'
     environment:
       WARDLOCK_BASE_DOMAIN: ${WARDLOCK_BASE_DOMAIN:-wardlock.localhost}
       WARDLOCK_DASHBOARD_HOST: ${WARDLOCK_DASHBOARD_HOST:-}
       WARDLOCK_LOG_FORMAT: json
+      WARDLOCK_OPERATOR_ADDR: ':9740'
       WARDLOCK_SECRET: ${WARDLOCK_SECRET:?set WARDLOCK_SECRET; see docs/DEPLOYMENT.md}
     volumes:
       - wardlock-data:/data
