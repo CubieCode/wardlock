@@ -368,7 +368,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.4: Public alpha launch checklist
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/o4.4-launch-checklist`
 - PR: https://github.com/CubieCode/wardlock/pull/67
 - Depends on: A2.7, O4.1, O4.2
