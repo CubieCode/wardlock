@@ -13,6 +13,7 @@ import {
 } from '@wardlock/ui';
 import { useEffect, useRef, useState } from 'react';
 import { ShareLinksCard } from '../links/share-links.js';
+import { PoliciesCard } from '../policies/policies.js';
 import { useTitle } from '../shell/page.js';
 import {
   defaultPolicy,
@@ -229,6 +230,7 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
         )}
       </Card>
 
+      <PoliciesCard api={api} site={site} onChange={refresh} />
       <ShareLinksCard api={api} site={site} />
 
       <Card title="Deploys">

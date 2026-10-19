@@ -12,9 +12,15 @@ export {
 export { CopyField } from './copy.js';
 export { Dialog } from './dialog.js';
 export {
+  Checkbox,
+  Fieldset,
+  Radio,
   SelectField,
+  TextAreaField,
   TextField,
+  type ChoiceProps,
   type SelectFieldProps,
+  type TextAreaFieldProps,
   type TextFieldProps,
 } from './form.js';
 export { Table, type TableColumn } from './table.js';
