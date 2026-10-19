@@ -335,10 +335,22 @@ func netKey(ip string) string {
 // A site is under pressure for a method once its counter in the current
 // window reaches 1/sitePressureDivisor of its limit. Only then is each
 // network (netKey) held to 1/networkShareDivisor of the site's limit per
-// window, counting its attempts from before the pressure began, so a flood
-// from fewer than networkShareDivisor networks cannot spend a site's whole
-// limit, while below the pressure mark many clients behind one network
-// get only their own per-IP limits.
+// window, counting its attempts from before the pressure began, while
+// below the pressure mark many clients behind one network get only their
+// own per-IP limits.
+//
+// The two constants set how many networks it takes to hold a method shut
+// on a site. One network may spend the limit alone up to the mark, after
+// which it is over its share; each further network adds its share. So it
+// takes 1 + (1 - 1/sitePressureDivisor) x networkShareDivisor networks
+// (six with these values) and, once fewer keep going, the method reopens
+// within one window. Raising either constant raises that bound, at the
+// cost of sharing earlier or more thinly among legitimate visitors.
+//
+// The pressure check and the counts take separate locks, so attempts in
+// flight as a site crosses the mark may each still see it below the mark
+// and pass a share a serial count would refuse (in tests, one or two).
+// That is accepted: the per-site limit itself is never exceeded.
 const (
 	sitePressureDivisor = 2
 	networkShareDivisor = 10

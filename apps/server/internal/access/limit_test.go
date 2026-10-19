@@ -554,66 +554,74 @@ func TestNetworkShareOnlyUnderPressure(t *testing.T) {
 }
 
 // TestNetworkShareUnderPressure: once a site is under pressure, one
-// network gets no more than its share of the site's limit in the window
-// (counting what it spent before), and attempts over its share spend
-// nothing of the site's; other networks still get in.
+// network gets no more than its share of the site's limit in the window,
+// counting what it spent before, and attempts over its share spend nothing
+// of the site's; other networks still get in. A network that spent right
+// up to the pressure mark alone (more than its share) gets nothing more.
 func TestNetworkShareUnderPressure(t *testing.T) {
 	t.Parallel()
 	limits := generous()
 	for _, m := range siteMethods {
-		t.Run(m.name, func(t *testing.T) {
-			t.Parallel()
-			f := newFlood(t, limits)
-			r := m.r(limits)
-			share, mark := networkShare(r.N), (r.N+sitePressureDivisor-1)/sitePressureDivisor
-			k := 0
-			// The flooding /48 spends half its share before the pressure.
-			early := share / 2
-			for i := range early {
-				if m.try(f, fmt.Sprintf("2001:db8:a:%x::1", i), k) {
-					t.Fatal("limited before the pressure mark")
+		r := m.r(limits)
+		share, mark := networkShare(r.N), pressureMark(r.N)
+		for _, early := range []int{share / 2, mark} {
+			t.Run(fmt.Sprintf("%s after %d", m.name, early), func(t *testing.T) {
+				t.Parallel()
+				f := newFlood(t, limits)
+				k := 0
+				// The flooding /48 spends early attempts before the
+				// pressure.
+				for i := range early {
+					if m.try(f, fmt.Sprintf("2001:db8:a:%x::1", i), k) {
+						t.Fatalf("attempt %d limited before the pressure mark", i+1)
+					}
+					k++
 				}
-				k++
-			}
-			// Other networks, each within its share, bring the site to
-			// the pressure mark.
-			for i := range mark - early {
-				if m.try(f, fmt.Sprintf("2001:db8:%x::1", 0x100+i/max(1, share-1)), k) {
-					t.Fatalf("attempt %d from a network within its share limited", i)
+				// Other networks, each within its share, bring the site
+				// to the pressure mark.
+				for i := range mark - early {
+					if m.try(f, fmt.Sprintf("2001:db8:%x::1", 0x100+i/max(1, share-1)), k) {
+						t.Fatalf("attempt %d from a network within its share limited", i)
+					}
+					k++
 				}
-				k++
-			}
-			// The flooding /48, from fresh /64s, gets the rest of its
-			// share and no more.
-			got := 0
-			for i := range 3 * share {
-				if !m.try(f, fmt.Sprintf("2001:db8:a:%x::1", 0x1000+i), k) {
-					got++
+				// The flooding /48, from fresh /64s, gets the rest of its
+				// share, if any, and no more.
+				got := 0
+				for i := range 3 * share {
+					if !m.try(f, fmt.Sprintf("2001:db8:a:%x::1", 0x1000+i), k) {
+						got++
+					}
+					k++
 				}
-				k++
-			}
-			if early+got != share {
-				t.Fatalf("one network spent %d under pressure, want its share of %d", early+got, share)
-			}
-			// Its refused attempts did not spend the site's limit:
-			// fresh networks still have r.N - mark - got left.
-			for i := range r.N - mark - got {
-				if m.try(f, fmt.Sprintf("2001:db8:%x::1", 0x2000+i/max(1, share-1)), k) {
-					t.Fatalf("attempt %d of the site's remainder limited", i)
+				if early+got != max(early, share) {
+					t.Fatalf("one network spent %d by the end of the window, want %d", early+got, max(early, share))
 				}
-				k++
-			}
-			if !m.try(f, "2001:db8:ffff::1", k) {
-				t.Fatalf("the site went past its limit of %d", r.N)
-			}
-		})
+				// Its refused attempts did not spend the site's limit:
+				// fresh networks still have r.N - mark - got left.
+				for i := range r.N - mark - got {
+					if m.try(f, fmt.Sprintf("2001:db8:%x::1", 0x2000+i/max(1, share-1)), k) {
+						t.Fatalf("attempt %d of the site's remainder limited", i)
+					}
+					k++
+				}
+				if !m.try(f, "2001:db8:ffff::1", k) {
+					t.Fatalf("the site went past its limit of %d", r.N)
+				}
+			})
+		}
 	}
 }
 
-// TestSiteFloodReopens: ten networks spending their whole share hold a
-// method shut on a site for the window; once fewer than ten keep it up,
-// the method reopens within one window. The per-site limit itself never
-// rises: more networks close the site at the same count.
+// pressureMark is the count at which limit puts a site under pressure.
+func pressureMark(limit int) int { return (limit + sitePressureDivisor - 1) / sitePressureDivisor }
+
+// TestSiteFloodReopens models the adaptive attacker. One network spends a
+// site's limit up to the pressure mark alone, then five more each spend
+// their share: six networks fill the site and hold the method shut window
+// after window. With five networks, in any arrangement, the method
+// reopens within one window. Ten networks at their shares from the start
+// also fill it, and more networks still close the site at its limit.
 func TestSiteFloodReopens(t *testing.T) {
 	t.Parallel()
 	limits := generous()
@@ -622,40 +630,83 @@ func TestSiteFloodReopens(t *testing.T) {
 			t.Parallel()
 			f := newFlood(t, limits)
 			r := m.r(limits)
-			share := networkShare(r.N)
-			k := 0
-			flood := func(nets int) {
-				for n := range nets {
-					for i := range share + 2 {
-						m.try(f, fmt.Sprintf("2001:db8:%x:%x::1", 0x10+n, i), k)
-						k++
-					}
-				}
+			share, mark := networkShare(r.N), pressureMark(r.N)
+			// 1 + (1 - 1/sitePressureDivisor) x networkShareDivisor.
+			need := 1 + (r.N-mark+share-1)/share
+			if need != 6 {
+				t.Fatalf("%d networks fill the site, want 6 with the default constants", need)
 			}
-			flood(networkShareDivisor)
-			if !m.try(f, "192.0.2.50", k) {
-				t.Fatal("ten networks did not reach the site limit")
-			}
-			k++
-			f.advance(r.Per)
-			flood(networkShareDivisor - 1)
-			if m.try(f, "192.0.2.51", k) {
-				t.Fatal("nine networks held the method shut after the window")
-			}
-			k++
-			// Twenty networks still close the site at r.N.
-			f.advance(r.Per)
-			spent := 0
-			for n := range 2 * networkShareDivisor {
-				for i := range share {
-					if !m.try(f, fmt.Sprintf("2001:db8:%x:%x::1", 0x40+n, i), k) {
-						spent++
+			k, base := 0, 0
+			// spend makes up to n attempts from fresh /64s of network
+			// net and returns how many were let through.
+			spend := func(net, n int) int {
+				got := 0
+				for range n {
+					if !m.try(f, fmt.Sprintf("2001:db8:%x:%x::1", net, k), k) {
+						got++
 					}
 					k++
 				}
+				return got
 			}
-			if spent != r.N {
-				t.Fatalf("twenty networks spent %d, want the site limit %d", spent, r.N)
+			// flood runs one window: network i first spends pre[i]
+			// (before the pressure, when they add up to no more than the
+			// mark), then every network tries as much as it can. It
+			// returns what the site let through.
+			flood := func(pre []int) int {
+				base += 0x100
+				total := 0
+				for i, n := range pre {
+					got := spend(base+i, n)
+					if got != n {
+						t.Fatalf("%v: network %d got %d of %d before the pressure mark", pre, i, got, n)
+					}
+					total += got
+				}
+				// No network can get more than the mark plus its share.
+				for i := range pre {
+					total += spend(base+i, mark+share)
+				}
+				return total
+			}
+			open := func() bool { k++; return !m.try(f, fmt.Sprintf("192.0.2.%d", k%250+1), k) }
+
+			// Six networks, one up to the mark: shut, window after window.
+			adaptive := append([]int{mark}, make([]int, need-1)...)
+			for w := range 3 {
+				if got := flood(adaptive); got != r.N {
+					t.Fatalf("window %d: six networks spent %d, want the site limit %d", w+1, got, r.N)
+				}
+				if open() {
+					t.Fatalf("window %d: six networks did not hold the method shut", w+1)
+				}
+				f.advance(r.Per)
+			}
+			// Five networks, however they spread their attempts before
+			// the pressure: the method stays open.
+			for _, pre := range [][]int{
+				{mark, 0, 0, 0, 0},
+				{mark - 1, 1, 0, 0, 0},
+				{mark / 2, mark - mark/2, 0, 0, 0},
+				{share, share, share, share, mark - 4*share},
+				{0, 0, 0, 0, 0},
+			} {
+				if got := flood(pre); got >= r.N {
+					t.Fatalf("five networks %v spent %d, the site limit", pre, got)
+				}
+				if !open() {
+					t.Fatalf("five networks %v held the method shut", pre)
+				}
+				f.advance(r.Per)
+			}
+			// Ten networks at their shares from the start fill the site;
+			// twenty still close it at r.N.
+			if got := flood(make([]int, networkShareDivisor)); got != r.N || open() {
+				t.Fatalf("ten networks spent %d, want the site limit %d and the method shut", got, r.N)
+			}
+			f.advance(r.Per)
+			if got := flood(make([]int, 2*networkShareDivisor)); got != r.N {
+				t.Fatalf("twenty networks spent %d, want the site limit %d", got, r.N)
 			}
 		})
 	}

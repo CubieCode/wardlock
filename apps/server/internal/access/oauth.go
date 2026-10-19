@@ -68,7 +68,7 @@ const (
 	// costs bounded memory; maxOAuthEntriesPerSite keeps a flood aimed at
 	// one site from using it all, the per-IP start limit keeps one client
 	// from filling a site's share, and the network share (limit.go) keeps
-	// fewer than ten networks from filling it.
+	// fewer than six networks from filling it.
 	maxOAuthEntries        = 50_000
 	maxOAuthEntriesPerSite = 1_000
 	// maxGitHubOrgChecks bounds the membership lookups one sign-in makes.
