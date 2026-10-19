@@ -53,7 +53,7 @@ writeFileSync(
     title: 'Wardlock documentation',
     body: `<h1>Wardlock documentation</h1>
 <p>Wardlock is a free, open-source, self-hostable way to publish static sites with access control built in. Deploy a folder to a subdomain with one command, then decide who can open it: anyone, people holding a share link, people who know a password, people who can receive an email code at an allowed address, or people who sign in with GitHub, Google or your own OIDC provider.</p>
-<p class="notice">Wardlock is pre-alpha. Do not use it for anything real yet.</p>
+<p class="notice">Wardlock is alpha software and has not had an external security review. Do not use it to protect anything sensitive yet.</p>
 <ul class="pages">
 ${list}
 </ul>

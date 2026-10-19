@@ -184,7 +184,7 @@ export function layout({ title, body, current, toc = [], sourceUrl }) {
 ${body}
 </main>
 </div>
-<footer>Wardlock is pre-alpha; these pages describe intended v1 behaviour and mark what is not built yet.${source}</footer>
+<footer>Wardlock is alpha software; do not use it to protect anything sensitive yet.${source}</footer>
 </body>
 </html>
 `;

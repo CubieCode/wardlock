@@ -1,6 +1,6 @@
 # Modules and boundaries
 
-Wardlock is a modular monolith: one server process, one dashboard, one CLI, with boundaries enforced by folder, Go module, licence and lint rules rather than by separate services. This file says what each module owns and what it may import. The rules are checked by `.golangci.yml` (depguard), `eslint.config.js` and `scripts/check-boundaries.mjs`, all part of `pnpm check`.
+Wardlock is a modular monolith: one server process, one dashboard, one CLI, with boundaries enforced by folder, Go module, licence and lint rules rather than by separate services. This file says what each module owns and what it may import. `pnpm check` enforces the licence boundaries and the TypeScript import rules (`scripts/check-boundaries.mjs`, `eslint.config.js`), and depguard (`.golangci.yml`) enforces the "Must not import" rules for `edge`, `access`, `oauth`, `mail` and `tls`, the MIT modules, and the storage rule for every domain package. The other rows are conventions that review checks.
 
 ## Go modules
 
@@ -14,20 +14,20 @@ MIT modules never import AGPL code: depguard denies `wardlock.nz/server` in `app
 
 ## Server packages (`apps/server/internal`)
 
-| Package     | Owns                                                                                                                                 | Must not import                                      |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| `platform`  | Config, logging and redaction, request logging, health and readiness, metrics exposition, graceful shutdown, version                 | any other internal package                           |
-| `store`     | SQLite connection, migration runner, sqlc queries, repository interfaces and their SQLite implementations, `storetest`               | domain packages                                      |
-| `edge`      | Host routing, static serving, policy enforcement at request time, `/.wardlock/*`, response headers, renditions selection             | `api`, `database/sql`, `sqlcgen`, SQLite driver      |
-| `access`    | Policies and their evaluation, share links and tokens, site sessions and cookie primitives, password, email code, OAuth              | `net/http`, `api`, `edge`, `database/sql`, `sqlcgen` |
-| `oauth`     | OAuth and OIDC provider clients (GitHub, Google, generic OIDC): authorisation URLs, code exchange, ID-token checks; `oauthtest` fake | `api`, `edge`, `store`, `database/sql`, `sqlcgen`    |
-| `deploys`   | Upload sessions, manifests, `BlobStore`, activation, rollback, garbage collection, rendition generation                              | `api`, `edge`, `database/sql`, `sqlcgen`             |
-| `sites`     | Sites, names, custom domains and verification                                                                                        | `api`, `edge`, `database/sql`, `sqlcgen`             |
-| `owners`    | Owner accounts, dashboard sessions, email-code and passkey sign-in, API tokens, CLI login                                            | `edge`, `database/sql`, `sqlcgen`                    |
-| `mail`      | `Mailer` interface, SMTP delivery (STARTTLS or implicit TLS), the `dev://` sink, sign-in and email-code templates                    | `api`, `edge`, `database/sql`, `sqlcgen`             |
-| `tls`       | certmagic configuration and modes, the on-demand decision, HTTP to HTTPS redirect, trusted-proxy `X-Forwarded-*` handling            | `api`, `edge`, `database/sql`, `sqlcgen`             |
-| `api`       | Generated OpenAPI interface, handlers that translate HTTP to domain calls, error-to-status mapping                                   | `edge`                                               |
-| `dashboard` | Embedded dashboard files, SPA fallback, dev proxy                                                                                    | domain packages                                      |
+| Package     | Owns                                                                                                                                                                  | Must not import                                                     |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `platform`  | Config, logging and redaction, request logging, health and readiness, metrics exposition, graceful shutdown, version                                                  | any other internal package                                          |
+| `store`     | SQLite connection, migration runner, sqlc queries, repository interfaces and their SQLite implementations, `storetest`                                                | domain packages                                                     |
+| `edge`      | Host routing, static serving, policy enforcement at request time, `/.wardlock/*`, response headers, renditions selection                                              | `api`, `store`, `deploys`, `database/sql`, `sqlcgen`, SQLite driver |
+| `access`    | Policies and their evaluation, share links and tokens, site sessions and cookie primitives, password, email code, OAuth, the access-log pipeline (`access/accesslog`) | `net/http`, `api`, `edge`, `database/sql`, `sqlcgen`                |
+| `oauth`     | OAuth and OIDC provider clients (GitHub, Google, generic OIDC): authorisation URLs, code exchange, ID-token checks; `oauthtest` fake                                  | `api`, `edge`, `store`, `database/sql`, `sqlcgen`                   |
+| `deploys`   | Upload sessions, manifests, `BlobStore`, activation, rollback, garbage collection, rendition generation                                                               | `api`, `edge`, `database/sql`, `sqlcgen`                            |
+| `sites`     | Sites, names, custom domains and verification                                                                                                                         | `api`, `edge`, `database/sql`, `sqlcgen`                            |
+| `owners`    | Owner accounts, dashboard sessions, email-code and passkey sign-in, API tokens, CLI login                                                                             | `edge`, `database/sql`, `sqlcgen`                                   |
+| `mail`      | `Mailer` interface, SMTP delivery (STARTTLS or implicit TLS), the `dev://` sink, sign-in and email-code templates                                                     | `api`, `edge`, `database/sql`, `sqlcgen`                            |
+| `tls`       | certmagic configuration and modes, the on-demand decision, HTTP to HTTPS redirect, trusted-proxy `X-Forwarded-*` handling                                             | `api`, `edge`, `database/sql`, `sqlcgen`                            |
+| `api`       | Generated OpenAPI interface, handlers that translate HTTP to domain calls, error-to-status mapping                                                                    | `edge`                                                              |
+| `dashboard` | Embedded dashboard files, SPA fallback, dev proxy                                                                                                                     | domain packages                                                     |
 
 Rules of thumb:
 
@@ -44,6 +44,7 @@ Rules of thumb:
 | `@wardlock/ui`           | `packages/ui`           | AGPL-3.0-only | React only; no `@wardlock/*` packages, no app code |
 | `@wardlock/apiclient-ts` | `packages/apiclient-ts` | MIT           | `openapi-fetch`; never AGPL packages               |
 | `@wardlock/api-spec`     | `packages/api-spec`     | MIT           | (tooling only)                                     |
+| `@wardlock/docs-site`    | `docs-site`             | MIT           | `marked`; never AGPL packages                      |
 
 The dashboard calls the server only through `@wardlock/apiclient-ts`: ESLint forbids `fetch`, `XMLHttpRequest`, `EventSource`, `WebSocket` and importing `openapi-fetch` directly in `apps/web/src`. Workspace packages are imported by name, never by relative path across package boundaries.
 

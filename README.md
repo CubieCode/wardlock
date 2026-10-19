@@ -4,9 +4,9 @@ Wardlock ([wardlock.nz](https://wardlock.nz)) is a free, open-source, self-hosta
 
 It is pronounced "ward-lock", not "warlock". A warded lock has internal obstructions, called wards, that only a key cut to the right shape can pass.
 
-> **Status: pre-alpha.** This repository holds the foundation only. The server starts and serves a dashboard with owner sign-in, health endpoints and the static files of each site's active deploy; the CLI logs in, deploys, lists, rolls back and tears down sites. Share links and every other feature below are planned in the [roadmap](ROADMAP.md) and are not built yet. Do not use Wardlock for anything real.
+> **Status: alpha.** Every feature below is built, but Wardlock has not had an external security review: do not use it to protect anything sensitive yet, back up before upgrading, and expect changes before v1. See [SECURITY](SECURITY.md) to report a problem and the [roadmap](ROADMAP.md) for what is and is not planned.
 
-## What it will do
+## What it does
 
 - **Deploy.** `wardlock deploy ./dist docs.example.com` uploads only the files that changed, then switches the site over atomically. Every deploy can be rolled back instantly. TLS certificates are automatic, including wildcards and custom domains.
 - **Share links.** The headline feature: a URL carrying a token (`?t=…`) that opens the page immediately, with no login screen. Links can expire or never expire, have a use limit, carry a label ("Linear ENG-123", "sent to Alice"), be limited to a path, and be revoked or rotated at any time.
