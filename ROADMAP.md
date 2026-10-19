@@ -401,8 +401,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.7: Contributor licence agreement text
 
-- Status: `todo`
-- Owner:
+- Status: `review`
+- Owner: `feat/o4.7-cla-text`
 - PR:
 - Depends on: O4.6
 - Scope: Write the Wardlock Contributor Licence Agreement that CONTRIBUTING describes, as `CLA.md` at the repository root: CubieCode as the recipient, a copyright licence including the right to sublicense and relicense (so CubieCode can keep the AGPL/MIT split coherent and move parts between licences), a patent licence, the contributor keeping copyright, the contributor's representations, and how corporate contributors sign. Link it from CONTRIBUTING and update the launch checklist's CLA text row. The text is a draft for the maintainer's (and ideally a lawyer's) review: no gist is created and CLA Assistant is not enabled.

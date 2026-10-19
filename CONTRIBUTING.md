@@ -4,7 +4,7 @@ Thanks for your interest in Wardlock. It is alpha software and the roadmap is dr
 
 ## Contributor licence agreement
 
-Before we can merge a pull request from anyone outside CubieCode, you must sign the Wardlock Contributor Licence Agreement through [CLA Assistant](https://cla-assistant.io). The bot comments on your first PR with a link; signing once covers all future contributions.
+Before we can merge a pull request from anyone outside CubieCode, you must sign the [Wardlock Contributor Licence Agreement](CLA.md) through [CLA Assistant](https://cla-assistant.io). The bot comments on your first PR with a link; signing once covers all future contributions.
 
 Why: Wardlock is split between AGPL-3.0 (server, dashboard, design system) and MIT (CLI, API contract, clients). The CLA lets CubieCode keep that split coherent and relicense parts of the project in future (for example moving a package from AGPL to MIT) without tracking down every past contributor. You keep the copyright in your contribution.
 
