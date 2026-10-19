@@ -1,6 +1,6 @@
 # Security model
 
-Wardlock protects static content with secrets that travel in URLs. That is a deliberate trade-off: a share link must open instantly for people, `curl`, AI fetch tools and link-preview bots that keep no cookies. This document lists what we defend against, how, and what we accept. Implementation rules live in [wardlock-access](../.agents/skills/wardlock-access/SKILL.md); A2.7 checks the implementation against this document.
+Wardlock protects static content with secrets that travel in URLs. That is a deliberate trade-off: a share link must open instantly for people, `curl`, AI fetch tools and link-preview bots that keep no cookies. This document lists what we defend against, how, and what we accept. Implementation rules live in [wardlock-access](../.agents/skills/wardlock-access/SKILL.md); A2.7 checked the implementation against this document.
 
 ## Assets and actors
 

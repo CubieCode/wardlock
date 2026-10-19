@@ -26,11 +26,11 @@ Read docs/SECURITY-MODEL.md and the access sections of docs/SPEC.md and docs/ARC
 - Production docs recommend sites on a different registrable domain from the dashboard: hosted sites run arbitrary JavaScript, and sibling subdomains can toss cookies onto each other's parent domain.
 - In local `*.localhost` mode browsers treat `http://` as secure enough for `Secure` and `__Host-`; do not add an insecure fallback.
 
-**Reserved path.** `/.wardlock/` on every site serves login pages, the OAuth and email callbacks, logout and health. The edge handles it before any deployed file; deploys containing `.wardlock/` paths are rejected at upload and never served.
+**Reserved path.** `/.wardlock/` on every site serves login pages (password, email code, OAuth start), the OAuth callback, the use-limited link `view` interstitial, logout, health and, in proxy TLS mode, `tls-ask`. The edge handles it before any deployed file; deploys containing `.wardlock/` paths are rejected at upload and never served.
 
 **OAuth/OIDC.** Providers cannot register wildcard redirect URIs, so OAuth runs on one central auth origin, `auth.<base domain>`. After the provider callback it issues a single-use, short-lived (≤60 s), site-bound code and redirects to `https://<site>/.wardlock/callback`; the edge exchanges the code server-side for a host-only cookie. Use PKCE (S256) and `state` on every flow; validate `nonce` for OIDC. Allowlists match verified emails only.
 
-**Rate limits** (through `Limiter`, per IP and per site): password attempts, email-code sends, email-code verification, and token guesses (unknown public IDs and bad MACs). Responses must not reveal which part was wrong.
+**Rate limits** (in-memory limiters per IP, per site, per network under pressure and, for email codes, per address): password attempts, email-code sends, email-code verification, OAuth starts and token guesses (unknown public IDs and bad MACs). Responses must not reveal which part was wrong.
 
 **Response headers on protected sites:** `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer` (or `same-origin`), `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: private` (`no-store` on login, interstitial and callback pages, server errors and any response that sets or clears a cookie). Never block AI fetchers in `robots.txt`; access is the policy's job.
 

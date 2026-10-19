@@ -390,8 +390,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.6: Alpha documentation refresh
 
-- Status: `todo`
-- Owner:
+- Status: `review`
+- Owner: `feat/o4.6-alpha-docs`
 - PR:
 - Depends on: O4.4, A2.9, A2.10, A2.11
 - Scope: Make the documentation true for the public alpha. Replace "pre-alpha" with an alpha notice in README, CONTRIBUTING, docs/DEPLOYMENT.md and the docs site (`docs-site/src/build.mjs`, `docs-site/src/render.mjs` and their test); rewrite README's status paragraph and "What it will do" for features that are built. Correct statements in README, CONTRIBUTING, SECURITY, `docs/`, `docs-site/README.md`, `deploy/`, `fixtures/README.md`, DESIGN.md and the `wardlock-*` skills that contradict main (planned or unbuilt features that are now built, renamed packages, env vars, commands or endpoints, and wave 9 risks described as open). Refresh docs/LAUNCH-CHECKLIST.md: close the A2.9 to A2.11 decisions and rows, and re-run its _done_ checks on the new commit. Statements that stay true until the release is published (no `go-import` metadata on `wardlock.nz`, no published releases) stay. No behaviour, API or code changes beyond the docs-site notice strings.

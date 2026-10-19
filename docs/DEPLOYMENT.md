@@ -1,6 +1,6 @@
 # Deployment
 
-Wardlock is pre-alpha. This document describes how a v1 instance is meant to run so that roadmap items build towards it; the parts that need unbuilt features are marked with their roadmap ID. Nothing here should be used in production yet.
+Wardlock is alpha software. This document describes how to run an instance; a roadmap ID next to a section names the item that built it. Wardlock has not had an external security review, so do not use it to protect anything sensitive yet.
 
 Wardlock needs one machine, one binary and a data directory. SQLite is embedded; there is no database server, cache or queue to run. Docker is optional.
 
@@ -32,7 +32,7 @@ Wildcard certificates need the DNS-01 challenge, so automatic TLS needs an API t
 
 ### Custom domains (C1.9)
 
-Owners add their own hostnames to a site with `wardlock domain add` (or, later, the dashboard); the operator sets nothing up per domain. The owner creates a `CNAME` from their hostname to `<name>.<base domain>`, which reaches the server through the sites wildcard. Apex domains and CDN-proxied records use the TXT fallback described in [SPEC](SPEC.md#custom-domains-c19-d35) plus A/AAAA records (or ALIAS/flattening) pointing at the server, so publish the server's addresses to owners who need them. Ports 80 and 443 must be reachable from the internet for HTTP-01/TLS-ALPN-01.
+Owners add their own hostnames to a site with `wardlock domain add` or the site's page in the dashboard; the operator sets nothing up per domain. The owner creates a `CNAME` from their hostname to `<name>.<base domain>`, which reaches the server through the sites wildcard. Apex domains and CDN-proxied records use the TXT fallback described in [SPEC](SPEC.md#custom-domains-c19-d35) plus A/AAAA records (or ALIAS/flattening) pointing at the server, so publish the server's addresses to owners who need them. Ports 80 and 443 must be reachable from the internet for HTTP-01/TLS-ALPN-01.
 
 Keep the sites wildcard as A/AAAA records. Verification follows the owner's CNAME chain to its end and accepts it only when that end is `<name>.<base domain>` itself; if the wildcard were a CNAME to another name, every chain would end there and Wardlock could not tell which site a domain points at, so only the TXT record would verify.
 
@@ -98,7 +98,7 @@ DNS-01 records are created under `_acme-challenge.<base domain>` and removed aft
 
 ## Install a release binary
 
-Releases are not published yet (O4.4). When they are, each GitHub release carries `wardlockd_<version>_<os>_<arch>` and `wardlock_<version>_<os>_<arch>` archives for linux, darwin and windows on amd64 and arm64 (`.zip` on Windows), `checksums.txt` (SHA-256 of every archive and SBOM) and an SPDX SBOM per archive (`<archive>.sbom.json`). The wardlockd archive also contains `wardlockd.service`.
+Releases are not published yet; see the [launch checklist](LAUNCH-CHECKLIST.md). When they are, each GitHub release carries `wardlockd_<version>_<os>_<arch>` and `wardlock_<version>_<os>_<arch>` archives for linux, darwin and windows on amd64 and arm64 (`.zip` on Windows), `checksums.txt` (SHA-256 of every archive and SBOM) and an SPDX SBOM per archive (`<archive>.sbom.json`). The wardlockd archive also contains `wardlockd.service`.
 
 [`deploy/install.sh`](../deploy/install.sh) installs the binary for this machine (Linux or macOS) after checking the archive against `checksums.txt`; it refuses a missing or mismatched checksum and never runs `sudo` itself:
 
@@ -127,7 +127,7 @@ The per-address limit on sign-in emails (5 per hour) counts every request for th
 
 ## Docker
 
-[`deploy/Dockerfile`](../deploy/Dockerfile) packages the static `wardlockd` into a distroless image that runs as the `nonroot` user (uid 65532) with data in the `/data` volume. Release images will be multi-arch (`linux/amd64`, `linux/arm64`) at `ghcr.io/cubiecode/wardlock:<version>` and `:latest`; none are published yet (O4.4). [`deploy/compose.yaml`](../deploy/compose.yaml) is an example with a read-only root filesystem, all capabilities dropped and one volume for data. Until images are published, build a snapshot and point the example at it:
+[`deploy/Dockerfile`](../deploy/Dockerfile) packages the static `wardlockd` into a distroless image that runs as the `nonroot` user (uid 65532) with data in the `/data` volume. Release images will be multi-arch (`linux/amd64`, `linux/arm64`) at `ghcr.io/cubiecode/wardlock:<version>` and `:latest`; none are published yet. [`deploy/compose.yaml`](../deploy/compose.yaml) is an example with a read-only root filesystem, all capabilities dropped and one volume for data. Until images are published, build a snapshot and point the example at it:
 
 ```sh
 goreleaser release --snapshot --clean   # images ghcr.io/cubiecode/wardlock:<version>-amd64 and -arm64
@@ -142,7 +142,7 @@ curl http://127.0.0.1:9740/readyz      # the operator listener; see Health, read
 If something else already terminates TLS on the machine, run Wardlock in proxy mode (`WARDLOCK_TLS_MODE=proxy`, the default for non-`localhost` hosts) on a loopback port and proxy every site host and the dashboard to it, preserving the `Host` header. Examples: [`deploy/Caddyfile.example`](../deploy/Caddyfile.example), [`deploy/nginx.conf.example`](../deploy/nginx.conf.example). Then:
 
 - Pass `Host` unchanged and set `X-Forwarded-For` and `X-Forwarded-Proto`. Set `WARDLOCK_TRUSTED_PROXIES` to the proxy's addresses, comma-separated IP addresses or CIDR ranges (`127.0.0.1,::1` for a proxy on the same machine). A range covering every address (`0.0.0.0/0`, `::/0`) is refused, and IPv4-mapped forms (`::ffff:10.0.0.1`) are read as IPv4. Wardlock believes forwarding headers only from those peers: it reads `X-Forwarded-For` from the right, skipping trusted hops, so the first untrusted address is the client and anything a client prepends is ignored; it keeps `X-Forwarded-Proto` only when it is `http` or `https`; and it removes `X-Forwarded-*`, `X-Real-IP` and `Forwarded` from every other peer. `X-Forwarded-Host` is never used: routing is by `Host`.
-- Without `WARDLOCK_TRUSTED_PROXIES` (Wardlock logs a warning at startup), Wardlock sees every client behind the proxy as the proxy's address, so the per-IP sign-in limits (email-code sends and verifications, setup and sign-in-link redemptions) become instance-wide: one busy or hostile client can make sign-in wait for everyone until the window resets. Never list an address that untrusted clients can connect from, or they can choose their own address.
+- Without `WARDLOCK_TRUSTED_PROXIES` (Wardlock logs a warning at startup), Wardlock sees every client behind the proxy as the proxy's address, so every per-IP limit (owner and visitor sign-in, share-link guesses, API-token failures and CLI login) becomes instance-wide: one busy or hostile client can make sign-in wait for everyone until the window resets. Never list an address that untrusted clients can connect from, or they can choose their own address.
 - Do not cache protected responses at the proxy, and do not log query strings (they carry share-link tokens), or redact the `t` parameter. The examples do this.
 - Allow request bodies of at least the per-file limit (25 MiB default) for blob uploads.
 - For custom domains, the proxy must obtain their certificates. With Caddy, use on-demand TLS with `ask` set to `http://127.0.0.1:8080/.wardlock/tls-ask`, so it only requests certificates for hostnames Wardlock has verified, and a catch-all `https://` site with `tls { on_demand }`, as the example does. `/.wardlock/tls-ask?domain=<hostname>` answers 200 for an active custom domain and 404 for anything else, and only to a peer in `WARDLOCK_TRUSTED_PROXIES` (any `Host`) whose request carries no `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`, `Forwarded` or `X-Real-IP` header: Caddy's own `ask` request has none, while every visitor request it forwards does. Every other request, and every TLS mode but proxy, gets 404. As a second guard, make the public site blocks answer `/.wardlock/tls-ask` themselves with a 404 before proxying, as the examples do (Caddy: `@tlsask path /.wardlock/tls-ask*` with `respond @tlsask 404`; nginx: `location ^~ /.wardlock/tls-ask { return 404; }`). Caddy keeps a certificate it already holds for a domain that later lapses or is removed until renewal, but Wardlock answers that host with the unknown-host 404. nginx cannot issue certificates on demand; use Caddy, or manage custom-domain certificates yourself.
@@ -302,7 +302,7 @@ The Go modules use vanity import paths on the project's own domain: `wardlock.nz
 />
 ```
 
-The fourth field is the module's directory inside the repository; Go supports it from 1.25. Until the domain serves this metadata, local builds rely on `go.work` and the `replace` directives in `apps/server/go.mod` and `apps/cli/go.mod`. Serving it is a launch task (O4.4); no DNS or hosting change is part of the current work.
+The fourth field is the module's directory inside the repository; Go supports it from 1.25. Until the domain serves this metadata, local builds rely on `go.work` and the `replace` directives in `apps/server/go.mod` and `apps/cli/go.mod`. Serving it is a launch task in the [launch checklist](LAUNCH-CHECKLIST.md).
 
 ## Releases and module tags
 

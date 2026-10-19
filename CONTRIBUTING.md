@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in Wardlock. It is pre-alpha, so the roadmap is driven by the maintainers; please open an issue to discuss a change before writing a large PR.
+Thanks for your interest in Wardlock. It is alpha software and the roadmap is driven by the maintainers, so please open an issue to discuss a change before writing a large PR.
 
 ## Contributor licence agreement
 
