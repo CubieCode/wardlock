@@ -313,7 +313,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.2: Health, metrics, logs and backups
 
-- Status: `review`
+- Status: `done`
 - Owner: feat/o4.2-health-metrics-backups
 - PR: https://github.com/CubieCode/wardlock/pull/62
 - Depends on: C1.2, C1.4
