@@ -1166,6 +1166,9 @@ type TokenId = Id
 // BadRequest The body of every error response.
 type BadRequest = Error
 
+// CheckedRecently The body of every error response.
+type CheckedRecently = Error
+
 // Conflict The body of every error response.
 type Conflict = Error
 
@@ -1876,7 +1879,7 @@ type ClientInterface interface {
 
 	// VerifyDomain Check a custom domain's DNS now.
 	//
-	// Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain.
+	// Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain: a check too soon after the last answers `429` with code `checked_recently`. Any other `429` code, such as `rate_limited` for an API token refused after failed attempts, is not a cooldown.
 	//
 	// Corresponds with POST /api/v0/sites/{site}/domains/{hostname}/verify (the `VerifyDomain` operationId).
 	VerifyDomain(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2846,7 +2849,7 @@ func (c *Client) GetDomain(ctx context.Context, site SiteName, hostname DomainHo
 
 // VerifyDomain Check a custom domain's DNS now.
 //
-// Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain.
+// Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain: a check too soon after the last answers `429` with code `checked_recently`. Any other `429` code, such as `rate_limited` for an API token refused after failed attempts, is not a cooldown.
 //
 // Corresponds with POST /api/v0/sites/{site}/domains/{hostname}/verify (the `VerifyDomain` operationId).
 func (c *Client) VerifyDomain(ctx context.Context, site SiteName, hostname DomainHostname, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5609,7 +5612,7 @@ type ClientWithResponsesInterface interface {
 
 	// VerifyDomainWithResponse Check a custom domain's DNS now.
 	//
-	// Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain.
+	// Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain: a check too soon after the last answers `429` with code `checked_recently`. Any other `429` code, such as `rate_limited` for an API token refused after failed attempts, is not a cooldown.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -8028,7 +8031,7 @@ type VerifyDomainResponse struct {
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *NotFound
 	// JSON429 the response for an HTTP 429 `application/json` response
-	JSON429 *RateLimited
+	JSON429 *CheckedRecently
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *Error
 	// Headers429 the parsed response headers for an HTTP 429 response
@@ -8056,7 +8059,7 @@ func (r VerifyDomainResponse) GetJSON404() *NotFound {
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
-func (r VerifyDomainResponse) GetJSON429() *RateLimited {
+func (r VerifyDomainResponse) GetJSON429() *CheckedRecently {
 	return r.JSON429
 }
 
@@ -9636,7 +9639,7 @@ func (c *ClientWithResponses) GetDomainWithResponse(ctx context.Context, site Si
 
 // VerifyDomainWithResponse Check a custom domain's DNS now.
 //
-// Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain.
+// Runs a check immediately and answers with the result: `status`, `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per domain: a check too soon after the last answers `429` with code `checked_recently`. Any other `429` code, such as `rate_limited` for an API token refused after failed attempts, is not a cooldown.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -11822,7 +11825,7 @@ func ParseVerifyDomainResponse(rsp *http.Response) (*VerifyDomainResponse, error
 		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest RateLimited
+		var dest CheckedRecently
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -72,7 +72,7 @@ info:
     | 409 | `site_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `default_policy`, `passkey_limit` |
     | 410 | `login_expired` |
     | 413 | `limit_exceeded` |
-    | 429 | `rate_limited`, `slow_down`; `Retry-After` gives the seconds to wait |
+    | 429 | `rate_limited`, `slow_down`, `checked_recently` (a domain check came too soon after the last); `Retry-After` gives the seconds to wait |
     | 500 | `internal` |
     | 501 | `not_implemented`: the operation is in the contract but not built yet |
   license:
@@ -1463,7 +1463,9 @@ paths:
       description: >-
         Runs a check immediately and answers with the result: `status`,
         `lastCheckedAt` and, on failure, `failureReason`. Rate-limited per
-        domain.
+        domain: a check too soon after the last answers `429` with code
+        `checked_recently`. Any other `429` code, such as `rate_limited` for
+        an API token refused after failed attempts, is not a cooldown.
       tags: [domains]
       security:
         - sessionCookie: []
@@ -1487,7 +1489,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
-          $ref: '#/components/responses/RateLimited'
+          $ref: '#/components/responses/CheckedRecently'
         default:
           $ref: '#/components/responses/Error'
 
@@ -2058,6 +2060,21 @@ components:
           example:
             code: rate_limited
             message: Too many attempts. Try again in 30 seconds.
+    CheckedRecently:
+      description: >-
+        The domain was checked moments ago (`checked_recently`); try again
+        after `Retry-After`. A refused API token answers `rate_limited`
+        instead, which waiting out the cooldown does not fix.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: checked_recently
+            message: This domain was checked moments ago. Try again shortly.
     Error:
       description: >-
         Any other error, including `500 internal` and `501 not_implemented`

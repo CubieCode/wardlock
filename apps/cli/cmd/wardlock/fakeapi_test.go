@@ -55,9 +55,10 @@ type fakeAPI struct {
 	// domains are each site's custom domains (domain_test.go).
 	domains map[string][]*apiclient.Domain
 	// verifyPasses is how many more verify calls fail before one passes;
-	// verifyCalls counts them; throttle answers the next verify 429.
+	// verifyCalls counts them; throttle answers the next verify with the
+	// cooldown 429, and refuseToken with a refused token's 429.
 	verifyPasses, verifyCalls int
-	throttle                  bool
+	throttle, refuseToken     bool
 }
 
 type fakeSite struct {

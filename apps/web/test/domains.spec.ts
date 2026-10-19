@@ -206,6 +206,41 @@ for (const scheme of schemes) {
       await page.unroute(`${api}/${hostname}/verify`);
     });
 
+    await test.step('a 429 that is not the cooldown shows the server’s error', async () => {
+      // A session never meets the token limiter, so the refusal it sends
+      // to a bearer request is answered here.
+      await page.route(`${api}/${hostname}/verify`, (route) =>
+        route.fulfill({
+          status: 429,
+          headers: { 'Retry-After': '600' },
+          json: {
+            code: 'rate_limited',
+            message: 'Too many failed attempts. Try again later.',
+          },
+        }),
+      );
+      await checkNow.click();
+      const notice = row.getByText(
+        'Could not check the domain: Too many failed attempts. Try again later.',
+      );
+      await expect(notice).toBeVisible();
+      await expect(row.getByText(/Checked moments ago/)).toHaveCount(0);
+      // The message wraps inside the row rather than overflowing it.
+      const [box, rowBox] = await Promise.all([
+        notice.boundingBox(),
+        row.boundingBox(),
+      ]);
+      expect(box!.x).toBeGreaterThanOrEqual(rowBox!.x);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(
+        rowBox!.x + rowBox!.width,
+      );
+      expect(
+        await notice.evaluate((el) => el.scrollWidth - el.clientWidth),
+      ).toBeLessThanOrEqual(0);
+      await shot('refused');
+      await page.unroute(`${api}/${hostname}/verify`);
+    });
+
     await test.step('a hostname another site holds is domain_taken', async () => {
       await page.goto(`${origin}/sites/${other}`);
       await expect(

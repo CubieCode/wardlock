@@ -138,9 +138,9 @@ func (s *Server) VerifyDomain(ctx context.Context, req VerifyDomainRequestObject
 	}
 	d, err := s.Sites.VerifyDomain(ctx, owner, req.Site, req.Hostname)
 	if soon, ok := errors.AsType[*sites.CheckTooSoonError](err); ok {
-		return VerifyDomain429JSONResponse{RateLimitedJSONResponse{
-			Body:    Error{Code: "rate_limited", Message: "This domain was checked moments ago. Try again shortly."},
-			Headers: RateLimitedResponseHeaders{RetryAfter: retryAfter(soon.RetryAfter)},
+		return VerifyDomain429JSONResponse{CheckedRecentlyJSONResponse{
+			Body:    Error{Code: "checked_recently", Message: "This domain was checked moments ago. Try again shortly."},
+			Headers: CheckedRecentlyResponseHeaders{RetryAfter: retryAfter(soon.RetryAfter)},
 		}}, nil
 	}
 	if err != nil {

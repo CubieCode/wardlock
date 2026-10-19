@@ -76,7 +76,13 @@ func (f *fakeAPI) handleDomains(handle func(pattern, scope string, h func(w http
 		if f.throttle {
 			f.throttle = false
 			w.Header().Set("Retry-After", "7")
-			reply(w, http.StatusTooManyRequests, apiErr("rate_limited", "This domain was checked moments ago. Try again shortly."))
+			reply(w, http.StatusTooManyRequests, apiErr("checked_recently", "This domain was checked moments ago. Try again shortly."))
+			return
+		}
+		if f.refuseToken {
+			f.refuseToken = false
+			w.Header().Set("Retry-After", "600")
+			reply(w, http.StatusTooManyRequests, apiErr("rate_limited", "Too many failed attempts. Try again later."))
 			return
 		}
 		if f.verifyPasses > 0 {
@@ -204,6 +210,24 @@ func TestDomainAddWait(t *testing.T) {
 		t.Fatalf("waited %v", waited)
 	}
 
+	// A refused token's 429 is not a cooldown: --wait stops at once with
+	// the server's message instead of polling until the deadline.
+	out.Reset()
+	errOut.Reset()
+	srv.verifyPasses, srv.verifyCalls = 0, 0
+	srv.refuseToken = true
+	start = a.now()
+	err = run(t.Context(), a, []string{"--json", "domain", "add", "docs", "refused.example.com", "--wait"})
+	if code := exitCode(errOut, err); code != 1 || out.Len() != 0 {
+		t.Fatalf("refused: exit %d, stdout %q", code, out)
+	}
+	if !strings.Contains(errOut.String(), "Too many failed attempts. Try again later.") || strings.Contains(errOut.String(), "after 10 minutes") {
+		t.Fatalf("refused: stderr %q", errOut)
+	}
+	if srv.verifyCalls != 1 || a.now().Sub(start) != waitInterval {
+		t.Fatalf("refused: %d checks over %v", srv.verifyCalls, a.now().Sub(start))
+	}
+
 	// Text output with --wait ends with the active status.
 	out.Reset()
 	srv.verifyPasses = 1
@@ -273,6 +297,13 @@ func TestDomainListVerifyRemove(t *testing.T) {
 	err := run(ctx, a, []string{"domain", "verify", "docs", "c.example.com"})
 	if code := exitCode(errOut, err); code != 1 || !strings.Contains(errOut.String(), "checked moments ago: try again in 7s") {
 		t.Fatalf("throttled: exit %d %q", code, errOut)
+	}
+	errOut.Reset()
+	srv.refuseToken = true
+	err = run(ctx, a, []string{"domain", "verify", "docs", "c.example.com"})
+	if code := exitCode(errOut, err); code != 1 || !strings.Contains(errOut.String(), "Too many failed attempts. Try again later.") ||
+		strings.Contains(errOut.String(), "checked moments ago") {
+		t.Fatalf("refused: exit %d %q", code, errOut)
 	}
 	errOut.Reset()
 	err = run(ctx, a, []string{"domain", "verify", "docs", "z.example.com"})

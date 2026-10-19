@@ -1167,6 +1167,9 @@ type TokenId = Id
 // BadRequest The body of every error response.
 type BadRequest = Error
 
+// CheckedRecently The body of every error response.
+type CheckedRecently = Error
+
 // Conflict The body of every error response.
 type Conflict = Error
 
@@ -2995,6 +2998,15 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 }
 
 type BadRequestJSONResponse Error
+
+type CheckedRecentlyResponseHeaders struct {
+	RetryAfter *int32
+}
+type CheckedRecentlyJSONResponse struct {
+	Body Error
+
+	Headers CheckedRecentlyResponseHeaders
+}
 
 type ConflictJSONResponse Error
 
@@ -5692,7 +5704,7 @@ func (response VerifyDomain404JSONResponse) VisitVerifyDomainResponse(w http.Res
 	return err
 }
 
-type VerifyDomain429JSONResponse struct{ RateLimitedJSONResponse }
+type VerifyDomain429JSONResponse struct{ CheckedRecentlyJSONResponse }
 
 func (response VerifyDomain429JSONResponse) VisitVerifyDomainResponse(w http.ResponseWriter) error {
 

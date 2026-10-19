@@ -221,7 +221,7 @@ func waitActive(ctx context.Context, a *app, c *conn, site apiclient.Site, d api
 			if d.Status == apiclient.DomainStatusActive {
 				return d, nil
 			}
-		case res.StatusCode() == http.StatusTooManyRequests:
+		case checkedRecently(res.HTTPResponse, res.Body):
 			pause = max(waitInterval, retryAfter(res.HTTPResponse))
 		default:
 			return d, domainFailed(c, res.HTTPResponse, res.Body, site.Name, d.Hostname)
@@ -300,7 +300,7 @@ func domainVerify(ctx context.Context, a *app, args []string) error {
 	if err != nil {
 		return c.unreachable(ctx, err)
 	}
-	if res.StatusCode() == http.StatusTooManyRequests {
+	if checkedRecently(res.HTTPResponse, res.Body) {
 		return fmt.Errorf("%s was checked moments ago: try again in %s", host, max(time.Second, retryAfter(res.HTTPResponse)))
 	}
 	if res.JSON200 == nil {
@@ -373,6 +373,13 @@ func domainRemove(ctx context.Context, a *app, args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "Removed %s from %s. It is no longer served.\n%s\n", host, site.Name, reminder)
 	return nil
+}
+
+// checkedRecently reports whether a verify answer is the per-domain
+// cooldown, the only 429 worth waiting out. Any other 429, such as a token
+// refused after failed attempts, is an error to show.
+func checkedRecently(res *http.Response, body []byte) bool {
+	return res != nil && res.StatusCode == http.StatusTooManyRequests && errorCode(body) == "checked_recently"
 }
 
 // domainFailed is conn.failed with a missing domain explained.
