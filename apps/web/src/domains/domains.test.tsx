@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { createApiClient } from '@wardlock/apiclient-ts';
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -10,9 +11,10 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app.js';
 import type { Site } from '../sites/format.js';
+import { refreshInterval } from './domains.js';
 import type { Domain } from './format.js';
 
 const me = {
@@ -99,7 +101,10 @@ const row = (hostname: string) =>
   within(card()).getByRole('listitem', { name: hostname });
 
 beforeEach(() => window.history.replaceState(null, '', '/sites/docs'));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe('custom domains on the site page', () => {
   it('says what a custom domain is when there is none', async () => {
@@ -333,6 +338,189 @@ describe('custom domains on the site page', () => {
     ).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Custom domains' })).toBeNull();
     expect(calls.some((c) => c.route.startsWith('POST'))).toBe(false);
+  });
+
+  it('keeps a persistent, empty status region for results', async () => {
+    const { api } = fakeServer(sitePage([domain('p.example.test', 'pending')]));
+    render(<App api={api} />);
+    await screen.findByRole('listitem', { name: 'p.example.test' });
+    const regions = within(card())
+      .getAllByRole('status')
+      .filter((el) => el.classList.contains('domain-live'));
+    // One for the card, one for the row; both mounted before anything happens.
+    expect(regions).toHaveLength(2);
+    expect(regions.every((el) => el.textContent === '')).toBe(true);
+  });
+
+  it('reads the list again while a domain is pending, and redraws times', async () => {
+    const ticks: (() => void)[] = [];
+    const realInterval = window.setInterval;
+    vi.spyOn(window, 'setInterval').mockImplementation(((
+      handler: () => void,
+      delay?: number,
+    ) => {
+      if (delay === refreshInterval) {
+        ticks.push(handler);
+        return 0;
+      }
+      return realInterval(handler, delay);
+    }) as typeof window.setInterval);
+    let current = domain('p.example.test', 'pending', {
+      lastCheckedAt: now - 3 * minute,
+    });
+    const { api, calls } = fakeServer({
+      ...sitePage([]),
+      [`GET ${base}/domains`]: () => Response.json({ items: [current] }),
+    });
+    render(<App api={api} />);
+    await screen.findByRole('listitem', { name: 'p.example.test' });
+    expect(row('p.example.test').textContent).toContain(
+      'Last checked 3 minutes ago',
+    );
+    const lists = () =>
+      calls.filter((c) => c.route === `GET ${base}/domains`).length;
+    const before = lists();
+
+    // Time passes: the tick redraws relative times without new data.
+    const later = now + 2 * minute;
+    vi.spyOn(Date, 'now').mockReturnValue(later);
+    current = domain('p.example.test', 'active', {
+      lastCheckedAt: later,
+      verifiedAt: later,
+    });
+    await act(async () => ticks.at(-1)!());
+    await waitFor(() =>
+      expect(within(row('p.example.test')).getByText('Active')).toBeTruthy(),
+    );
+    expect(lists()).toBe(before + 1);
+    expect(row('p.example.test').textContent).toContain(
+      'Last checked just now',
+    );
+
+    // Nothing pending any more: ticks only redraw, they do not fetch.
+    await act(async () => ticks.at(-1)!());
+    expect(lists()).toBe(before + 1);
+  });
+
+  it('does not read the list while the page is hidden', async () => {
+    const ticks: (() => void)[] = [];
+    const realInterval = window.setInterval;
+    vi.spyOn(window, 'setInterval').mockImplementation(((
+      handler: () => void,
+      delay?: number,
+    ) => {
+      if (delay === refreshInterval) {
+        ticks.push(handler);
+        return 0;
+      }
+      return realInterval(handler, delay);
+    }) as typeof window.setInterval);
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    const { api, calls } = fakeServer(
+      sitePage([domain('p.example.test', 'pending')]),
+    );
+    render(<App api={api} />);
+    await screen.findByRole('listitem', { name: 'p.example.test' });
+    const lists = () =>
+      calls.filter((c) => c.route === `GET ${base}/domains`).length;
+    const before = lists();
+    await act(async () => ticks.at(-1)!());
+    expect(lists()).toBe(before);
+    // Coming back reads it straight away.
+    hidden.mockReturnValue(false);
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() => expect(lists()).toBe(before + 1));
+  });
+
+  it('keeps focus on Check now while the check runs', async () => {
+    // The verify answer is held until the test releases it.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const { api, calls } = fakeServer({
+      ...sitePage([domain('l.example.test', 'lapsed')]),
+      [`POST ${base}/domains/l.example.test/verify`]: (() =>
+        held.then(() =>
+          Response.json(domain('l.example.test', 'lapsed')),
+        )) as unknown as Handler,
+    });
+    render(<App api={api} />);
+    await screen.findByRole('listitem', { name: 'l.example.test' });
+    const button = screen.getByRole('button', {
+      name: 'Check l.example.test now',
+    });
+    button.focus();
+    fireEvent.click(button);
+    await waitFor(() => expect(button.textContent).toBe('Checking…'));
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.hasAttribute('disabled')).toBe(false);
+    expect(document.activeElement).toBe(button);
+    // A second press while checking sends nothing more.
+    fireEvent.click(button);
+    release();
+    await waitFor(() => expect(button.textContent).toBe('Check now'));
+    expect(document.activeElement).toBe(button);
+    expect(calls.filter((c) => c.route.endsWith('/verify'))).toHaveLength(1);
+  });
+
+  it('says a lapsed domain still does not check out', async () => {
+    const { api } = fakeServer({
+      ...sitePage([domain('l.example.test', 'lapsed')]),
+      [`POST ${base}/domains/l.example.test/verify`]: () =>
+        Response.json(domain('l.example.test', 'lapsed')),
+    });
+    render(<App api={api} />);
+    await screen.findByRole('listitem', { name: 'l.example.test' });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Check l.example.test now' }),
+    );
+    await waitFor(() =>
+      expect(row('l.example.test').textContent).toContain(
+        'Checked: the record still does not check out.',
+      ),
+    );
+    expect(row('l.example.test').textContent).not.toContain('yet.');
+  });
+
+  it('explains a domain dropped by Check now and moves focus to it', async () => {
+    const { api } = fakeServer({
+      ...sitePage([domain('p.example.test', 'pending')]),
+    });
+    render(<App api={api} />);
+    await screen.findByRole('listitem', { name: 'p.example.test' });
+    const button = screen.getByRole('button', {
+      name: 'Check p.example.test now',
+    });
+    button.focus();
+    fireEvent.click(button);
+    await screen.findByRole('heading', { name: 'No custom domains yet' });
+    const notice = within(card()).getByText(
+      'p.example.test was no longer claimed and has been removed from the list.',
+    );
+    const region = notice.closest('[role="status"]')!;
+    await waitFor(() => expect(document.activeElement).toBe(region));
+  });
+
+  it('moves focus to the result after removing a domain', async () => {
+    const { api } = fakeServer({
+      ...sitePage([domain('p.example.test', 'pending')]),
+      [`DELETE ${base}/domains/p.example.test`]: () =>
+        new Response(null, { status: 204 }),
+    });
+    render(<App api={api} />);
+    await screen.findByRole('listitem', { name: 'p.example.test' });
+    const opener = screen.getByRole('button', {
+      name: 'Remove p.example.test',
+    });
+    opener.focus();
+    fireEvent.click(opener);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove domain' }));
+    const notice = await within(card()).findByText(
+      'Removed p.example.test. Remember to delete its DNS record.',
+    );
+    const region = notice.closest('[role="status"]')!;
+    await waitFor(() => expect(document.activeElement).toBe(region));
   });
 
   it('offers a retry when the list cannot load', async () => {

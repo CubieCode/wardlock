@@ -11,7 +11,7 @@ import {
   TextField,
   type NoticeTone,
 } from '@wardlock/ui';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type Ref } from 'react';
 import type { Site } from '../sites/format.js';
 import {
   byHostname,
@@ -31,6 +31,34 @@ type ListState =
   | { kind: 'error' }
   | { kind: 'ready'; domains: Domain[]; nextCursor: string | undefined };
 
+type Message = { tone: NoticeTone; text: string } | null;
+
+/** How often the list is read again while a domain is pending. */
+export const refreshInterval = 30_000;
+
+/**
+ * A status region that stays mounted, so screen readers announce what is
+ * written into it. Empty, it takes no space; it can take focus when the
+ * control that caused the message is gone.
+ */
+function LiveNotice({
+  message,
+  ref,
+}: {
+  message: Message;
+  ref?: Ref<HTMLDivElement>;
+}) {
+  return (
+    <div ref={ref} role="status" tabIndex={-1} className="domain-live">
+      {message && (
+        <div className={`wl-notice wl-notice-${message.tone}`}>
+          {message.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * A site's custom domains: add a hostname, see the DNS record to create
  * (and the TXT fallback) with copy actions, follow each one's status and
@@ -39,7 +67,13 @@ type ListState =
 export function DomainsCard({ api, site }: { api: ApiClient; site: Site }) {
   const [state, setState] = useState<ListState>({ kind: 'loading' });
   const [removing, setRemoving] = useState<Domain | null>(null);
-  const [done, setDone] = useState<string | null>(null);
+  const [done, setDone] = useState<Message>(null);
+  // Set when the control that acted is gone (a removed row), so focus
+  // lands on the result instead of the page body.
+  const focusDone = useRef(false);
+  const doneRef = useRef<HTMLDivElement>(null);
+  // Re-rendered on each refresh tick, so relative times do not go stale.
+  const [, setTick] = useState(0);
   const [more, setMore] = useState<'idle' | 'loading' | 'error'>('idle');
   const [attempt, setAttempt] = useState(0);
   // Bumped by every change, so an older page requested before it cannot
@@ -70,6 +104,63 @@ export function DomainsCard({ api, site }: { api: ApiClient; site: Site }) {
       live = false;
     };
   }, [api, site.name, attempt]);
+
+  // Runs after the removed row's dialog has unmounted and given up focus.
+  useEffect(() => {
+    if (!focusDone.current) return;
+    focusDone.current = false;
+    doneRef.current?.focus();
+  }, [done]);
+
+  const hasDomains = state.kind === 'ready' && state.domains.length > 0;
+  const anyPending =
+    state.kind === 'ready' && state.domains.some((d) => d.status === 'pending');
+  // While a domain is pending, read the list again every so often, but not
+  // while the page is hidden; every tick also redraws the check times.
+  useEffect(() => {
+    if (!hasDomains) return;
+    let live = true;
+    const refresh = async () => {
+      setTick((n) => n + 1);
+      if (!anyPending || document.hidden) return;
+      const started = generation.current;
+      const { data } = await api
+        .GET('/api/v0/sites/{site}/domains', {
+          params: { path: { site: site.name } },
+        })
+        .catch(() => ({ data: undefined }));
+      // A change made meanwhile is newer than this answer.
+      if (!live || !data || started !== generation.current) return;
+      setState((current) => {
+        if (current.kind !== 'ready') return current;
+        // The whole list came back: it also drops domains removed
+        // elsewhere or deleted after 7 days pending.
+        if (!data.nextCursor && !current.nextCursor)
+          return { ...current, domains: data.items };
+        return {
+          ...current,
+          domains: current.domains.map(
+            (d) => data.items.find((fresh) => fresh.id === d.id) ?? d,
+          ),
+        };
+      });
+    };
+    const timer = setInterval(refresh, refreshInterval);
+    const onVisible = () => {
+      if (!document.hidden) void refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      live = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [api, site.name, hasDomains, anyPending]);
+
+  const announce = (message: Message, moveFocus = false) => {
+    setDone(message);
+    focusDone.current = moveFocus;
+  };
 
   const update = (change: (domains: Domain[]) => Domain[]) => {
     generation.current += 1;
@@ -158,9 +249,16 @@ export function DomainsCard({ api, site }: { api: ApiClient; site: Site }) {
             site={site}
             domain={domain}
             onChecked={replace}
-            onGone={() =>
-              update((domains) => domains.filter((d) => d.id !== domain.id))
-            }
+            onGone={() => {
+              update((domains) => domains.filter((d) => d.id !== domain.id));
+              announce(
+                {
+                  tone: 'warning',
+                  text: `${domain.hostname} was no longer claimed and has been removed from the list.`,
+                },
+                true,
+              );
+            }}
             onRemove={() => {
               setDone(null);
               setRemoving(domain);
@@ -181,14 +279,16 @@ export function DomainsCard({ api, site }: { api: ApiClient; site: Site }) {
         site={site}
         onAdded={(domain) => {
           update((domains) => [...domains, domain].sort(byHostname));
-          setDone(
-            domain.status === 'active'
-              ? `Added ${domain.hostname}. Its DNS record already checks out, so it is live.`
-              : `Added ${domain.hostname}. Create its DNS record below; Wardlock checks it automatically.`,
-          );
+          announce({
+            tone: 'info',
+            text:
+              domain.status === 'active'
+                ? `Added ${domain.hostname}. Its DNS record already checks out, so it is live.`
+                : `Added ${domain.hostname}. Create its DNS record below; Wardlock checks it automatically.`,
+          });
         }}
       />
-      {done && <Notice>{done}</Notice>}
+      <LiveNotice ref={doneRef} message={done} />
       {body}
       {more === 'error' && (
         <Notice tone="danger">Could not load more domains. Try again.</Notice>
@@ -213,8 +313,12 @@ export function DomainsCard({ api, site }: { api: ApiClient; site: Site }) {
           onClose={() => setRemoving(null)}
           onRemoved={() => {
             update((domains) => domains.filter((d) => d.id !== removing.id));
-            setDone(
-              `Removed ${removing.hostname}. Remember to delete its DNS record.`,
+            announce(
+              {
+                tone: 'info',
+                text: `Removed ${removing.hostname}. Remember to delete its DNS record.`,
+              },
+              true,
             );
             setRemoving(null);
           }}
@@ -334,15 +438,13 @@ function DomainRow({
   onRemove: () => void;
 }) {
   const [checking, setChecking] = useState(false);
-  const [result, setResult] = useState<{
-    tone: NoticeTone;
-    text: string;
-  } | null>(null);
+  const [result, setResult] = useState<Message>(null);
   const failure = domain.failureReason
     ? failureText(domain.failureReason)
     : null;
 
   const checkNow = async () => {
+    if (checking) return;
     setChecking(true);
     setResult(null);
     const answer = await api
@@ -358,7 +460,10 @@ function DomainRow({
           ? { tone: 'info', text: 'Checked: the record checks out.' }
           : {
               tone: 'warning',
-              text: 'Checked: the record does not check out yet.',
+              text:
+                answer.data.status === 'lapsed'
+                  ? 'Checked: the record still does not check out.'
+                  : 'Checked: the record does not check out yet.',
             },
       );
     }
@@ -409,7 +514,8 @@ function DomainRow({
         <div className="domain-row-actions">
           <Button
             type="button"
-            disabled={checking}
+            // Not `disabled`, which would drop keyboard focus mid-check.
+            aria-disabled={checking}
             aria-label={`Check ${domain.hostname} now`}
             onClick={checkNow}
           >
@@ -432,7 +538,7 @@ function DomainRow({
             domain.createdAt + pendingLifetime,
           )}`}
       </p>
-      {result && <Notice tone={result.tone}>{result.text}</Notice>}
+      <LiveNotice message={result} />
       {failure && (
         <div className="domain-failure">
           <p className="domain-failure-headline">{failure.headline}</p>

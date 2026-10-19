@@ -141,3 +141,26 @@
 .domain-more {
   min-width: 0;
 }
+
+/* Mounted even when empty so screen readers announce what appears in it;
+   empty, it takes no space in the layout. */
+.domain-live:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.domain-live:focus {
+  outline: none;
+}
+
+.domain-live:focus-visible > .wl-notice {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.domain-row-actions [aria-disabled='true'] {
+  cursor: progress;
+}
