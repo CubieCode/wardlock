@@ -278,7 +278,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.4: Policies editor
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: feat/d3.4-policies-editor
 - PR:
 - Depends on: D3.2, A2.3, A2.4

@@ -363,13 +363,14 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   column-gap: var(--space-3);
-  align-items: center;
+  align-items: start;
 }
 
+/* Centred on the label's first line, however many lines it wraps to. */
 .wl-choice-input {
   width: 1.25rem;
   height: 1.25rem;
-  margin: 0;
+  margin: calc((var(--touch-target) - 1.25rem) / 2) 0 0;
   accent-color: var(--color-primary);
   cursor: pointer;
 }
@@ -378,6 +379,7 @@
   display: flex;
   align-items: center;
   min-height: var(--touch-target);
+  padding-block: var(--space-2);
   cursor: pointer;
 }
 
