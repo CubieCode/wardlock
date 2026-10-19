@@ -1,0 +1,14 @@
+{
+  "name": "@wardlock/docs-site",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node src/build.mjs && node src/check-links.mjs",
+    "check-links": "node src/check-links.mjs"
+  },
+  "devDependencies": {
+    "marked": "18.1.1"
+  }
+}

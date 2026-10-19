@@ -324,9 +324,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.3: Documentation site on Wardlock
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/o4.3-docs-site`
+- PR: https://github.com/CubieCode/wardlock/pull/58
 - Depends on: C1.5, A2.2
 - Scope: A static docs site generated from `docs/` (user-facing pages only), deployed with `wardlock deploy` to a Wardlock instance; a CI job that builds it (deploying only when authorised).
 - Acceptance: The site builds in CI with no external services; links are checked; it is protected or public as decided at assignment; no deploy happens without explicit authorisation.

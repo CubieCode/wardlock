@@ -8,6 +8,7 @@ export default defineConfig({
       'apps/web/src/**/*.test.{ts,tsx}',
       'packages/*/src/**/*.test.{ts,tsx}',
       'scripts/**/*.test.mjs',
+      'docs-site/src/**/*.test.mjs',
     ],
     environment: 'node',
   },

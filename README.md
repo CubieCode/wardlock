@@ -48,6 +48,7 @@ The Go modules use vanity import paths on `wardlock.nz`, which does not serve `g
 | `pnpm format`       | Apply Prettier and gofmt                                        |
 | `pnpm browser:test` | Playwright acceptance against a real server, desktop and mobile |
 | `pnpm test:watch`   | Vitest in watch mode                                            |
+| `pnpm docs:build`   | Build the docs site from `docs/` and check its links            |
 
 ## Repository layout
 
@@ -64,6 +65,7 @@ fixtures/             Synthetic sample sites for tests
 scripts/              Checks, codegen, dev runner, worktree setup
 tools/                Pinned Go tool versions (sqlc, oapi-codegen, linters)
 docs/                 Spec, architecture, modules, security model, deployment
+docs-site/            Static docs site generated from docs/ (MIT)
 .agents/skills/       Agent skills; .claude/skills links here
 ```
 
