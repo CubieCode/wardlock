@@ -10,9 +10,10 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
-import { StrictMode, type ReactElement } from 'react';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from './app.js';
+import { runEffects } from './test/effects.js';
 
 const owner = {
   owner: {
@@ -85,17 +86,6 @@ function type(label: string | RegExp, value: string) {
   fireEvent.change(screen.getByRole('textbox', { name: label }), {
     target: { value },
   });
-}
-
-/**
- * Runs the effects React still has queued from the last commit. findBy*
- * resolves as soon as the page is in the DOM, but useEffect callbacks, such as
- * the session's focus listeners, run in a later scheduler task that can lose
- * that race under CPU load. React runs them before it starts any new update,
- * so rendering the same element again flushes them and changes nothing else.
- */
-function runEffects(rerender: (ui: ReactElement) => void, ui: ReactElement) {
-  act(() => rerender(ui));
 }
 
 beforeEach(() => at('/'));
