@@ -289,8 +289,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.5: Custom domains
 
-- Status: `todo`
-- Owner:
+- Status: `review`
+- Owner: feat/d3.5-custom-domains
 - PR:
 - Depends on: D3.2, C1.9
 - Scope: A Domains section on the site detail screen: add a hostname, show the routing CNAME (and the TXT fallback with when to use it) with copy actions, live status with last check and the failure reason in plain words, "Check now", remove with a confirmation that reminds the owner to delete the DNS record.

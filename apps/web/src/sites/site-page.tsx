@@ -12,6 +12,7 @@ import {
   StatusBadge,
 } from '@wardlock/ui';
 import { useEffect, useRef, useState } from 'react';
+import { DomainsCard } from '../domains/domains.js';
 import { ShareLinksCard } from '../links/share-links.js';
 import { PoliciesCard } from '../policies/policies.js';
 import { useTitle } from '../shell/page.js';
@@ -247,6 +248,7 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
 
       <PoliciesCard api={api} site={site} onChange={() => refresh('access')} />
       <ShareLinksCard api={api} site={site} />
+      <DomainsCard api={api} site={site} />
 
       <Card title="Deploys">
         {rolledBack && (
