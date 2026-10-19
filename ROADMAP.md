@@ -377,6 +377,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item
 - Parallel: Alone, last.
 
+### O4.5: Test suite stability
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: none
+- Scope: Fix the intermittent test failures seen in CI during waves 7 and 8, each at its root cause (a wrong wait, query or assumption in the test, or a real race in the code) rather than by retrying or lengthening timeouts: `apps/web/src/sites/sites.test.tsx` "site detail > shows the address, access and deploy history" (found multiple elements with the text `/assets/`); `apps/web/src/links/links.test.tsx` "link access log > treats a missing or foreign link as not found" (document title still the access log's); `apps/web/src/app.test.tsx` "checks the session once when the tab comes back" (expected 2 calls, got 1); `apps/server/internal/mail` TestSMTPHonoursContext (i/o timeout instead of deadline exceeded under CPU load). If a failure turns out to be a product bug, fix it with a test and describe it in the PR.
+- Acceptance: Each named test passes 50 consecutive local runs (Vitest `--repeat` or a loop; `go test -race -count=50` for the Go test), including at least one run under CPU load (for example with `GOMAXPROCS=1` or a parallel `stress` job), with the commands and results in the PR; no test retries, skips or longer timeouts added as the fix; `pnpm check` passes.
+- Skills: wardlock-item, wardlock-web, wardlock-go-service
+- Parallel: Any wave. Touches only the named test files, test helpers under `apps/web/src/test*` and, if a real race is found, the code under test; no gates.
+
 ## Waves
 
 Suggested batches, based on the file ownership above. Re-check overlap before launching; merge in the order listed within a wave when items share interfaces.
@@ -388,6 +399,7 @@ Suggested batches, based on the file ownership above. Re-check overlap before la
 5. **Wave 5:** A2.3, A2.4, A2.6, C1.9 (O4.2 after C1.9). A2.3 lands the shared login page template first.
 6. **Wave 6:** A2.5, D3.3, D3.4, D3.5. Only one of D3.3, D3.4 and D3.5 changes `packages/ui`.
 7. **Then:** A2.7 alone; O4.3 when its dependencies are done; O4.4 last.
+8. **Wave 9:** A2.9, A2.10, A2.11, O4.5. A2.11 holds the API contract gate (`openapi.yaml` and generated clients); no migrations or lockfile changes expected. A2.9 agrees its limiter design with the coordinator before implementing it.
 
 ## Not planned yet
 
