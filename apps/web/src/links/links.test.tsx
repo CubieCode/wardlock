@@ -461,7 +461,9 @@ describe('link access log', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Linear ENG-123' }),
     ).toBeTruthy();
-    expect(document.title).toBe('Link access log · docs · Wardlock');
+    await waitFor(() =>
+      expect(document.title).toBe('Link access log · docs · Wardlock'),
+    );
     const table = screen.getByRole('table', {
       name: 'Visits through link q4v7m2xkpa',
     });
@@ -525,7 +527,9 @@ describe('link access log', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Link not found' }),
     ).toBeTruthy();
-    expect(document.title).toBe('Link not found · Wardlock');
+    await waitFor(() =>
+      expect(document.title).toBe('Link not found · Wardlock'),
+    );
   });
 
   it('offers a retry when the log cannot load', async () => {

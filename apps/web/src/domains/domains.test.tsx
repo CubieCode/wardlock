@@ -14,6 +14,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app.js';
 import type { Site } from '../sites/format.js';
+import { runEffects } from '../test/effects.js';
 import { refreshInterval } from './domains.js';
 import type { Domain } from './format.js';
 
@@ -399,8 +400,11 @@ describe('custom domains on the site page', () => {
       ...sitePage([]),
       [`GET ${base}/domains`]: () => Response.json({ items: [current] }),
     });
-    render(<App api={api} />);
+    const app = <App api={api} />;
+    const { rerender } = render(app);
     await screen.findByRole('listitem', { name: 'p.example.test' });
+    // The refresh timer starts in an effect after the list is shown.
+    runEffects(rerender, app);
     expect(row('p.example.test').textContent).toContain(
       'Last checked 3 minutes ago',
     );
@@ -446,8 +450,11 @@ describe('custom domains on the site page', () => {
     const { api, calls } = fakeServer(
       sitePage([domain('p.example.test', 'pending')]),
     );
-    render(<App api={api} />);
+    const app = <App api={api} />;
+    const { rerender } = render(app);
     await screen.findByRole('listitem', { name: 'p.example.test' });
+    // The refresh timer starts in an effect after the list is shown.
+    runEffects(rerender, app);
     const lists = () =>
       calls.filter((c) => c.route === `GET ${base}/domains`).length;
     const before = lists();

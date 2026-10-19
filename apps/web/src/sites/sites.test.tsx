@@ -135,7 +135,7 @@ describe('site list', () => {
     expect(
       within(rows[0]!).getByRole('link', { name: 'docs' }).getAttribute('href'),
     ).toBe('/sites/docs');
-    expect(document.title).toBe('Sites · Wardlock');
+    await waitFor(() => expect(document.title).toBe('Sites · Wardlock'));
     expect(
       screen.getByRole('link', { name: 'Sites' }).getAttribute('aria-current'),
     ).toBe('page');
@@ -236,10 +236,13 @@ describe('site detail', () => {
         }) as HTMLInputElement
       ).value,
     ).toBe('https://docs.sites.example.test/');
+    // The access policies card further down lists /assets/ too once its own
+    // load finishes, so look for the path in this card only.
+    const access = screen.getByRole('region', { name: 'Address and access' });
     expect(
-      screen.getByText('Only visitors with access can open this site.'),
+      within(access).getByText('Only visitors with access can open this site.'),
     ).toBeTruthy();
-    expect(screen.getByText('/assets/')).toBeTruthy();
+    expect(within(access).getByText('/assets/')).toBeTruthy();
     const rows = within(
       screen.getByRole('list', { name: 'Deploy history' }),
     ).getAllByRole('listitem');
@@ -272,7 +275,9 @@ describe('site detail', () => {
       const { unmount } = render(<App api={api} />);
       await screen.findByRole('heading', { level: 1, name: 'Site not found' });
       texts.push(screen.getByRole('main').textContent ?? '');
-      expect(document.title).toBe('Site not found · Wardlock');
+      await waitFor(() =>
+        expect(document.title).toBe('Site not found · Wardlock'),
+      );
       unmount();
     }
     expect(texts[0]).toBe(texts[1]);

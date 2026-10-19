@@ -103,7 +103,9 @@ describe('/cli-login', () => {
     });
     render(<App api={server.api} />);
     await screen.findByRole('heading', { level: 1, name: 'Approve CLI login' });
-    expect(document.title).toBe('Approve CLI login · Wardlock');
+    await waitFor(() =>
+      expect(document.title).toBe('Approve CLI login · Wardlock'),
+    );
     expect(screen.getByText('BDFH-KMPR')).toBeTruthy();
     expect(screen.getByText('owner@example.test')).toBeTruthy();
     expect(screen.queryByRole('navigation')).toBeNull();
