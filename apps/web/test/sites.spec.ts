@@ -226,6 +226,34 @@ for (const scheme of schemes) {
       expect(policyAnswers.slice(0, 3)).toEqual(policyAnswers.slice(3));
       expect(policyAnswers.every((a) => a.startsWith('404 '))).toBe(true);
       await shot('not-found');
+      // Custom domains (D3.5): no Domains section, and the same 404 for a
+      // foreign site's domains as for a missing site's.
+      await expect(
+        page.getByRole('region', { name: 'Custom domains' }),
+      ).toHaveCount(0);
+      const answers: string[] = [];
+      for (const s of [foreignSite, 'no-such-site'])
+        for (const [method, path] of [
+          ['GET', 'domains'],
+          ['POST', 'domains'],
+          ['POST', 'domains/www.example.test/verify'],
+          ['DELETE', 'domains/www.example.test'],
+        ] as const) {
+          const res = await page.request.fetch(
+            `${origin}/api/v0/sites/${s}/${path}`,
+            {
+              method,
+              headers: { Origin: origin },
+              data:
+                method === 'POST'
+                  ? { hostname: 'www.example.test' }
+                  : undefined,
+            },
+          );
+          answers.push(`${method} ${path} ${res.status()} ${await res.text()}`);
+        }
+      expect(answers.slice(0, 4)).toEqual(answers.slice(4));
+      expect(answers.every((a) => / 404 /.test(a))).toBe(true);
     });
   });
 }

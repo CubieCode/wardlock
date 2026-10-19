@@ -101,6 +101,7 @@ const sitePage = (links: ShareLink[]): Record<string, Handler> => ({
       ],
     }),
   [`GET ${base}/links`]: () => Response.json({ items: links }),
+  [`GET ${base}/domains`]: () => Response.json({ items: [] }),
 });
 
 const at = (path: string) => window.history.replaceState(null, '', path);

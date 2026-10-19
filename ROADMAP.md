@@ -289,9 +289,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.5: Custom domains
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: feat/d3.5-custom-domains
+- PR: https://github.com/CubieCode/wardlock/pull/60
 - Depends on: D3.2, C1.9
 - Scope: A Domains section on the site detail screen: add a hostname, show the routing CNAME (and the TXT fallback with when to use it) with copy actions, live status with last check and the failure reason in plain words, "Check now", remove with a confirmation that reminds the owner to delete the DNS record.
 - Acceptance: Browser tests at 1440px and 390px in light and dark cover add, each status, a failure reason, "Check now", `domain_taken` and removal; foreign site IDs show the same not-found state; records are copyable exactly as shown. Mobbin references cited in the PR (start with: add custom domain with DNS records to configure; domain verification status pending and verified; copy DNS record value).

@@ -1,0 +1,166 @@
+/* SPDX-FileCopyrightText: 2026 CubieCode */
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* Custom domains on the site page. Visual language comes from @wardlock/ui. */
+
+.domain-add {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* Field and button side by side when there is room, the button level
+   with the input. */
+.domain-add-row {
+  display: grid;
+  gap: var(--space-3);
+  align-items: end;
+}
+
+@media (min-width: 48rem) {
+  .domain-add-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+.domain-add-row > .wl-button {
+  justify-self: start;
+}
+
+.domain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.domain-row {
+  display: grid;
+  gap: var(--space-3);
+  padding-block: var(--space-4);
+  min-width: 0;
+}
+
+.domain-row + .domain-row {
+  border-top: 1px solid var(--color-border);
+}
+
+.domain-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.domain-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  font-weight: var(--font-weight-medium);
+}
+
+.domain-host {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.domain-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.domain-row-meta {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.domain-failure {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-left: 4px solid var(--color-warning-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted);
+  overflow-wrap: anywhere;
+}
+
+.domain-failure-headline {
+  font-weight: var(--font-weight-medium);
+}
+
+.domain-records,
+.domain-more-body {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* Name and value side by side on wide screens, stacked on small ones. */
+.domain-record {
+  display: grid;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+}
+
+@media (min-width: 64rem) {
+  .domain-record {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .domain-record-type {
+    grid-column: 1 / -1;
+  }
+}
+
+.domain-record .wl-field {
+  min-width: 0;
+}
+
+.domain-record-type {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.domain-record-type code {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+}
+
+.domain-more > summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-target);
+  width: fit-content;
+  cursor: pointer;
+  color: var(--color-primary);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-control);
+}
+
+.domain-more {
+  min-width: 0;
+}
+
+/* Mounted even when empty so screen readers announce what appears in it;
+   empty, it takes no space in the layout. */
+.domain-live:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.domain-live:focus {
+  outline: none;
+}
+
+.domain-live:focus-visible > .wl-notice {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.domain-row-actions [aria-disabled='true'] {
+  cursor: progress;
+}
