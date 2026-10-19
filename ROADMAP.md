@@ -368,8 +368,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.4: Public alpha launch checklist
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: `feat/o4.4-launch-checklist`
 - PR:
 - Depends on: A2.7, O4.1, O4.2
 - Scope: A checklist document only: licence and CLA readiness, security review closed, release artefacts verified, vanity import tags served from `wardlock.nz`, repository visibility, private vulnerability reporting enabled, CLA Assistant enabled, docs reviewed. No launch actions.
