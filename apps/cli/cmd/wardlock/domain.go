@@ -375,7 +375,6 @@ func domainRemove(ctx context.Context, a *app, args []string) error {
 	return nil
 }
 
-// domainFailed is conn.failed with a missing domain explained.
 // checkedRecently reports whether a verify answer is the per-domain
 // cooldown, the only 429 worth waiting out. Any other 429, such as a token
 // refused after failed attempts, is an error to show.
@@ -383,6 +382,7 @@ func checkedRecently(res *http.Response, body []byte) bool {
 	return res != nil && res.StatusCode == http.StatusTooManyRequests && errorCode(body) == "checked_recently"
 }
 
+// domainFailed is conn.failed with a missing domain explained.
 func domainFailed(c *conn, res *http.Response, body []byte, site, host string) error {
 	if res != nil && res.StatusCode == http.StatusNotFound {
 		return fmt.Errorf("%s has no custom domain %s: wardlock domain list %s shows them", site, host, site)
