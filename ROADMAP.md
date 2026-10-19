@@ -388,6 +388,28 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item, wardlock-web, wardlock-go-service
 - Parallel: Any wave. Touches only the named test files, test helpers under `apps/web/src/test*` and, if a real race is found, the code under test; no gates.
 
+### O4.6: Alpha documentation refresh
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: O4.4, A2.9, A2.10, A2.11
+- Scope: Make the documentation true for the public alpha. Replace "pre-alpha" with an alpha notice in README, CONTRIBUTING, docs/DEPLOYMENT.md and the docs site (`docs-site/src/build.mjs`, `docs-site/src/render.mjs` and their test); rewrite README's status paragraph and "What it will do" for features that are built. Correct statements in README, CONTRIBUTING, SECURITY, `docs/`, `docs-site/README.md`, `deploy/`, `fixtures/README.md`, DESIGN.md and the `wardlock-*` skills that contradict main (planned or unbuilt features that are now built, renamed packages, env vars, commands or endpoints, and wave 9 risks described as open). Refresh docs/LAUNCH-CHECKLIST.md: close the A2.9 to A2.11 decisions and rows, and re-run its _done_ checks on the new commit. Statements that stay true until the release is published (no `go-import` metadata on `wardlock.nz`, no published releases) stay. No behaviour, API or code changes beyond the docs-site notice strings.
+- Acceptance: No "pre-alpha" remains; every corrected claim is checked against the code with file references in the PR; `pnpm check` (including `pnpm docs:build` and its link check) and `git diff --check` pass; nothing published, no settings or DNS changed.
+- Skills: wardlock-item
+- Parallel: Wave 10, first. Owns the files above; no gates.
+
+### O4.7: Contributor licence agreement text
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: O4.6
+- Scope: Write the Wardlock Contributor Licence Agreement that CONTRIBUTING describes, as `CLA.md` at the repository root: CubieCode as the recipient, a copyright licence including the right to sublicense and relicense (so CubieCode can keep the AGPL/MIT split coherent and move parts between licences), a patent licence, the contributor keeping copyright, the contributor's representations, and how corporate contributors sign. Link it from CONTRIBUTING and update the launch checklist's CLA text row. The text is a draft for the maintainer's (and ideally a lawyer's) review: no gist is created and CLA Assistant is not enabled.
+- Acceptance: `CLA.md` merged and linked from CONTRIBUTING; open legal choices (the registered entity name, governing law, any commitment to keep contributions under an OSI-approved licence) listed in the PR; `pnpm check` and `git diff --check` pass; nothing published, no settings changed.
+- Skills: wardlock-item
+- Parallel: Wave 10, after O4.6 (both edit CONTRIBUTING and the launch checklist). No gates.
+
 ## Waves
 
 Suggested batches, based on the file ownership above. Re-check overlap before launching; merge in the order listed within a wave when items share interfaces.
@@ -400,6 +422,7 @@ Suggested batches, based on the file ownership above. Re-check overlap before la
 6. **Wave 6:** A2.5, D3.3, D3.4, D3.5. Only one of D3.3, D3.4 and D3.5 changes `packages/ui`.
 7. **Then:** A2.7 alone; O4.3 when its dependencies are done; O4.4 last.
 8. **Wave 9:** A2.9, A2.10, A2.11, O4.5. A2.11 holds the API contract gate (`openapi.yaml` and generated clients); no migrations or lockfile changes expected. A2.9 agrees its limiter design with the coordinator before implementing it.
+9. **Wave 10:** O4.6, then O4.7. Docs only; no gates.
 
 ## Not planned yet
 
