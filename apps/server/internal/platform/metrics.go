@@ -45,15 +45,24 @@ func (m *Metrics) Collect(fn func(context.Context, *Exposition)) {
 	m.collectors = append(m.collectors, fn)
 }
 
-// Instrument counts every request next answers.
+// Instrument counts every request next answers. A handler that panics
+// counts as a 500, and the panic carries on to net/http.
 func (m *Metrics) Instrument(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		m.inFlight.Add(1)
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		defer func() {
+			status := rec.status
+			p := recover()
+			if p != nil {
+				status = http.StatusInternalServerError
+			}
 			m.inFlight.Add(-1)
-			m.observe(rec.status, time.Since(start))
+			m.observe(status, time.Since(start))
+			if p != nil {
+				panic(p)
+			}
 		}()
 		next.ServeHTTP(rec, r)
 	})

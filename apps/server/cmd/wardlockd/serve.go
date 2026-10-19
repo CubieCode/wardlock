@@ -269,7 +269,8 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	if opLn != nil {
 		// Health, readiness and metrics for the operator only: never
 		// routed through the edge, so no site or dashboard host reaches
-		// them. Scrapes are neither logged nor counted.
+		// them. Scrapes are neither logged nor counted. Last, so it shuts
+		// down last and answers /readyz with 503 while the others drain.
 		opSrv := newHTTPServer(log, platform.OperatorHandler(readiness, metrics))
 		opSrv.ReadTimeout = 30 * time.Second
 		opSrv.WriteTimeout = 30 * time.Second
@@ -289,7 +290,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		log.Info("no owner exists yet: open the setup URL within 60 minutes to create the first owner, or run wardlockd admin create",
 			slog.String("setup_url", setupURL))
 	}
-	return platform.Serve(ctx, log, servers...)
+	return platform.Serve(ctx, log, readiness, servers...)
 }
 
 // tlsAsk answers /.wardlock/tls-ask for the TLS-terminating proxy in proxy

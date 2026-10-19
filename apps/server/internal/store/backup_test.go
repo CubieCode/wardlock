@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -164,6 +165,55 @@ func TestBackupNeverOverwrites(t *testing.T) {
 		if name := e.Name(); name != "wardlock.db" && name != "existing.db" && name != "wardlock.db-wal" && name != "wardlock.db-shm" {
 			t.Errorf("unexpected file %s left behind", name)
 		}
+	}
+}
+
+// TestFailedBackupLeavesNothing fails a backup while its copy is open in
+// WAL mode (so -wal and -shm exist beside it), and cancels one before it
+// starts: neither leaves a file behind.
+func TestFailedBackupLeavesNothing(t *testing.T) {
+	ctx := t.Context()
+	srcDir, dstDir := t.TempDir(), t.TempDir()
+	db, err := store.Open(ctx, filepath.Join(srcDir, "wardlock.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.Migrate(ctx, time.Now); err != nil {
+		t.Fatal(err)
+	}
+	var sidecars []string
+	db.SetBackupFaultForTest(func(tmp string) error {
+		for _, suffix := range []string{"-wal", "-shm"} {
+			if _, err := os.Stat(tmp + suffix); err == nil {
+				sidecars = append(sidecars, suffix)
+			}
+		}
+		return errors.New("injected failure")
+	})
+	dst := filepath.Join(dstDir, "backup.db")
+	if err := db.Backup(ctx, dst); err == nil || !strings.Contains(err.Error(), "injected failure") {
+		t.Fatalf("Backup = %v, want the injected failure", err)
+	}
+	if len(sidecars) != 2 {
+		t.Errorf("copy had sidecars %v while open, want -wal and -shm (the test would prove nothing)", sidecars)
+	}
+	db.SetBackupFaultForTest(nil)
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := db.Backup(cancelled, dst); err == nil {
+		t.Fatal("Backup with a cancelled context succeeded")
+	}
+	if entries, _ := os.ReadDir(dstDir); len(entries) != 0 {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("failed backups left %v", names)
+	}
+	// A later backup still works.
+	if err := db.Backup(ctx, dst); err != nil {
+		t.Fatalf("Backup after failures: %v", err)
 	}
 }
 

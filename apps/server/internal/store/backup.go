@@ -49,8 +49,9 @@ func (db *DB) Backup(ctx context.Context, path string) (err error) {
 	}
 	defer func() {
 		if err != nil {
-			_ = os.Remove(tmpName)
-			_ = os.Remove(tmpName + "-journal")
+			for _, suffix := range []string{"", "-journal", "-wal", "-shm"} {
+				_ = os.Remove(tmpName + suffix)
+			}
 		}
 	}()
 
@@ -82,7 +83,7 @@ func (db *DB) Backup(ctx context.Context, path string) (err error) {
 	if err != nil {
 		return fmt.Errorf("backup: %w", err)
 	}
-	if err := finishBackupFile(ctx, tmpName); err != nil {
+	if err := db.finishBackupFile(ctx, tmpName); err != nil {
 		return err
 	}
 	if err := syncFile(tmpName); err != nil {
@@ -100,7 +101,7 @@ func (db *DB) Backup(ctx context.Context, path string) (err error) {
 
 // finishBackupFile checks the copy and makes it a single file: a WAL-mode
 // source leaves the copy's header asking for WAL.
-func finishBackupFile(ctx context.Context, path string) error {
+func (db *DB) finishBackupFile(ctx context.Context, path string) error {
 	c, err := sql.Open("sqlite", fileURI(path))
 	if err != nil {
 		return fmt.Errorf("check backup: %w", err)
@@ -112,6 +113,11 @@ func finishBackupFile(ctx context.Context, path string) error {
 	}
 	if result != "ok" {
 		return fmt.Errorf("check backup: quick_check reported %q", result)
+	}
+	if db.backupFault != nil {
+		if err := db.backupFault(path); err != nil {
+			return fmt.Errorf("check backup: %w", err)
+		}
 	}
 	if _, err := c.ExecContext(ctx, "PRAGMA journal_mode=DELETE"); err != nil {
 		return fmt.Errorf("check backup: %w", err)

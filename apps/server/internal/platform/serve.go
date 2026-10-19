@@ -29,8 +29,10 @@ type Listener struct {
 }
 
 // Serve runs every server until ctx is cancelled or one of them fails, then
-// shuts them all down gracefully.
-func Serve(ctx context.Context, log *slog.Logger, servers ...Listener) error {
+// shuts them all down gracefully, one after another in the order given. As
+// shutdown begins, ready (when not nil) starts answering 503, so list the
+// operator listener last: it keeps answering /readyz while the others drain.
+func Serve(ctx context.Context, log *slog.Logger, ready *Readiness, servers ...Listener) error {
 	errs := make(chan error, len(servers))
 	for _, s := range servers {
 		// Read TLSConfig before serving: ServeTLS and Serve configure HTTP/2
@@ -55,6 +57,9 @@ func Serve(ctx context.Context, log *slog.Logger, servers ...Listener) error {
 	case <-ctx.Done():
 	}
 	log.Info("shutting down")
+	if ready != nil {
+		ready.Shutdown()
+	}
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), ShutdownTimeout)
 	defer cancel()
 	for _, s := range servers {

@@ -9,11 +9,13 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -156,5 +158,123 @@ func TestOperatorHandler(t *testing.T) {
 			body, _ := io.ReadAll(rec.Body)
 			t.Errorf("%s %s = %d %s, want %d", tc.method, tc.path, rec.Code, body, tc.code)
 		}
+	}
+}
+
+func TestInstrumentCountsPanicsAs500(t *testing.T) {
+	m := platform.NewMetrics(time.Now())
+	h := m.Instrument(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }))
+	func() {
+		defer func() {
+			if p := recover(); p != "boom" {
+				t.Errorf("recovered %v, want the handler's panic to carry on", p)
+			}
+		}()
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	}()
+	rec := httptest.NewRecorder()
+	m.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, `wardlock_http_requests_total{code="5xx"} 1`) || strings.Contains(body, `code="2xx"`) ||
+		!strings.Contains(body, "wardlock_http_requests_in_flight 0\n") {
+		t.Errorf("panic not counted as one finished 500:\n%s", body)
+	}
+}
+
+// TestReadinessHungCheck uses a check that ignores its context and never
+// returns, as DirWritable does on a stuck network mount.
+func TestReadinessHungCheck(t *testing.T) {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	var started atomic.Int32
+	r := platform.NewReadiness(slog.New(slog.DiscardHandler),
+		platform.Check{Name: "database", Run: func(context.Context) error { return nil }},
+		platform.Check{Name: "blobs", Run: func(context.Context) error {
+			started.Add(1)
+			<-release
+			return nil
+		}},
+	)
+	for range 3 {
+		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		begin := time.Now()
+		rec := httptest.NewRecorder()
+		r.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil).WithContext(ctx))
+		cancel()
+		if took := time.Since(begin); took > 2*time.Second {
+			t.Fatalf("/readyz took %v with a hung check", took)
+		}
+		if body := rec.Body.String(); rec.Code != http.StatusServiceUnavailable ||
+			!strings.Contains(body, `"blobs":"timeout"`) || !strings.Contains(body, `"database":"ok"`) {
+			t.Errorf("/readyz with a hung check = %d %s", rec.Code, body)
+		}
+	}
+	m := platform.NewMetrics(time.Now())
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	rec := httptest.NewRecorder()
+	m.Handler(r).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil).WithContext(ctx))
+	if !strings.Contains(rec.Body.String(), `wardlock_ready{check="blobs"} 0`) {
+		t.Errorf("metrics with a hung check:\n%s", rec.Body.String())
+	}
+	if n := started.Load(); n != 1 {
+		t.Errorf("hung check started %d times, want once while it is still running", n)
+	}
+}
+
+func TestReadinessDuringShutdown(t *testing.T) {
+	ready := platform.NewReadiness(slog.New(slog.DiscardHandler),
+		platform.Check{Name: "database", Run: func(context.Context) error { return nil }})
+	listen := func() net.Listener {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ln
+	}
+	// The main server has a request in flight, so its graceful shutdown
+	// waits; the operator server, listed last, still answers meanwhile.
+	inFlight, finish := make(chan struct{}), make(chan struct{})
+	mainLn, opLn := listen(), listen()
+	mainSrv := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		close(inFlight)
+		<-finish
+	})}
+	opSrv := &http.Server{ReadHeaderTimeout: time.Second, Handler: platform.OperatorHandler(ready, platform.NewMetrics(time.Now()))}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		done <- platform.Serve(ctx, slog.New(slog.DiscardHandler), ready,
+			platform.Listener{Server: mainSrv, Listener: mainLn}, platform.Listener{Server: opSrv, Listener: opLn})
+	}()
+	readyz := func() int {
+		t.Helper()
+		res, err := http.Get("http://" + opLn.Addr().String() + "/readyz")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		return res.StatusCode
+	}
+	if code := readyz(); code != http.StatusOK {
+		t.Fatalf("/readyz before shutdown = %d", code)
+	}
+	go func() {
+		if res, err := http.Get("http://" + mainLn.Addr().String() + "/"); err == nil {
+			_ = res.Body.Close()
+		}
+	}()
+	<-inFlight
+	cancel()
+	deadline := time.Now().Add(5 * time.Second)
+	for code := readyz(); code != http.StatusServiceUnavailable; code = readyz() {
+		if time.Now().After(deadline) {
+			t.Fatalf("/readyz during shutdown = %d, want 503", code)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(finish)
+	if err := <-done; err != nil {
+		t.Fatalf("Serve = %v", err)
 	}
 }
