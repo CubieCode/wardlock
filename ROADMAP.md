@@ -278,7 +278,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.4: Policies editor
 
-- Status: `review`
+- Status: `done`
 - Owner: feat/d3.4-policies-editor
 - PR: https://github.com/CubieCode/wardlock/pull/61
 - Depends on: D3.2, A2.3, A2.4
@@ -289,7 +289,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.5: Custom domains
 
-- Status: `review`
+- Status: `done`
 - Owner: feat/d3.5-custom-domains
 - PR: https://github.com/CubieCode/wardlock/pull/60
 - Depends on: D3.2, C1.9
