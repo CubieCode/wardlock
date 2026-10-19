@@ -267,7 +267,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: `feat/a2.11-domain-cooldown-code`
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/70
 - Depends on: A2.7
 - Scope: A2.7 found that the domain-check cooldown and a refused API token both answer `429` with code `rate_limited` (`internal/api/domains.go` and the token middleware in `internal/api/owners.go`), so `wardlock domain add --wait` treats a refused-token 429 as a cooldown and keeps polling until its 10-minute deadline without naming the token, and `wardlock domain verify` reports "checked moments ago". Give the cooldown 429 its own error code in `openapi.yaml`, send it from `internal/api/domains.go`, and make `domain add --wait` and `domain verify` retry or report a cooldown only for that code and show the API's error for any other 429.
 - Acceptance: API tests prove the cooldown answers the new code and a refused token answers `rate_limited`; CLI tests prove `domain add --wait` stops at once with the server's message on a `rate_limited` 429 and still waits out a cooldown, and `domain verify` reports each case correctly; regenerated clients committed; SPEC describes the code.
