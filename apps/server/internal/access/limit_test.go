@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -172,7 +173,10 @@ func TestSketchSaturation(t *testing.T) {
 }
 
 // TestOverflowSketchPerMethod: methods keep separate sketches, so
-// saturating one method's counters refuses nobody on another.
+// saturating one method's counters refuses nobody on another. The sketch
+// seed is random, so the keys checked are picked by their counters: an
+// unseen key the flood filled must be refused, and the same must not hold
+// for another method's keys, even ones whose counters the flood filled.
 func TestOverflowSketchPerMethod(t *testing.T) {
 	now := time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC)
 	l := newLimiter(func() time.Time { return now })
@@ -182,12 +186,44 @@ func TestOverflowSketchPerMethod(t *testing.T) {
 	for i := range 8 * r.N * 64 {
 		l.allow(fmt.Sprintf("link-fail-ip:2001:db8:%x::/64", i), r)
 	}
-	if ok, _ := l.allow("link-fail-ip:192.0.2.1", r); ok {
+	flooded := l.sketches[newSketchKey("link-fail-ip:", r.Per)]
+	if flooded == nil {
+		t.Fatal("no sketch for the flooded method")
+	}
+	// Unseen keys whose counters the flood has raised to N. A flood of
+	// 8 x N x width leaves nearly every counter there, so a few of 256
+	// candidates always qualify.
+	filled := func(format string, want int) []string {
+		var keys []string
+		for i := 0; i < 256 && len(keys) < want; i++ {
+			if key := fmt.Sprintf(format, i); flooded.estimate(l.seed, key) >= r.N {
+				keys = append(keys, key)
+			}
+		}
+		if len(keys) < want {
+			t.Fatalf("the flood filled the counters of only %d of 256 unseen keys", len(keys))
+		}
+		return keys
+	}
+	if ok, _ := l.allow(filled("link-fail-ip:192.0.2.%d", 1)[0], r); ok {
 		t.Fatal("the saturated method's sketch let an unseen key in")
 	}
-	for i := range 100 {
-		if ok, _ := l.allow(fmt.Sprintf("password-ip:198.51.100.%d", i), r); !ok {
-			t.Fatalf("another method's unseen key %d refused", i)
+
+	if l.sketches[newSketchKey("password-ip:", r.Per)] != nil {
+		t.Fatal("a sketch for a method that has not overflowed")
+	}
+	rows := [sketchRows][]uint16{slices.Clone(flooded.rows[0]), slices.Clone(flooded.rows[1])}
+	// Each event raises a fresh sketch's highest counter by at most one, so
+	// the first N keys in it are always allowed; in the flooded sketch these
+	// same keys would be refused.
+	for _, key := range filled("password-ip:198.51.100.%d", r.N) {
+		if ok, _ := l.allow(key, r); !ok {
+			t.Fatalf("another method's unseen key %s refused", key)
+		}
+	}
+	for i := range rows {
+		if !slices.Equal(rows[i], flooded.rows[i]) {
+			t.Fatal("another method's keys changed the flooded sketch")
 		}
 	}
 	if len(l.sketches) != 2 {
