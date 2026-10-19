@@ -368,9 +368,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.4: Public alpha launch checklist
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/o4.4-launch-checklist`
+- PR: https://github.com/CubieCode/wardlock/pull/67
 - Depends on: A2.7, O4.1, O4.2
 - Scope: A checklist document only: licence and CLA readiness, security review closed, release artefacts verified, vanity import tags served from `wardlock.nz`, repository visibility, private vulnerability reporting enabled, CLA Assistant enabled, docs reviewed. No launch actions.
 - Acceptance: Checklist merged with an owner for every line; nothing published, no settings or DNS changed.

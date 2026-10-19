@@ -71,6 +71,8 @@ docs-site/            Static docs site generated from docs/ (MIT)
 
 Read [SPEC](docs/SPEC.md), [ARCHITECTURE](docs/ARCHITECTURE.md), [MODULES](docs/MODULES.md), [SECURITY-MODEL](docs/SECURITY-MODEL.md), [DEPLOYMENT](docs/DEPLOYMENT.md), [DESIGN-SYSTEM](docs/DESIGN-SYSTEM.md), [DESIGN](DESIGN.md), [ROADMAP](ROADMAP.md) and [AGENTS](AGENTS.md).
 
+What remains before the public alpha is tracked in the [launch checklist](docs/LAUNCH-CHECKLIST.md).
+
 ## Orca worktrees
 
 `orca.yaml` runs `scripts/worktree-setup.sh` for each new worktree. It writes a lane-specific `.env` once (ports derived from the worktree path, a fresh `WARDLOCK_SECRET`, data in `.local/data`), installs locked dependencies, downloads Go modules and runs `pnpm check`. It copies nothing from the main checkout and starts no services. If a port is taken, edit that worktree's `.env`. Use the `wardlock-item` skill for one roadmap item and `wardlock-orchestrate` for coordinated parallel work.
