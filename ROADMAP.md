@@ -223,7 +223,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: `feat/a2.7-access-security-review`
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/65
 - Depends on: A2.2, A2.3, A2.4, A2.5, A2.6, D3.3
 - Scope: Walk docs/SECURITY-MODEL.md against the implementation; fuzz token parsing and cookie decoding; verify every rate limit; check headers on every protected response type; check log hygiene; fix small findings, record larger ones as new roadmap items.
 - Acceptance: A findings table in the PR with each threat's status and evidence; fuzzers committed and run for a recorded duration; no open high-severity finding without an item.
