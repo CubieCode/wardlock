@@ -243,7 +243,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.9: Sign-in limiter tables that resist flooding
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/a2.9-limiter-flooding`
 - PR: https://github.com/CubieCode/wardlock/pull/72
 - Depends on: A2.7
@@ -254,7 +254,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.10: Third-party log hygiene
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/a2.10-third-party-log-hygiene`
 - PR: https://github.com/CubieCode/wardlock/pull/71
 - Depends on: A2.7
@@ -265,7 +265,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.11: Distinct error code for the domain-check cooldown
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/a2.11-domain-cooldown-code`
 - PR: https://github.com/CubieCode/wardlock/pull/70
 - Depends on: A2.7
@@ -379,7 +379,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.5: Test suite stability
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/o4.5-test-stability`
 - PR: https://github.com/CubieCode/wardlock/pull/73
 - Depends on: none
