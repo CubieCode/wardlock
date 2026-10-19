@@ -221,8 +221,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.7: Access security review
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: `feat/a2.7-access-security-review`
 - PR:
 - Depends on: A2.2, A2.3, A2.4, A2.5, A2.6, D3.3
 - Scope: Walk docs/SECURITY-MODEL.md against the implementation; fuzz token parsing and cookie decoding; verify every rate limit; check headers on every protected response type; check log hygiene; fix small findings, record larger ones as new roadmap items.
@@ -240,6 +240,28 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Acceptance: Tests prove the request path never blocks on the database (a slow fake store does not slow serving), counts dropped entries, flushes on shutdown, truncates IPv4 and IPv6 as configured and never stores raw tokens.
 - Skills: wardlock-item, wardlock-go-service, wardlock-access
 - Parallel: Wave 3 with C1.6, C1.7 and A2.1. Owns `internal/access/accesslog*` (or a dedicated package agreed in the brief) and access-log queries.
+
+### A2.9: Sign-in limiter tables that resist flooding
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: A2.7
+- Scope: A2.7 found that the visitor per-IP limiter table (`internal/access`, 100,000 keys, IPv6 by /64) is shared by password attempts, email-code sends and entries, OAuth starts and share-link guesses, each counted before any site or credential check: filling it (about two IPv6 /48s) refuses password, email-code and OAuth sign-in for every new client on every site until its windows expire. Separately, anyone can spend a site's per-site password and email-code limits and keep that method shut for the site indefinitely. Decide and implement a design that keeps sign-in available under both floods without lifting any limit (for example per-method tables, coarser keys such as IPv6 /48 under pressure, counting only failures per site, or per-site fallbacks when the IP table is full), and record the decision in docs/SECURITY-MODEL.md, replacing the "Accepted limiter risks" paragraph.
+- Acceptance: Tests prove that filling the IP table from many synthetic addresses neither refuses sign-in for unseen clients beyond what the recorded design allows nor lifts any per-IP, per-address or per-site limit; that a per-site flood cannot hold a method shut beyond the recorded bound; and that the full wardlock-access test matrix passes. SECURITY-MODEL and SPEC describe the new behaviour.
+- Skills: wardlock-item, wardlock-access, wardlock-go-service
+- Parallel: Runs alone or beside items that do not touch `internal/access/limit*`, the access service's limiter wiring or `internal/edge` rate-limit handling.
+
+### A2.10: Third-party log hygiene
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: A2.7
+- Scope: A2.7 checked Wardlock's own slog calls; two log paths it did not verify end to end remain. The certmagic log adapter (`internal/tls/log.go`) forwards every field verbatim, so at debug level ACME and DNS-provider details, including provider responses, reach the logs unfiltered. The `dev://` mail sink logs visitor recipient addresses, which is intended for local development but is the default mail mode. Review both: redact or drop sensitive certmagic fields, and warn at startup when `dev://` mail is used outside local mode, or record why not.
+- Acceptance: Tests capture certmagic debug output through the adapter and assert no credential-bearing field survives; a test or documented decision covers the `dev://` warning; SECURITY-MODEL lists what each third-party adapter may log.
+- Skills: wardlock-item, wardlock-go-service
+- Parallel: Any wave; touches only `internal/tls/log*`, `internal/mail/dev*` and `cmd/wardlockd` startup checks.
 
 ## D3: Dashboard
 

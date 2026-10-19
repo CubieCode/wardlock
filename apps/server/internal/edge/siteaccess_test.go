@@ -351,6 +351,9 @@ func TestAccessFailureIs500(t *testing.T) {
 	if rec.Code != 500 || strings.Contains(rec.Body.String(), "database") {
 		t.Fatalf("%d %q", rec.Code, rec.Body.String())
 	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("500 Cache-Control = %q, want no-store", cc)
+	}
 	if rec := h.do(http.MethodGet, "basic."+base, "/.wardlock/health", nil); rec.Code != 200 {
 		t.Fatalf("health with access failing = %d", rec.Code)
 	}

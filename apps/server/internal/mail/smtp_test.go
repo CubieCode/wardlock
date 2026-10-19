@@ -116,6 +116,20 @@ func TestSMTPRecipientErrorHidesAddress(t *testing.T) {
 	}
 }
 
+// Errors before the recipient stage are reported by stage and reply code
+// too: the server's text is never kept.
+func TestSMTPGreetingErrorHidesServerText(t *testing.T) {
+	srv := startFakeSMTP(t, fakeOptions{greeting: "554 fake.example.test server-text-marker"})
+	msg, err := mail.EmailCodeMessage(recipient, mail.EmailCode{Code: testCode, Site: "docs.example.test", ValidFor: 10 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = srv.mailer(platform.SMTPStartTLS, testUser, testPass).Send(t.Context(), msg)
+	if err == nil || !strings.HasSuffix(err.Error(), "greeting: server replied 554") || strings.Contains(err.Error(), "marker") {
+		t.Fatalf("Send = %v, want the stage and code only", err)
+	}
+}
+
 func TestSMTPHonoursContext(t *testing.T) {
 	// A server that accepts and never greets.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -169,6 +183,8 @@ type fakeOptions struct {
 	rejectAuth  bool
 	// rejectRcpt refuses every recipient, echoing the address back.
 	rejectRcpt bool
+	// greeting, when set, replaces the 220 greeting line.
+	greeting string
 }
 
 type delivery struct {
@@ -229,7 +245,11 @@ func (s *fakeSMTP) serve(conn net.Conn) {
 	isTLS := s.opts.implicitTLS
 	var cur delivery
 	reply := func(format string, args ...any) bool { return tp.PrintfLine(format, args...) == nil }
-	if !reply("220 fake.example.test ESMTP") {
+	greeting := "220 fake.example.test ESMTP"
+	if s.opts.greeting != "" {
+		greeting = s.opts.greeting
+	}
+	if !reply("%s", greeting) {
 		return
 	}
 	for {

@@ -6,6 +6,7 @@ package edge
 import (
 	"embed"
 	"html/template"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -28,6 +29,7 @@ func (e *Edge) decide(w http.ResponseWriter, r *http.Request, req access.Request
 	d, err := e.access.Decide(r.Context(), req)
 	if err != nil {
 		e.log.ErrorContext(r.Context(), "decide access", slog.String("site_id", req.SiteID), slog.Any("error", err))
+		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return access.Decision{}, false
 	}
@@ -41,11 +43,67 @@ func (e *Edge) decide(w http.ResponseWriter, r *http.Request, req access.Request
 }
 
 // protectedHeaders are SPEC "Protected-site response headers", less
-// Cache-Control, which each response sets.
+// Cache-Control, which each response sets. Cross-Origin-Resource-Policy
+// stops another origin, a sibling site included (same-site, so the Lax
+// session cookie rides along), from loading a protected response as a
+// script, image or style; navigations and cookie-less fetchers are
+// unaffected (SECURITY-MODEL "Cookie tossing and cross-site session
+// abuse").
 func protectedHeaders(h http.Header) {
 	h.Set("X-Robots-Tag", "noindex")
 	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("Cross-Origin-Resource-Policy", "same-origin")
 }
+
+// storeGuard settles Cache-Control as a site response starts, whatever
+// wrote it: a response that sets or clears a cookie is never stored, a
+// server error is never stored, and a protected response stays private
+// even when net/http's error replies (412, 416) drop the header it set.
+type storeGuard struct {
+	http.ResponseWriter
+	protected bool
+	started   bool
+}
+
+func (g *storeGuard) start(code int) {
+	if g.started {
+		return
+	}
+	g.started = true
+	h := g.Header()
+	switch {
+	case len(h.Values("Set-Cookie")) > 0 || code >= 500:
+		if !strings.Contains(h.Get("Cache-Control"), "no-store") {
+			h.Set("Cache-Control", "no-store")
+		}
+	case g.protected && h.Get("Cache-Control") == "":
+		h.Set("Cache-Control", cacheControl(true))
+	}
+}
+
+func (g *storeGuard) WriteHeader(code int) {
+	if code >= 200 {
+		g.start(code)
+	}
+	g.ResponseWriter.WriteHeader(code)
+}
+
+func (g *storeGuard) Write(b []byte) (int, error) {
+	g.start(http.StatusOK)
+	return g.ResponseWriter.Write(b)
+}
+
+// ReadFrom keeps the underlying writer's sendfile path for io.Copy.
+func (g *storeGuard) ReadFrom(src io.Reader) (int64, error) {
+	g.start(http.StatusOK)
+	if rf, ok := g.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(src)
+	}
+	return io.Copy(struct{ io.Writer }{g.ResponseWriter}, src)
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (g *storeGuard) Unwrap() http.ResponseWriter { return g.ResponseWriter }
 
 // addVary adds field to Vary unless it is there already.
 func addVary(h http.Header, field string) {
@@ -136,9 +194,16 @@ func (e *Edge) logout(w http.ResponseWriter, r *http.Request, site ServedSite) {
 func SessionCookie(c access.Cookie) *http.Cookie {
 	return &http.Cookie{
 		Name: c.Name, Value: c.Value, Path: "/", Expires: c.Expires,
-		MaxAge: max(1, int(time.Until(c.Expires).Seconds())),
+		MaxAge: maxAge(c.Expires),
 		Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	}
+}
+
+// maxAge is a cookie's Max-Age for expires, in whole seconds rounded to
+// the nearest (a 600-second cookie made a moment ago is still 600), and
+// at least 1.
+func maxAge(expires time.Time) int {
+	return max(1, int(time.Until(expires).Round(time.Second)/time.Second))
 }
 
 // ClearSessionCookie deletes the site session cookie.

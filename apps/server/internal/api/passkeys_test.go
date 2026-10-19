@@ -32,7 +32,7 @@ func newPasskeyHarness(t *testing.T, limits owners.Limits) *ownerHarness {
 	})
 }
 
-func decode[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
+func decode[T any](t testing.TB, rec *httptest.ResponseRecorder) T {
 	t.Helper()
 	var v T
 	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {

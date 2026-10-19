@@ -23,7 +23,7 @@ import (
 // newTokenHarness is the owner harness with the token service, sites and
 // deploys wired in. The token service shares the harness clock and logger
 // output, so the cleanup log assertion covers tokens and device codes too.
-func newTokenHarness(t *testing.T, limits owners.TokenLimits) *ownerHarness {
+func newTokenHarness(t testing.TB, limits owners.TokenLimits) *ownerHarness {
 	t.Helper()
 	db := storetest.New(t)
 	var h *ownerHarness
@@ -57,7 +57,7 @@ func (h *ownerHarness) bearer(token string, r req) *httptest.ResponseRecorder {
 	return h.do(r)
 }
 
-func decodeInto(t *testing.T, rec *httptest.ResponseRecorder, v any) {
+func decodeInto(t testing.TB, rec *httptest.ResponseRecorder, v any) {
 	t.Helper()
 	if err := json.Unmarshal(rec.Body.Bytes(), v); err != nil {
 		t.Fatalf("decode %s: %v", rec.Body, err)
@@ -65,11 +65,14 @@ func decodeInto(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 }
 
 // createToken creates an API token with a dashboard session and returns it.
-func createToken(t *testing.T, h *ownerHarness, session, name string, scopes ...api.Scope) api.CreatedApiToken {
+func createToken(t testing.TB, h *ownerHarness, session, name string, scopes ...api.Scope) api.CreatedApiToken {
 	t.Helper()
 	rec := h.do(req{method: http.MethodPost, path: "/api/v0/tokens", cookie: session,
 		body: api.CreateApiTokenRequest{Name: name, Scopes: scopes}})
 	wantStatus(t, rec, http.StatusCreated)
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("create Cache-Control %q", cc)
+	}
 	var created api.CreatedApiToken
 	decodeInto(t, rec, &created)
 	h.secret(created.Token)
@@ -154,6 +157,9 @@ func TestExpiredAPIToken(t *testing.T) {
 	rec := h.do(req{method: http.MethodPost, path: "/api/v0/tokens", cookie: session,
 		body: api.CreateApiTokenRequest{Name: "short", Scopes: api.Scopes{api.ScopeDeploy}, ExpiresAt: &exp}})
 	wantStatus(t, rec, http.StatusCreated)
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("create Cache-Control %q", cc)
+	}
 	var created api.CreatedApiToken
 	decodeInto(t, rec, &created)
 	h.secret(created.Token)
@@ -218,10 +224,13 @@ func TestBearerIgnoresCookie(t *testing.T) {
 	wantError(t, rec, http.StatusUnauthorized, "unauthenticated")
 }
 
-func startLogin(t *testing.T, h *ownerHarness, clientName string) api.CliLogin {
+func startLogin(t testing.TB, h *ownerHarness, clientName string) api.CliLogin {
 	t.Helper()
 	rec := h.do(req{method: http.MethodPost, path: "/api/v0/cli-login", body: api.StartCliLoginRequest{ClientName: &clientName}})
 	wantStatus(t, rec, http.StatusCreated)
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("start Cache-Control %q", cc)
+	}
 	var l api.CliLogin
 	decodeInto(t, rec, &l)
 	h.secret(l.DeviceCode)
@@ -262,6 +271,9 @@ func TestCLILoginEndToEnd(t *testing.T) {
 	h.clock.advance(5 * time.Second)
 	rec = poll(h, l.DeviceCode)
 	wantStatus(t, rec, http.StatusOK)
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("delivery Cache-Control %q", cc)
+	}
 	var created api.CreatedApiToken
 	decodeInto(t, rec, &created)
 	h.secret(created.Token)
@@ -341,11 +353,42 @@ func TestCLILoginOwnerIsolation(t *testing.T) {
 func TestCLILoginRateLimits(t *testing.T) {
 	limits := owners.DefaultTokenLimits()
 	limits.StartPerIP = owners.Rate{N: 1, Per: time.Hour}
+	limits.PollPerIP = owners.Rate{N: 2, Per: time.Minute}
+	limits.DecidePerOwner = owners.Rate{N: 1, Per: 15 * time.Minute}
 	h := newTokenHarness(t, limits)
-	startLogin(t, h, "")
-	rec := h.do(req{method: http.MethodPost, path: "/api/v0/cli-login", body: api.StartCliLoginRequest{}})
-	wantError(t, rec, http.StatusTooManyRequests, "rate_limited")
-	if rec.Header().Get("Retry-After") == "" {
-		t.Fatal("no Retry-After")
+	session := h.owner("owner@example.test")
+	l := startLogin(t, h, "")
+	limited := func(rec *httptest.ResponseRecorder) {
+		t.Helper()
+		wantError(t, rec, http.StatusTooManyRequests, "rate_limited")
+		if rec.Header().Get("Retry-After") == "" {
+			t.Fatal("no Retry-After")
+		}
 	}
+	start := func() *httptest.ResponseRecorder {
+		return h.do(req{method: http.MethodPost, path: "/api/v0/cli-login", body: api.StartCliLoginRequest{}})
+	}
+	deny := func(code string) *httptest.ResponseRecorder {
+		return h.do(req{method: http.MethodPost, path: "/api/v0/cli-login/deny", cookie: session, body: api.DenyCliLoginRequest{UserCode: code}})
+	}
+	limited(start())
+
+	// Polls per IP, unknown device codes included.
+	wantStatus(t, poll(h, "dc_"+strings.Repeat("A", 43)), http.StatusGone)
+	wantStatus(t, poll(h, l.DeviceCode), http.StatusAccepted)
+	limited(poll(h, l.DeviceCode))
+	h.clock.advance(time.Minute)
+	wantStatus(t, poll(h, l.DeviceCode), http.StatusAccepted)
+
+	// Decisions per owner.
+	wantError(t, deny("ZZZZ-ZZZZ"), http.StatusBadRequest, "invalid_code")
+	limited(deny(l.UserCode))
+	h.clock.advance(15 * time.Minute)
+	// The login has expired meanwhile: refused as a bad code, not limited.
+	wantError(t, deny(l.UserCode), http.StatusBadRequest, "invalid_code")
+
+	// Starts per IP, after the hour.
+	limited(start())
+	h.clock.advance(44 * time.Minute)
+	wantStatus(t, start(), http.StatusCreated)
 }

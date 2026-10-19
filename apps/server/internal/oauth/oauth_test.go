@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -154,6 +155,9 @@ func TestOIDCIdentity(t *testing.T) {
 		{"wrong issuer", func(o *oauthtest.Options) { o.Issuer = "https://issuer.example.test" }, nil, oauth.ErrIDToken},
 		{"wrong audience", func(o *oauthtest.Options) { o.Audience = "another-client" }, nil, oauth.ErrIDToken},
 		{"expired ID token", func(o *oauthtest.Options) { o.Expired = true }, nil, oauth.ErrIDToken},
+		{"userinfo fails", func(o *oauthtest.Options) {
+			o.Account.EmailInUserInfo, o.UserInfoError = true, "userinfo-body-marker"
+		}, nil, oauth.ErrProvider},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -167,6 +171,10 @@ func TestOIDCIdentity(t *testing.T) {
 			id, err := p.Identify(t.Context(), access.Exchange{RedirectURI: redirectURI, Code: code, Verifier: verifier, Nonce: nonce})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			// Errors are logged: a provider's response body never is.
+			if err != nil && strings.Contains(err.Error(), "body-marker") {
+				t.Fatalf("err = %v repeats the provider's body", err)
 			}
 			if !slices.Equal(id.Emails, tt.emails) || id.Orgs != nil {
 				t.Fatalf("identity %+v, want emails %v", id, tt.emails)
@@ -242,13 +250,18 @@ func TestOIDCDiscoveryFailureIsCached(t *testing.T) {
 	var hits atomic.Int32
 	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
-		http.Error(w, "down", http.StatusServiceUnavailable)
+		http.Error(w, "down: issuer-body-marker", http.StatusServiceUnavailable)
 	}))
 	defer down.Close()
 	p := oauth.NewOIDC(oauth.OIDCConfig{ID: "oidc", Issuer: down.URL, ClientID: "x", ClientSecret: "y"})
 	for range 3 {
-		if _, err := p.AuthCodeURL(t.Context(), access.AuthRequest{}); !errors.Is(err, oauth.ErrProvider) {
+		_, err := p.AuthCodeURL(t.Context(), access.AuthRequest{})
+		if !errors.Is(err, oauth.ErrProvider) {
 			t.Fatalf("issuer down: %v", err)
+		}
+		// The error is logged: it names the status, never the body.
+		if msg := err.Error(); strings.Contains(msg, "issuer-body-marker") || !strings.Contains(msg, "503 Service Unavailable") {
+			t.Fatalf("discovery error %q", msg)
 		}
 	}
 	if n := hits.Load(); n != 1 {

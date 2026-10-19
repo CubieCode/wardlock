@@ -19,6 +19,7 @@ import (
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/edge"
 	"wardlock.nz/server/internal/mail"
+	"wardlock.nz/server/internal/platform"
 	"wardlock.nz/server/internal/store"
 	"wardlock.nz/server/internal/store/storetest"
 )
@@ -26,10 +27,13 @@ import (
 // policyEdge is the edge wired to the access service and the store as serve
 // wires them, over a throwaway SQLite database, with a clock the test moves.
 type policyEdge struct {
-	t             *testing.T
-	db            *store.DB
-	acc           *access.Service
-	e             *edge.Edge
+	t   testing.TB
+	db  *store.DB
+	acc *access.Service
+	e   *edge.Edge
+	// h is e behind the request logger, as serve wires it, so log
+	// assertions cover request lines too.
+	h             http.Handler
 	deploys       *deploys.Service
 	owner         store.Owner
 	logs          *bytes.Buffer
@@ -78,7 +82,7 @@ func (p *policyEdge) advance(d time.Duration) {
 	p.clock = p.clock.Add(d)
 }
 
-func newPolicyEdge(t *testing.T, opts ...func(*access.Config)) *policyEdge {
+func newPolicyEdge(t testing.TB, opts ...func(*access.Config)) *policyEdge {
 	t.Helper()
 	db := storetest.New(t)
 	p := &policyEdge{t: t, db: db, logs: &bytes.Buffer{}, clock: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC), mailDir: t.TempDir(), mailLogs: &bytes.Buffer{}}
@@ -120,6 +124,7 @@ func newPolicyEdge(t *testing.T, opts ...func(*access.Config)) *policyEdge {
 		t.Fatal(err)
 	}
 	t.Cleanup(p.e.Close)
+	p.h = platform.LogRequests(log, p.e)
 	p.owner = store.Owner{ID: store.NewID(), Email: "owner@example.test", CreatedAt: p.now()}
 	if err := db.Owners().Create(t.Context(), p.owner); err != nil {
 		t.Fatal(err)
@@ -208,7 +213,7 @@ func (p *policyEdge) do(method, host, target, cookie string, header http.Header)
 		req.AddCookie(&http.Cookie{Name: access.SessionCookieName, Value: cookie})
 	}
 	rec := httptest.NewRecorder()
-	p.e.ServeHTTP(rec, req)
+	p.h.ServeHTTP(rec, req)
 	return result{rec.Code, rec.Body.String(), rec.Result().Header}
 }
 
@@ -257,7 +262,7 @@ func TestPoliciesThroughTheEdge(t *testing.T) {
 	// A site with no policy row is public: deploys keep working.
 	r := p.do(http.MethodGet, host, "/", "", html)
 	r.expect(t, 200, "Home page", "")
-	if r.h.Get("X-Robots-Tag") != "" || r.h.Get("Cache-Control") != "public, max-age=0, must-revalidate" || r.h.Get("Vary") != "" {
+	if r.h.Get("X-Robots-Tag") != "" || r.h.Get("Cross-Origin-Resource-Policy") != "" || r.h.Get("Cache-Control") != "public, max-age=0, must-revalidate" || r.h.Get("Vary") != "" {
 		t.Fatalf("public page headers %v", r.h)
 	}
 
@@ -410,4 +415,23 @@ func TestSessionMatrixThroughTheEdge(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A policy on "<dir>index.html/" protects that one file; asking for its
+// directory must not serve it past that policy.
+func TestDirectoryIndexWithItsOwnPolicy(t *testing.T) {
+	p := newPolicyEdge(t)
+	docs := p.publish("docs")
+	pol := p.set("docs", "/internal/index.html/", store.Protected, true)
+	for _, target := range []string{"/internal/", "/internal/index.html", "/internal"} {
+		r := p.visit(visit{target: target, header: html})
+		if strings.Contains(r.body, "Internal plans") || r.code == 200 {
+			t.Fatalf("%s served the protected index: %d", target, r.code)
+		}
+	}
+	// With a session for that policy, the directory serves its index.
+	cookie := p.issue(docs, pol)
+	p.visit(visit{target: "/internal/", cookie: cookie, header: html}).expect(t, 200, "Internal plans", "")
+	// Other directories keep one decision and their own policy.
+	p.visit(visit{target: "/", header: html}).expect(t, 200, "Home page", "")
 }

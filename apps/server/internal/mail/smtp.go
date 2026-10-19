@@ -87,12 +87,12 @@ func (m *SMTP) send(ctx context.Context, to string, data []byte) error {
 	c, err := smtp.NewClient(conn, host)
 	if err != nil {
 		_ = conn.Close()
-		return fmt.Errorf("greeting: %w", err)
+		return stageError("greeting", err)
 	}
 	defer func() { _ = c.Close() }()
 	if m.hello != "" {
 		if err := c.Hello(m.hello); err != nil {
-			return fmt.Errorf("hello: %w", err)
+			return stageError("hello", err)
 		}
 	}
 
@@ -101,7 +101,7 @@ func (m *SMTP) send(ctx context.Context, to string, data []byte) error {
 			return ErrNoSTARTTLS
 		}
 		if err := c.StartTLS(tlsConfig); err != nil {
-			return fmt.Errorf("starttls: %w", err)
+			return stageError("starttls", err)
 		}
 	}
 

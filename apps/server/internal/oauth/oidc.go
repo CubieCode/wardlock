@@ -149,7 +149,7 @@ func (o *OIDC) fetch(ctx context.Context, done chan struct{}) {
 	defer o.mu.Unlock()
 	o.inflight = nil
 	if err != nil {
-		o.failed = fmt.Errorf("%w: OIDC discovery for %s: %w", ErrProvider, o.c.Issuer, err)
+		o.failed = fmt.Errorf("%w: OIDC discovery for %s: %w", ErrProvider, o.c.Issuer, withoutBody(err))
 		o.failedUntil = o.now().Add(discoveryRetry)
 	} else {
 		o.provider, o.failed = p, nil
@@ -231,7 +231,7 @@ func (o *OIDC) Identify(ctx context.Context, x access.Exchange) (access.Identity
 	if c.Email == "" && p.UserInfoEndpoint() != "" {
 		info, err := p.UserInfo(o.ctx(ctx), oauth2.StaticTokenSource(tok))
 		if err != nil {
-			return access.Identity{}, fmt.Errorf("%w: userinfo: %w", ErrProvider, err)
+			return access.Identity{}, fmt.Errorf("%w: userinfo: %w", ErrProvider, withoutBody(err))
 		}
 		// The userinfo subject must be the ID token's (OIDC Core 5.3.2).
 		if info.Subject != idt.Subject {

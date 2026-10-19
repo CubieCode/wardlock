@@ -68,6 +68,19 @@ func exchange(ctx context.Context, client *http.Client, cfg *oauth2.Config, code
 	return tok, nil
 }
 
+// withoutBody drops the response body from go-oidc's errors for a non-200
+// answer ("<status>: <body>"), keeping only the status: a provider's body
+// is unbounded and may repeat what the visitor sent. Other errors pass
+// through unchanged.
+func withoutBody(err error) error {
+	msg := err.Error()
+	status, _, ok := strings.Cut(msg, ": ")
+	if !ok || len(status) < 4 || status[3] != ' ' || strings.Trim(status[:3], "0123456789") != "" {
+		return err
+	}
+	return fmt.Errorf("provider answered %s", safeText(status))
+}
+
 // safeText keeps a provider's error code printable and short for logs.
 func safeText(s string) string {
 	s = strings.Map(func(r rune) rune {

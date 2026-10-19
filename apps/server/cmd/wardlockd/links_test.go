@@ -66,7 +66,7 @@ func (p *policyEdge) visit(v visit) result {
 		req.AddCookie(&http.Cookie{Name: access.SessionCookieName, Value: v.cookie})
 	}
 	rec := httptest.NewRecorder()
-	p.e.ServeHTTP(rec, req)
+	p.h.ServeHTTP(rec, req)
 	return result{rec.Code, rec.Body.String(), rec.Result().Header}
 }
 
@@ -492,6 +492,7 @@ func TestShareLinkRateLimitsThroughTheEdge(t *testing.T) {
 	if r.code != http.StatusTooManyRequests || r.h.Get("Retry-After") == "" {
 		t.Fatalf("over the IP limit: %d %v", r.code, r.h)
 	}
+	r.protected(t, "no-store")
 	// Other addresses are unaffected.
 	p.visit(visit{target: withT("/", token), ip: "198.51.100.8"}).expect(t, 200, "Home page", "")
 	p.advance(limits.TokenFailuresPerIP.Per)

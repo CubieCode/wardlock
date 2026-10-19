@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -317,6 +318,10 @@ type Decision struct {
 	// is forged, tampered with, for another site, expired, revoked or bound
 	// to a policy version that no longer exists.
 	ClearCookie bool
+	// IndexApart reports, for a directory path (ending in "/"), that its
+	// index.html is governed by another policy (one on "<dir>index.html/"),
+	// so serving the index for the directory needs a decision of its own.
+	IndexApart bool
 }
 
 // Decide applies the governing policy to r. A public policy allows anyone
@@ -335,6 +340,16 @@ func (s *Service) Decide(ctx context.Context, r Request) (Decision, error) {
 	if !ok {
 		return Decision{}, fmt.Errorf("site %s has no default policy", r.SiteID)
 	}
+	d, err := s.decide(ctx, r, ps, p)
+	if err == nil && strings.HasSuffix(r.Path, "/") {
+		ip, _ := Governing(ps, r.Path+"index.html")
+		d.IndexApart = ip.ID != p.ID
+	}
+	return d, err
+}
+
+func (s *Service) decide(ctx context.Context, r Request, ps []store.Policy, p store.Policy) (Decision, error) {
+	var err error
 	if p.Visibility == store.Public {
 		return Decision{Outcome: Allow, Policy: p, Via: ViaPublic}, nil
 	}

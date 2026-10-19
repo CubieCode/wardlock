@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"wardlock.nz/server/internal/access"
 )
@@ -277,9 +278,12 @@ func (e *Edge) view(w http.ResponseWriter, r *http.Request, site ServedSite) {
 }
 
 // localPath returns p if it is a path on this host, else "/". Tickets are
-// signed, so this is only a second line against an open redirect.
+// signed, so this is only a second line against an open redirect. Browsers
+// drop tabs and newlines from a Location and read a backslash as a slash,
+// so neither may appear anywhere ("/\t/host" would become "//host").
 func localPath(p string) string {
-	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.HasPrefix(p, "/\\") {
+	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") ||
+		strings.ContainsRune(p, '\\') || strings.ContainsFunc(p, unicode.IsControl) {
 		return "/"
 	}
 	return p

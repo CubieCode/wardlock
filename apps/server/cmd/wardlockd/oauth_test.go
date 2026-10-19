@@ -162,7 +162,7 @@ func (b *browser) request(method, raw string, form url.Values) result {
 			req.AddCookie(&http.Cookie{Name: name, Value: value})
 		}
 		rec := httptest.NewRecorder()
-		b.o.e.ServeHTTP(rec, req)
+		b.o.h.ServeHTTP(rec, req)
 		res = result{rec.Code, rec.Body.String(), rec.Result().Header}
 	} else {
 		r, err := oauth.NewHTTPClient().Get(raw)
@@ -686,10 +686,20 @@ func TestAuthOrigin(t *testing.T) {
 		{http.MethodGet, "/callback/github/x", 404},
 		{http.MethodPost, "/callback/github", 405},
 		{http.MethodGet, "/callback/github", 400},
+		{http.MethodGet, "/callback/github?state=unknown&code=x", 400},
 	} {
 		r := o.do(c.method, authHost, c.target, "", html)
-		if r.code != c.code || r.h.Get("Set-Cookie") != "" || r.h.Get("Cache-Control") != "no-store" || r.h.Get("X-Robots-Tag") != "noindex" {
+		if r.code != c.code || r.h.Get("Set-Cookie") != "" || r.h.Get("Cache-Control") != "no-store" || r.h.Get("X-Robots-Tag") != "noindex" ||
+			r.h.Get("Referrer-Policy") != "no-referrer" || r.h.Get("Cross-Origin-Resource-Policy") != "same-origin" {
 			t.Fatalf("%s %s: %d %v", c.method, c.target, r.code, r.h)
+		}
+		// The error page Wardlock renders is never framed and runs no
+		// scripts.
+		if c.code == 400 {
+			if csp := r.h.Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'none'") || !strings.Contains(csp, "frame-ancestors 'none'") ||
+				r.h.Get("X-Frame-Options") != "DENY" {
+				t.Fatalf("%s %s: error page headers %v", c.method, c.target, r.h)
+			}
 		}
 	}
 }
@@ -752,7 +762,7 @@ func TestOAuthConcurrentRedeem(t *testing.T) {
 			req.Host = host
 			req.AddCookie(&http.Cookie{Name: access.OAuthBindingCookieName, Value: binding})
 			rec := httptest.NewRecorder()
-			o.e.ServeHTTP(rec, req)
+			o.h.ServeHTTP(rec, req)
 			codes <- rec.Code
 		})
 	}

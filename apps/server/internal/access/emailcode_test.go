@@ -315,9 +315,23 @@ func TestEmailCodeNeutral(t *testing.T) {
 	}
 	try := func(path, addr string) result {
 		reads := h.policies.count()
-		// The request path, without waiting for the background send.
-		err := h.svc.SendEmailCode(t.Context(), access.EmailCodeRequest{SiteID: s.ID, Site: "harbour.wardlock.test", Path: path, IP: "192.0.2.1", Address: addr})
+		// The request path alone: the background send's policy read waits
+		// until the request path's reads are counted, so it cannot land in
+		// them (or not) depending on scheduling.
+		release := h.policies.hold()
+		defer release()
+		done := make(chan error, 1)
+		go func() {
+			done <- h.svc.SendEmailCode(t.Context(), access.EmailCodeRequest{SiteID: s.ID, Site: "harbour.wardlock.test", Path: path, IP: "192.0.2.1", Address: addr})
+		}()
+		var err error
+		select {
+		case err = <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%s: the request path waited for a policy read", addr)
+		}
 		r := result{err: err, keys: limiter.Keys(), reads: h.policies.count() - reads}
+		release()
 		access.WaitSends(h.svc)
 		return r
 	}

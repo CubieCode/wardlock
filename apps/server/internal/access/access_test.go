@@ -44,18 +44,43 @@ func (n *notifier) Subscribe(fn func(string)) func() {
 	return func() {}
 }
 
-// countingPolicies counts reads that reach the database.
+// countingPolicies counts reads that reach the database. While hold's
+// release is pending, reads wait before they are counted.
 type countingPolicies struct {
 	store.Policies
 	mu    sync.Mutex
 	reads int
+	held  chan struct{}
 }
 
 func (c *countingPolicies) ForSite(ctx context.Context, siteID string) ([]store.Policy, error) {
 	c.mu.Lock()
+	held := c.held
+	c.mu.Unlock()
+	if held != nil {
+		<-held
+	}
+	c.mu.Lock()
 	c.reads++
 	c.mu.Unlock()
 	return c.Policies.ForSite(ctx, siteID)
+}
+
+// hold makes reads wait until release is called.
+func (c *countingPolicies) hold() (release func()) {
+	held := make(chan struct{})
+	c.mu.Lock()
+	c.held = held
+	c.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			c.mu.Lock()
+			c.held = nil
+			c.mu.Unlock()
+			close(held)
+		})
+	}
 }
 
 type harness struct {

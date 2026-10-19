@@ -39,7 +39,8 @@ func NewToken() (token, publicID string) {
 }
 
 // ParseToken returns the public ID of a well-formed token. It looks only at
-// the shape, so it never says whether a token exists.
+// the shape, so it never says whether a token exists. The secret must be
+// canonical base64url, so one secret has exactly one spelling.
 func ParseToken(raw string) (publicID string, ok bool) {
 	if len(raw) != tokenLen || !strings.HasPrefix(raw, tokenPrefix) || raw[len(tokenPrefix)+publicIDLen] != '_' {
 		return "", false
@@ -50,7 +51,7 @@ func ParseToken(raw string) (publicID string, ok bool) {
 			return "", false
 		}
 	}
-	secret, err := base64.RawURLEncoding.DecodeString(raw[len(raw)-tokenSecretLen:])
+	secret, err := base64.RawURLEncoding.Strict().DecodeString(raw[len(raw)-tokenSecretLen:])
 	if err != nil || len(secret) != secretBytes {
 		return "", false
 	}

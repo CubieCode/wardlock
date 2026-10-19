@@ -38,7 +38,7 @@ const (
 // ownerHarness is the real API handler (with request logging) over a fresh
 // SQLite database, a fake clock and a mailer that captures messages.
 type ownerHarness struct {
-	t     *testing.T
+	t     testing.TB
 	h     http.Handler
 	svc   *owners.Service
 	db    *store.DB
@@ -57,7 +57,7 @@ func newOwnerHarness(t *testing.T, limits owners.Limits) *ownerHarness {
 }
 
 // newOwnerHarnessWith lets extend add other lanes' services to the server.
-func newOwnerHarnessWith(t *testing.T, db *store.DB, limits owners.Limits, extend func(*api.Server)) *ownerHarness {
+func newOwnerHarnessWith(t testing.TB, db *store.DB, limits owners.Limits, extend func(*api.Server)) *ownerHarness {
 	t.Helper()
 	h := &ownerHarness{
 		t:     t,
@@ -156,6 +156,13 @@ func (b *syncBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.Write(p)
+}
+
+// reset discards what was written so far.
+func (b *syncBuffer) reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
 }
 
 func (b *syncBuffer) String() string {
@@ -289,7 +296,7 @@ func (h *ownerHarness) owner(email string) string {
 	return h.signIn(email)
 }
 
-func codeOf(t *testing.T, link string) string {
+func codeOf(t testing.TB, link string) string {
 	t.Helper()
 	m := linkCode.FindStringSubmatch(link)
 	if m == nil {
@@ -298,14 +305,14 @@ func codeOf(t *testing.T, link string) string {
 	return m[1]
 }
 
-func wantStatus(t *testing.T, rec *httptest.ResponseRecorder, want int) {
+func wantStatus(t testing.TB, rec *httptest.ResponseRecorder, want int) {
 	t.Helper()
 	if rec.Code != want {
 		t.Fatalf("status %d, want %d; body %s", rec.Code, want, rec.Body)
 	}
 }
 
-func wantError(t *testing.T, rec *httptest.ResponseRecorder, status int, code string) {
+func wantError(t testing.TB, rec *httptest.ResponseRecorder, status int, code string) {
 	t.Helper()
 	wantStatus(t, rec, status)
 	var e api.Error
@@ -319,7 +326,7 @@ func wantError(t *testing.T, rec *httptest.ResponseRecorder, status int, code st
 
 // sessionToken returns the session cookie set by rec, checking its
 // attributes against the contract.
-func sessionToken(t *testing.T, rec *httptest.ResponseRecorder) string {
+func sessionToken(t testing.TB, rec *httptest.ResponseRecorder) string {
 	t.Helper()
 	raw := rec.Header().Values("Set-Cookie")
 	if len(raw) != 1 {
