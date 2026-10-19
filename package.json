@@ -21,7 +21,8 @@
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check:codegen": "bash scripts/codegen.sh --check",
     "check:go": "bash scripts/check-go.sh",
-    "browser:test": "pnpm build && node scripts/browser-acceptance.mjs"
+    "browser:test": "pnpm build && node scripts/browser-acceptance.mjs",
+    "docs:build": "pnpm --filter @wardlock/docs-site build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
