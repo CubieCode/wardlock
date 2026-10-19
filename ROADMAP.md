@@ -247,8 +247,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Owner:
 - PR:
 - Depends on: A2.7
-- Scope: A2.7 found that the visitor per-IP limiter table (`internal/access`, 100,000 keys, IPv6 by /64) is shared by password attempts, email-code sends and entries, OAuth starts and share-link guesses, each counted before any site or credential check: filling it (about two IPv6 /48s) refuses password, email-code and OAuth sign-in for every new client on every site until its windows expire. Separately, anyone can spend a site's per-site password and email-code limits and keep that method shut for the site indefinitely. Decide and implement a design that keeps sign-in available under both floods without lifting any limit (for example per-method tables, coarser keys such as IPv6 /48 under pressure, counting only failures per site, or per-site fallbacks when the IP table is full), and record the decision in docs/SECURITY-MODEL.md, replacing the "Accepted limiter risks" paragraph.
-- Acceptance: Tests prove that filling the IP table from many synthetic addresses neither refuses sign-in for unseen clients beyond what the recorded design allows nor lifts any per-IP, per-address or per-site limit; that a per-site flood cannot hold a method shut beyond the recorded bound; and that the full wardlock-access test matrix passes. SECURITY-MODEL and SPEC describe the new behaviour.
+- Scope: A2.7 found that the visitor per-IP limiter table (`internal/access`, 100,000 keys, IPv6 by /64) is shared by password attempts, email-code sends and entries, OAuth starts and share-link guesses, each counted before any site or credential check: filling it (about two IPv6 /48s) refuses password, email-code and OAuth sign-in for every new client on every site until its windows expire. Separately, anyone can spend a site's per-site password and email-code limits and keep that method shut for the site indefinitely. Likewise, the owner per-address send table (`internal/owners`, 100,000 addresses, kept apart from the owner per-IP table by A2.7) can be filled with invented addresses, which refuses owner email-code sends to addresses it does not yet hold for up to an hour. Decide and implement a design that keeps sign-in available under both floods without lifting any limit (for example per-method tables, coarser keys such as IPv6 /48 under pressure, counting only failures per site, or per-site fallbacks when the IP table is full), and record the decision in docs/SECURITY-MODEL.md, replacing the "Accepted limiter risks" paragraph.
+- Acceptance: Tests prove that filling the IP table from many synthetic addresses neither refuses sign-in for unseen clients beyond what the recorded design allows nor lifts any per-IP, per-address or per-site limit; that filling the owner per-address table does not refuse owner email-code sign-in beyond the recorded bound; that a per-site flood cannot hold a method shut beyond the recorded bound; and that the full wardlock-access test matrix passes. SECURITY-MODEL and SPEC describe the new behaviour.
 - Skills: wardlock-item, wardlock-access, wardlock-go-service
 - Parallel: Runs alone or beside items that do not touch `internal/access/limit*`, the access service's limiter wiring or `internal/edge` rate-limit handling.
 
@@ -262,6 +262,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Acceptance: Tests capture certmagic debug output through the adapter and assert no credential-bearing field survives; a test or documented decision covers the `dev://` warning; SECURITY-MODEL lists what each third-party adapter may log.
 - Skills: wardlock-item, wardlock-go-service
 - Parallel: Any wave; touches only `internal/tls/log*`, `internal/mail/dev*` and `cmd/wardlockd` startup checks.
+
+### A2.11: Distinct error code for the domain-check cooldown
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: A2.7
+- Scope: A2.7 found that the domain-check cooldown and a refused API token both answer `429` with code `rate_limited` (`internal/api/domains.go` and the token middleware in `internal/api/owners.go`), so `wardlock domain add --wait` treats a refused-token 429 as a cooldown and keeps polling until its 10-minute deadline without naming the token, and `wardlock domain verify` reports "checked moments ago". Give the cooldown 429 its own error code in `openapi.yaml`, send it from `internal/api/domains.go`, and make `domain add --wait` and `domain verify` retry or report a cooldown only for that code and show the API's error for any other 429.
+- Acceptance: API tests prove the cooldown answers the new code and a refused token answers `rate_limited`; CLI tests prove `domain add --wait` stops at once with the server's message on a `rate_limited` 429 and still waits out a cooldown, and `domain verify` reports each case correctly; regenerated clients committed; SPEC describes the code.
+- Skills: wardlock-item, wardlock-go-service
+- Parallel: Holds the `packages/api-spec` gate; touches `internal/api/domains*`, `apps/cli/cmd/wardlock/domain*` and the generated clients.
 
 ## D3: Dashboard
 

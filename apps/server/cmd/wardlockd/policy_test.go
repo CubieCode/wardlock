@@ -423,11 +423,21 @@ func TestDirectoryIndexWithItsOwnPolicy(t *testing.T) {
 	p := newPolicyEdge(t)
 	docs := p.publish("docs")
 	pol := p.set("docs", "/internal/index.html/", store.Protected, true)
-	for _, target := range []string{"/internal/", "/internal/index.html", "/internal"} {
-		r := p.visit(visit{target: target, header: html})
-		if strings.Contains(r.body, "Internal plans") || r.code == 200 {
-			t.Fatalf("%s served the protected index: %d", target, r.code)
-		}
+	// The directory answers a plain 404, not a challenge: its own policy
+	// (the default) allowed the request, the index's refused it.
+	r := p.visit(visit{target: "/internal/", header: html})
+	if r.code != http.StatusNotFound || strings.Contains(r.body, "Internal plans") || strings.Contains(r.body, "This page is private") {
+		t.Fatalf("/internal/ = %d %q, want a plain 404", r.code, r.body)
+	}
+	r.protected(t, "private, max-age=0, must-revalidate")
+	// The file's own URL gets the sign-in prompt, and the clean URL its
+	// redirect to the directory.
+	r = p.visit(visit{target: "/internal/index.html", header: html})
+	r.expect(t, http.StatusUnauthorized, "This page is private", "Internal plans")
+	r.protected(t, "no-store")
+	r = p.visit(visit{target: "/internal", header: html})
+	if r.code != http.StatusMovedPermanently || strings.Contains(r.body, "Internal plans") {
+		t.Fatalf("/internal = %d %q", r.code, r.body)
 	}
 	// With a session for that policy, the directory serves its index.
 	cookie := p.issue(docs, pol)
