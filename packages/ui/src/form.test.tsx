@@ -193,10 +193,12 @@ describe('Fieldset, Radio and Checkbox', () => {
         />
       </Fieldset>,
     );
-    const group = screen.getByRole('group', {
-      name: 'Who can open it',
-      description: 'Choose one.',
-    });
+    expect(
+      screen.getByRole('group', {
+        name: 'Who can open it',
+        description: 'Choose one.',
+      }),
+    ).toBeTruthy();
     const everyone = screen.getByRole('radio', {
       name: 'Everyone',
       description: 'No sign-in.',
@@ -204,7 +206,6 @@ describe('Fieldset, Radio and Checkbox', () => {
     expect((everyone as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByText('Some people'));
     expect(chosen).toBe('some');
-    expect(group.hasAttribute('aria-invalid')).toBe(false);
   });
 
   it('announces a group error and labels checkboxes', () => {
@@ -217,7 +218,7 @@ describe('Fieldset, Radio and Checkbox', () => {
       name: 'Ways in',
       description: 'Choose at least one.',
     });
-    expect(group.getAttribute('aria-invalid')).toBe('true');
+    expect(group.hasAttribute('aria-invalid')).toBe(false);
     expect(screen.getByRole('alert').textContent).toBe('Choose at least one.');
     const box = screen.getByRole('checkbox', {
       name: 'Password',

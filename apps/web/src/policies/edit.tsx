@@ -21,6 +21,7 @@ import {
   parseEntries,
   parseOrgs,
   policyName,
+  validOrg,
   type PolicyMethod,
   type SetPolicyRequest,
 } from './format.js';
@@ -33,7 +34,10 @@ const fields = [
   'allowlist',
 ] as const;
 type Field = (typeof fields)[number];
-type Errors = Partial<Record<Field, string>>;
+// The server names the whole allowlist as the target of every entry it
+// cannot read; an organisation's error belongs beside the organisations.
+type Errors = Partial<Record<Field | 'githubOrgs', string>>;
+const orgError = /GitHub organisation name/;
 
 const minPassword = 8;
 const maxPasswordBytes = 1024;
@@ -164,6 +168,9 @@ export function PolicyDialog({
       )
         found.allowlist =
           'Sign-in needs at least one address, domain or GitHub organisation.';
+      const badOrg = on('oauth') && githubOrgs.find((org) => !validOrg(org));
+      if (badOrg)
+        found.githubOrgs = `“${badOrg}” is not a GitHub organisation name like example-org.`;
       // Organisations are only shown, and so only sent, with sign-in on;
       // leaving them out keeps the current ones.
       body.allowlist = on('oauth')
@@ -199,7 +206,11 @@ export function PolicyDialog({
       target &&
       (target !== 'path' || adding)
     )
-      return setErrors({ [target]: error.message });
+      return setErrors({
+        [target === 'allowlist' && orgError.test(error.message) && on('oauth')
+          ? 'githubOrgs'
+          : target]: error.message,
+      });
     setFailure(
       error?.message
         ? `Could not save the policy: ${error.message}`
@@ -343,6 +354,7 @@ export function PolicyDialog({
             className="policy-mono"
             rows={2}
             value={orgs}
+            error={errors.githubOrgs}
             onChange={(event) => setOrgs(event.target.value)}
           />
         )}

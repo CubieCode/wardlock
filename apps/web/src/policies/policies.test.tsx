@@ -13,7 +13,13 @@ import {
 import { afterEach, describe, expect, it } from 'vitest';
 import { App } from '../app.js';
 import type { Policy, Site } from '../sites/format.js';
-import { governing, parseEntries } from './format.js';
+import {
+  cleanPath,
+  governing,
+  parseEntries,
+  requestPath,
+  validOrg,
+} from './format.js';
 import { PoliciesCard } from './policies.js';
 
 const me = {
@@ -163,6 +169,57 @@ describe('governing', () => {
   });
 });
 
+// The edge's cleanPath (apps/server/internal/edge/edge.go): Go's path.Clean
+// on the rooted path, with a trailing slash kept. Cases from edge_test.go,
+// siteaccess_test.go and accesslog_test.go, plus path.Clean's own rules.
+describe('cleanPath', () => {
+  it.each([
+    ['', '/'],
+    ['/', '/'],
+    ['about', '/about'],
+    ['//about', '/about'],
+    ['//about/', '/about/'],
+    ['/assets/../guide', '/guide'],
+    ['/assets/../about/', '/about/'],
+    ['/assets/../.wardlock/index.html', '/.wardlock/index.html'],
+    ['//.wardlock/health', '/.wardlock/health'],
+    ['/docs/../.wardlock/health', '/.wardlock/health'],
+    ['/x/../.wardlock/tls-ask', '/.wardlock/tls-ask'],
+    ['/docs/../admin/x', '/admin/x'],
+    ['/docs/./guide.html', '/docs/guide.html'],
+    ['/docs/.', '/docs'],
+    ['/docs/..', '/'],
+    ['/../../etc', '/etc'],
+    ['/a//b///c/', '/a/b/c/'],
+    ['/./', '/'],
+  ])('%j cleans to %j', (raw, clean) => {
+    expect(cleanPath(raw)).toBe(clean);
+  });
+
+  it('decodes a typed request path before cleaning it', () => {
+    expect(requestPath(' /docs/%2E%2E/admin/x?y=1#z ')).toBe('/admin/x');
+    expect(requestPath('/caf%C3%A9/')).toBe('/café/');
+    expect(requestPath('/100%/x')).toBe('/100%/x');
+  });
+});
+
+describe('validOrg', () => {
+  it.each([
+    ['example-org', true],
+    ['Example-Org', true],
+    ['a', true],
+    ['a'.repeat(39), true],
+    ['a'.repeat(40), false],
+    ['-org', false],
+    ['org-', false],
+    ['ex--org', false],
+    ['ex_org', false],
+    ['ex.org', false],
+  ])('%j is %s', (org, ok) => {
+    expect(validOrg(org)).toBe(ok);
+  });
+});
+
 describe('parseEntries', () => {
   it('splits addresses from domains on lines, commas and spaces', () => {
     expect(
@@ -233,6 +290,19 @@ describe('access policies card', () => {
     fireEvent.change(field, { target: { value: '/assetsx?x=1' } });
     expect(result()).toBe(
       '/assetsx follows the site default: protected (password).',
+    ); // Cleaned as the server cleans it, so dot segments cannot borrow
+    // another folder's policy.
+    fireEvent.change(field, { target: { value: '/assets/../admin/x' } });
+    expect(result()).toBe(
+      '/admin/x follows the site default: protected (password).',
+    );
+    fireEvent.change(field, { target: { value: '//assets//logo.svg' } });
+    expect(result()).toBe(
+      '/assets/logo.svg follows the policy for /assets/: public.',
+    );
+    fireEvent.change(field, { target: { value: '/x/../.Wardlock/login' } });
+    expect(result()).toBe(
+      '/.Wardlock/login is one of Wardlock’s own pages, which no policy covers.',
     );
   });
 
@@ -342,6 +412,86 @@ describe('access policies card', () => {
     expect(within(list).getAllByRole('listitem')[0]!.textContent).toContain(
       'Allowlist: ana@example.test and *.example.org.',
     );
+  });
+
+  it('puts GitHub organisation errors beside the organisations', async () => {
+    let reject = true;
+    const { api, puts } = fakeServer(
+      [
+        policy('/', {
+          visibility: 'protected',
+          methods: ['oauth'],
+          allowlist: { emails: [], domains: ['example.org'], githubOrgs: [] },
+        }),
+      ],
+      {
+        // The server's real answer: the target is the whole allowlist.
+        'PUT /api/v0/sites/docs/policies': () =>
+          reject
+            ? Response.json(
+                {
+                  code: 'invalid_policy',
+                  message:
+                    '"org-x" is not a GitHub organisation name like example-org.',
+                  target: 'allowlist',
+                },
+                { status: 400 },
+              )
+            : Response.json(
+                {
+                  code: 'invalid_policy',
+                  message:
+                    '"a@b" is not an email address like name@example.com.',
+                  target: 'allowlist',
+                },
+                { status: 400 },
+              ),
+      },
+    );
+    await card(api);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Edit the site default' }),
+    );
+    const edit = dialog('Edit the site default for docs');
+    const orgs = within(edit).getByRole('textbox', {
+      name: 'GitHub organisations',
+    });
+
+    // Caught before sending when it breaks GitHub's naming rules.
+    fireEvent.change(orgs, { target: { value: 'good-org\nbad--org' } });
+    fireEvent.click(within(edit).getByRole('button', { name: 'Save policy' }));
+    expect(
+      within(edit).getByRole('textbox', {
+        name: 'GitHub organisations',
+        description: /“bad--org” is not a GitHub organisation name/,
+      }),
+    ).toBeTruthy();
+    expect(puts()).toHaveLength(0);
+
+    // The server's refusal of an organisation goes beside the organisations.
+    fireEvent.change(orgs, { target: { value: 'org-x' } });
+    fireEvent.click(within(edit).getByRole('button', { name: 'Save policy' }));
+    expect(
+      await within(edit).findByRole('textbox', {
+        name: 'GitHub organisations',
+        description: /"org-x" is not a GitHub organisation name/,
+      }),
+    ).toBeTruthy();
+    expect(
+      within(edit)
+        .getByRole('textbox', { name: 'Allowlist' })
+        .hasAttribute('aria-invalid'),
+    ).toBe(false);
+
+    // Any other allowlist refusal stays beside the allowlist.
+    reject = false;
+    fireEvent.click(within(edit).getByRole('button', { name: 'Save policy' }));
+    expect(
+      await within(edit).findByRole('textbox', {
+        name: 'Allowlist',
+        description: /is not an email address/,
+      }),
+    ).toBeTruthy();
   });
 
   it('enables sign-in with GitHub organisations', async () => {
@@ -528,5 +678,39 @@ describe('on the site page', () => {
         'Only visitors with access can open this site.',
       ),
     );
+  });
+  it('says a saved change could not refresh the site details, not the deploys', async () => {
+    window.history.replaceState(null, '', '/sites/docs');
+    let siteReads = 0;
+    const { api } = fakeServer([policy('/')], {
+      'GET /api/v0/sites/docs': () =>
+        ++siteReads === 1
+          ? Response.json(docs)
+          : Response.json(
+              { code: 'internal', message: 'Something went wrong.' },
+              { status: 500 },
+            ),
+    });
+    render(<App api={api} />);
+    const policies = await screen.findByRole('region', {
+      name: 'Access policies',
+    });
+    await within(policies).findByRole('list', { name: 'Access policies' });
+    fireEvent.click(
+      within(policies).getByRole('button', { name: 'Edit the site default' }),
+    );
+    const edit = dialog('Edit the site default for docs');
+    fireEvent.click(within(edit).getByRole('radio', { name: 'Protected' }));
+    fireEvent.click(within(edit).getByRole('button', { name: 'Save policy' }));
+    const summary = screen.getByRole('region', { name: 'Address and access' });
+    expect((await within(summary).findByRole('alert')).textContent).toBe(
+      'Saved, but could not refresh the site details. The access shown here may be out of date.',
+    );
+    expect(
+      screen.queryByText(/Could not refresh the deploy history/),
+    ).toBeNull();
+    expect(
+      within(summary).getByRole('button', { name: 'Refresh' }),
+    ).toBeTruthy();
   });
 });

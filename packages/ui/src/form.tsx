@@ -190,7 +190,8 @@ export function TextAreaField({
 /**
  * A group of related controls (radios, checkboxes) under one visible
  * legend, with optional hint and error. The hint and error describe the
- * group, and the error is announced.
+ * group, and the error is announced. A group takes no aria-invalid (ARIA
+ * 1.2 does not allow it on role=group); mark invalid controls instead.
  */
 export function Fieldset({
   legend,
@@ -215,7 +216,6 @@ export function Fieldset({
     <fieldset
       className={cx('wl-fieldset', className)}
       aria-describedby={describedBy}
-      aria-invalid={error ? true : undefined}
     >
       <legend className="wl-field-label">{legend}</legend>
       {hint ? (

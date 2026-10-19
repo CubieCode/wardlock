@@ -310,7 +310,7 @@ for (const scheme of schemes) {
         '/docs/index.html follows the policy for /docs/: public.',
       );
       await shot('paths');
-      await checker.fill('/index.html');
+      await checker.fill('/docs/../index.html');
       await expect(card.getByRole('status').last()).toHaveText(
         '/index.html follows the site default: protected (password, email code and GitHub, Google or single sign-on).',
       );

@@ -7,7 +7,14 @@ import { useEffect, useState } from 'react';
 import { PolicyBadge, type Policy, type Site } from '../sites/format.js';
 import { DeletePolicyDialog } from './delete.js';
 import { PolicyDialog } from './edit.js';
-import { allowlistText, byPath, governing, methodsText } from './format.js';
+import {
+  allowlistText,
+  byPath,
+  governing,
+  methodsText,
+  requestPath,
+  reserved,
+} from './format.js';
 import './policies.css';
 
 type ListState =
@@ -254,9 +261,11 @@ function PolicyRow({
 /** Answers "which policy decides this path?" as the owner types. */
 function PathCheck({ policies }: { policies: Policy[] }) {
   const [path, setPath] = useState('');
-  const typed = path.trim().replace(/[?#].*$/, '');
-  const target = typed && !typed.startsWith('/') ? `/${typed}` : typed;
-  const policy = target ? governing(policies, target) : undefined;
+  // Matched as the server matches a request: decoded and cleaned, so
+  // /docs/../admin/ is /admin/.
+  const target = path.trim() ? requestPath(path) : '';
+  const own = target !== '' && reserved(target);
+  const policy = target && !own ? governing(policies, target) : undefined;
   return (
     <div className="policy-check">
       <TextField
@@ -270,6 +279,12 @@ function PathCheck({ policies }: { policies: Policy[] }) {
         onChange={(event) => setPath(event.target.value)}
       />
       <p className="policy-check-result" role="status">
+        {own && (
+          <>
+            <code>{target}</code> is one of Wardlock’s own pages, which no
+            policy covers.
+          </>
+        )}
         {policy && (
           <>
             <code>{target}</code> follows{' '}

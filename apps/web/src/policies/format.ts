@@ -35,6 +35,52 @@ export const methodsText = (policy: Policy) =>
 export const policyName = (path: string) =>
   path === '/' ? 'the site default' : path;
 
+/**
+ * The path the server matches policies against, as the edge's `cleanPath`
+ * makes it: rooted, dot segments resolved, repeated slashes collapsed, and
+ * a trailing slash kept (except that `.`, `..` and an empty path are bare
+ * directories, as Go's `path.Clean` leaves them).
+ */
+export function cleanPath(p: string) {
+  const rooted = p.startsWith('/') ? p : `/${p}`;
+  const segments: string[] = [];
+  for (const segment of rooted.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') segments.pop();
+    else segments.push(segment);
+  }
+  const clean = `/${segments.join('/')}`;
+  return rooted.endsWith('/') && clean !== '/' ? `${clean}/` : clean;
+}
+
+/**
+ * A path typed into the checker as the server would see the request: no
+ * query or fragment, percent-decoded (a malformed escape stays as typed),
+ * then cleaned.
+ */
+export function requestPath(typed: string) {
+  const raw = typed.trim().replace(/[?#].*$/, '');
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    // Not valid percent-encoding; match it as typed.
+  }
+  return cleanPath(decoded);
+}
+
+/** `/.wardlock/` in any letter case: Wardlock's own pages, never governed by a policy. */
+export const reserved = (path: string) =>
+  `${path}/`.toLowerCase().startsWith('/.wardlock/');
+
+/**
+ * Whether `org` is a GitHub organisation login the server accepts:
+ * letters, digits and single hyphens, neither first nor last, at most 39
+ * characters (compared without case).
+ */
+export const validOrg = (org: string) =>
+  org.length <= 39 && /^[a-z0-9]+(-[a-z0-9]+)*$/i.test(org);
+
 /** Whether `prefix` governs `path`: the path itself, under it, or its directory without the slash. */
 function covers(prefix: string, path: string) {
   return (
