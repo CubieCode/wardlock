@@ -265,7 +265,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.11: Distinct error code for the domain-check cooldown
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: `feat/a2.11-domain-cooldown-code`
 - PR:
 - Depends on: A2.7
