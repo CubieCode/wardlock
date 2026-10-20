@@ -126,9 +126,14 @@ for (const scheme of schemes) {
       await expect(
         page.getByRole('heading', { level: 1, name: site }),
       ).toBeVisible();
-      await expect(page.getByText('Taken down')).toBeVisible();
+      await expect(page.getByText('Taken down', { exact: true })).toBeVisible();
       await expect(
-        page.getByText('The operator of this server has taken this site down.'),
+        page.getByText(
+          'The operator of this server has taken this site down.',
+          {
+            exact: true,
+          },
+        ),
       ).toBeVisible();
       await expect(
         page.getByRole('button', { name: 'Tear down site' }),
