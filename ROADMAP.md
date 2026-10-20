@@ -498,6 +498,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item
 - Parallel: Wave 12, first group. Owns `.github/workflows/release.yml`, `.goreleaser.yaml` if needed; no gates.
 
+### O4.12: VPS deployment with automatic TLS and R2
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: C1.4, C1.9, C1.11, O4.11
+- Scope: A ready-to-use deployment for one small VPS with a public IP (any provider; Hetzner as the worked example), with Wardlock terminating TLS itself and uploads in Cloudflare R2. Add `deploy/vps/`: a `compose.yaml` running only `wardlockd` (the published `ghcr.io/cubiecode/wardlock:<version>` image pinned by version, ports 80 and 443 published, read-only root, dropped capabilities, the operator listener bound to loopback, one data volume for SQLite and certificates), a `wardlock.env.example` (`WARDLOCK_TLS_MODE=auto` with `WARDLOCK_DNS_PROVIDER=cloudflare` for the wildcard, the hosts, `WARDLOCK_BLOB_BACKEND=s3` with R2's endpoint, bucket, `auto` region and path-style addressing, SMTP, OAuth; names and placeholders only), and a nightly backup (a systemd timer or cron example running `wardlockd backup` and uploading the copy with restic to a separate R2 bucket, keeping `WARDLOCK_SECRET` out of it). Since no image is published before v0.1.0, also add a Dockerfile target (or a documented path) that builds `wardlockd` and the dashboard from source, so the stack can run before the first release. Add a DEPLOYMENT section walking through it: firewall (22, 80, 443), DNS records (dashboard, wildcard and `auth` for sites, all DNS-only, not proxied), a Cloudflare API token scoped to DNS edit on the sites zone, R2 buckets and a token scoped to them, first start and the setup URL, custom domains (Wardlock certifies them on demand; Let's Encrypt rate limits; `WARDLOCK_ACME_CA` as a fallback), upgrades (back up, change the tag, `docker compose pull && up -d`) and restore. Nothing is provisioned, deployed or published.
+- Acceptance: `docker compose -f deploy/vps/compose.yaml config` validates; the source-build image builds and starts locally in `local` mode against the example env with placeholders replaced (commands and output in the PR); `pnpm check` (including the docs-site link check) and `git diff --check` pass; no real hosts, tokens or addresses in examples; nothing provisioned or deployed.
+- Skills: wardlock-item
+- Parallel: Wave 12, beside C1.10. Owns `deploy/vps/`, `deploy/Dockerfile` (adding a target without changing the release image) and the new DEPLOYMENT section; no gates.
+
 ## Waves
 
 Suggested batches, based on the file ownership above. Re-check overlap before launching; merge in the order listed within a wave when items share interfaces.
@@ -512,7 +523,7 @@ Suggested batches, based on the file ownership above. Re-check overlap before la
 8. **Wave 9:** A2.9, A2.10, A2.11, O4.5. A2.11 holds the API contract gate (`openapi.yaml` and generated clients); no migrations or lockfile changes expected. A2.9 agrees its limiter design with the coordinator before implementing it.
 9. **Wave 10:** O4.6, then O4.7. Docs only; no gates.
 10. **Wave 11:** O4.8 and O4.9, in either order. Lint and CI configuration only; no gates.
-11. **Wave 12:** first D3.6, A2.12 and O4.11 (A2.12 holds the API contract gate; D3.6 merges first, since both touch the site page); then C1.10 (migration owner, takes the API contract gate) beside C1.11 (lockfile owner for `apps/server/go.sum`); then O4.10 last.
+11. **Wave 12:** first D3.6, A2.12 and O4.11 (A2.12 holds the API contract gate; D3.6 merges first, since both touch the site page); then C1.10 (migration owner, takes the API contract gate) beside C1.11 (lockfile owner for `apps/server/go.sum`) and O4.12; then O4.10 last.
 
 ## Not planned yet
 
