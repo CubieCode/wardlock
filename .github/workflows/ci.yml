@@ -81,7 +81,9 @@ jobs:
         if: runner.environment != 'github-hosted'
         run: pnpm --filter @wardlock/web exec playwright install --only-shell chromium
       - run: pnpm browser:test
+      # Debugging output only: a full artifact quota must not fail the job.
       - if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-results
