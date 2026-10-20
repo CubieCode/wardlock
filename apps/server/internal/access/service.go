@@ -79,6 +79,9 @@ type Config struct {
 	// OAuth is the operator's OAuth and OIDC providers and the origins
 	// their flows run between (A2.5).
 	OAuth OAuthConfig
+	// AbuseEmail receives visitors' abuse reports (A2.13,
+	// WARDLOCK_ABUSE_EMAIL); "" turns reports off.
+	AbuseEmail string
 	// Limits are the visitor rate limits; zero means DefaultLimits.
 	Limits Limits
 	Now    func() time.Time

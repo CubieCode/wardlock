@@ -1,0 +1,25 @@
+Someone reported a site on your Wardlock server.
+
+Site:     {{.Site}} (site ID {{.SiteID}})
+Reason:   {{.Reason}}
+{{- if .Page}}
+Page:     {{.Page}}
+{{- end}}
+{{- if .Contact}}
+Contact:  {{.Contact}}
+{{- else}}
+Contact:  none given
+{{- end}}
+Received: {{.ReceivedAt.UTC.Format "2006-01-02 15:04 UTC"}}
+{{if .Details}}
+Details:
+
+{{.Details}}
+{{end}}
+The report comes from a visitor and may be wrong. Share-link tokens are
+removed from what they wrote. To act on it:
+
+    wardlockd admin takedown-site {{.SiteName}}
+
+See "Abuse reports" in docs/DEPLOYMENT.md for the full procedure,
+including how to preserve and report illegal material.

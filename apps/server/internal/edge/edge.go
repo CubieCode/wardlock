@@ -125,6 +125,19 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A site the operator took down answers the unavailable page on every
+	// path and host, whatever its policies; only the report form and
+	// health stay reachable.
+	if s.site.Unavailable {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		switch clean := cleanPath(r.URL.Path); clean {
+		case reportPath, ReservedPrefix + "health":
+			e.serveReserved(w, r, s.site, clean)
+		default:
+			e.unavailablePage(w, r, clean)
+		}
+		return
+	}
 	// A site with nothing published is indistinguishable from no site,
 	// whatever the method or path.
 	if s.site.ActiveDeployID == "" {

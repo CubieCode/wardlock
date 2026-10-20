@@ -1,0 +1,310 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 CubieCode -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!--
+  The abuse report form (A2.13), /.wardlock/report on every site while the
+  operator has set WARDLOCK_ABUSE_EMAIL: the site (from the host), the page
+  (prefilled from ?page=), a reason, optional details and an optional
+  contact address. It posts to itself on the same host, like the login
+  form; a sent report replaces the form with a thank-you, and a refused one
+  shows the entries again with the message under its field. No scripts:
+  the same strict Content-Security-Policy as the login page, whose styles
+  it shares (colours mirror packages/ui/styles/tokens.css).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Report this site · {{.Site}}</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --canvas: light-dark(#f6f6f3, #12171d);
+        --surface: light-dark(#ffffff, #1a2028);
+        --surface-muted: light-dark(#eeeeea, #222a33);
+        --text: light-dark(#1b2430, #e8ebee);
+        --muted: light-dark(#4f5a66, #a7b0ba);
+        --border: light-dark(#d9dad4, #2e3742);
+        --border-strong: light-dark(#7d858e, #6b7682);
+        --primary: light-dark(#1f4f5c, #7fc1cf);
+        --primary-hover: light-dark(#183f4a, #9fd2dc);
+        --primary-text: light-dark(#ffffff, #0f1a1f);
+        --focus: light-dark(#2f6fb0, #8fbfff);
+        --danger: light-dark(#a3302a, #f0a39c);
+        --accent: light-dark(#a8741f, #d7a756);
+        --warning: light-dark(#7d5200, #e8c06d);
+        --warning-surface: light-dark(#fbf1dc, #2a2213);
+        --warning-border: light-dark(#e2c27c, #5e4a1d);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5rem;
+        padding: 1.5rem 1rem;
+        background: var(--canvas);
+        color: var(--text);
+        font:
+          1rem/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      main {
+        width: 100%;
+        max-width: 26rem;
+        padding: 2rem;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+      .site {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 1.5rem;
+        font-size: 0.875rem;
+        color: var(--muted);
+      }
+      .host {
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+      }
+      .status {
+        flex: none;
+        padding: 0.125rem 0.5rem;
+        border: 1px solid var(--warning-border);
+        border-radius: 999px;
+        background: var(--warning-surface);
+        color: var(--warning);
+        font-weight: 500;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.5rem;
+        line-height: 1.25;
+        font-weight: 650;
+      }
+      p {
+        margin: 0;
+      }
+      .lead {
+        color: var(--muted);
+      }
+      .notice {
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      footer {
+        font-size: 0.875rem;
+        color: var(--muted);
+      }
+      footer span {
+        color: var(--accent);
+      }
+      form {
+        display: grid;
+        gap: 1.25rem;
+        margin-top: 1.5rem;
+      }
+      .field {
+        display: grid;
+        gap: 0.375rem;
+      }
+      fieldset {
+        display: grid;
+        gap: 0.5rem;
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+      legend,
+      label.title {
+        margin-bottom: 0.375rem;
+        padding: 0;
+        font-size: 0.875rem;
+        font-weight: 600;
+      }
+      .choice {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        min-height: 2.75rem;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 0.9375rem;
+        cursor: pointer;
+      }
+      .choice:has(input:checked) {
+        border-color: var(--primary);
+        background: var(--surface-muted);
+      }
+      .choice input {
+        flex: none;
+        width: 1.125rem;
+        height: 1.125rem;
+        margin: 0;
+        accent-color: var(--primary);
+      }
+      input[type='text'],
+      input[type='email'],
+      textarea {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--border-strong);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+      }
+      textarea {
+        min-height: 7rem;
+        resize: vertical;
+      }
+      [aria-invalid='true'] {
+        border-color: var(--danger);
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      .error {
+        color: var(--danger);
+        font-size: 0.875rem;
+      }
+      .error.alone {
+        margin-top: 1rem;
+      }
+      button {
+        min-height: 2.75rem;
+        padding: 0.625rem 1rem;
+        border: 0;
+        border-radius: 6px;
+        background: var(--primary);
+        color: var(--primary-text);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:hover {
+        background: var(--primary-hover);
+      }
+      .back {
+        display: inline-block;
+        margin-top: 1.5rem;
+        color: var(--primary);
+        font-weight: 500;
+        text-underline-offset: 2px;
+      }
+      footer a {
+        color: var(--primary);
+        text-underline-offset: 2px;
+      }
+      footer a:hover {
+        color: var(--primary-hover);
+      }
+      a:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible,
+      button:focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+      @media (max-width: 30rem) {
+        body {
+          justify-content: flex-start;
+          padding-top: 3rem;
+        }
+        main {
+          padding: 1.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="site">
+        <span class="host">{{.Site}}</span>
+        <span class="status">{{if .Sent}}Sent{{else}}Report{{end}}</span>
+      </p>
+      {{if .Sent}}
+      <h1>Thanks for your report</h1>
+      <p class="lead">
+        It has gone to the operator of this server, who will review it. You will
+        hear back only if you left an address and they need more detail.
+      </p>
+      <a class="back" href="{{.Back}}">Back to the site</a>
+      {{else}}
+      <h1>Report this site</h1>
+      <p class="lead">
+        Tell the operator of this server about content that is harmful or breaks
+        the law. Reports go to the operator, not to the site's owner.
+      </p>
+      {{with .Alone}}
+      <p class="error alone" role="alert">{{.}}</p>
+      {{end}}
+      <form method="post" action="/.wardlock/report">
+        <input type="hidden" name="back" value="{{.Back}}" />
+        <fieldset>
+          <legend>What is wrong?</legend>
+          {{range .Reasons}}
+          <label class="choice">
+            <!-- prettier-ignore -->
+            <input type="radio" name="reason" value="{{.Value}}" required{{if eq .Value $.Reason}} checked{{end}} />
+            {{.Label}}
+          </label>
+          {{end}} {{with index .Errors `reason`}}
+          <p class="error" role="alert">{{.}}</p>
+          {{end}}
+        </fieldset>
+        <div class="field">
+          <label class="title" for="page">Page</label>
+          <!-- prettier-ignore -->
+          <input id="page" name="page" type="text" value="{{.Page}}" maxlength="2000" autocomplete="off"{{with index .Errors `page`}} aria-invalid="true" aria-describedby="page-error"{{end}} />
+          {{with index .Errors `page`}}
+          <p class="error" id="page-error" role="alert">{{.}}</p>
+          {{end}}
+        </div>
+        <div class="field">
+          <label class="title" for="details">Details (optional)</label>
+          <!-- prettier-ignore -->
+          <textarea id="details" name="details" maxlength="{{.MaxDetails}}" aria-describedby="details-hint{{with index .Errors `details`}} details-error{{end}}"{{with index .Errors `details`}} aria-invalid="true"{{end}}>{{.Details}}</textarea>
+          <p class="hint" id="details-hint">
+            What you saw and where, up to {{.MaxDetails}} characters. Any
+            share-link tokens you paste are removed.
+          </p>
+          {{with index .Errors `details`}}
+          <p class="error" id="details-error" role="alert">{{.}}</p>
+          {{end}}
+        </div>
+        <div class="field">
+          <label class="title" for="contact">Your email (optional)</label>
+          <!-- prettier-ignore -->
+          <input id="contact" name="contact" type="email" value="{{.Contact}}" maxlength="254" autocomplete="email" aria-describedby="contact-hint{{with index .Errors `contact`}} contact-error{{end}}"{{with index .Errors `contact`}} aria-invalid="true"{{end}} />
+          <p class="hint" id="contact-hint">
+            Only used if the operator needs to ask you more.
+          </p>
+          {{with index .Errors `contact`}}
+          <p class="error" id="contact-error" role="alert">{{.}}</p>
+          {{end}}
+        </div>
+        <button type="submit">Send report</button>
+      </form>
+      {{end}}
+    </main>
+    <footer>Served by <span>Wardlock</span></footer>
+  </body>
+</html>

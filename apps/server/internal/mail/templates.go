@@ -52,6 +52,17 @@ type Invite struct {
 	ValidFor  time.Duration
 }
 
+// AbuseReport is a visitor's report about a site, for the operator
+// (A2.13). Every field but SiteID, SiteName and ReceivedAt is the
+// reporter's words, with share-link tokens already removed.
+type AbuseReport struct {
+	// Site is the host the report was made on; SiteName the site's name.
+	Site, SiteID, SiteName string
+	Reason                 string
+	Page, Details, Contact string
+	ReceivedAt             time.Time
+}
+
 // layout is the HTML body shared by every code message.
 type layout struct {
 	Title, Lead, Code, Where, Ignore string
@@ -106,6 +117,16 @@ func InviteMessage(to netmail.Address, d Invite) (Message, error) {
 		return Message{}, fmt.Errorf("render html: %w", err)
 	}
 	return Message{To: to, Subject: "You're invited to Wardlock on " + d.Host, Text: text.String(), HTML: body.String()}, nil
+}
+
+// AbuseReportMessage builds the plain-text report sent to the operator's
+// abuse address. Reporters' words never reach the subject.
+func AbuseReportMessage(to netmail.Address, d AbuseReport) (Message, error) {
+	var text bytes.Buffer
+	if err := textTemplates.ExecuteTemplate(&text, "report.txt.tmpl", d); err != nil {
+		return Message{}, fmt.Errorf("render report.txt.tmpl: %w", err)
+	}
+	return Message{To: to, Subject: "Abuse report: " + d.Site, Text: text.String()}, nil
 }
 
 func render(to netmail.Address, subject, textName string, data any, html layout) (Message, error) {

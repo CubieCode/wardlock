@@ -64,6 +64,10 @@ func (a *fakeAccess) EmailCodeLogin(context.Context, access.EmailCodeAttempt) (a
 
 func (*fakeAccess) OAuthProviders() []access.ProviderInfo { return nil }
 
+func (*fakeAccess) ReportsEnabled() bool { return false }
+
+func (*fakeAccess) SendReport(context.Context, access.Report) error { return access.ErrReportsOff }
+
 func (*fakeAccess) StartOAuth(context.Context, access.OAuthStart) (access.OAuthStarted, error) {
 	return access.OAuthStarted{}, access.ErrUnknownProvider
 }

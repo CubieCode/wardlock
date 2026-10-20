@@ -79,6 +79,10 @@ func (publicSite) EmailCodeLogin(context.Context, access.EmailCodeAttempt) (acce
 
 func (publicSite) OAuthProviders() []access.ProviderInfo { return nil }
 
+func (publicSite) ReportsEnabled() bool { return false }
+
+func (publicSite) SendReport(context.Context, access.Report) error { return access.ErrReportsOff }
+
 func (publicSite) StartOAuth(context.Context, access.OAuthStart) (access.OAuthStarted, error) {
 	return access.OAuthStarted{}, access.ErrUnknownProvider
 }
