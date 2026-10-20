@@ -410,6 +410,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item
 - Parallel: Wave 10, after O4.6 (both edit CONTRIBUTING and the launch checklist). No gates.
 
+### O4.8: Enforce every module boundary in depguard
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: O4.6
+- Scope: O4.6 found that `.golangci.yml` enforces only some of docs/MODULES.md's "Must not import" rules: those for `edge`, `access`, `oauth`, `mail` and `tls`, the storage rule for domain packages, and the MIT modules. Add depguard rules for the rest: `platform` imports no other internal package; `store` and `dashboard` import no domain package (and `dashboard` not `store`); `deploys` and `sites` import neither `api` nor `edge`; `owners` and `api` do not import `edge`. Each rule gets a `desc` naming the boundary. Update MODULES so it says every row is enforced. The code already respects these rules, so no Go code changes.
+- Acceptance: golangci-lint passes on main's code with the new rules; for each new rule, a temporary violating import (not committed) is shown failing with that rule's message, with the commands and output in the PR; `pnpm check` and `git diff --check` pass.
+- Skills: wardlock-item, wardlock-go-service
+- Parallel: Any wave. Owns `.golangci.yml` and docs/MODULES.md; no gates.
+
 ## Waves
 
 Suggested batches, based on the file ownership above. Re-check overlap before launching; merge in the order listed within a wave when items share interfaces.
@@ -423,6 +434,7 @@ Suggested batches, based on the file ownership above. Re-check overlap before la
 7. **Then:** A2.7 alone; O4.3 when its dependencies are done; O4.4 last.
 8. **Wave 9:** A2.9, A2.10, A2.11, O4.5. A2.11 holds the API contract gate (`openapi.yaml` and generated clients); no migrations or lockfile changes expected. A2.9 agrees its limiter design with the coordinator before implementing it.
 9. **Wave 10:** O4.6, then O4.7. Docs only; no gates.
+10. **Wave 11:** O4.8. Lint configuration only; no gates.
 
 ## Not planned yet
 
