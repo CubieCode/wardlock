@@ -68,6 +68,8 @@ for (const scheme of schemes) {
         await expect(
           v.getByRole('heading', { level: 1, name: 'Report this site' }),
         ).toBeVisible();
+        // On Wardlock's dashboard origin, out of the reported site's reach.
+        expect(new URL(v.url()).origin).toBe(origin);
         await expect(v.getByRole('textbox', { name: 'Page' })).toHaveValue(
           `${site}.wardlock.localhost/plans/`,
         );
@@ -141,6 +143,10 @@ for (const scheme of schemes) {
       await expect(page.getByRole('button', { name: 'Open site' })).toHaveCount(
         0,
       );
+      // Its domains are frozen: no field to add one.
+      await expect(
+        page.getByRole('button', { name: 'Add domain' }),
+      ).toHaveCount(0);
       await check(page, info, `dashboard-taken-down-${scheme}`);
     });
 
