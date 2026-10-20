@@ -126,15 +126,18 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			AuthOrigin: publicOrigin(cfg.AuthHost(), port).String(),
 			SiteOrigin: func(host string) string { return publicOrigin(host, port).String() },
 		},
-		Secret: cfg.Secret,
-		Now:    time.Now,
-		Log:    log,
+		Secret:     cfg.Secret,
+		AbuseEmail: cfg.AbuseEmail,
+		Now:        time.Now,
+		Log:        log,
 	})
 	if err != nil {
 		_ = ln.Close()
 		return err
 	}
 	defer accessSvc.Close()
+	stopWatch := startUnavailableWatch(ctx, log, db.Sites(), notifier)
+	defer stopWatch()
 	// In auto mode the certificate manager exists before the sites service,
 	// which removes custom-domain certificates when domains go.
 	var certs *wltls.Manager
@@ -219,6 +222,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Health:        platform.Healthz(),
 		Sites: siteSource{
 			baseDomain: cfg.BaseDomain,
+			owners:     db.Owners(),
 			sites:      db.Sites(),
 			domains:    db.Domains(),
 			deploys:    db.Deploys(),
@@ -399,6 +403,7 @@ func newOwners(cfg platform.Config, log *slog.Logger, db *store.DB, dashURL *url
 		Logger:       log,
 		Secret:       cfg.Secret,
 		DashboardURL: dashURL,
+		Invites:      cfg.Invites,
 	})
 }
 
