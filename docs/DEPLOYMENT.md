@@ -137,6 +137,141 @@ curl http://127.0.0.1:8080/healthz
 curl http://127.0.0.1:9740/readyz      # the operator listener; see Health, readiness and metrics
 ```
 
+## VPS with automatic TLS and R2 (O4.12)
+
+A ready-made deployment for one small VPS with a public IP address. Wardlock terminates TLS itself ([Automatic TLS](#automatic-tls)): the sites wildcard through DNS-01 with Cloudflare, the dashboard and owners' custom domains on demand. Deploy files go to Cloudflare R2 ([S3-compatible blob storage](#s3-compatible-blob-storage)), and a nightly backup goes to a second R2 bucket with restic. Nothing else runs on the machine: no reverse proxy, no Cloudflare Tunnel and no Cloudflare proxying. Nothing here is provisioned for you; you run each step.
+
+The files are in [`deploy/vps/`](../deploy/vps/README.md):
+
+| File                                                                                                                              | Purpose                                                                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`compose.yaml`](../deploy/vps/compose.yaml)                                                                                      | `wardlockd` only, pinned by version; ports 80 and 443 published, the operator listener on `127.0.0.1:9740`, read-only root, all capabilities dropped, one volume `wardlock-data` |
+| [`wardlock.env.example`](../deploy/vps/wardlock.env.example)                                                                      | the configuration, names and placeholders only; copy it to `wardlock.env`                                                                                                        |
+| [`backup.sh`](../deploy/vps/backup.sh), [`wardlock-backup.service`, `wardlock-backup.timer`](../deploy/vps/wardlock-backup.timer) | the nightly backup and its systemd timer                                                                                                                                         |
+| [`restic.env.example`](../deploy/vps/restic.env.example)                                                                          | the backup repository and its credentials; copy it to `/etc/wardlock/restic.env`                                                                                                 |
+
+The worked example is an OVHcloud VPS-1 (2 vCores, 4 GB RAM, NVMe) in the Singapore or Sydney region, but nothing in the files is specific to a provider: any VPS with a public IPv4 address, and preferably an IPv6 address, works. Below, `example-sites.net` is the sites domain (a zone on Cloudflare), `wardlock.example.com` the dashboard, and `<account id>` your Cloudflare account ID.
+
+### Server and firewall
+
+1. Create the VPS from a current Debian or Ubuntu image with your SSH key, and install updates.
+2. Install Docker Engine 27 or later with the Compose plugin from [Docker's repository](https://docs.docker.com/engine/install/), plus `git` and `restic` from the distribution. Docker 27 and later gives the Compose network its own private IPv6 subnet and forwards IPv6 connections with their source address, which per-IP limits and the [access log](#access-log) need.
+3. Allow inbound TCP 22, 80 and 443 and nothing else. With `ufw`: `ufw allow OpenSSH && ufw allow 80/tcp && ufw allow 443/tcp && ufw enable`. Docker's published ports bypass `ufw`, which is why `compose.yaml` publishes the operator listener on the host's loopback only.
+
+On OVHcloud:
+
+- The VPS has a public IPv4 and an IPv6 address, both shown in the control panel. Some images do not configure the IPv6 address; if `ip -6 addr` shows no global address, add the address and gateway from the control panel to the network configuration (netplan or cloud-init), and check from another machine with `ping -6 <server IPv6>` before publishing AAAA records.
+- The optional Network Firewall in the control panel filters traffic before it reaches the VPS. If you enable it, allow TCP 22, 80 and 443 there too, or certificate validation and visitors never arrive.
+- Reverse DNS is optional: Wardlock sends mail through your SMTP provider, not from the VPS.
+
+### DNS records
+
+In the Cloudflare dashboard for the sites zone (and wherever the dashboard's zone lives), create these records with the proxy status **DNS only** (grey cloud), never **Proxied**. Proxied records would make Cloudflare terminate TLS instead of Wardlock, hide visitors' addresses, and break certificate validation for the dashboard and custom domains.
+
+| Name                     | Type    | Content                               |
+| ------------------------ | ------- | ------------------------------------- |
+| `*.example-sites.net`    | A, AAAA | `<server IPv4>`, `<server IPv6>`      |
+| `auth.example-sites.net` | A, AAAA | the same (the wildcard covers it too) |
+| `wardlock.example.com`   | A, AAAA | the same                              |
+
+Keep the wildcard as A/AAAA records, not a CNAME ([Custom domains](#custom-domains-c19)). If either zone has CAA records, allow `letsencrypt.org`. See [Domains and DNS](#domains-and-dns) for choosing the domains.
+
+### Cloudflare API token
+
+Create an API token (not the global API key) with _Zone → DNS → Edit_ and _Zone → Zone → Read_ on the sites zone only, as [Automatic TLS](#automatic-tls) describes, and optionally restrict it to the server's addresses. It goes in `WARDLOCK_DNS_API_TOKEN`. When the dashboard is in another zone, Wardlock certifies it with HTTP-01 or TLS-ALPN-01, so the token needs no access there.
+
+### R2 buckets and tokens
+
+1. In R2, create two private buckets, for example `wardlock-blobs` for deploy files and `wardlock-backups` for restic, with a location hint near the VPS. Turn on no public access, custom domain or `r2.dev` URL for either: every file is served through Wardlock's access control.
+2. Create two R2 API tokens with _Object Read & Write_, each limited to one bucket: one for `wardlockd`, one for restic. Each shows an access key ID and a secret access key once; the backup token must not reach `wardlockd`, and the blobs token must not reach the backups.
+3. The S3 endpoint for both is `https://<account id>.r2.cloudflarestorage.com`, the region `auto`.
+
+### Configure and start
+
+Until a release image is published, build one from source on the server (or anywhere, then `docker save` and `docker load`). The `source` target of [`deploy/Dockerfile`](../deploy/Dockerfile) builds the dashboard and `wardlockd` into the same distroless image as the release:
+
+```sh
+sudo git clone https://github.com/CubieCode/wardlock /opt/wardlock
+cd /opt/wardlock
+sudo docker build -f deploy/Dockerfile --target source -t wardlock:source .
+echo WARDLOCK_IMAGE=wardlock:source | sudo tee deploy/vps/.env
+```
+
+Once releases exist, skip the build and leave `.env` out: `compose.yaml` names `ghcr.io/cubiecode/wardlock:<version>`. Then configure:
+
+```sh
+cd /opt/wardlock/deploy/vps
+sudo install -m 0600 wardlock.env.example wardlock.env
+openssl rand -base64 32 | tr '+/' '-_'   # WARDLOCK_SECRET; store a copy off the server
+sudoedit wardlock.env
+```
+
+Fill in `WARDLOCK_SECRET`, the hosts, the Cloudflare token, the R2 bucket, endpoint and blobs token, and [SMTP](#smtp); add [OAuth and OIDC](#oauth-and-oidc) providers if you want them. For the first start, uncomment the Let's Encrypt staging `WARDLOCK_ACME_CA` so mistakes do not use up production rate limits. Then:
+
+```sh
+sudo docker compose up -d
+sudo docker compose logs wardlockd | grep -E 'setup_url|certificate|error'
+curl -s http://127.0.0.1:9740/readyz      # ready once the database, R2 and certificates pass
+```
+
+`/readyz` reports `certificates` failing until the wildcard and dashboard certificates arrive, usually within a minute or two; the log names the CA's reason when one fails. When it reports ready, comment out `WARDLOCK_ACME_CA` again and run `sudo docker compose up -d`, which recreates the container and obtains production certificates; staging and production certificates are stored apart under `certs/certificates/`, one folder per CA. Then open the `setup_url` from the log (`https://wardlock.example.com/…`, valid 60 minutes; a new one on every start until an owner exists) to create the first owner, as [Single binary with systemd](#single-binary-with-systemd) describes. `sudo docker compose exec wardlockd wardlockd admin create --email you@example.com` works too.
+
+### Custom domains on the VPS
+
+Owners add their own domains from the dashboard or the CLI and point them at the server ([Custom domains](#custom-domains-c19)); you set nothing up per domain. Wardlock obtains each certificate on demand at the first TLS handshake once the domain is verified and active. Every certificate counts against [Let's Encrypt's rate limits](https://letsencrypt.org/docs/rate-limits/) (per registered domain, per account and for failed validations), which matter mostly when many owners add domains at once or one keeps failing validation; renewals do not count against new-certificate limits. If you reach a limit, or Let's Encrypt is unavailable for a long time, `WARDLOCK_ACME_CA` can point Wardlock at another ACME CA's directory. It must issue without external account binding, which Wardlock does not support.
+
+### Backups and restore on the VPS
+
+The data volume holds `wardlock.db` and `certs/` (certificates, keys and the ACME account); deploy files are in R2. [`backup.sh`](../deploy/vps/backup.sh) runs nightly as root:
+
+1. `wardlockd backup` writes a consistent copy of the database into the volume, while the server runs ([Backups](#backups)).
+2. restic uploads the whole volume to the `wardlock-backups` bucket: the copy and `certs/`. Only the live `wardlock.db`, `wardlock.db-wal` and `wardlock.db-shm` are left out, since they cannot be copied safely while the server runs and the copy replaces them.
+3. The copy is deleted, and snapshots older than 14 daily, 8 weekly and 12 monthly are pruned.
+
+Set it up once:
+
+```sh
+sudo install -d -m 0700 /etc/wardlock
+sudo install -m 0600 /opt/wardlock/deploy/vps/restic.env.example /etc/wardlock/restic.env
+sudoedit /etc/wardlock/restic.env                       # repository, backup token
+openssl rand -base64 32 | sudo tee /etc/wardlock/restic-password >/dev/null
+sudo chmod 0600 /etc/wardlock/restic-password
+sudo sh -c 'set -a; . /etc/wardlock/restic.env; restic init'
+sudo install -m 0644 /opt/wardlock/deploy/vps/wardlock-backup.service \
+  /opt/wardlock/deploy/vps/wardlock-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now wardlock-backup.timer
+sudo systemctl start wardlock-backup.service && journalctl -u wardlock-backup.service -n 5
+```
+
+Without systemd timers, a cron line does the same: `30 3 * * * root /opt/wardlock/deploy/vps/backup.sh` in `/etc/cron.d/wardlock-backup`.
+
+**Keep the secrets out of the backup.** `WARDLOCK_SECRET` lives in `wardlock.env`, outside the volume, so it is never in the backup. Store it, together with the restic password and both env files' credentials, somewhere that survives losing the VPS and is not the backup bucket: a password manager or an offline copy that only operators can reach. Without `WARDLOCK_SECRET` a restore loses every share link, API token and session; without the restic password the backups cannot be read at all.
+
+**Deploy files are not in this backup.** Protect the `wardlock-blobs` bucket as [Backups](#backups) describes for blobs in a bucket, for example with an `rclone sync` to another bucket after each database backup.
+
+To restore, on the same or a new VPS prepared as above, with `wardlock.env` (the same `WARDLOCK_SECRET` and hosts), `/etc/wardlock/restic.env` and the restic password back in place:
+
+```sh
+cd /opt/wardlock/deploy/vps
+sudo docker compose down                                # if it is running
+sudo docker compose up --no-start                       # creates the volume
+data=$(sudo docker volume inspect --format '{{ .Mountpoint }}' wardlock-data)
+sudo sh -c 'set -a; . /etc/wardlock/restic.env; restic snapshots; restic restore latest --host wardlock --target /root/wardlock-restore'
+src=/root/wardlock-restore$data                         # restic keeps the original path
+sudo find "$data" -mindepth 1 -delete                   # an empty data directory
+db=$(sudo find "$src" -maxdepth 1 -name 'wardlock-*.db' | sort | tail -n 1)
+sudo cp "$db" "$data/wardlock.db"
+sudo test -d "$src/certs" && sudo cp -a "$src/certs" "$data/"   # certificates, if any
+sudo chown -R 65532:65532 "$data" && sudo chmod 0700 "$data"
+sudo docker compose up -d && curl -s http://127.0.0.1:9740/readyz
+```
+
+`restic restore` puts files under the target at their original path; on a host with a different Docker data root, `restic ls latest` shows where. The rest of [Restore](#restore) applies: migrations upgrade an older backup, and anything written after the backup is lost.
+
+### Upgrades on the VPS
+
+Run the backup first (`sudo systemctl start wardlock-backup.service`). Then change the version in `compose.yaml` (or in `WARDLOCK_IMAGE` in `.env`) and run `sudo docker compose pull && sudo docker compose up -d`. For a source build, check out the new commit, rebuild the `source` image and run `sudo docker compose up -d`. Migrations run on start and are forward-only ([Upgrades](#upgrades)): going back needs the backup.
+
 ## Behind Caddy or nginx
 
 If something else already terminates TLS on the machine, run Wardlock in proxy mode (`WARDLOCK_TLS_MODE=proxy`, the default for non-`localhost` hosts) on a loopback port and proxy every site host and the dashboard to it, preserving the `Host` header. Examples: [`deploy/Caddyfile.example`](../deploy/Caddyfile.example), [`deploy/nginx.conf.example`](../deploy/nginx.conf.example). Then:

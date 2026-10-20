@@ -1,0 +1,66 @@
+# SPDX-FileCopyrightText: 2026 CubieCode
+# SPDX-License-Identifier: MIT
+#
+# Wardlock on one VPS with a public IPv4 and IPv6 address: wardlockd
+# terminates TLS itself (automatic TLS, Let's Encrypt) and keeps deploy files
+# in Cloudflare R2. Nothing else runs. Walkthrough: docs/DEPLOYMENT.md, "VPS
+# with automatic TLS and R2".
+#
+# Configuration lives in wardlock.env beside this file (copy
+# wardlock.env.example, mode 0600). The listen addresses and data directory
+# are fixed here. Images are pinned by version; until one is published, build
+# from source and name it in WARDLOCK_IMAGE in .env beside this file:
+#   docker build -f deploy/Dockerfile --target source -t wardlock:source .
+#   echo WARDLOCK_IMAGE=wardlock:source > deploy/vps/.env
+name: wardlock
+services:
+  wardlockd:
+    image: ${WARDLOCK_IMAGE:-ghcr.io/cubiecode/wardlock:0.1.0}
+    restart: unless-stopped
+    env_file:
+      # Optional only so `docker compose config` works in a fresh checkout:
+      # without it, wardlockd refuses to start (no WARDLOCK_SECRET).
+      - path: wardlock.env
+        required: false
+    environment:
+      WARDLOCK_HTTP_ADDR: ':8080'
+      WARDLOCK_HTTPS_ADDR: ':8443'
+      WARDLOCK_OPERATOR_ADDR: ':9740'
+      WARDLOCK_DATA_DIR: /data
+    ports:
+      # ACME HTTP-01, /healthz and the redirect to HTTPS; then sites, the
+      # dashboard and the API. Published on every IPv4 and IPv6 address.
+      - '80:8080'
+      - '443:8443'
+      # Operator listener (/healthz, /readyz, /metrics): the host's loopback
+      # only. Never publish it on a public address.
+      - '127.0.0.1:9740:9740'
+    networks: [wardlock]
+    # SQLite database (wardlock.db) and certificates (certs/). Deploy files
+    # are in R2, not here.
+    volumes:
+      - wardlock-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    # Graceful shutdown drains requests for up to 10 seconds, then writes the
+    # buffered access log.
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '5'
+networks:
+  # A network of its own, so no other container can reach the operator
+  # listener. IPv6 on it lets Docker forward IPv6 connections with their
+  # source address, which per-IP limits and the access log rely on.
+  wardlock:
+    enable_ipv6: true
+volumes:
+  wardlock-data:
+    # A fixed name, so backup.sh and the restore steps can find it.
+    name: wardlock-data
