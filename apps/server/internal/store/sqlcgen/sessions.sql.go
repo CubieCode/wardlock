@@ -80,10 +80,13 @@ func (q *Queries) CreateSiteSession(ctx context.Context, arg CreateSiteSessionPa
 }
 
 const getOwnerSessionByTokenHash = `-- name: GetOwnerSessionByTokenHash :one
-SELECT id, owner_id, token_hash, created_at, last_seen_at, expires_at, revoked_at, user_agent
-FROM owner_sessions WHERE token_hash = ?1
+SELECT owner_sessions.id, owner_sessions.owner_id, owner_sessions.token_hash, owner_sessions.created_at,
+  owner_sessions.last_seen_at, owner_sessions.expires_at, owner_sessions.revoked_at, owner_sessions.user_agent
+FROM owner_sessions JOIN owners ON owners.id = owner_sessions.owner_id
+WHERE owner_sessions.token_hash = ?1 AND owners.suspended_at IS NULL
 `
 
+// A suspended owner's sessions are never found (A2.13).
 func (q *Queries) GetOwnerSessionByTokenHash(ctx context.Context, tokenHash string) (OwnerSession, error) {
 	row := q.db.QueryRowContext(ctx, getOwnerSessionByTokenHash, tokenHash)
 	var i OwnerSession
@@ -190,6 +193,22 @@ func (q *Queries) ListOwnerSessions(ctx context.Context, arg ListOwnerSessionsPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const revokeAllOwnerSessions = `-- name: RevokeAllOwnerSessions :exec
+UPDATE owner_sessions SET revoked_at = COALESCE(revoked_at, ?1)
+WHERE owner_id = ?2
+`
+
+type RevokeAllOwnerSessionsParams struct {
+	RevokedAt sql.NullInt64
+	OwnerID   string
+}
+
+// Suspension revokes every session the owner has (A2.13).
+func (q *Queries) RevokeAllOwnerSessions(ctx context.Context, arg RevokeAllOwnerSessionsParams) error {
+	_, err := q.db.ExecContext(ctx, revokeAllOwnerSessions, arg.RevokedAt, arg.OwnerID)
+	return err
 }
 
 const revokeOwnerSession = `-- name: RevokeOwnerSession :execrows

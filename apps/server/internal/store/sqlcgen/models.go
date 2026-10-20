@@ -101,11 +101,12 @@ type Domain struct {
 }
 
 type Owner struct {
-	ID         string
-	Email      string
-	InvitedBy  sql.NullString
-	CreatedAt  int64
-	AcceptedAt sql.NullInt64
+	ID          string
+	Email       string
+	InvitedBy   sql.NullString
+	CreatedAt   int64
+	AcceptedAt  sql.NullInt64
+	SuspendedAt sql.NullInt64
 }
 
 type OwnerBlob struct {
@@ -197,6 +198,7 @@ type Site struct {
 	Name           string
 	CreatedAt      int64
 	ActiveDeployID sql.NullString
+	TakenDownAt    sql.NullInt64
 }
 
 type SiteSession struct {

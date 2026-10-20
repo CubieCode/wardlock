@@ -69,7 +69,8 @@ type Sessions interface {
 	CreateOwner(ctx context.Context, s OwnerSession) error
 	CreateSite(ctx context.Context, s SiteSession) error
 	// GetOwnerByTokenHash finds a dashboard session by its cookie token
-	// hash, whatever its state; callers check expiry and revocation.
+	// hash, whatever its state, unless its owner is suspended
+	// (ErrNotFound); callers check expiry and revocation.
 	GetOwnerByTokenHash(ctx context.Context, hash string) (OwnerSession, error)
 	// TouchOwner moves the session's last use forward to at; an earlier at
 	// changes nothing.

@@ -46,6 +46,10 @@ DELETE FROM deploys
 WHERE deploys.id = ?1
   AND NOT EXISTS (SELECT 1 FROM sites WHERE sites.active_deploy_id = deploys.id)
   AND (deploys.activated_at IS NOT NULL OR deploys.created_at < ?2)
+  AND NOT EXISTS (
+    SELECT 1 FROM sites JOIN owners ON owners.id = sites.owner_id
+    WHERE sites.id = deploys.site_id AND (sites.taken_down_at IS NOT NULL OR owners.suspended_at IS NOT NULL)
+  )
 `
 
 type DeletePrunableDeployParams struct {
@@ -54,7 +58,8 @@ type DeletePrunableDeployParams struct {
 }
 
 // Deletes one deploy unless it has become its site's active deploy or is a
-// young pending deploy; its manifest goes with it (ON DELETE CASCADE).
+// young pending deploy, or its site has been taken down or its owner
+// suspended since; its manifest goes with it (ON DELETE CASCADE).
 func (q *Queries) DeletePrunableDeploy(ctx context.Context, arg DeletePrunableDeployParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deletePrunableDeploy, arg.ID, arg.PendingBefore)
 	if err != nil {
@@ -69,6 +74,10 @@ WHERE (deploys.created_at > ?1
     OR (deploys.created_at = ?1 AND deploys.id > ?2))
   AND NOT EXISTS (SELECT 1 FROM sites WHERE sites.active_deploy_id = deploys.id)
   AND (deploys.activated_at IS NOT NULL OR deploys.created_at < ?3)
+  AND NOT EXISTS (
+    SELECT 1 FROM sites JOIN owners ON owners.id = sites.owner_id
+    WHERE sites.id = deploys.site_id AND (sites.taken_down_at IS NOT NULL OR owners.suspended_at IS NOT NULL)
+  )
   AND (
     SELECT COUNT(*) FROM deploys AS newer
     WHERE newer.site_id = deploys.site_id
@@ -94,7 +103,9 @@ type ListPrunableDeploysRow struct {
 
 // Deploys beyond each site's newest keep_count, oldest first, after the
 // (created_at, id) cursor. Never the site's active deploy, nor a pending
-// deploy created at or after pending_before, whose upload may be in flight.
+// deploy created at or after pending_before, whose upload may be in flight,
+// nor any deploy of a taken-down site or a suspended owner's site, kept as
+// evidence (A2.13).
 func (q *Queries) ListPrunableDeploys(ctx context.Context, arg ListPrunableDeploysParams) ([]ListPrunableDeploysRow, error) {
 	rows, err := q.db.QueryContext(ctx, listPrunableDeploys,
 		arg.AfterCreatedAt,

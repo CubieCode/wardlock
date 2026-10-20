@@ -97,7 +97,7 @@ func (q *Queries) CreateOwnerLoginCode(ctx context.Context, arg CreateOwnerLogin
 }
 
 const getOwner = `-- name: GetOwner :one
-SELECT id, email, invited_by, created_at, accepted_at FROM owners WHERE id = ?1
+SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners WHERE id = ?1
 `
 
 func (q *Queries) GetOwner(ctx context.Context, id string) (Owner, error) {
@@ -109,12 +109,13 @@ func (q *Queries) GetOwner(ctx context.Context, id string) (Owner, error) {
 		&i.InvitedBy,
 		&i.CreatedAt,
 		&i.AcceptedAt,
+		&i.SuspendedAt,
 	)
 	return i, err
 }
 
 const getOwnerByEmail = `-- name: GetOwnerByEmail :one
-SELECT id, email, invited_by, created_at, accepted_at FROM owners WHERE email = ?1
+SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners WHERE email = ?1
 `
 
 func (q *Queries) GetOwnerByEmail(ctx context.Context, email string) (Owner, error) {
@@ -126,6 +127,7 @@ func (q *Queries) GetOwnerByEmail(ctx context.Context, email string) (Owner, err
 		&i.InvitedBy,
 		&i.CreatedAt,
 		&i.AcceptedAt,
+		&i.SuspendedAt,
 	)
 	return i, err
 }
@@ -186,6 +188,50 @@ func (q *Queries) LatestOwnerLoginCode(ctx context.Context, arg LatestOwnerLogin
 	return i, err
 }
 
+const listAllOwners = `-- name: ListAllOwners :many
+SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners
+WHERE email > ?1
+ORDER BY email
+LIMIT ?2
+`
+
+type ListAllOwnersParams struct {
+	AfterEmail string
+	RowLimit   int64
+}
+
+// Instance-wide, for `wardlockd admin list-owners` only: every owner by
+// address, after the cursor.
+func (q *Queries) ListAllOwners(ctx context.Context, arg ListAllOwnersParams) ([]Owner, error) {
+	rows, err := q.db.QueryContext(ctx, listAllOwners, arg.AfterEmail, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Owner
+	for rows.Next() {
+		var i Owner
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.InvitedBy,
+			&i.CreatedAt,
+			&i.AcceptedAt,
+			&i.SuspendedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markOwnerAccepted = `-- name: MarkOwnerAccepted :exec
 UPDATE owners SET accepted_at = COALESCE(accepted_at, ?1) WHERE id = ?2
 `
@@ -198,6 +244,18 @@ type MarkOwnerAcceptedParams struct {
 func (q *Queries) MarkOwnerAccepted(ctx context.Context, arg MarkOwnerAcceptedParams) error {
 	_, err := q.db.ExecContext(ctx, markOwnerAccepted, arg.AcceptedAt, arg.ID)
 	return err
+}
+
+const reinstateOwner = `-- name: ReinstateOwner :execrows
+UPDATE owners SET suspended_at = NULL WHERE id = ?1
+`
+
+func (q *Queries) ReinstateOwner(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, reinstateOwner, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const retireOwnerLoginCodes = `-- name: RetireOwnerLoginCodes :exec
@@ -224,6 +282,24 @@ WHERE owner_id IS NULL AND purpose = 'setup' AND used_at IS NULL
 func (q *Queries) RetireSetupCodes(ctx context.Context, usedAt sql.NullInt64) error {
 	_, err := q.db.ExecContext(ctx, retireSetupCodes, usedAt)
 	return err
+}
+
+const suspendOwner = `-- name: SuspendOwner :execrows
+UPDATE owners SET suspended_at = COALESCE(suspended_at, ?1) WHERE id = ?2
+`
+
+type SuspendOwnerParams struct {
+	SuspendedAt sql.NullInt64
+	ID          string
+}
+
+// Suspension (A2.13). Suspending keeps the first time; reinstating clears it.
+func (q *Queries) SuspendOwner(ctx context.Context, arg SuspendOwnerParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, suspendOwner, arg.SuspendedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const useOwnerLoginCode = `-- name: UseOwnerLoginCode :execrows

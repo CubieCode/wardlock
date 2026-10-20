@@ -6,9 +6,12 @@ VALUES (sqlc.arg(id), sqlc.arg(owner_id), sqlc.arg(token_hash), sqlc.arg(created
 INSERT INTO site_sessions (id, site_id, token_hash, method, share_link_id, policy_id, policy_version, subject, created_at, expires_at, revoked_at)
 VALUES (sqlc.arg(id), sqlc.arg(site_id), sqlc.arg(token_hash), sqlc.arg(method), sqlc.narg(share_link_id), sqlc.arg(policy_id), sqlc.arg(policy_version), sqlc.narg(subject), sqlc.arg(created_at), sqlc.arg(expires_at), sqlc.narg(revoked_at));
 
+-- A suspended owner's sessions are never found (A2.13).
 -- name: GetOwnerSessionByTokenHash :one
-SELECT id, owner_id, token_hash, created_at, last_seen_at, expires_at, revoked_at, user_agent
-FROM owner_sessions WHERE token_hash = sqlc.arg(token_hash);
+SELECT owner_sessions.id, owner_sessions.owner_id, owner_sessions.token_hash, owner_sessions.created_at,
+  owner_sessions.last_seen_at, owner_sessions.expires_at, owner_sessions.revoked_at, owner_sessions.user_agent
+FROM owner_sessions JOIN owners ON owners.id = owner_sessions.owner_id
+WHERE owner_sessions.token_hash = sqlc.arg(token_hash) AND owners.suspended_at IS NULL;
 
 -- name: TouchOwnerSession :exec
 UPDATE owner_sessions SET last_seen_at = sqlc.arg(last_seen_at)
@@ -17,6 +20,11 @@ WHERE id = sqlc.arg(id) AND last_seen_at < sqlc.arg(last_seen_at);
 -- name: RevokeOwnerSession :execrows
 UPDATE owner_sessions SET revoked_at = COALESCE(revoked_at, sqlc.arg(revoked_at))
 WHERE id = sqlc.arg(id) AND owner_id = sqlc.arg(owner_id);
+
+-- Suspension revokes every session the owner has (A2.13).
+-- name: RevokeAllOwnerSessions :exec
+UPDATE owner_sessions SET revoked_at = COALESCE(revoked_at, sqlc.arg(revoked_at))
+WHERE owner_id = sqlc.arg(owner_id);
 
 -- Active sessions only: not revoked, before the absolute expiry and seen
 -- after idle_since. Ordered most recently used first; the cursor is the

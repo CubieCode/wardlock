@@ -271,6 +271,7 @@ func gcContract(t *testing.T, open Opener) {
 			}
 		}
 	})
+	gcOperatorContract(t, open)
 }
 
 var errBoom = errors.New("boom")

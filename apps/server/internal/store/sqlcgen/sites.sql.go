@@ -36,7 +36,7 @@ func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) error {
 }
 
 const deleteSite = `-- name: DeleteSite :execrows
-DELETE FROM sites WHERE id = ?1 AND owner_id = ?2
+DELETE FROM sites WHERE id = ?1 AND owner_id = ?2 AND taken_down_at IS NULL
 `
 
 type DeleteSiteParams struct {
@@ -44,6 +44,7 @@ type DeleteSiteParams struct {
 	OwnerID string
 }
 
+// Owners cannot delete a taken-down site: its files are evidence (A2.13).
 func (q *Queries) DeleteSite(ctx context.Context, arg DeleteSiteParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteSite, arg.ID, arg.OwnerID)
 	if err != nil {
@@ -53,7 +54,7 @@ func (q *Queries) DeleteSite(ctx context.Context, arg DeleteSiteParams) (int64, 
 }
 
 const getSite = `-- name: GetSite :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.id = ?1 AND sites.owner_id = ?2
 `
@@ -70,6 +71,7 @@ type GetSiteRow struct {
 	ActiveDeployID sql.NullString
 	CreatedAt      int64
 	ActivatedAt    sql.NullInt64
+	TakenDownAt    sql.NullInt64
 }
 
 func (q *Queries) GetSite(ctx context.Context, arg GetSiteParams) (GetSiteRow, error) {
@@ -82,12 +84,13 @@ func (q *Queries) GetSite(ctx context.Context, arg GetSiteParams) (GetSiteRow, e
 		&i.ActiveDeployID,
 		&i.CreatedAt,
 		&i.ActivatedAt,
+		&i.TakenDownAt,
 	)
 	return i, err
 }
 
 const getSiteByID = `-- name: GetSiteByID :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.id = ?1
 `
@@ -99,6 +102,7 @@ type GetSiteByIDRow struct {
 	ActiveDeployID sql.NullString
 	CreatedAt      int64
 	ActivatedAt    sql.NullInt64
+	TakenDownAt    sql.NullInt64
 }
 
 // Instance-wide: edge routing only, never owner API handlers.
@@ -112,12 +116,13 @@ func (q *Queries) GetSiteByID(ctx context.Context, id string) (GetSiteByIDRow, e
 		&i.ActiveDeployID,
 		&i.CreatedAt,
 		&i.ActivatedAt,
+		&i.TakenDownAt,
 	)
 	return i, err
 }
 
 const getSiteByName = `-- name: GetSiteByName :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.name = ?1
 `
@@ -129,6 +134,7 @@ type GetSiteByNameRow struct {
 	ActiveDeployID sql.NullString
 	CreatedAt      int64
 	ActivatedAt    sql.NullInt64
+	TakenDownAt    sql.NullInt64
 }
 
 // Instance-wide: edge routing only, never owner API handlers.
@@ -142,12 +148,13 @@ func (q *Queries) GetSiteByName(ctx context.Context, name string) (GetSiteByName
 		&i.ActiveDeployID,
 		&i.CreatedAt,
 		&i.ActivatedAt,
+		&i.TakenDownAt,
 	)
 	return i, err
 }
 
 const getSiteByOwnerDomain = `-- name: GetSiteByOwnerDomain :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
 FROM sites
 JOIN domains ON domains.site_id = sites.id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
@@ -166,6 +173,7 @@ type GetSiteByOwnerDomainRow struct {
 	ActiveDeployID sql.NullString
 	CreatedAt      int64
 	ActivatedAt    sql.NullInt64
+	TakenDownAt    sql.NullInt64
 }
 
 // Any status: the owner API resolves pending and lapsed hostnames too.
@@ -179,12 +187,13 @@ func (q *Queries) GetSiteByOwnerDomain(ctx context.Context, arg GetSiteByOwnerDo
 		&i.ActiveDeployID,
 		&i.CreatedAt,
 		&i.ActivatedAt,
+		&i.TakenDownAt,
 	)
 	return i, err
 }
 
 const getSiteByOwnerName = `-- name: GetSiteByOwnerName :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.name = ?1 AND sites.owner_id = ?2
 `
@@ -201,6 +210,7 @@ type GetSiteByOwnerNameRow struct {
 	ActiveDeployID sql.NullString
 	CreatedAt      int64
 	ActivatedAt    sql.NullInt64
+	TakenDownAt    sql.NullInt64
 }
 
 func (q *Queries) GetSiteByOwnerName(ctx context.Context, arg GetSiteByOwnerNameParams) (GetSiteByOwnerNameRow, error) {
@@ -213,12 +223,74 @@ func (q *Queries) GetSiteByOwnerName(ctx context.Context, arg GetSiteByOwnerName
 		&i.ActiveDeployID,
 		&i.CreatedAt,
 		&i.ActivatedAt,
+		&i.TakenDownAt,
 	)
 	return i, err
 }
 
+const listAllSites = `-- name: ListAllSites :many
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at,
+  owners.email AS owner_email, owners.suspended_at AS owner_suspended_at
+FROM sites
+JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+WHERE sites.name > ?1
+ORDER BY sites.name
+LIMIT ?2
+`
+
+type ListAllSitesParams struct {
+	AfterName string
+	RowLimit  int64
+}
+
+type ListAllSitesRow struct {
+	ID               string
+	OwnerID          string
+	Name             string
+	ActiveDeployID   sql.NullString
+	CreatedAt        int64
+	ActivatedAt      sql.NullInt64
+	TakenDownAt      sql.NullInt64
+	OwnerEmail       string
+	OwnerSuspendedAt sql.NullInt64
+}
+
+func (q *Queries) ListAllSites(ctx context.Context, arg ListAllSitesParams) ([]ListAllSitesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllSites, arg.AfterName, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllSitesRow
+	for rows.Next() {
+		var i ListAllSitesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.Name,
+			&i.ActiveDeployID,
+			&i.CreatedAt,
+			&i.ActivatedAt,
+			&i.TakenDownAt,
+			&i.OwnerEmail,
+			&i.OwnerSuspendedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSites = `-- name: ListSites :many
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.owner_id = ?1 AND sites.name > ?2
 ORDER BY sites.name
@@ -238,6 +310,7 @@ type ListSitesRow struct {
 	ActiveDeployID sql.NullString
 	CreatedAt      int64
 	ActivatedAt    sql.NullInt64
+	TakenDownAt    sql.NullInt64
 }
 
 func (q *Queries) ListSites(ctx context.Context, arg ListSitesParams) ([]ListSitesRow, error) {
@@ -256,6 +329,7 @@ func (q *Queries) ListSites(ctx context.Context, arg ListSitesParams) ([]ListSit
 			&i.ActiveDeployID,
 			&i.CreatedAt,
 			&i.ActivatedAt,
+			&i.TakenDownAt,
 		); err != nil {
 			return nil, err
 		}
@@ -270,9 +344,53 @@ func (q *Queries) ListSites(ctx context.Context, arg ListSitesParams) ([]ListSit
 	return items, nil
 }
 
+const listUnavailableSiteIDs = `-- name: ListUnavailableSiteIDs :many
+SELECT sites.id FROM sites JOIN owners ON owners.id = sites.owner_id
+WHERE sites.taken_down_at IS NOT NULL OR owners.suspended_at IS NOT NULL
+ORDER BY sites.id
+`
+
+// Sites that answer the unavailable page: taken down, or owned by a
+// suspended owner. The server polls it to drop cached sites when an
+// operator command changes either in another process.
+func (q *Queries) ListUnavailableSiteIDs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listUnavailableSiteIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const restoreSite = `-- name: RestoreSite :execrows
+UPDATE sites SET taken_down_at = NULL WHERE id = ?1
+`
+
+func (q *Queries) RestoreSite(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, restoreSite, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const setActiveDeploy = `-- name: SetActiveDeploy :execrows
 UPDATE sites SET active_deploy_id = ?1
-WHERE sites.id = ?2 AND sites.owner_id = ?3
+WHERE sites.id = ?2 AND sites.owner_id = ?3 AND sites.taken_down_at IS NULL
   AND EXISTS (SELECT 1 FROM deploys WHERE deploys.id = ?1 AND deploys.site_id = sites.id)
 `
 
@@ -282,6 +400,7 @@ type SetActiveDeployParams struct {
 	OwnerID  string
 }
 
+// A taken-down site keeps the deploy it had (A2.13).
 func (q *Queries) SetActiveDeploy(ctx context.Context, arg SetActiveDeployParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, setActiveDeploy, arg.DeployID, arg.SiteID, arg.OwnerID)
 	if err != nil {
@@ -304,4 +423,35 @@ func (q *Queries) SiteOwnedBy(ctx context.Context, arg SiteOwnedByParams) (strin
 	var id string
 	err := row.Scan(&id)
 	return id, err
+}
+
+const takeDownSite = `-- name: TakeDownSite :execrows
+UPDATE sites SET taken_down_at = COALESCE(taken_down_at, ?1) WHERE id = ?2
+`
+
+type TakeDownSiteParams struct {
+	TakenDownAt sql.NullInt64
+	ID          string
+}
+
+// Operator controls (A2.13), for `wardlockd admin` only: instance-wide,
+// never an owner API handler. Taking down keeps the first time.
+func (q *Queries) TakeDownSite(ctx context.Context, arg TakeDownSiteParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, takeDownSite, arg.TakenDownAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const tearDownSite = `-- name: TearDownSite :execrows
+DELETE FROM sites WHERE id = ?1
+`
+
+func (q *Queries) TearDownSite(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, tearDownSite, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

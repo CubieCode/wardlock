@@ -1,12 +1,18 @@
 -- Deploys beyond each site's newest keep_count, oldest first, after the
 -- (created_at, id) cursor. Never the site's active deploy, nor a pending
--- deploy created at or after pending_before, whose upload may be in flight.
+-- deploy created at or after pending_before, whose upload may be in flight,
+-- nor any deploy of a taken-down site or a suspended owner's site, kept as
+-- evidence (A2.13).
 -- name: ListPrunableDeploys :many
 SELECT deploys.id, deploys.site_id, deploys.created_at FROM deploys
 WHERE (deploys.created_at > sqlc.arg(after_created_at)
     OR (deploys.created_at = sqlc.arg(after_created_at) AND deploys.id > sqlc.arg(after_id)))
   AND NOT EXISTS (SELECT 1 FROM sites WHERE sites.active_deploy_id = deploys.id)
   AND (deploys.activated_at IS NOT NULL OR deploys.created_at < sqlc.arg(pending_before))
+  AND NOT EXISTS (
+    SELECT 1 FROM sites JOIN owners ON owners.id = sites.owner_id
+    WHERE sites.id = deploys.site_id AND (sites.taken_down_at IS NOT NULL OR owners.suspended_at IS NOT NULL)
+  )
   AND (
     SELECT COUNT(*) FROM deploys AS newer
     WHERE newer.site_id = deploys.site_id
@@ -16,12 +22,17 @@ ORDER BY deploys.created_at, deploys.id
 LIMIT sqlc.arg(row_limit);
 
 -- Deletes one deploy unless it has become its site's active deploy or is a
--- young pending deploy; its manifest goes with it (ON DELETE CASCADE).
+-- young pending deploy, or its site has been taken down or its owner
+-- suspended since; its manifest goes with it (ON DELETE CASCADE).
 -- name: DeletePrunableDeploy :execrows
 DELETE FROM deploys
 WHERE deploys.id = sqlc.arg(id)
   AND NOT EXISTS (SELECT 1 FROM sites WHERE sites.active_deploy_id = deploys.id)
-  AND (deploys.activated_at IS NOT NULL OR deploys.created_at < sqlc.arg(pending_before));
+  AND (deploys.activated_at IS NOT NULL OR deploys.created_at < sqlc.arg(pending_before))
+  AND NOT EXISTS (
+    SELECT 1 FROM sites JOIN owners ON owners.id = sites.owner_id
+    WHERE sites.id = deploys.site_id AND (sites.taken_down_at IS NOT NULL OR owners.suspended_at IS NOT NULL)
+  );
 
 -- Blobs no deploy lists (as a file or a rendition), first stored and last claimed by any owner before
 -- created_before, in hash order after the cursor.

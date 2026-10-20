@@ -23,6 +23,9 @@ type Owner struct {
 	// AcceptedAt is the first successful sign-in; zero while the invite is
 	// outstanding.
 	AcceptedAt time.Time
+	// SuspendedAt is when the operator suspended the owner (A2.13); zero
+	// while not suspended.
+	SuspendedAt time.Time
 }
 
 // LoginCodePurpose says what a one-time owner credential is for.
@@ -87,6 +90,21 @@ type Owners interface {
 	// so only the next one issued works. For LoginCodeSetup, ownerID is
 	// ignored and every unused setup code is retired.
 	RetireLoginCodes(ctx context.Context, ownerID string, purpose LoginCodePurpose, at time.Time) error
+
+	// Operator controls (A2.13), for `wardlockd admin` only.
+
+	// Suspend marks the owner suspended at at (an already suspended owner
+	// keeps the first time) and, in the same transaction, revokes every
+	// dashboard session and denies every approved CLI login not yet
+	// collected. Session and API token lookups skip a suspended owner's
+	// credentials. An unknown owner is ErrNotFound.
+	Suspend(ctx context.Context, id string, at time.Time) error
+	// Reinstate clears the suspension; the owner's API tokens work again,
+	// but revoked sessions stay revoked. An unknown owner is ErrNotFound.
+	Reinstate(ctx context.Context, id string) error
+	// ListAll returns up to limit owners on the instance ordered by
+	// address, starting after afterEmail ("" for the first page).
+	ListAll(ctx context.Context, afterEmail string, limit int) ([]Owner, error)
 }
 
 // Owners returns the SQLite Owners repository.
@@ -108,11 +126,12 @@ func (r ownersRepo) Get(ctx context.Context, id string) (Owner, error) {
 
 func ownerFromRow(row sqlcgen.Owner) Owner {
 	return Owner{
-		ID:         row.ID,
-		Email:      row.Email,
-		InvitedBy:  row.InvitedBy.String,
-		CreatedAt:  fromMs(row.CreatedAt),
-		AcceptedAt: fromNullMs(row.AcceptedAt),
+		ID:          row.ID,
+		Email:       row.Email,
+		InvitedBy:   row.InvitedBy.String,
+		CreatedAt:   fromMs(row.CreatedAt),
+		AcceptedAt:  fromNullMs(row.AcceptedAt),
+		SuspendedAt: fromNullMs(row.SuspendedAt),
 	}
 }
 
@@ -260,4 +279,34 @@ func (r ownersRepo) RetireLoginCodes(ctx context.Context, ownerID string, purpos
 		Purpose: string(purpose),
 		UsedAt:  nullMs(at),
 	}))
+}
+
+func (r ownersRepo) Suspend(ctx context.Context, id string, at time.Time) error {
+	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
+		n, err := q.SuspendOwner(ctx, sqlcgen.SuspendOwnerParams{ID: id, SuspendedAt: nullMs(at)})
+		if err := rowsAffected("suspend owner", n, err); err != nil {
+			return err
+		}
+		if err := q.RevokeAllOwnerSessions(ctx, sqlcgen.RevokeAllOwnerSessionsParams{OwnerID: id, RevokedAt: nullMs(at)}); err != nil {
+			return mapErr("revoke owner sessions", err)
+		}
+		return mapErr("deny cli logins", q.DenyApprovedCLILogins(ctx, nullString(id)))
+	})
+}
+
+func (r ownersRepo) Reinstate(ctx context.Context, id string) error {
+	n, err := r.db.q.ReinstateOwner(ctx, id)
+	return rowsAffected("reinstate owner", n, err)
+}
+
+func (r ownersRepo) ListAll(ctx context.Context, afterEmail string, limit int) ([]Owner, error) {
+	rows, err := r.db.q.ListAllOwners(ctx, sqlcgen.ListAllOwnersParams{AfterEmail: afterEmail, RowLimit: int64(limit)})
+	if err != nil {
+		return nil, mapErr("list all owners", err)
+	}
+	out := make([]Owner, len(rows))
+	for i, row := range rows {
+		out[i] = ownerFromRow(row)
+	}
+	return out, nil
 }

@@ -316,6 +316,7 @@ erDiagram
     TEXT invited_by FK
     INTEGER created_at
     INTEGER accepted_at "first sign-in"
+    INTEGER suspended_at "operator suspension"
   }
   owner_login_codes {
     TEXT id PK
@@ -380,6 +381,7 @@ erDiagram
     TEXT name UK
     INTEGER created_at
     TEXT active_deploy_id FK
+    INTEGER taken_down_at "operator takedown"
   }
   domains {
     TEXT id PK
