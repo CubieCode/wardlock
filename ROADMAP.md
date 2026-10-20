@@ -410,6 +410,28 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item
 - Parallel: Wave 10, after O4.6 (both edit CONTRIBUTING and the launch checklist). No gates.
 
+### O4.8: Enforce every module boundary in depguard
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: O4.6
+- Scope: O4.6 found that `.golangci.yml` enforces only some of docs/MODULES.md's "Must not import" rules: those for `edge`, `access`, `oauth`, `mail` and `tls`, the storage rule for domain packages, and the MIT modules. Add depguard rules for the rest: `platform` imports no other internal package; `store` and `dashboard` import no domain package (and `dashboard` not `store`); `deploys` and `sites` import neither `api` nor `edge`; `owners` and `api` do not import `edge`. Each rule gets a `desc` naming the boundary. Update MODULES so it says every row is enforced. The code already respects these rules, so no Go code changes.
+- Acceptance: golangci-lint passes on main's code with the new rules; for each new rule, a temporary violating import (not committed) is shown failing with that rule's message, with the commands and output in the PR; `pnpm check` and `git diff --check` pass.
+- Skills: wardlock-item, wardlock-go-service
+- Parallel: Any wave. Owns `.golangci.yml` and docs/MODULES.md; no gates.
+
+### O4.9: Stop uploading unused CI artifacts
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: O4.1
+- Scope: The `Release` workflow uploaded every snapshot (about 65 MB of archives and SBOMs) as an artifact on every PR and main run with 7-day retention, which filled CubieCode's Actions artifact quota until the included usage resets; every PR's docs-site `build` and Release `snapshot` jobs then failed at the upload step. Nothing reads those uploads, so stop them: remove the snapshot upload (PRs and main still build the snapshot and run `scripts/release-smoke.sh`) and the docs-site upload, and have the disabled docs-site deploy job build the site itself instead of downloading an artifact. Keep CI's Playwright failure upload, but with `continue-on-error` so a full quota cannot fail the job. Update the workflow comments and any docs that describe the uploads.
+- Acceptance: PR and main runs upload no snapshot or docs-site artifact and pass while the quota is full; the deploy job (still `if: false`) builds the site before deploying it; `pnpm check` and `git diff --check` pass; nothing published or deployed.
+- Skills: wardlock-item
+- Parallel: Any wave. Owns `.github/workflows/release.yml`; no gates.
+
 ## Waves
 
 Suggested batches, based on the file ownership above. Re-check overlap before launching; merge in the order listed within a wave when items share interfaces.
@@ -423,6 +445,7 @@ Suggested batches, based on the file ownership above. Re-check overlap before la
 7. **Then:** A2.7 alone; O4.3 when its dependencies are done; O4.4 last.
 8. **Wave 9:** A2.9, A2.10, A2.11, O4.5. A2.11 holds the API contract gate (`openapi.yaml` and generated clients); no migrations or lockfile changes expected. A2.9 agrees its limiter design with the coordinator before implementing it.
 9. **Wave 10:** O4.6, then O4.7. Docs only; no gates.
+10. **Wave 11:** O4.8 and O4.9, in either order. Lint and CI configuration only; no gates.
 
 ## Not planned yet
 
