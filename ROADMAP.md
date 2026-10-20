@@ -425,7 +425,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: `feat/o4.9-snapshot-artifacts`
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/81
 - Depends on: O4.1
 - Scope: The `Release` workflow uploaded every snapshot (about 65 MB of archives and SBOMs) as an artifact on every PR and main run with 7-day retention, which filled CubieCode's Actions artifact quota until the included usage resets; every PR's docs-site `build` and Release `snapshot` jobs then failed at the upload step. Nothing reads those uploads, so stop them: remove the snapshot upload (PRs and main still build the snapshot and run `scripts/release-smoke.sh`) and the docs-site upload, and have the disabled docs-site deploy job build the site itself instead of downloading an artifact. Keep CI's Playwright failure upload, but with `continue-on-error` so a full quota cannot fail the job. Update the workflow comments and any docs that describe the uploads.
 - Acceptance: PR and main runs upload no snapshot or docs-site artifact and pass while the quota is full; the deploy job (still `if: false`) builds the site before deploying it; `pnpm check` and `git diff --check` pass; nothing published or deployed.
