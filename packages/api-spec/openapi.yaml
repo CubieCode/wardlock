@@ -1071,6 +1071,7 @@ paths:
                     totalSize: 1532918
                     message: Fix typo on the install page
                     spa: false
+                    immutableAssets: false
                   - id: 01928c4a-1f2e-7d3c-8b4a-596877665544
                     status: inactive
                     createdAt: 1767139200000
@@ -1078,6 +1079,7 @@ paths:
                     fileCount: 40
                     totalSize: 1480233
                     spa: false
+                    immutableAssets: false
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1115,6 +1117,7 @@ paths:
             example:
               message: Fix typo on the install page
               spa: false
+              immutableAssets: false
               files:
                 - path: index.html
                   sha256: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
@@ -1138,6 +1141,7 @@ paths:
                   totalSize: 53331
                   message: Fix typo on the install page
                   spa: false
+                  immutableAssets: false
                 missing:
                   - fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9
         '400':
@@ -2207,6 +2211,7 @@ components:
           totalSize: 1532918
           message: Fix typo on the install page
           spa: false
+          immutableAssets: false
     Policy:
       summary: A protected path policy.
       value:
@@ -2793,7 +2798,8 @@ components:
     Deploy:
       type: object
       additionalProperties: false
-      required: [id, status, createdAt, fileCount, totalSize, spa]
+      required:
+        [id, status, createdAt, fileCount, totalSize, spa, immutableAssets]
       properties:
         id:
           $ref: '#/components/schemas/Id'
@@ -2825,6 +2831,13 @@ components:
           description: >-
             Whether missing paths without a file extension serve
             `/index.html` while this deploy is active.
+        immutableAssets:
+          type: boolean
+          description: >-
+            Whether files under `/assets/` with a content hash in their name
+            are served with `Cache-Control: public, max-age=31536000,
+            immutable` (`private` on protected sites) while this deploy is
+            active. See SPEC "Serving" for the hash rule.
     DeployPage:
       type: object
       additionalProperties: false
@@ -2871,6 +2884,13 @@ components:
           type: boolean
           default: false
           description: Serve `/index.html` for missing extensionless paths.
+        immutableAssets:
+          type: boolean
+          default: false
+          description: >-
+            Cache files under `/assets/` with a content hash in their name
+            for a year as immutable (SPEC "Serving"). Only set it when every
+            such name changes whenever its content does.
     CreatedDeploy:
       type: object
       additionalProperties: false

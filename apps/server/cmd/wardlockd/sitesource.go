@@ -45,6 +45,7 @@ func (s siteSource) SiteForHost(ctx context.Context, host string) (edge.ServedSi
 		return edge.ServedSite{}, fmt.Errorf("get active deploy: %w", err)
 	}
 	served.SPA = d.SPA
+	served.ImmutableAssets = d.ImmutableAssets
 	return served, nil
 }
 

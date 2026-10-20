@@ -1,20 +1,20 @@
 -- name: CreateDeploy :exec
-INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, created_at, activated_at)
-VALUES (sqlc.arg(id), sqlc.arg(site_id), sqlc.narg(message), sqlc.arg(file_count), sqlc.arg(total_size), sqlc.arg(spa), sqlc.arg(created_at), sqlc.narg(activated_at));
+INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, immutable_assets, created_at, activated_at)
+VALUES (sqlc.arg(id), sqlc.arg(site_id), sqlc.narg(message), sqlc.arg(file_count), sqlc.arg(total_size), sqlc.arg(spa), sqlc.arg(immutable_assets), sqlc.arg(created_at), sqlc.narg(activated_at));
 
 -- name: CreateDeployFile :exec
 INSERT INTO deploy_files (deploy_id, path, sha256, size)
 VALUES (sqlc.arg(deploy_id), sqlc.arg(path), sqlc.arg(sha256), sqlc.arg(size));
 
 -- name: GetDeploy :one
-SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.created_at, deploys.activated_at
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at
 FROM deploys JOIN sites ON sites.id = deploys.site_id
 WHERE deploys.id = sqlc.arg(id) AND deploys.site_id = sqlc.arg(site_id) AND sites.owner_id = sqlc.arg(owner_id);
 
 -- Newest first, strictly before the cursor (created_at, id); the first page
 -- passes the largest created_at.
 -- name: ListDeploys :many
-SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.created_at, deploys.activated_at
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at
 FROM deploys JOIN sites ON sites.id = deploys.site_id
 WHERE deploys.site_id = sqlc.arg(site_id) AND sites.owner_id = sqlc.arg(owner_id)
   AND (deploys.created_at < sqlc.arg(before_created_at)

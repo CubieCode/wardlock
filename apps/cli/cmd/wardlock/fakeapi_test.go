@@ -268,7 +268,8 @@ func (f *fakeAPI) createDeploy(w http.ResponseWriter, r *http.Request, s *fakeSi
 	}
 	f.created = append(f.created, body)
 	d := &fakeDeploy{Deploy: apiclient.Deploy{Id: f.id(), Status: apiclient.DeployStatusPending, CreatedAt: 1_800_000_000_000,
-		FileCount: int32(len(body.Files)), Message: body.Message, Spa: body.Spa != nil && *body.Spa}}
+		FileCount: int32(len(body.Files)), Message: body.Message, Spa: body.Spa != nil && *body.Spa,
+		ImmutableAssets: body.ImmutableAssets != nil && *body.ImmutableAssets}}
 	missing := []string{}
 	for _, file := range body.Files {
 		if strings.HasPrefix(strings.ToLower(file.Path), ".wardlock/") || strings.Contains(file.Path, `\`) {

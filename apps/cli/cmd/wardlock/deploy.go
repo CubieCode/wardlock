@@ -65,6 +65,7 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 	g := addGlobalFlags(fs)
 	message := fs.String("message", "", "describe this deploy in its history")
 	spa := fs.Bool("spa", false, "serve /index.html for missing paths without a file extension (default \"spa\" from wardlock.json)")
+	immutable := fs.Bool("immutable-assets", false, "cache hashed files under /assets/, such as index-BdK3j2Lp.js, for a year without revalidating (default \"immutableAssets\" from wardlock.json)")
 	pos, err := parseArgs(fs, args)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
@@ -105,9 +106,13 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 		return err
 	}
 	useSPA := cfg.Spa != nil && *cfg.Spa
+	useImmutable := cfg.ImmutableAssets != nil && *cfg.ImmutableAssets
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "spa" {
+		switch f.Name {
+		case "spa":
 			useSPA = *spa
+		case "immutable-assets":
+			useImmutable = *immutable
 		}
 	})
 	if n := utf8.RuneCountInString(*message); n > maxMessageChars {
@@ -131,14 +136,15 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 	}
 
 	d := &deployer{a: a, c: c, root: root, prog: &progress{w: a.stderr, live: a.liveProgress, now: a.now}}
-	return d.run(ctx, deployRequest{path: path, shown: shown, target: t, message: *message, spa: useSPA, json: g.json})
+	return d.run(ctx, deployRequest{path: path, shown: shown, target: t, message: *message, spa: useSPA, immutableAssets: useImmutable, json: g.json})
 }
 
 type deployRequest struct {
-	path, shown string
-	target      target
-	message     string
-	spa, json   bool
+	path, shown     string
+	target          target
+	message         string
+	spa, json       bool
+	immutableAssets bool
 }
 
 type deployer struct {
@@ -193,7 +199,7 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 		manifest[i] = apiclient.ManifestFile{Path: f.path, Sha256: f.sha256, Size: f.size}
 		byHash[f.sha256] = f
 	}
-	body := apiclient.CreateDeployRequest{Files: manifest, Spa: &r.spa}
+	body := apiclient.CreateDeployRequest{Files: manifest, Spa: &r.spa, ImmutableAssets: &r.immutableAssets}
 	if r.message != "" {
 		body.Message = &r.message
 	}

@@ -22,6 +22,9 @@ type ServedSite struct {
 	ActiveDeployID string // empty while nothing is published
 	// SPA is the active deploy's SPA fallback flag.
 	SPA bool
+	// ImmutableAssets is the active deploy's opt-in to long-term caching
+	// of hashed files under /assets/ (SPEC "Serving").
+	ImmutableAssets bool
 	// ActivatedAt is when the active deploy was activated; it is every
 	// file's Last-Modified.
 	ActivatedAt time.Time

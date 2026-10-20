@@ -91,7 +91,7 @@ func deploysContract(t *testing.T, open Opener) {
 		o := f.owner()
 		s := f.site(o.ID)
 		want := f.validDeploy(s.ID)
-		want.Message, want.SPA = "first", true
+		want.Message, want.SPA, want.ImmutableAssets = "first", true, true
 		f.must(f.r.Deploys.Create(t.Context(), o.ID, want, []store.DeployFile{{Path: "index.html", SHA256: sha('a'), Size: 5}}))
 		got, err := f.r.Deploys.Get(t.Context(), o.ID, s.ID, want.ID)
 		if err != nil {
@@ -112,9 +112,12 @@ func deploysContract(t *testing.T, open Opener) {
 		f := newFixture(t, open)
 		o := f.owner()
 		s := f.site(o.ID)
+		flags := map[string]bool{} // "<id>/spa" and "<id>/immutable" to the flag created
 		for i := range 4 {
 			d := f.validDeploy(s.ID)
 			d.CreatedAt = now.Add(time.Duration(i%2) * time.Minute) // ties broken by ID
+			d.SPA, d.ImmutableAssets = i%2 == 0, i < 2
+			flags[d.ID+"/spa"], flags[d.ID+"/immutable"] = d.SPA, d.ImmutableAssets
 			f.must(f.r.Deploys.Create(t.Context(), o.ID, d, nil))
 		}
 		all, err := f.r.Deploys.List(t.Context(), o.ID, s.ID, store.DeployCursor{}, 10)
@@ -123,6 +126,12 @@ func deploysContract(t *testing.T, open Opener) {
 		}
 		if len(all) != 4 {
 			t.Fatalf("List() returned %d deploys, want 4", len(all))
+		}
+		for _, d := range all {
+			if d.SPA != flags[d.ID+"/spa"] || d.ImmutableAssets != flags[d.ID+"/immutable"] {
+				t.Errorf("List() deploy %s SPA %v ImmutableAssets %v; want %v %v",
+					d.ID, d.SPA, d.ImmutableAssets, flags[d.ID+"/spa"], flags[d.ID+"/immutable"])
+			}
 		}
 		for i := 1; i < len(all); i++ {
 			a, b := all[i-1], all[i]

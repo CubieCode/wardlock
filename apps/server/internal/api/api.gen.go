@@ -446,8 +446,11 @@ type CreateApiTokenRequest struct {
 
 // CreateDeployRequest defines model for CreateDeployRequest.
 type CreateDeployRequest struct {
-	Files   []ManifestFile `json:"files"`
-	Message *string        `json:"message,omitempty"`
+	Files []ManifestFile `json:"files"`
+
+	// ImmutableAssets Cache files under `/assets/` with a content hash in their name for a year as immutable (SPEC "Serving"). Only set it when every such name changes whenever its content does.
+	ImmutableAssets *bool   `json:"immutableAssets,omitempty"`
+	Message         *string `json:"message,omitempty"`
 
 	// Spa Serve `/index.html` for missing extensionless paths.
 	Spa *bool `json:"spa,omitempty"`
@@ -547,8 +550,11 @@ type Deploy struct {
 	// Id A lowercase, hyphenated UUIDv7.
 	//
 	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
-	Id      Id      `json:"id"`
-	Message *string `json:"message,omitempty"`
+	Id Id `json:"id"`
+
+	// ImmutableAssets Whether files under `/assets/` with a content hash in their name are served with `Cache-Control: public, max-age=31536000, immutable` (`private` on protected sites) while this deploy is active. See SPEC "Serving" for the hash rule.
+	ImmutableAssets bool    `json:"immutableAssets"`
+	Message         *string `json:"message,omitempty"`
 
 	// Spa Whether missing paths without a file extension serve `/index.html` while this deploy is active.
 	Spa bool `json:"spa"`

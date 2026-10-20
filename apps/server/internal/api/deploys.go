@@ -130,12 +130,13 @@ func (s *Server) siteURL(host string) string {
 
 func deployBody(site store.Site, d store.Deploy) Deploy {
 	out := Deploy{
-		Id:        d.ID,
-		Status:    DeployStatus(deploys.StatusOf(site, d)),
-		CreatedAt: d.CreatedAt.UnixMilli(),
-		FileCount: math.MaxInt32, // the file limit keeps real counts far below
-		TotalSize: d.TotalSize,
-		Spa:       d.SPA,
+		Id:              d.ID,
+		Status:          DeployStatus(deploys.StatusOf(site, d)),
+		CreatedAt:       d.CreatedAt.UnixMilli(),
+		FileCount:       math.MaxInt32, // the file limit keeps real counts far below
+		TotalSize:       d.TotalSize,
+		Spa:             d.SPA,
+		ImmutableAssets: d.ImmutableAssets,
 	}
 	if d.FileCount >= 0 && d.FileCount <= math.MaxInt32 {
 		out.FileCount = int32(d.FileCount)
@@ -312,6 +313,9 @@ func (s *Server) CreateDeploy(ctx context.Context, req CreateDeployRequestObject
 	}
 	if req.Body.Spa != nil {
 		m.SPA = *req.Body.Spa
+	}
+	if req.Body.ImmutableAssets != nil {
+		m.ImmutableAssets = *req.Body.ImmutableAssets
 	}
 	d, missing, err := s.Deploys.Create(ctx, owner, req.Site, m)
 	if err != nil {

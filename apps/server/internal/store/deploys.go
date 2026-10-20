@@ -16,14 +16,16 @@ import (
 
 // Deploy is an immutable snapshot of a site's files.
 type Deploy struct {
-	ID          string
-	SiteID      string
-	Message     string
-	FileCount   int
-	TotalSize   int64
-	SPA         bool // serve /index.html for missing extensionless paths
-	CreatedAt   time.Time
-	ActivatedAt time.Time // most recent activation; zero if never
+	ID        string
+	SiteID    string
+	Message   string
+	FileCount int
+	TotalSize int64
+	SPA       bool // serve /index.html for missing extensionless paths
+	// ImmutableAssets caches hashed files under /assets/ for a year.
+	ImmutableAssets bool
+	CreatedAt       time.Time
+	ActivatedAt     time.Time // most recent activation; zero if never
 }
 
 // DeployFile is one manifest entry. Its blob need not exist yet: activation
@@ -119,14 +121,15 @@ func (r deploysRepo) Create(ctx context.Context, ownerID string, d Deploy, files
 			return err
 		}
 		err := q.CreateDeploy(ctx, sqlcgen.CreateDeployParams{
-			ID:          d.ID,
-			SiteID:      d.SiteID,
-			Message:     nullString(d.Message),
-			FileCount:   int64(d.FileCount),
-			TotalSize:   d.TotalSize,
-			Spa:         boolInt(d.SPA),
-			CreatedAt:   ms(d.CreatedAt),
-			ActivatedAt: nullMs(d.ActivatedAt),
+			ID:              d.ID,
+			SiteID:          d.SiteID,
+			Message:         nullString(d.Message),
+			FileCount:       int64(d.FileCount),
+			TotalSize:       d.TotalSize,
+			Spa:             boolInt(d.SPA),
+			ImmutableAssets: boolInt(d.ImmutableAssets),
+			CreatedAt:       ms(d.CreatedAt),
+			ActivatedAt:     nullMs(d.ActivatedAt),
 		})
 		if err != nil {
 			return mapErr("create deploy", err)
@@ -160,14 +163,15 @@ func getDeploy(ctx context.Context, q *sqlcgen.Queries, ownerID, siteID, id stri
 
 func deployFrom(row sqlcgen.GetDeployRow) Deploy {
 	return Deploy{
-		ID:          row.ID,
-		SiteID:      row.SiteID,
-		Message:     row.Message.String,
-		FileCount:   int(row.FileCount),
-		TotalSize:   row.TotalSize,
-		SPA:         row.Spa == 1,
-		CreatedAt:   fromMs(row.CreatedAt),
-		ActivatedAt: fromNullMs(row.ActivatedAt),
+		ID:              row.ID,
+		SiteID:          row.SiteID,
+		Message:         row.Message.String,
+		FileCount:       int(row.FileCount),
+		TotalSize:       row.TotalSize,
+		SPA:             row.Spa == 1,
+		ImmutableAssets: row.ImmutableAssets == 1,
+		CreatedAt:       fromMs(row.CreatedAt),
+		ActivatedAt:     fromNullMs(row.ActivatedAt),
 	}
 }
 

@@ -227,7 +227,12 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Location", target)
 		w.WriteHeader(http.StatusMovedPermanently)
 	default:
-		e.serveFile(w, r, s, res.file, res.status, protected, strip)
+		// Long-term caching only for a hashed asset answering its own
+		// path, never a fallback (SPEC "Serving"); a response that sets a
+		// cookie is still not stored (storeGuard).
+		immutable := s.site.ImmutableAssets && res.status == http.StatusOK &&
+			"/"+res.file.Path == clean && hashedAsset(res.file.Path)
+		e.serveFile(w, r, s, res.file, res.status, protected, strip, immutable)
 	}
 }
 

@@ -109,7 +109,7 @@ func TestListDeploys(t *testing.T) {
 	if err := json.Unmarshal(m["deploys"], &deploys); err != nil || len(deploys) != 2 {
 		t.Fatalf("deploys %s", m["deploys"])
 	}
-	assertJSONKeys(t, deploys[0], "id", "status", "createdAt", "activatedAt", "fileCount", "totalSize", "message", "spa")
+	assertJSONKeys(t, deploys[0], "id", "status", "createdAt", "activatedAt", "fileCount", "totalSize", "message", "spa", "immutableAssets")
 
 	out.Reset()
 	errOut.Reset()

@@ -1215,6 +1215,8 @@ export interface components {
       message?: string;
       /** @description Whether missing paths without a file extension serve `/index.html` while this deploy is active. */
       spa: boolean;
+      /** @description Whether files under `/assets/` with a content hash in their name are served with `Cache-Control: public, max-age=31536000, immutable` (`private` on protected sites) while this deploy is active. See SPEC "Serving" for the hash rule. */
+      immutableAssets: boolean;
     };
     DeployPage: {
       items: components['schemas']['Deploy'][];
@@ -1241,6 +1243,11 @@ export interface components {
        * @default false
        */
       spa: boolean;
+      /**
+       * @description Cache files under `/assets/` with a content hash in their name for a year as immutable (SPEC "Serving"). Only set it when every such name changes whenever its content does.
+       * @default false
+       */
+      immutableAssets: boolean;
     };
     CreatedDeploy: {
       deploy: components['schemas']['Deploy'];
@@ -2747,7 +2754,8 @@ export interface operations {
            *           "fileCount": 42,
            *           "totalSize": 1532918,
            *           "message": "Fix typo on the install page",
-           *           "spa": false
+           *           "spa": false,
+           *           "immutableAssets": false
            *         },
            *         {
            *           "id": "01928c4a-1f2e-7d3c-8b4a-596877665544",
@@ -2756,7 +2764,8 @@ export interface operations {
            *           "activatedAt": 1767139260000,
            *           "fileCount": 40,
            *           "totalSize": 1480233,
-           *           "spa": false
+           *           "spa": false,
+           *           "immutableAssets": false
            *         }
            *       ]
            *     }
@@ -2790,6 +2799,7 @@ export interface operations {
          * @example {
          *       "message": "Fix typo on the install page",
          *       "spa": false,
+         *       "immutableAssets": false,
          *       "files": [
          *         {
          *           "path": "index.html",
@@ -2823,7 +2833,8 @@ export interface operations {
            *         "fileCount": 2,
            *         "totalSize": 53331,
            *         "message": "Fix typo on the install page",
-           *         "spa": false
+           *         "spa": false,
+           *         "immutableAssets": false
            *       },
            *       "missing": [
            *         "fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9"
