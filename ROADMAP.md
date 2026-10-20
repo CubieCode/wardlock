@@ -151,6 +151,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item, wardlock-go-service, wardlock-access
 - Parallel: Wave 5 with A2.3, A2.4 and A2.6. Owns domain files in `internal/sites/`, `queries/domains.sql`, the domain worker wiring and `WARDLOCK_DNS_RESOLVERS` config lines, `apps/cli` domain commands, `deploy/Caddyfile.example`. Touches `internal/edge` only for `tls-ask` (coordinate with A2.3's login template work in the briefs). Conflicts with O4.2 on `internal/platform` and `cmd/wardlockd`: run O4.2 after it. No migrations or API changes if F0.2 and F0.3 covered domains as scoped; otherwise it is the wave's migration owner and needs the API gate.
 
+### C1.10: Long-term caching for hashed assets
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: C1.3, C1.5, A2.12
+- Scope: The per-deploy opt-in SPEC "Serving" lists as not in v1. A deploy may set `immutableAssets` (like `spa`, stored on the deploy so a rollback restores matching headers): `wardlock deploy --immutable-assets` and `"immutableAssets": true` in `wardlock.json`, a deploy field and create parameter in `openapi.yaml`, a portable migration adding the deploy column, the sqlc query and `storetest` contract cases. When the active deploy sets it, files under `/assets/` whose name carries a content hash (define the rule in SPEC, for example a dot- or dash-separated segment of 8 or more hex or base64url characters before the extension) are served with `Cache-Control: public, max-age=31536000, immutable`, or `private, max-age=31536000, immutable` on protected sites; everything else keeps the current headers. Show the flag on deploys in the dashboard (no `packages/ui` change). Update SPEC, ARCHITECTURE (schema diagram, migration list), DEPLOYMENT if relevant, and the CLI help.
+- Acceptance: Edge tests for the header rule (hashed and unhashed names, outside `/assets/`, protected and public, renditions, flag off); migration and contract tests; CLI tests for the flag and `wardlock.json`; API tests; dashboard test; `pnpm codegen` output committed; `pnpm check` and `pnpm browser:test` pass; the dashboard change checked at 1440px and 390px in light and dark.
+- Skills: wardlock-item, wardlock-go-service, wardlock-access, wardlock-web
+- Parallel: Wave 12, second group, after A2.12 merges. Migration owner for the wave; takes the API contract gate from A2.12.
+
 ## A2: Access control
 
 ### A2.1: Policy model and evaluation
@@ -274,6 +285,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item, wardlock-go-service
 - Parallel: Holds the `packages/api-spec` gate; touches `internal/api/domains*`, `apps/cli/cmd/wardlock/domain*` and the generated clients.
 
+### A2.12: Per-site access log
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: A2.8, D3.3
+- Scope: Let owners read a whole site's access log, not just one share link's (O4.6 found SPEC promised it). Add `listSiteAccessLog` (`GET /api/v0/sites/{site}/access-log`) to `packages/api-spec/openapi.yaml`, paged and filtered like `listShareLinkAccessLog` and readable with either API token scope, served from the existing owner-scoped `store.AccessLog.ListBySite`; a missing site and another owner's answer the same `404`, and entries of a torn-down site are not reachable through it. Add an "Access log" page to the dashboard, reached from the site page, showing time, path, status, how the visitor got in (with the share link's label when it came through one) and truncated IP, with the same empty, loading, error and paging states as the link access log. Update SPEC "Access log" and the API docs. No CLI command, matching the link log.
+- Acceptance: API handler tests (paging, scope, owner isolation with two owners, missing site `404`); dashboard tests and a Playwright spec; Mobbin references cited; checked at 1440px and 390px in light and dark; `pnpm check` and `pnpm browser:test` pass.
+- Skills: wardlock-item, wardlock-go-service, wardlock-access, wardlock-web
+- Parallel: Wave 12, first group. Holds the API contract gate (`openapi.yaml` and generated clients) and the `packages/ui` gate if it needs a component. Owns `internal/api` access-log handlers and a new `apps/web/src/sites/` access-log page; adds one link to `site-page.tsx` (merge after D3.6 and rebase).
+
 ## D3: Dashboard
 
 ### D3.1: Dashboard shell and owner sign-in
@@ -330,6 +352,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Acceptance: Browser tests at 1440px and 390px in light and dark cover add, each status, a failure reason, "Check now", `domain_taken` and removal; foreign site IDs show the same not-found state; records are copyable exactly as shown. Mobbin references cited in the PR (start with: add custom domain with DNS records to configure; domain verification status pending and verified; copy DNS record value).
 - Skills: wardlock-item, wardlock-web
 - Parallel: Wave 6 with A2.5, D3.3 and D3.4. Owns `apps/web/src/domains/` and the Domains section's mount point in `apps/web/src/sites/`. Only one of D3.3, D3.4 and D3.5 changes `packages/ui`.
+
+### D3.6: Open site from the dashboard
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: D3.3
+- Scope: Restore SPEC's "Open site" action. On the site page, an "Open site" button opens the site in a new tab. For a public site (its `/` policy is public) it opens the site's address directly. Otherwise it first creates a share link through the existing `createShareLink` operation, labelled "Opened from dashboard", expiring in 10 minutes, no use limit, scoped to the whole site, and opens its URL; the link appears in the link list and access log like any other and can be revoked. Open the new tab synchronously from the click (then set its location) so pop-up blockers allow it, with `noopener`; show an error if creation fails. Update SPEC "Owners and sign-in" to describe exactly this. No API, `packages/ui` or server changes.
+- Acceptance: Component tests (public site opens directly; protected site creates a 10-minute labelled link and opens it; failure shows an error); a Playwright spec opening a protected fixture site; Mobbin references cited; checked at 1440px and 390px in light and dark; `pnpm check` and `pnpm browser:test` pass.
+- Skills: wardlock-item, wardlock-web
+- Parallel: Wave 12, first group. Owns the Open site button in `apps/web/src/sites/site-page.tsx` and its tests; no gates. Merges before A2.12.
 
 ## O4: Operations and release
 
@@ -432,6 +465,28 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item
 - Parallel: Any wave. Owns `.github/workflows/release.yml`; no gates.
 
+### O4.10: Release notes for v0.1.0
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: O4.6, D3.6, A2.12, C1.10
+- Scope: Write the alpha release notes by hand (changelog generation is off), as `docs/releases/v0.1.0.md`: the alpha warning (no external security review, not for anything sensitive), what Wardlock does, how to install (release archives with `install.sh`, the container image, `go install` once the vanity paths are served), the first-run and backup and upgrade pointers into DEPLOYMENT, and how to report problems. Update the launch checklist's "Release notes" row. Nothing tagged or published.
+- Acceptance: Notes merged and accurate against main; links valid in `pnpm docs:build`; `pnpm check` and `git diff --check` pass.
+- Skills: wardlock-item
+- Parallel: Wave 12, last. Owns `docs/releases/`; no gates.
+
+### O4.11: Publish job ready to enable
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: O4.1, O4.9
+- Scope: The launch checklist's "Publish job ready to enable" line. In `.github/workflows/release.yml`, trigger on `v*` tags (the server/CLI `v0.1.0` tag, not the `apps/*/v*` and `packages/*/v*` module tags), add the ghcr.io login (with `packages: write` and `contents: write` scoped to the publish job only), and remove `if: false` so the job runs only on such a tag push with `WARDLOCK_PUBLISH=true`. Snapshots on PRs and main stay as they are and never publish. Keep the GitHub release a draft. Update the workflow header, `docs/DEPLOYMENT.md`'s release steps and the launch checklist row. No tag is pushed.
+- Acceptance: The workflow shows publishing can only run from a `v*` tag push; PR and main runs still skip `publish`; `pnpm check` passes; nothing tagged, published or pushed to ghcr.io.
+- Skills: wardlock-item
+- Parallel: Wave 12, first group. Owns `.github/workflows/release.yml`, `.goreleaser.yaml` if needed; no gates.
+
 ## Waves
 
 Suggested batches, based on the file ownership above. Re-check overlap before launching; merge in the order listed within a wave when items share interfaces.
@@ -446,6 +501,7 @@ Suggested batches, based on the file ownership above. Re-check overlap before la
 8. **Wave 9:** A2.9, A2.10, A2.11, O4.5. A2.11 holds the API contract gate (`openapi.yaml` and generated clients); no migrations or lockfile changes expected. A2.9 agrees its limiter design with the coordinator before implementing it.
 9. **Wave 10:** O4.6, then O4.7. Docs only; no gates.
 10. **Wave 11:** O4.8 and O4.9, in either order. Lint and CI configuration only; no gates.
+11. **Wave 12:** first D3.6, A2.12 and O4.11 (A2.12 holds the API contract gate; D3.6 merges first, since both touch the site page); then C1.10 (migration owner, takes the API contract gate); then O4.10 last. No lockfile changes expected.
 
 ## Not planned yet
 
