@@ -298,7 +298,11 @@ describe('site detail', () => {
     at('/sites/docs');
     const down = { ...docs, unavailable: true };
     const { api } = fakeServer(
-      oneSite(down, [live, earlier], [policy('/', 'protected')]),
+      oneSite(
+        down,
+        [live, earlier],
+        [policy('/', 'protected'), policy('/drafts/', 'protected')],
+      ),
     );
     render(<App api={api} />);
     expect(
@@ -315,6 +319,15 @@ describe('site detail', () => {
     expect(screen.queryByRole('button', { name: 'Open site' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Roll back/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Tear down site' })).toBeNull();
+    // Domains are frozen and no policy may be deleted; editing stays.
+    expect(
+      await screen.findByText(/its domains stay as they are/),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add domain' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Delete / })).toBeNull();
+    expect(
+      (await screen.findAllByRole('button', { name: /^Edit/ })).length,
+    ).toBeGreaterThan(0);
     const teardown = screen.getByRole('region', {
       name: 'Tear down this site',
     });

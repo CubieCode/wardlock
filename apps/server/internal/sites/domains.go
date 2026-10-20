@@ -44,7 +44,8 @@ type CertRemover interface {
 func (s *Service) RoutingTarget(siteName string) string { return s.Hostname(siteName) }
 
 // AddDomain attaches hostname to ownerID's site and checks its DNS straight
-// away. The returned domain is pending unless that first check passed.
+// away. The returned domain is pending unless that first check passed. A
+// taken-down site takes no new domains (ErrUnavailable).
 func (s *Service) AddDomain(ctx context.Context, ownerID, siteName, hostname string) (store.Domain, error) {
 	h, err := s.CheckHostname(hostname)
 	if err != nil {
@@ -53,6 +54,9 @@ func (s *Service) AddDomain(ctx context.Context, ownerID, siteName, hostname str
 	site, err := s.Get(ctx, ownerID, siteName)
 	if err != nil {
 		return store.Domain{}, err
+	}
+	if !site.TakenDownAt.IsZero() {
+		return store.Domain{}, ErrUnavailable
 	}
 	d := store.Domain{
 		ID:       store.NewID(),
@@ -132,11 +136,16 @@ func (s *Service) reread(ctx context.Context, ownerID string, d store.Domain) (s
 }
 
 // RemoveDomain detaches one of ownerID's domains: serving it stops at once
-// and its certificate is deleted.
+// and its certificate is deleted. A taken-down site's domains cannot be
+// removed (ErrUnavailable).
 func (s *Service) RemoveDomain(ctx context.Context, ownerID, siteName, hostname string) error {
 	site, d, err := s.ownedDomain(ctx, ownerID, siteName, hostname)
 	if err != nil {
 		return err
+	}
+	if !site.TakenDownAt.IsZero() {
+		// A taken-down site's domains are frozen with it (A2.13).
+		return ErrUnavailable
 	}
 	if err := s.c.Domains.Delete(ctx, ownerID, site.ID, d.Hostname); err != nil {
 		return storeErr("remove domain", err)

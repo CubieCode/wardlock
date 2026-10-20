@@ -5448,6 +5448,20 @@ func (response UploadDeployBlob404JSONResponse) VisitUploadDeployBlobResponse(w 
 	return err
 }
 
+type UploadDeployBlob409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UploadDeployBlob409JSONResponse) VisitUploadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UploadDeployBlob413JSONResponse struct{ TooLargeJSONResponse }
 
 func (response UploadDeployBlob413JSONResponse) VisitUploadDeployBlobResponse(w http.ResponseWriter) error {
@@ -5740,6 +5754,20 @@ func (response RemoveDomain404JSONResponse) VisitRemoveDomainResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDomain409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RemoveDomain409JSONResponse) VisitRemoveDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }

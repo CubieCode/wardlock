@@ -223,8 +223,9 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
         <Notice tone="warning">
           <strong>The operator of this server has taken this site down.</strong>{' '}
           Visitors see an unavailable page at every address of the site. Its
-          deploys are kept as they are: you can change who has access, but not
-          deploy, roll back or tear it down until the operator restores it.
+          deploys, domains and access records are kept as they are: you can
+          change who has access, but not deploy, roll back, change its domains,
+          delete a policy or tear it down until the operator restores it.
         </Notice>
       )}
 

@@ -178,9 +178,10 @@ func (s *Service) missing(ctx context.Context, ownerID, siteID, deployID string)
 // Upload stores one blob listed in a deploy's manifest and records that the
 // owner holds it. The body must be exactly the listed size and hash; one
 // longer than the per-file limit is ErrLimitExceeded. Re-uploading a blob
-// already stored verifies it again without rewriting it.
+// already stored verifies it again without rewriting it. A taken-down site
+// takes no uploads (ErrSiteUnavailable).
 func (s *Service) Upload(ctx context.Context, ownerID, siteName, deployID, hash string, body io.Reader) error {
-	site, err := s.site(ctx, ownerID, siteName)
+	site, err := s.changeable(ctx, ownerID, siteName)
 	if err != nil {
 		return err
 	}

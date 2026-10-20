@@ -274,20 +274,27 @@ export function DomainsCard({ api, site }: { api: ApiClient; site: Site }) {
         Serve this site at an address you own too, with the same access
         settings. Visitors sign in separately on each address.
       </p>
-      <AddDomainForm
-        api={api}
-        site={site}
-        onAdded={(domain) => {
-          update((domains) => [...domains, domain].sort(byHostname));
-          announce({
-            tone: 'info',
-            text:
-              domain.status === 'active'
-                ? `Added ${domain.hostname}. Its DNS record already checks out, so it is live.`
-                : `Added ${domain.hostname}. Create its DNS record below; Wardlock checks it automatically.`,
-          });
-        }}
-      />
+      {site.unavailable ? (
+        <p>
+          While the operator has taken this site down, its domains stay as they
+          are: none can be added or removed.
+        </p>
+      ) : (
+        <AddDomainForm
+          api={api}
+          site={site}
+          onAdded={(domain) => {
+            update((domains) => [...domains, domain].sort(byHostname));
+            announce({
+              tone: 'info',
+              text:
+                domain.status === 'active'
+                  ? `Added ${domain.hostname}. Its DNS record already checks out, so it is live.`
+                  : `Added ${domain.hostname}. Create its DNS record below; Wardlock checks it automatically.`,
+            });
+          }}
+        />
+      )}
       <LiveNotice ref={doneRef} message={done} />
       {body}
       {more === 'error' && (
@@ -523,13 +530,15 @@ function DomainRow({
           >
             {checking ? 'Checking…' : 'Check now'}
           </Button>
-          <Button
-            type="button"
-            aria-label={`Remove ${domain.hostname}`}
-            onClick={onRemove}
-          >
-            Remove
-          </Button>
+          {!site.unavailable && (
+            <Button
+              type="button"
+              aria-label={`Remove ${domain.hostname}`}
+              onClick={onRemove}
+            >
+              Remove
+            </Button>
+          )}
         </div>
       </div>
       <p>{statusSummary(domain)}</p>

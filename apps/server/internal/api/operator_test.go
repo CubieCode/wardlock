@@ -144,6 +144,7 @@ func TestTakenDownSiteRefusesChanges(t *testing.T) {
 	first := hs.deploy(hs.ownerA, "docs", file{"index.html", "<p>one</p>"})
 	hs.deploy(hs.ownerA, "docs", file{"index.html", "<p>two</p>"})
 	pending := hs.createDeploy(hs.ownerA, "docs", manifest(file{"index.html", "<p>three</p>"}))
+	hs.do(hs.ownerA, http.MethodPost, "/sites/docs/domains", map[string]string{"hostname": "docs.example.com"}).want(t, http.StatusCreated, "")
 	if err := hs.db.Sites().TakeDown(t.Context(), first.Site.Id, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -167,6 +168,28 @@ func TestTakenDownSiteRefusesChanges(t *testing.T) {
 	hs.do(hs.ownerA, http.MethodPost, "/sites/docs/deploys/"+pending.Deploy.Id+"/activate", nil).want(t, http.StatusConflict, "site_unavailable")
 	hs.do(hs.ownerA, http.MethodPost, "/sites/docs/rollback", nil).want(t, http.StatusConflict, "site_unavailable")
 	hs.do(hs.ownerA, http.MethodDelete, "/sites/docs", nil).want(t, http.StatusConflict, "site_unavailable")
+	hs.upload(hs.ownerA, "docs", pending.Deploy.Id, file{"index.html", "<p>three</p>"}).want(t, http.StatusConflict, "site_unavailable")
+	// Custom domains are frozen; checking one still works.
+	hs.do(hs.ownerA, http.MethodPost, "/sites/docs/domains", map[string]string{"hostname": "www.example.com"}).want(t, http.StatusConflict, "site_unavailable")
+	hs.do(hs.ownerA, http.MethodDelete, "/sites/docs/domains/docs.example.com", nil).want(t, http.StatusConflict, "site_unavailable")
+	hs.advance(time.Hour)
+	hs.do(hs.ownerA, http.MethodPost, "/sites/docs/domains/docs.example.com/verify", nil).want(t, http.StatusOK, "")
+	// Access can still change, but no record of who had it may go.
+	hs.do(hs.ownerA, http.MethodPut, "/sites/docs/policies", map[string]any{"path": "/drafts/", "visibility": "protected", "methods": []string{"links"}}).want(t, http.StatusOK, "")
+	var pols api.PolicyPage
+	res = hs.do(hs.ownerA, http.MethodGet, "/sites/docs/policies", nil)
+	res.decode(t, &pols)
+	for _, p := range pols.Items {
+		if p.Path == "/drafts/" {
+			hs.do(hs.ownerA, http.MethodDelete, "/sites/docs/policies/"+p.Id, nil).want(t, http.StatusConflict, "site_unavailable")
+		}
+	}
+	var link api.CreatedShareLink
+	res = hs.do(hs.ownerA, http.MethodPost, "/sites/docs/links", map[string]any{"label": "review"})
+	res.want(t, http.StatusCreated, "")
+	res.decode(t, &link)
+	hs.do(hs.ownerA, http.MethodPost, "/sites/docs/links/"+link.ShareLink.PublicId+"/rotate", nil).want(t, http.StatusOK, "")
+	hs.do(hs.ownerA, http.MethodDelete, "/sites/docs/links/"+link.ShareLink.PublicId, nil).want(t, http.StatusNoContent, "")
 	// Another owner learns nothing.
 	hs.do(hs.ownerB, http.MethodGet, "/sites/docs", nil).want(t, http.StatusNotFound, "not_found")
 	hs.do(hs.ownerB, http.MethodDelete, "/sites/docs", nil).want(t, http.StatusNotFound, "not_found")

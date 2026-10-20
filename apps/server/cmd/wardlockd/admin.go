@@ -283,8 +283,9 @@ func takedownSite(ctx context.Context, a *adminEnv, args []string, out io.Writer
 		return operatorErr(err, "site", args[0])
 	}
 	fmt.Fprintf(out, "Took down %s (site %s, owner %s) as of %s.\n"+
-		"Every host it answers on serves the unavailable page. Its deploys and files are kept\n"+
-		"and its owner cannot change or delete them.\n"+
+		"Every host it answers on serves the unavailable page. Its deploys, files, custom domains,\n"+
+		"share-link and session records and access log are kept: its owner cannot deploy, roll back,\n"+
+		"change domains, delete policies or delete the site, though they can still change who has access.\n"+
 		"Undo with: wardlockd admin restore-site %s\n", s.Name, s.ID, s.OwnerID, stamp(s.TakenDownAt), s.Name)
 	return nil
 }

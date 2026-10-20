@@ -78,7 +78,7 @@ func failed(err error) (*failure, error) {
 }
 
 // siteUnavailable explains a site_unavailable refusal.
-const siteUnavailable = "The operator of this server has taken this site down. Its deploys are kept as they are until the operator restores it."
+const siteUnavailable = "The operator of this server has taken this site down. Its deploys, domains and access records are kept as they are until the operator restores it."
 
 const (
 	defaultLimit = 50

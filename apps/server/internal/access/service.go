@@ -31,6 +31,9 @@ var (
 	// ErrDefaultPolicy means the request would delete a site's default
 	// policy, which every site keeps.
 	ErrDefaultPolicy = errors.New("default policy cannot be deleted")
+	// ErrSiteUnavailable means the operator has taken the site down and
+	// the change would delete records of who had access (A2.13).
+	ErrSiteUnavailable = errors.New("site taken down by the operator")
 )
 
 // TargetError carries the field an error is about and a message safe to
@@ -679,11 +682,16 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 
 // Delete removes path policy id from ownerID's site called name, ending
 // the sessions bound to it; its paths fall back to the next longest prefix.
-// The site default cannot be deleted (ErrDefaultPolicy).
+// The site default cannot be deleted (ErrDefaultPolicy). Nor can any
+// policy of a taken-down site (ErrSiteUnavailable): deleting one deletes
+// the sessions it issued, which record who had access (A2.13).
 func (s *Service) Delete(ctx context.Context, ownerID, siteName, id string) error {
 	site, err := s.ownedSite(ctx, ownerID, siteName)
 	if err != nil {
 		return err
+	}
+	if !site.TakenDownAt.IsZero() {
+		return ErrSiteUnavailable
 	}
 	ps, err := s.loadPolicies(ctx, site.ID)
 	if err != nil {

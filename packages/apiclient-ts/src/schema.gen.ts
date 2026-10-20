@@ -557,7 +557,7 @@ export interface paths {
     get?: never;
     /**
      * Upload one file body for a pending deploy.
-     * @description The body is the file's raw bytes. The server verifies the SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in this deploy's manifest (`400 unexpected_blob`). Uploading a blob the server already holds succeeds without storing it again, so retries are safe. Bodies over the per-file limit answer `413 limit_exceeded`.
+     * @description The body is the file's raw bytes. The server verifies the SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in this deploy's manifest (`400 unexpected_blob`). Uploading a blob the server already holds succeeds without storing it again, so retries are safe. Bodies over the per-file limit answer `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
      */
     put: operations['uploadDeployBlob'];
     post?: never;
@@ -645,7 +645,7 @@ export interface paths {
     put?: never;
     /**
      * Attach a custom domain to a site.
-     * @description Normalises the hostname (lowercase, IDN to A-label, no trailing dot or port) and answers with the records to create. The domain starts `pending` and is checked straight away. IP addresses, wildcards, the base domain and names under it, the dashboard host and the auth origin answer `400 invalid_hostname`. A hostname attached to any site answers `409 domain_taken` without saying which.
+     * @description Normalises the hostname (lowercase, IDN to A-label, no trailing dot or port) and answers with the records to create. The domain starts `pending` and is checked straight away. IP addresses, wildcards, the base domain and names under it, the dashboard host and the auth origin answer `400 invalid_hostname`. A hostname attached to any site answers `409 domain_taken` without saying which. A site the operator has taken down answers `409 site_unavailable`: its domains are frozen.
      */
     post: operations['addDomain'];
     delete?: never;
@@ -678,7 +678,7 @@ export interface paths {
     post?: never;
     /**
      * Detach a custom domain from its site.
-     * @description Serving stops immediately and the domain's certificate is deleted. The owner should also delete the DNS record, or whoever later holds the site name could claim the hostname.
+     * @description Serving stops immediately and the domain's certificate is deleted. The owner should also delete the DNS record, or whoever later holds the site name could claim the hostname. A site the operator has taken down answers `409 site_unavailable`: its domains are frozen.
      */
     delete: operations['removeDomain'];
     options?: never;
@@ -770,7 +770,7 @@ export interface paths {
     post?: never;
     /**
      * Delete a path policy.
-     * @description Its paths fall back to the next longest matching policy on the next request, and visitor sessions created under it end. The site default cannot be deleted (`409 default_policy`); set it instead.
+     * @description Its paths fall back to the next longest matching policy on the next request, and visitor sessions created under it end. The site default cannot be deleted (`409 default_policy`); set it instead. A site the operator has taken down answers `409 site_unavailable`, since deleting a policy deletes the records of the sessions it issued.
      */
     delete: operations['deletePolicy'];
     options?: never;
@@ -2899,6 +2899,7 @@ export interface operations {
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
       413: components['responses']['TooLarge'];
       default: components['responses']['Error'];
     };
@@ -3174,6 +3175,7 @@ export interface operations {
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
       default: components['responses']['Error'];
     };
   };
