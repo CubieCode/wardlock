@@ -178,7 +178,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Status: `todo`
 - Owner:
 - PR:
-- Depends on: C1.10, C1.11, O4.12
+- Depends on: C1.10, C1.11, O4.12, O4.14
 - Scope: Cut the object-store (R2/S3) requests per page view and per upload, without weakening integrity. (1) Lazy open: the edge already knows each file's size from the deploy manifest, so opening a blob for serving makes no request (no `HeadObject`); a missing object surfaces on the first read and is handled as today's open failure. Change the `BlobStore` interface minimally (for example an open that takes the known size) and keep the filesystem store's behaviour. (2) Early `304`: answer `If-None-Match` (and `If-Modified-Since` where `http.ServeContent` would) from the known ETag (the SHA-256) before opening the blob, for both stores, with identical headers to today's `304`. (3) Single-call upload: when the store proves the provider verifies the payload hash (an explicit SHA-256 checksum or signed payload hash that the provider rejects on mismatch), `Put` writes straight to the final key in one request; otherwise it keeps today's temporary key, verify and copy. Detect support with a one-time probe per process (an upload with a deliberately wrong checksum to a temporary key that must be rejected), never by provider name, and never let an unverified write reach a final key. (4) A local read-through blob cache: `WARDLOCK_BLOB_CACHE_DIR` and `WARDLOCK_BLOB_CACHE_MAX_BYTES` (off by default), content-addressed so it can never be stale, filled on a miss by streaming to a temporary file while serving and verifying the hash before keeping it, evicting least recently used blobs beyond the size limit, safe under concurrent requests for the same blob, rebuilt from scratch if wiped, and removed from when GC deletes a blob. (5) Recommend daily GC (`WARDLOCK_GC_INTERVAL_MINUTES=1440`) and a cache size in `deploy/vps/wardlock.env.example`, and document the cache, the probe and the call counts per request in DEPLOYMENT and ARCHITECTURE.
 - Acceptance: Tests with the in-process S3 fake counting requests: a full response costs one `GetObject` on a cold cache and none on a warm one; `304` and `HEAD` cost none; a Range request on a cold cache costs one ranged `GetObject`; single-call upload used only when the fake enforces checksums, and the temporary-key path when it does not, with a mismatch never leaving an object at the final key in either; cache tests for hash verification, eviction, concurrent fills, wipe and GC removal; edge tests that conditional responses are unchanged; `pnpm check` passes.
 - Skills: wardlock-item, wardlock-go-service, wardlock-access
@@ -564,6 +564,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item, wardlock-web
 - Parallel: Wave 13, beside A2.14 or A2.15. Owns the new doc and the link on the two pages; no gates.
 
+### O4.14: Documentation restructure
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: C1.10
+- Scope: Restructure the documentation in the style of the CubieCode Counterstrain repository: each section leads with what most readers need (a few sentences, a short list or a table), and the dense material (implementation detail, edge cases, exact limits and their rationale, protocol and storage internals, threat-by-threat reasoning) moves into collapsed `<details><summary>…</summary>` blocks, with nothing deleted that is still true. Apply it to README (short: status line, a documentation index, a "what it does" list, a stack table, grouped command tables; move the Orca worktree and licensing FAQ detail into collapsed blocks or CONTRIBUTING), docs/SPEC.md, docs/ARCHITECTURE.md (lead with a built-items table in a collapsed block, as Counterstrain's "What each built item added"), docs/DEPLOYMENT.md (a quick-start path first, then reference sections whose variable tables and edge cases collapse), docs/SECURITY-MODEL.md (each threat: the defence in one or two sentences, the reasoning collapsed), docs/MODULES.md and CONTRIBUTING. Keep every heading anchor that other docs, the API contract, code comments or the docs site link to, or update every link. Add `<details>` styling to `docs-site/src/style.css` (light and dark) and make the link checker and table of contents work with collapsed sections. Add a short "Docs style" rule to AGENTS.md so later items keep it. No behaviour changes.
+- Acceptance: Every page is shorter to scan (state before and after line counts of text outside `<details>`); no fact removed (diff reviewed section by section in the PR); `pnpm docs:build` and its link check pass; the docs site checked at 1440px and 390px in light and dark with collapsed and expanded blocks; `pnpm check` and `git diff --check` pass.
+- Skills: wardlock-item, wardlock-web
+- Parallel: Wave 12, alone, after C1.10 merges and before C1.12, O4.10 and wave 13 (it rewrites the files they all edit). Owns README, CONTRIBUTING, AGENTS.md's docs rule, `docs/` and `docs-site/src/style.css`.
+
 ## Waves
 
 Suggested batches, based on the file ownership above. Re-check overlap before launching; merge in the order listed within a wave when items share interfaces.
@@ -578,7 +589,7 @@ Suggested batches, based on the file ownership above. Re-check overlap before la
 8. **Wave 9:** A2.9, A2.10, A2.11, O4.5. A2.11 holds the API contract gate (`openapi.yaml` and generated clients); no migrations or lockfile changes expected. A2.9 agrees its limiter design with the coordinator before implementing it.
 9. **Wave 10:** O4.6, then O4.7. Docs only; no gates.
 10. **Wave 11:** O4.8 and O4.9, in either order. Lint and CI configuration only; no gates.
-11. **Wave 12:** first D3.6, A2.12 and O4.11 (A2.12 holds the API contract gate; D3.6 merges first, since both touch the site page); then C1.10 (migration owner, takes the API contract gate) beside C1.11 (lockfile owner for `apps/server/go.sum`) and O4.12; then C1.12 after C1.10; then O4.10 last.
+11. **Wave 12:** first D3.6, A2.12 and O4.11 (A2.12 holds the API contract gate; D3.6 merges first, since both touch the site page); then C1.10 (migration owner, takes the API contract gate) beside C1.11 (lockfile owner for `apps/server/go.sum`) and O4.12; then O4.14 alone after C1.10 (it rewrites the docs every later item edits); then C1.12; then O4.10 last.
 12. **Wave 13:** A2.13 (migration owner), then A2.14 (migration owner, API contract gate), then A2.15 (migration owner); O4.13 beside A2.14 or A2.15. Starts after wave 12.
 
 ## Not planned yet
