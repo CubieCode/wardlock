@@ -162,6 +162,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item, wardlock-go-service, wardlock-access, wardlock-web
 - Parallel: Wave 12, second group, after A2.12 merges. Migration owner for the wave; takes the API contract gate from A2.12.
 
+### C1.11: S3-compatible blob storage
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: C1.2, C1.8
+- Scope: A second `deploys.BlobStore` implementation backed by any S3-compatible object store (AWS S3, Cloudflare R2, MinIO, Backblaze B2, Wasabi, Garage), chosen by configuration; the filesystem store stays the default. `Has` via `HeadObject`; `Put` streams while hashing to a temporary key, verifies SHA-256 and size, then copies to the final key (a mismatch stores nothing); `Open` returns a seekable reader that fetches ranges on demand, so the edge's Range and content sniffing work without downloading whole files; `Delete` removes the object. Garbage collection gets an S3 equivalent of the filesystem-specific sweeps (stale temporary keys). Configuration such as `WARDLOCK_BLOB_BACKEND=s3`, `WARDLOCK_S3_ENDPOINT`, `_BUCKET`, `_REGION`, `_PREFIX` and path-style addressing, with credentials from the standard AWS environment and files; credentials never logged; readiness checks the bucket. Docs: DEPLOYMENT (setup, bucket permissions, request costs, backups by bucket versioning or replication since `wardlockd backup` does not copy the bucket), ARCHITECTURE, `.env.example`. Still single-instance: the database, limiters and certificates stay local.
+- Acceptance: The `BlobStore` contract tests run against both implementations, the S3 one against an in-process fake (no Docker or network in `pnpm check`); tests for hash mismatch, ranged reads and seeks, missing blobs, GC of stale temporary keys and config validation; the new dependency justified in the PR and `go.sum` updated; `pnpm check` and `git diff --check` pass.
+- Skills: wardlock-item, wardlock-go-service
+- Parallel: Wave 12, beside C1.10. Lockfile owner for `apps/server/go.sum`; owns `internal/deploys` blob stores, `cmd/wardlockd` wiring and `internal/platform` config. No migration or API contract change.
+
 ## A2: Access control
 
 ### A2.1: Policy model and evaluation
@@ -501,7 +512,7 @@ Suggested batches, based on the file ownership above. Re-check overlap before la
 8. **Wave 9:** A2.9, A2.10, A2.11, O4.5. A2.11 holds the API contract gate (`openapi.yaml` and generated clients); no migrations or lockfile changes expected. A2.9 agrees its limiter design with the coordinator before implementing it.
 9. **Wave 10:** O4.6, then O4.7. Docs only; no gates.
 10. **Wave 11:** O4.8 and O4.9, in either order. Lint and CI configuration only; no gates.
-11. **Wave 12:** first D3.6, A2.12 and O4.11 (A2.12 holds the API contract gate; D3.6 merges first, since both touch the site page); then C1.10 (migration owner, takes the API contract gate); then O4.10 last. No lockfile changes expected.
+11. **Wave 12:** first D3.6, A2.12 and O4.11 (A2.12 holds the API contract gate; D3.6 merges first, since both touch the site page); then C1.10 (migration owner, takes the API contract gate) beside C1.11 (lockfile owner for `apps/server/go.sum`); then O4.10 last.
 
 ## Not planned yet
 
@@ -509,6 +520,6 @@ These are recorded so nobody starts them. Each needs a roadmap item and an expli
 
 - MCP server for creating and managing links from AI tools.
 - Teams and members: shared ownership of sites, roles.
-- Scale-out: Postgres repositories passing the same contract tests, an S3 `BlobStore`, shared certmagic storage, a shared rate limiter, multi-instance cache invalidation.
+- Scale-out: Postgres repositories passing the same contract tests, shared certmagic storage, a shared rate limiter, multi-instance cache invalidation.
 - Hosted service concerns: billing, quotas, abuse reporting and scanning.
 - Homebrew tap and other package managers.
