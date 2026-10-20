@@ -412,9 +412,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.8: Enforce every module boundary in depguard
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/o4.8-depguard-boundaries`
-- PR: https://github.com/CubieCode/wardlock/pull/80
+- PR: https://github.com/CubieCode/wardlock/pull/83
 - Depends on: O4.6
 - Scope: O4.6 found that `.golangci.yml` enforces only some of docs/MODULES.md's "Must not import" rules: those for `edge`, `access`, `oauth`, `mail` and `tls`, the storage rule for domain packages, and the MIT modules. Add depguard rules for the rest: `platform` imports no other internal package; `store` and `dashboard` import no domain package (and `dashboard` not `store`); `deploys` and `sites` import neither `api` nor `edge`; `owners` and `api` do not import `edge`. Each rule gets a `desc` naming the boundary. Update MODULES so it says every row is enforced. The code already respects these rules, so no Go code changes.
 - Acceptance: golangci-lint passes on main's code with the new rules; for each new rule, a temporary violating import (not committed) is shown failing with that rule's message, with the commands and output in the PR; `pnpm check` and `git diff --check` pass.
@@ -423,9 +423,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.9: Stop uploading unused CI artifacts
 
-- Status: `review`
+- Status: `done`
 - Owner: `feat/o4.9-snapshot-artifacts`
-- PR: https://github.com/CubieCode/wardlock/pull/81
+- PR: https://github.com/CubieCode/wardlock/pull/82
 - Depends on: O4.1
 - Scope: The `Release` workflow uploaded every snapshot (about 65 MB of archives and SBOMs) as an artifact on every PR and main run with 7-day retention, which filled CubieCode's Actions artifact quota until the included usage resets; every PR's docs-site `build` and Release `snapshot` jobs then failed at the upload step. Nothing reads those uploads, so stop them: remove the snapshot upload (PRs and main still build the snapshot and run `scripts/release-smoke.sh`) and the docs-site upload, and have the disabled docs-site deploy job build the site itself instead of downloading an artifact. Keep CI's Playwright failure upload, but with `continue-on-error` so a full quota cannot fail the job. Update the workflow comments and any docs that describe the uploads.
 - Acceptance: PR and main runs upload no snapshot or docs-site artifact and pass while the quota is full; the deploy job (still `if: false`) builds the site before deploying it; `pnpm check` and `git diff --check` pass; nothing published or deployed.
