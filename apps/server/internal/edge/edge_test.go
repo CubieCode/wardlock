@@ -74,9 +74,13 @@ func (fx fixtures) file(t testing.TB, site, p string) edge.ServedFile {
 }
 
 type fakeBlobs struct {
-	mu   sync.Mutex
-	m    map[string][]byte
-	fail bool
+	mu sync.Mutex
+	m  map[string][]byte
+	// fail fails Open; failRead fails the first Read instead, as a lazily
+	// opened bucket object does when it is missing.
+	fail, failRead bool
+	// opens counts Open calls.
+	opens int
 }
 
 func (b *fakeBlobs) add(p string, body []byte) edge.ServedFile {
@@ -88,19 +92,38 @@ func (b *fakeBlobs) add(p string, body []byte) edge.ServedFile {
 	return edge.ServedFile{Path: p, SHA256: h, Size: int64(len(body))}
 }
 
-func (b *fakeBlobs) Open(_ context.Context, sha string) (io.ReadSeekCloser, error) {
+func (b *fakeBlobs) Open(_ context.Context, sha string, size int64) (io.ReadSeekCloser, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.opens++
 	body, ok := b.m[sha]
 	if !ok || b.fail {
 		return nil, errors.New("blob not found")
 	}
+	if int64(len(body)) != size {
+		return nil, errors.New("size does not match the manifest")
+	}
+	if b.failRead {
+		return nopCloser{failingReadSeeker{}}, nil
+	}
 	return nopCloser{bytes.NewReader(body)}, nil
+}
+
+// openCount returns how many times Open has been called.
+func (b *fakeBlobs) openCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.opens
 }
 
 type nopCloser struct{ io.ReadSeeker }
 
 func (nopCloser) Close() error { return nil }
+
+type failingReadSeeker struct{}
+
+func (failingReadSeeker) Read([]byte) (int, error)       { return 0, errors.New("blob not found") }
+func (failingReadSeeker) Seek(int64, int) (int64, error) { return 0, nil }
 
 // fakeSource resolves hosts the way the cmd/wardlockd adapter does: a label
 // under the base domain by site name, anything else as a custom domain.

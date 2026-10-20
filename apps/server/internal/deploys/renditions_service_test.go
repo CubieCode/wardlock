@@ -28,11 +28,11 @@ type vanishingBlobs struct {
 	onOpen func() // runs before each Open
 }
 
-func (b *vanishingBlobs) Open(ctx context.Context, h string) (io.ReadSeekCloser, error) {
+func (b *vanishingBlobs) Open(ctx context.Context, h string, size int64) (io.ReadSeekCloser, error) {
 	if b.onOpen != nil {
 		b.onOpen()
 	}
-	return b.FSBlobStore.Open(ctx, h)
+	return b.FSBlobStore.Open(ctx, h, size)
 }
 
 func (b *vanishingBlobs) Put(ctx context.Context, h string, size int64, r io.Reader) error {
@@ -106,7 +106,7 @@ func (w *renditionWorld) deploy(site string, files map[string]string) store.Depl
 
 func (w *renditionWorld) read(h string) string {
 	w.t.Helper()
-	b, err := w.blobs.Open(w.t.Context(), h)
+	b, err := w.blobs.Open(w.t.Context(), h, 0) // FSBlobStore ignores the size
 	if err != nil {
 		w.t.Fatalf("open %s: %v", h, err)
 	}

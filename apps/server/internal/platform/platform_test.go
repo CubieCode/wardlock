@@ -92,6 +92,22 @@ func TestLoadConfig(t *testing.T) {
 		{"access key without secret", s3Env(map[string]string{"AWS_ACCESS_KEY_ID": "AKIAEXAMPLE"}), true, nil},
 		{"secret without access key", s3Env(map[string]string{"AWS_SECRET_ACCESS_KEY": "example-secret"}), true, nil},
 		{"session token alone", s3Env(map[string]string{"AWS_SESSION_TOKEN": "example-session"}), true, nil},
+		{"no blob cache by default", nil, false, func(c platform.Config) bool {
+			return c.BlobCacheDir == "" && c.BlobCacheMaxBytes == 0
+		}},
+		{"blob cache", s3Env(map[string]string{"WARDLOCK_BLOB_CACHE_DIR": "/var/cache/wardlock", "WARDLOCK_BLOB_CACHE_MAX_BYTES": "2147483648"}), false,
+			func(c platform.Config) bool {
+				return c.BlobCacheDir == "/var/cache/wardlock" && c.BlobCacheMaxBytes == 2<<30
+			}},
+		{"blob cache beside filesystem blobs", map[string]string{"WARDLOCK_DATA_DIR": "/srv/wl", "WARDLOCK_BLOB_CACHE_DIR": "/srv/wl/blob-cache", "WARDLOCK_BLOB_CACHE_MAX_BYTES": "1"}, false,
+			func(c platform.Config) bool { return c.BlobCacheDir == "/srv/wl/blob-cache" }},
+		{"blob cache without a size", map[string]string{"WARDLOCK_BLOB_CACHE_DIR": "/var/cache/wardlock"}, true, nil},
+		{"blob cache size without a directory", map[string]string{"WARDLOCK_BLOB_CACHE_MAX_BYTES": "1048576"}, true, nil},
+		{"blob cache size with unit", map[string]string{"WARDLOCK_BLOB_CACHE_DIR": "/var/cache/wardlock", "WARDLOCK_BLOB_CACHE_MAX_BYTES": "2GiB"}, true, nil},
+		{"blob cache size zero", map[string]string{"WARDLOCK_BLOB_CACHE_DIR": "/var/cache/wardlock", "WARDLOCK_BLOB_CACHE_MAX_BYTES": "0"}, true, nil},
+		{"blob cache in the blob directory", map[string]string{"WARDLOCK_BLOB_DIR": "/srv/blobs", "WARDLOCK_BLOB_CACHE_DIR": "/srv/blobs/cache", "WARDLOCK_BLOB_CACHE_MAX_BYTES": "1"}, true, nil},
+		{"blob cache is the blob directory", map[string]string{"WARDLOCK_BLOB_DIR": "/srv/blobs", "WARDLOCK_BLOB_CACHE_DIR": "/srv/blobs/", "WARDLOCK_BLOB_CACHE_MAX_BYTES": "1"}, true, nil},
+		{"blob cache around the blob directory", map[string]string{"WARDLOCK_BLOB_DIR": "/srv/blobs", "WARDLOCK_BLOB_CACHE_DIR": "/srv", "WARDLOCK_BLOB_CACHE_MAX_BYTES": "1"}, true, nil},
 		{"no operator listener by default", nil, false, func(c platform.Config) bool { return c.OperatorAddr == "" }},
 		{"operator listener", map[string]string{"WARDLOCK_OPERATOR_ADDR": "127.0.0.1:9740"}, false, func(c platform.Config) bool {
 			return c.OperatorAddr == "127.0.0.1:9740"

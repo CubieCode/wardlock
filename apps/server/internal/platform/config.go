@@ -50,6 +50,10 @@ type Config struct {
 	BlobDir string
 	// S3 is the bucket for BlobS3.
 	S3 S3Config
+	// BlobCacheDir keeps local copies of served blobs, at most
+	// BlobCacheMaxBytes of them; "" (the default) caches nothing.
+	BlobCacheDir      string
+	BlobCacheMaxBytes int64
 	// Deploy limits: bytes per file, files per deploy, bytes per deploy.
 	MaxFileSize    int64
 	MaxDeployFiles int

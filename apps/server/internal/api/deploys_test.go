@@ -282,7 +282,7 @@ func TestDeployProtocol(t *testing.T) {
 	if got := hs.notifications(); !slices.Equal(got, []string{site.Id}) {
 		t.Fatalf("notified %v, want the site once", got)
 	}
-	rc, err := hs.blobs.Open(t.Context(), app.hash())
+	rc, err := hs.blobs.Open(t.Context(), app.hash(), int64(len(app.content)))
 	if err != nil {
 		t.Fatal(err)
 	}

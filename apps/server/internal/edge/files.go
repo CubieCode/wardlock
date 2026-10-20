@@ -5,7 +5,6 @@ package edge
 
 import (
 	"io"
-	"log/slog"
 	"mime"
 	"net/http"
 	"net/url"
@@ -199,44 +198,40 @@ func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f Se
 		return
 	}
 	send, coding, vary := negotiate(s, f, r.Header.Get("Accept-Encoding"))
-	blob, err := e.blobs.Open(r.Context(), send.SHA256)
-	if err != nil {
-		e.log.ErrorContext(r.Context(), "open blob",
-			slog.String("site_id", s.site.ID), slog.String("sha256", send.SHA256), slog.Any("error", err))
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	defer func() { _ = blob.Close() }()
-
-	h := w.Header()
-	if immutable {
-		h.Set("Cache-Control", immutableCacheControl(protected))
-	} else {
-		h.Set("Cache-Control", cacheControl(protected))
-	}
-	if vary {
-		h.Add("Vary", "Accept-Encoding")
-	}
-	h.Set("Content-Type", ctype)
-	if coding != "" {
-		h.Set("Content-Encoding", coding)
-	}
-	h.Set("Content-Length", strconv.FormatInt(send.Size, 10))
-
-	if status != http.StatusOK {
-		// 404.html: no conditional or range handling.
-		w.WriteHeader(status)
-		if r.Method != http.MethodHead {
-			_, _ = io.CopyN(w, blob, send.Size)
+	e.serveBlob(w, r, s, send.SHA256, send.Size, "open blob", func(w http.ResponseWriter, blob io.ReadSeeker) {
+		h := w.Header()
+		if immutable {
+			h.Set("Cache-Control", immutableCacheControl(protected))
+		} else {
+			h.Set("Cache-Control", cacheControl(protected))
 		}
-		return
-	}
-	h.Set("ETag", `"`+send.SHA256+`"`)
-	if coding != "" && strings.Contains(r.Header.Get("Range"), ",") {
-		// One range of an encoded variant at most: multipart byteranges of
-		// compressed bytes help nobody, so send the whole variant.
-		r = r.Clone(r.Context())
-		r.Header.Del("Range")
-	}
-	http.ServeContent(w, r, "", s.site.ActivatedAt, blob)
+		if vary {
+			h.Add("Vary", "Accept-Encoding")
+		}
+		h.Set("Content-Type", ctype)
+		if coding != "" {
+			h.Set("Content-Encoding", coding)
+		}
+		h.Set("Content-Length", strconv.FormatInt(send.Size, 10))
+
+		if status != http.StatusOK {
+			// 404.html: no conditional or range handling.
+			w.WriteHeader(status)
+			if r.Method != http.MethodHead {
+				_, _ = io.CopyN(w, blob, send.Size)
+			}
+			return
+		}
+		h.Set("ETag", `"`+send.SHA256+`"`)
+		r := r
+		if coding != "" && strings.Contains(r.Header.Get("Range"), ",") {
+			// One range of an encoded variant at most: multipart byteranges of
+			// compressed bytes help nobody, so send the whole variant.
+			r = r.Clone(r.Context())
+			r.Header.Del("Range")
+		}
+		// ServeContent answers 304 and 412 before reading, so they never
+		// open the blob (serveBlob).
+		http.ServeContent(w, r, "", s.site.ActivatedAt, blob)
+	})
 }

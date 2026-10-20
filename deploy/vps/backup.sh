@@ -34,6 +34,7 @@ restic backup --quiet --host wardlock --tag wardlock \
   --exclude "$data/wardlock.db" \
   --exclude "$data/wardlock.db-wal" \
   --exclude "$data/wardlock.db-shm" \
+  --exclude "$data/blob-cache" \
   "$data"
 restic forget --quiet --host wardlock --tag wardlock --prune \
   --keep-daily 14 --keep-weekly 8 --keep-monthly 12

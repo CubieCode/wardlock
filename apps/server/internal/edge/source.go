@@ -59,10 +59,11 @@ type SiteSource interface {
 	ActiveFiles(ctx context.Context, site ServedSite) ([]ServedFile, error)
 }
 
-// BlobOpener opens content-addressed file bodies. The deploys BlobStore
-// satisfies it.
+// BlobOpener opens content-addressed file bodies of a size the manifest
+// gives. The deploys BlobStore satisfies it. Open may defer its work, and
+// so its errors, to the first Read.
 type BlobOpener interface {
-	Open(ctx context.Context, sha256 string) (io.ReadSeekCloser, error)
+	Open(ctx context.Context, sha256 string, size int64) (io.ReadSeekCloser, error)
 }
 
 // Invalidator reports that a site's served state changed (activation,

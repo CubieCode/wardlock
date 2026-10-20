@@ -300,7 +300,7 @@ openssl rand -base64 32 | tr '+/' '-_'   # WARDLOCK_SECRET; store a copy off the
 sudoedit wardlock.env
 ```
 
-Fill in `WARDLOCK_SECRET`, the hosts, the Cloudflare token, the R2 bucket, endpoint and blobs token, and [SMTP](#smtp); add [OAuth and OIDC](#oauth-and-oidc) providers if you want them. For the first start, uncomment the Let's Encrypt staging `WARDLOCK_ACME_CA` so mistakes do not use up production rate limits. Then:
+Fill in `WARDLOCK_SECRET`, the hosts, the Cloudflare token, the R2 bucket, endpoint and blobs token, and [SMTP](#smtp); add [OAuth and OIDC](#oauth-and-oidc) providers if you want them. The example already turns on the [blob cache](#blob-cache) (2 GiB in the data volume) and daily garbage collection, so R2 sees few requests; change the cache size to suit the disk. For the first start, uncomment the Let's Encrypt staging `WARDLOCK_ACME_CA` so mistakes do not use up production rate limits. Then:
 
 ```sh
 sudo docker compose up -d
@@ -335,10 +335,10 @@ Every certificate counts against [Let's Encrypt's rate limits](https://letsencry
 <details>
 <summary>What the backup does</summary>
 
-The data volume holds `wardlock.db` and `certs/` (certificates, keys and the ACME account); deploy files are in R2.
+The data volume holds `wardlock.db`, `certs/` (certificates, keys and the ACME account) and `blob-cache/` (local copies of deploy files, see [Blob cache](#blob-cache)); deploy files are in R2.
 
 1. `wardlockd backup` writes a consistent copy of the database into the volume, while the server runs ([Backups](#backups)).
-2. restic uploads the whole volume to the `wardlock-backups` bucket: the copy and `certs/`. Only the live `wardlock.db`, `wardlock.db-wal` and `wardlock.db-shm` are left out, since they cannot be copied safely while the server runs and the copy replaces them.
+2. restic uploads the whole volume to the `wardlock-backups` bucket: the copy and `certs/`. The live `wardlock.db`, `wardlock.db-wal` and `wardlock.db-shm` are left out, since they cannot be copied safely while the server runs and the copy replaces them, and so is `blob-cache/`, which refills from R2.
 3. The copy is deleted, and snapshots older than 14 daily, 8 weekly and 12 monthly are pruned.
 
 </details>
@@ -495,7 +495,7 @@ Values are whole numbers of at least 1, without units. A deploy over a limit is 
 
 ### S3-compatible blob storage
 
-With `WARDLOCK_BLOB_BACKEND=s3` the file bodies go to a bucket on any S3-compatible service (AWS S3, Cloudflare R2, MinIO, Backblaze B2, Wasabi, Garage) instead of `WARDLOCK_BLOB_DIR`, which must then be unset. Everything else stays on the machine: the database, rate limits and certificates are still local, so this is still one server, not a cluster. Keep the bucket private: every file is served through Wardlock's access control.
+With `WARDLOCK_BLOB_BACKEND=s3` the file bodies go to a bucket on any S3-compatible service (AWS S3, Cloudflare R2, MinIO, Backblaze B2, Wasabi, Garage) instead of `WARDLOCK_BLOB_DIR`, which must then be unset. Everything else stays on the machine: the database, rate limits and certificates are still local, so this is still one server, not a cluster. Keep the bucket private: every file is served through Wardlock's access control. Add the [blob cache](#blob-cache) and run garbage collection daily to keep requests to the bucket down.
 
 ```sh
 WARDLOCK_BLOB_BACKEND=s3
@@ -556,19 +556,58 @@ Keep the bucket private (no public access, no website hosting): every file is se
 <details>
 <summary>Object layout, upload integrity and size limit</summary>
 
-Blobs are stored at `<prefix>sha256/ab/cdef…`, the same layout as on disk. An upload streams to a temporary key `<prefix>uploads/<random>` while Wardlock hashes it, signed with the expected SHA-256 so the service rejects other bytes too; only a verified upload is copied to its final key, and the temporary key is then deleted, so a blob is either complete or absent. Abandoned temporary keys older than `WARDLOCK_GC_GRACE_HOURS` are removed by garbage collection, as are blob objects with no database record. Each file is at most 5 GiB, the limit of one upload or copy, so `WARDLOCK_MAX_FILE_SIZE` may not exceed `5368709120`. Serving reads files with ranged `GET`s from the position the response needs, so a `Range` request never downloads the whole object.
+Blobs are stored at `<prefix>sha256/ab/cdef…`, the same layout as on disk. Every upload is signed with the file's expected SHA-256 as its payload hash, and Wardlock hashes the bytes as they stream, failing the request before its last bytes are sent if they do not match, so a blob is either complete or absent.
+
+How an upload reaches its key depends on whether the service itself rejects a body that does not match its signed payload hash. Once per server process, before the first upload, Wardlock asks: it uploads a small body to a temporary key `<prefix>uploads/<random>` signed with a deliberately wrong hash.
+
+- **Rejected** with a checksum error (AWS S3 and MinIO do this): each later upload is one `PUT` straight to its final key.
+- **Accepted**, or refused for another reason: the probe object is deleted, and each upload streams to a temporary key, is verified, is copied to its final key, and the temporary key is deleted. Unverified content never reaches a final key.
+- **No answer** (rejected credentials, a server error or a network failure): that upload fails and the next one probes again.
+
+The choice is logged once as `s3 upload path` with `path` (`direct` or `temporary key`) and the reason; it never depends on the provider's name and never logs credentials. Abandoned temporary keys older than `WARDLOCK_GC_GRACE_HOURS` are removed by garbage collection, as are blob objects with no database record. Each file is at most 5 GiB, the limit of one upload or copy, so `WARDLOCK_MAX_FILE_SIZE` may not exceed `5368709120`.
+
+Serving takes each file's size from the deploy's manifest, so opening a file makes no request. Wardlock reads with ranged `GET`s from the position the response needs, so a `Range` request never downloads the whole object. A file missing from the bucket shows up on that first read and answers `500`, logged as `open blob`, before any of the response is sent. A `HEAD` request reads nothing, so it answers `200` even for a missing file.
 
 </details>
 
 <details>
 <summary>Requests per deploy, page view and collection (for estimating a bill)</summary>
 
-- **Deploys:** one `HEAD` per manifest file the owner has uploaded before, when the deploy is created and again when it is activated, and for each uploaded file one `PUT`, one `COPY` and one `DELETE` (the copy and delete happen even when the content is already stored, so upload timing does not reveal what other owners have stored). Activation also reads each HTML file once and stores its Markdown and text renditions the same way.
-- **Serving:** one `HEAD` for each response that opens a file, plus one `GET` for each response that sends its body (a `304 Not Modified` or `HEAD` request sends none); every byte served is egress from the bucket, so run Wardlock close to it, or pick a service without egress fees.
-- **Garbage collection:** one `LIST` per 1,000 stored objects each run (every `WARDLOCK_GC_INTERVAL_MINUTES`, hourly by default), plus one `DELETE` per removed blob.
+- **Deploys:** one `HEAD` per manifest file the owner has uploaded before, when the deploy is created and again when it is activated. Each uploaded file is one `PUT` on a service that checks payload hashes, otherwise one `PUT`, one `COPY` and one `DELETE`. Either way, an upload makes the same requests when the content is already stored, so upload timing does not reveal what other owners have stored. Activation also reads each HTML file once (no request if the [blob cache](#blob-cache) holds it) and stores its Markdown and text renditions the same way.
+- **Upload probe:** one `PUT` per server process before its first upload, plus one `DELETE` when the service accepts the probe.
+- **Serving:** one `GET` for each response that sends a body: a full file, a `Range`, or a `404.html`. With the [blob cache](#blob-cache), a full response costs one `GET` the first time and none after; a `Range` the cache does not hold costs one ranged `GET`. A `304 Not Modified`, a `412`, a `416` or a `HEAD` request costs none, with or without the cache. Every byte served from the bucket is egress, so run Wardlock close to it, or pick a service without egress fees.
+- **Garbage collection:** one `LIST` per 1,000 stored objects each run, plus one `DELETE` per removed blob. With S3, run it daily (`WARDLOCK_GC_INTERVAL_MINUTES=1440`) rather than at the hourly default: unreferenced blobs wait out a 24-hour grace period anyway, so hourly runs mostly repeat the listing.
 - **Readiness:** one `HEAD` of the bucket per `/readyz` or `/metrics` scrape.
 
-Each served file waits for at least one round trip to the bucket, so expect slower first bytes than from a local disk.
+Each file the cache does not hold waits for at least one round trip to the bucket, so expect slower first bytes than from a local disk.
+
+</details>
+
+### Blob cache
+
+With S3, set `WARDLOCK_BLOB_CACHE_DIR` and `WARDLOCK_BLOB_CACHE_MAX_BYTES` to keep local copies of the files Wardlock serves. A cached file costs the bucket no request and no egress. The cache is off by default, and both variables are set together or not at all.
+
+```sh
+WARDLOCK_BLOB_CACHE_DIR=/var/cache/wardlock/blobs
+WARDLOCK_BLOB_CACHE_MAX_BYTES=2147483648 # 2 GiB
+```
+
+<details>
+<summary>How the cache fills, evicts and stays correct</summary>
+
+| Variable                        | Default | Meaning                                                                            |
+| ------------------------------- | ------- | ---------------------------------------------------------------------------------- |
+| `WARDLOCK_BLOB_CACHE_DIR`       | none    | directory for cached copies; must not be, contain or sit inside the blob directory |
+| `WARDLOCK_BLOB_CACHE_MAX_BYTES` | none    | bytes the cache keeps, a whole number of at least 1 without units                  |
+
+- **Content-addressed.** Copies are stored by SHA-256 (`sha256/ab/cdef…` under the directory), so a copy can never be stale: a new deploy's changed file has a new hash.
+- **Filled while serving.** A response that reads a whole file from the start (a full `GET`, or `Range: bytes=0-`, which browsers send for media) streams it to a temporary file under `fill/` as it is sent. The copy is kept only when its bytes hash to the file's SHA-256 at its size. A `Range` from anywhere else, or one that stops early, fills nothing, so it fetches only the bytes it asked for. Reading the rest of the object just to fill the cache would pay for bytes nobody requested.
+- **One fill at a time.** Concurrent first requests for the same file all read from the bucket; one of them fills the cache.
+- **Least recently used out.** Beyond the size limit, the copies used longest ago are deleted. A file bigger than the limit is never cached. Use is tracked in memory and stamped on each copy's modification time, so a restart rebuilds the order from the directory and removes unfinished fills.
+- **Safe to wipe.** Deleting the directory, or any copy in it, while the server runs only means those files are fetched and cached again. A copy whose size is wrong is treated as missing.
+- **Garbage collection** removes a blob's cached copy along with the blob, including one still filling. `wardlockd gc` removes copies from the same directory when it shares the server's configuration.
+
+The cache works with the filesystem backend too, but there it only duplicates the blob directory, so it is meant for S3. Size it to hold the files visitors fetch most; one page view usually needs its HTML, stylesheets, scripts and images.
 
 </details>
 
@@ -579,7 +618,7 @@ The server prunes deploy history and removes file bodies no deploy references at
 <details>
 <summary>Variables, grace period, running it from cron and its log line</summary>
 
-The active deploy is never pruned. Deploys not yet activated and bodies uploaded within `WARDLOCK_GC_GRACE_HOURS` are kept, so a slow upload is never cut short; keep the grace period longer than your longest deploy. `wardlockd gc` is safe to run while the server is running, for example from cron with `WARDLOCK_GC_INTERVAL_MINUTES=0`.
+The active deploy is never pruned. Deploys not yet activated and bodies uploaded within `WARDLOCK_GC_GRACE_HOURS` are kept, so a slow upload is never cut short; keep the grace period longer than your longest deploy. `wardlockd gc` is safe to run while the server is running, for example from cron with `WARDLOCK_GC_INTERVAL_MINUTES=0`. With S3 blob storage, a daily run (`WARDLOCK_GC_INTERVAL_MINUTES=1440`) is enough and lists the bucket 24 times less often.
 
 | Variable                       | Default | Meaning                                                               |
 | ------------------------------ | ------- | --------------------------------------------------------------------- |

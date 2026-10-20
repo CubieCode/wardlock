@@ -6,7 +6,6 @@ package edge
 import (
 	"bytes"
 	"errors"
-	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -169,17 +168,11 @@ func hasPrefixASCIIFold(b []byte, lowerPattern string) bool {
 // ETag, conditional or range handling; it is cached privately like every
 // response a token opens.
 func (e *Edge) serveStripped(w http.ResponseWriter, r *http.Request, s *served, f ServedFile, status int, ctype string) {
-	blob, err := e.blobs.Open(r.Context(), f.SHA256)
+	doc, err := e.readBlob(r.Context(), f)
 	if err != nil {
+		// A bucket's missing object only shows when read, so a failed
+		// read logs as the failed open it is.
 		e.log.ErrorContext(r.Context(), "open blob",
-			slog.String("site_id", s.site.ID), slog.String("sha256", f.SHA256), slog.Any("error", err))
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	defer func() { _ = blob.Close() }()
-	doc, err := io.ReadAll(io.LimitReader(blob, f.Size))
-	if err != nil {
-		e.log.ErrorContext(r.Context(), "read blob",
 			slog.String("site_id", s.site.ID), slog.String("sha256", f.SHA256), slog.Any("error", err))
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
