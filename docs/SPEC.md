@@ -26,7 +26,7 @@ Share links and API tokens use one format: `wl_<public id>_<secret>`. The public
 ## Owners and sign-in (C1.1, C1.6, C1.7)
 
 - An instance has one or more owners. There is no open sign-up, ever, in v1: owners are invited by an existing owner or created by the operator.
-- **Bootstrap.** The first owner comes from a one-time setup URL printed in the log, or from `wardlockd admin create`; later owners are invited by email.
+- **Bootstrap.** The first owner comes from a one-time setup URL printed in the log, or from `wardlockd admin create`; later owners are invited by email (or, with `WARDLOCK_INVITES=operator`, only created by the operator; see [Operator controls](#operator-controls-and-abuse-reports-a213)).
 - **Dashboard sign-in** is by one-time email code or passkey (C1.6). There are no owner passwords.
 - **Owner sessions** are `__Host-` cookies on the dashboard host, `HttpOnly`, `Secure`, `SameSite=Lax`, idle timeout 14 days, absolute 90 days, revocable from the dashboard.
 - **API tokens** (C1.7) are scoped (`deploy`, `manage`), named, revocable, optionally expiring, and shown once. They use the same format and hashing as share-link tokens (see Tokens).
@@ -37,7 +37,7 @@ Share links and API tokens use one format: `wl_<public id>_<secret>`. The public
 
 - **Bootstrap.** When no owner exists, `wardlockd serve` prints a one-time setup URL to the log (`https://<dashboard host>/setup?code=…`, single use, valid 60 minutes, reprinted on each start until used). Alternatively the operator runs `wardlockd admin create --email you@example.com`, which creates the owner offline and prints a one-time sign-in URL.
 - **One-time URL paths** on the dashboard host, which the dashboard serves (D3.1): `/setup?code=<code>` (the setup URL; the page asks for the owner's email and calls `completeSetup`) and `/sign-in?code=<code>` (admin-create and invitation links; the page calls `redeemSignInLink`). Both use `https://<dashboard host>` without a port, except a `localhost`/`*.localhost` dashboard host, which uses `http://` and the listen port.
-- **Invitations.** An owner invites another by email address; the invitee gets a one-time sign-in link valid for 7 days and can afterwards sign in by email code. The response is the same whether or not the address already belongs to an owner (who then gets nothing). The admin-create sign-in URL is valid for 60 minutes.
+- **Invitations.** An owner invites another by email address; the invitee gets a one-time sign-in link valid for 7 days and can afterwards sign in by email code. The response is the same whether or not the address already belongs to an owner (who then gets nothing). The admin-create sign-in URL is valid for 60 minutes. With `WARDLOCK_INVITES=operator` (A2.13) the invite operation answers `403 invites_restricted` and only `wardlockd admin create` adds owners; the default, `owners`, lets any owner invite. An invitation to a suspended owner's address sends nothing.
 - **Dashboard sign-in** uses a one-time email code (6 digits, valid 10 minutes, 5 attempts, rate-limited) or a passkey (C1.6). There are no owner passwords. Sending a new code retires the previous one. Default limits: 5 sends per address and 20 per IP per hour, 30 verifications per IP per 15 minutes, 10 setup or sign-in-link redemptions per IP per 15 minutes, 20 invitations per owner per hour; over a limit the API answers `429` with `Retry-After`. When a limiter's table of IPs or addresses is full (100,000 keys), keys it does not hold are counted in a fixed-size overflow sketch under the same limits rather than refused (A2.9; SECURITY-MODEL "Limiter tables under flooding").
 - **Passkeys** (C1.6). A signed-in owner can add WebAuthn passkeys from the dashboard's Passkeys page and sign in with one instead of an email code. The relying party is the dashboard host and only the dashboard origin is accepted, so changing `WARDLOCK_DASHBOARD_HOST` makes existing passkeys unusable (owners sign in by email code and add new ones). Passkeys are discoverable credentials, so sign-in asks for no email address; user verification is preferred, not required, and no attestation is requested. Each challenge is valid for 5 minutes and is used once, whatever the outcome; a response for another origin or relying party, a bad signature, an unknown or removed passkey and a signature counter that did not increase are all refused with the same `invalid_passkey` error. An owner has at most 20 passkeys, each with a name (by default the browser and system that created it, such as "Chrome on macOS"), its creation time and its last sign-in. Removing a passkey stops it signing in at once and does not end sessions it started. Passkeys are managed only from a dashboard session, never with an API token. Passkey sign-in starts are limited per IP at the same rate as email-code verifications (30 per 15 minutes), counted separately, with at most 5 sign-ins open at once per IPv4 address or IPv6 /48. Adding a passkey is limited to 10 starts per owner per 15 minutes, with at most 3 open at once; registrations and sign-ins are held in separate tables, so adding passkeys never delays signing in. If two sign-ins with the same passkey race, only the first is accepted.
 
@@ -78,6 +78,7 @@ Signed-in owners manage everything from the dashboard on the dashboard host. Onl
 - **Custom domains** (D3.5), on `/sites/<name>` below its share links: a Hostname field adds a domain (`domain_taken` and `invalid_hostname` are shown on the field). Each domain shows its status as a word (Pending, Active or Lapsed), what that means for visitors, when DNS was last checked and is next checked, a pending claim's removal date, and the last failure in plain words (no record, CNAME points elsewhere, TXT value differs, DNS lookup failed) with the server's detail and the next step. The CNAME record's name and target are shown with Copy buttons, exactly as the API gives them; the TXT record is behind a disclosure explaining it is for apex domains and CDN-proxied records. An active domain keeps its records behind a disclosure. **Check now** runs one check and shows the result, or how long to wait when it is refused as too soon. **Remove** asks first and reminds the owner to delete the DNS records.
 - **Share links** (D3.3), on `/sites/<name>`: create a link (label, expiry or never, use limit, path scope) and copy its URL, which is shown once; list, revoke and rotate links (a rotated link's new URL is also shown once). Each link's page, `/sites/<name>/links/<id>`, shows its details and its access log; a revoked link's past visits stay readable.
 - **Access log** (A2.12): `/sites/<name>/access-log`, reached from the site page, lists the site's visits newest first with time, path, status, how the visitor got in (with the share link's label when it came through one) and the truncated IP, paged like the link access log.
+- **Taken down** (A2.13): a site the operator has taken down, or whose owner is suspended, shows a "Taken down" badge on `/sites` and `/sites/<name>`, and the site page says "The operator of this server has taken this site down…". The site stays readable and its policies, share links and domains editable, but Open site, Roll back and Tear down are hidden.
 - `/passkeys` (C1.6) lists the owner's passkeys with when each was added and last used, adds one with the browser's passkey prompt, and removes one after a confirmation naming it.
 - The signed-in shell has a sidebar (a top bar with a Menu button below 48rem) listing only built screens, the signed-in owner's address and Sign out.
 
@@ -89,6 +90,7 @@ Signed-in owners manage everything from the dashboard on the dashboard host. Onl
 - A site is created by its first deploy (the CLI creates it before uploading) or from the dashboard. Names are unique per instance; a name held by another owner's site is reported as taken (site names are public through DNS).
 - **Custom domains** (C1.9): a site can also be served at domains its owner controls; see Custom domains.
 - **Teardown** deletes the site, its deploys, links, policies and custom domains, and frees the name. Blobs no longer referenced are removed by garbage collection (C1.8).
+- **Unavailable** (A2.13): a site the operator has taken down, or whose owner is suspended, serves only the unavailable page and keeps its deploys; the API Site object's read-only `unavailable` is `true`. See [Operator controls](#operator-controls-and-abuse-reports-a213).
 
 <details>
 <summary>Name rules and reserved names</summary>
@@ -133,7 +135,7 @@ The goal is that adding one DNS record is all an owner has to do. The record nam
 - Activation is atomic: a visitor sees either the previous deploy or the new one, never a mix.
 - Every deploy stays in history with its time, file count, total size and an optional message. **Rollback** reactivates any earlier deploy instantly, with no upload.
 - Default limits (configurable): 25 MiB per file, 20,000 files and 1 GiB per deploy, 50 deploys of history per site (older ones are pruned, never the active one).
-- **Garbage collection** (C1.8) removes old deploys beyond the history limit and file bodies no deploy lists, hourly and with `wardlockd gc`.
+- **Garbage collection** (C1.8) removes old deploys beyond the history limit and file bodies no deploy lists, hourly and with `wardlockd gc`. It never touches a taken-down site or a suspended owner's site (A2.13).
 - Paths must be clean, valid UTF-8 and outside `.wardlock/`; a deploy with a bad path is rejected, naming it.
 
 <details>
@@ -349,14 +351,53 @@ Every request for a published site's content (after the access decision, allowed
 
 </details>
 
+## Operator controls and abuse reports (A2.13)
+
+The operator of a server can act on abuse from the server host, without the dashboard. A running server picks up each change within about 2 seconds.
+
+| Command (`wardlockd admin …`) | Effect                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| `list-owners`, `list-sites`   | List owners (email, status, created, ID) and sites (name, owner, status, ID)                     |
+| `suspend-owner ADDRESS`       | Signs the owner out, refuses their sign-in and API tokens, and makes all their sites unavailable |
+| `reinstate-owner ADDRESS`     | Lets the owner sign in again; their tokens and sites work again                                  |
+| `takedown-site SITE`          | Every page of the site answers "This site is unavailable"; deploys and files are kept            |
+| `restore-site SITE`           | Serves the same active deploy again                                                              |
+| `teardown-site SITE`          | Deletes a taken-down site as an owner's teardown would                                           |
+
+With `WARDLOCK_ABUSE_EMAIL` set, visitors can report a site from a "Report this site" link on Wardlock's own pages; reports are emailed to that address. Operating a server, the commands and the preserve-and-report procedure: [DEPLOYMENT](DEPLOYMENT.md#operator-controls).
+
+<details>
+<summary>Suspension, takedown and the unavailable page in detail</summary>
+
+- **Identifying a site.** `SITE` is a site name or any hostname the site answers on (its base-domain host or an active custom domain). `teardown-site` only accepts a taken-down site, so a typo cannot delete a serving one.
+- **Suspending an owner** sets `suspended_at` and, in one transaction, revokes every dashboard session (permanently) and denies approved but uncollected CLI logins. While suspended, API tokens are refused, and sign-in by email code (no code is sent, as for an unknown address), sign-in link and passkey fails with the same neutral error as a wrong code or passkey, so a suspension is not revealed to someone guessing addresses. Invitations to the address send nothing. All the owner's sites answer the unavailable page. **Reinstating** clears it: tokens and sites work again, and the owner signs in again (old sessions stay revoked).
+- **Takedown** sets `taken_down_at`. Every path on every host of the site (base-domain and custom domains), whatever the policy, cookie, share link or `Bearer` token, answers `403` with the unavailable page; only `/.wardlock/health` and `/.wardlock/report` still answer. The page is neutral: it says the site was taken offline by the operator of this server, with no reason and no owner. It sends `Cache-Control: no-store`, `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and a strict `Content-Security-Policy` with no scripts.
+- **What the owner can still do.** Read the site and edit its policies, share links and custom domains. Creating deploys, activating, rolling back and deleting the site answer `409 site_unavailable`. Garbage collection skips every deploy of a taken-down site or a suspended owner's site, so nothing is lost while the operator investigates. **Restore** serves the same active deploy again.
+- **Admin teardown** deletes the site's domains, deploys, policies and links like an owner teardown; garbage collection later removes files nothing references. In automatic TLS mode it cannot reach the running server's certificate manager, so certificates for the site's custom domains are not removed at once; they are not renewed and expire.
+- **Storage.** Migration `0008_operator_controls` adds nullable `owners.suspended_at` and `sites.taken_down_at` (UTC Unix milliseconds). A running server polls for changes, so the commands work whether or not it is running.
+- **Logging.** Operator actions log IDs only (`owner_id`, `site_id`), such as "operator suspended owner" and "operator took down site".
+
+</details>
+
+<details>
+<summary>Abuse reports (<code>/.wardlock/report</code>)</summary>
+
+- **Off by default.** With `WARDLOCK_ABUSE_EMAIL` unset no page shows a report link and `/.wardlock/report` answers `404`. Set to a plain address (no display name), a "Report this site" link appears in the footer of the login page, the share-link "Click to view" interstitial and the unavailable page, never on the site's own pages, leading to `/.wardlock/report?page=<path>`.
+- **The form** names the site (from the host) and asks for the Page (prefilled with host and path, editable, at most 2,000 characters), a reason (Phishing or a scam; Malware or a harmful download; Illegal content; Sexual content involving a child; Copyright or trademark infringement; Something else), optional Details (at most 2,000 characters) and an optional email address for contact (at most 254 characters, a plain address). It posts only from the same origin, like the login form, has no scripts and sends `Cache-Control: no-store`. A thank-you page says the report went to the operator.
+- **Rate limits.** Every submission counts, valid or not: 5 per IP per hour and 30 per site per hour, with the usual per-network share when a limiter's table is under pressure; over a limit it answers `429` with `Retry-After`.
+- **Tokens are removed** from the page and details before sending: any `t=` query parameter value becomes `[removed]` and any `wl_<id>_<secret>` token becomes `[token removed]`.
+- **The email**, plain text through the normal mailer (`WARDLOCK_SMTP_URL`) with the subject "Abuse report: <host>", gives the host, site ID, reason, page, contact address, time received, details and the `wardlockd admin takedown-site <name>` command to act on it. The reporter's IP is never sent or logged; the server logs "abuse report sent" with the site ID and reason only.
+
+</details>
+
 ## Reserved path
 
-`/.wardlock/` on every published site is served by Wardlock and can never be overridden by a deploy; policies never apply under it. It holds the sign-in pages (`login`, `callback`, `logout`, `view`), `health` and the proxy's `tls-ask`.
+`/.wardlock/` on every published site is served by Wardlock and can never be overridden by a deploy; policies never apply under it. It holds the sign-in pages (`login`, `callback`, `logout`, `view`), `health`, the abuse report form `report` (A2.13) and the proxy's `tls-ask`.
 
 <details>
 <summary>Each path and when it answers</summary>
 
-`/.wardlock/` (matched in any letter case, as deploy validation rejects it in any case) on every published site is served by Wardlock and can never be overridden by a deploy: `login`, `callback`, `logout`, `view` (POST, the use-limited interstitial's button; A2.2), `health` and `tls-ask` (C1.9: answered only in behind-a-proxy mode and only to requests from a trusted-proxy address that carry no forwarding headers, so never to a visitor the proxy forwards, on any `Host`; 404 otherwise). F0.1 implements `health`; since C1.3 it answers only on sites with an active deploy (a host with nothing published is an unknown host). A2.1 adds `login` (GET, the login page for the site default; it lists sign-in methods as A2.3 to A2.5 add them) and `logout` (POST). Policies never apply under `/.wardlock/`.
+`/.wardlock/` (matched in any letter case, as deploy validation rejects it in any case) on every published site is served by Wardlock and can never be overridden by a deploy: `login`, `callback`, `logout`, `view` (POST, the use-limited interstitial's button; A2.2), `health` and `tls-ask` (C1.9: answered only in behind-a-proxy mode and only to requests from a trusted-proxy address that carry no forwarding headers, so never to a visitor the proxy forwards, on any `Host`; 404 otherwise). F0.1 implements `health`; since C1.3 it answers only on sites with an active deploy (a host with nothing published is an unknown host). A2.1 adds `login` (GET, the login page for the site default; it lists sign-in methods as A2.3 to A2.5 add them) and `logout` (POST). A2.13 adds `report` (GET the form, POST a report), answered only when `WARDLOCK_ABUSE_EMAIL` is set (404 otherwise); on a taken-down site only `health` and `report` answer. Policies never apply under `/.wardlock/`.
 
 </details>
 
@@ -465,4 +506,4 @@ All fields are optional; flags and arguments override them (`--spa=false` overri
 
 ## Not in v1
 
-Teams and shared ownership, an MCP server, hosted service features (billing, abuse handling), Postgres or other database backends, multiple server instances. See ROADMAP "Not planned yet". File bodies can be stored in an S3-compatible bucket (C1.11; DEPLOYMENT "S3-compatible blob storage").
+Teams and shared ownership, an MCP server, hosted service features (billing, and abuse handling beyond the operator controls of A2.13), Postgres or other database backends, multiple server instances. See ROADMAP "Not planned yet". File bodies can be stored in an S3-compatible bucket (C1.11; DEPLOYMENT "S3-compatible blob storage").

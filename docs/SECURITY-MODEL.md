@@ -242,12 +242,16 @@ Pinned tool versions (`tools/go.mod`, lockfiles), `govulncheck` in every check r
 
 ## Public instances and abuse
 
-Wardlock defaults to **invite-only**: there is no open sign-up in v1, the first owner is created by the operator, and further owners are invited by existing owners. Operators who let others deploy should use a dedicated sites domain and be ready to tear sites down.
+Wardlock defaults to **invite-only**: there is no open sign-up in v1, the first owner is created by the operator, and further owners are invited by existing owners (or, with `WARDLOCK_INVITES=operator`, only created by the operator). Operators who let others deploy should use a dedicated sites domain, set `WARDLOCK_ABUSE_EMAIL` so visitors can report abuse, and use the operator commands (A2.13) to suspend owners and take sites down while keeping the evidence: [DEPLOYMENT "Operator controls"](DEPLOYMENT.md#operator-controls).
 
 <details>
 <summary>Abuse risks and what operators should do</summary>
 
-Anyone who runs an instance others can deploy to inherits the usual hosting abuse problems: phishing pages, malware and illegal content served from their domain, and the domain being blocklisted as a result. Operators of such instances should use a dedicated sites domain, monitor new sites, keep contact details for every owner, and be ready to tear sites down. Abuse tooling (reporting, automated scanning, quotas per owner) is not part of v1; the roadmap plans it for wave 13: operator controls and abuse reports (A2.13), owner quotas (A2.14), content screening (A2.15) and an acceptable use policy (O4.13).
+Anyone who runs an instance others can deploy to inherits the usual hosting abuse problems: phishing pages, malware and illegal content served from their domain, and the domain being blocklisted as a result. Operators of such instances should use a dedicated sites domain, monitor new sites (`wardlockd admin list-sites`), keep contact details for every owner, and be ready to act.
+
+Built (A2.13): `wardlockd admin` commands to list owners and sites, suspend and reinstate owners, and take down, restore and tear down sites; an optional abuse report form at `/.wardlock/report` that emails the operator; and `WARDLOCK_INVITES=operator` to stop owners inviting others. A takedown or suspension answers a neutral unavailable page on every host of the site and keeps every deploy and file (garbage collection skips them), so evidence survives until the operator decides; a suspended owner's sign-in attempts fail exactly as a wrong code or passkey does, so suspension is not revealed to someone guessing addresses. Reports strip share-link tokens before sending and never record the reporter's IP. Details: SPEC ["Operator controls and abuse reports"](SPEC.md#operator-controls-and-abuse-reports-a213).
+
+Still planned: owner quotas (A2.14), content screening (A2.15) and an acceptable use policy with a full abuse procedure (O4.13). Until O4.13, DEPLOYMENT has a [preserve-and-report procedure](DEPLOYMENT.md#preserving-and-reporting-illegal-material) for illegal material.
 
 </details>
 
