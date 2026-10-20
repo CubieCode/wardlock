@@ -9,6 +9,7 @@ import (
 	"fmt"
 	htmltemplate "html/template"
 	netmail "net/mail"
+	"strings"
 	texttemplate "text/template"
 	"time"
 )
@@ -19,7 +20,7 @@ var templateFS embed.FS
 // Parsed once; templates are read-only after parsing.
 var (
 	textTemplates = texttemplate.Must(texttemplate.New("").
-			Funcs(texttemplate.FuncMap{"minutes": minutes, "days": days}).
+			Funcs(texttemplate.FuncMap{"minutes": minutes, "days": days, "quote": quote}).
 			ParseFS(templateFS, "templates/*.txt.tmpl"))
 	htmlTemplates = htmltemplate.Must(htmltemplate.New("").ParseFS(templateFS, "templates/*.html.tmpl"))
 )
@@ -138,6 +139,13 @@ func render(to netmail.Address, subject, textName string, data any, html layout)
 		return Message{}, fmt.Errorf("render html: %w", err)
 	}
 	return Message{To: to, Subject: subject, Text: text.String(), HTML: body.String()}, nil
+}
+
+// quote prefixes every line of s with "> ", so text a reporter wrote can
+// never pass for a line of Wardlock's own.
+func quote(s string) string {
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+	return "> " + strings.ReplaceAll(s, "\n", "\n> ")
 }
 
 func minutes(d time.Duration) int { return int(d.Round(time.Minute) / time.Minute) }

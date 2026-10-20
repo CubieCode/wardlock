@@ -136,8 +136,6 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		return err
 	}
 	defer accessSvc.Close()
-	stopWatch := startUnavailableWatch(ctx, log, db.Sites(), notifier)
-	defer stopWatch()
 	// In auto mode the certificate manager exists before the sites service,
 	// which removes custom-domain certificates when domains go.
 	var certs *wltls.Manager
@@ -153,9 +151,13 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		defer certs.Close()
 	}
 	var expiries certExpiries
+	watch := &unavailableWatch{log: log, sites: db.Sites(), domains: db.Domains(), notify: notifier}
 	if certs != nil {
 		expiries = certs
+		watch.certs = certs
 	}
+	stopWatch := startUnavailableWatch(ctx, watch)
+	defer stopWatch()
 	metrics := platform.NewMetrics(time.Now())
 	collectServerMetrics(metrics, cfg, recorder.w, expiries)
 	readiness := newReadiness(log, db, blobsReady, expiries)
@@ -216,10 +218,12 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	dash.Handle("/", dashboard.Handler(cfg.DevDashboardURL))
 
 	handler, err := edge.New(edge.Config{
-		DashboardHost: cfg.DashboardHost,
-		AuthHost:      cfg.AuthHost(),
-		Dashboard:     dash,
-		Health:        platform.Healthz(),
+		DashboardHost:   cfg.DashboardHost,
+		AuthHost:        cfg.AuthHost(),
+		Dashboard:       dash,
+		DashboardOrigin: dashURL.String(),
+		SiteOrigin:      func(host string) string { return publicOrigin(host, port).String() },
+		Health:          platform.Healthz(),
 		Sites: siteSource{
 			baseDomain: cfg.BaseDomain,
 			owners:     db.Owners(),

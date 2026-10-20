@@ -157,8 +157,6 @@ func (e *Edge) serveReserved(w http.ResponseWriter, r *http.Request, site Served
 		e.logout(w, r, site)
 	case ReservedPrefix + "view":
 		e.view(w, r, site)
-	case reportPath:
-		e.report(w, r, site)
 	default:
 		http.NotFound(w, r)
 	}

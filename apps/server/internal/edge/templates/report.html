@@ -2,12 +2,14 @@
 <!-- SPDX-FileCopyrightText: 2026 CubieCode -->
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
 <!--
-  The abuse report form (A2.13), /.wardlock/report on every site while the
-  operator has set WARDLOCK_ABUSE_EMAIL: the site (from the host), the page
-  (prefilled from ?page=), a reason, optional details and an optional
-  contact address. It posts to itself on the same host, like the login
-  form; a sent report replaces the form with a thank-you, and a refused one
-  shows the entries again with the message under its field. No scripts:
+  The abuse report form (A2.13), /report?site=<host>&page=<path> on the
+  dashboard host while the operator has set WARDLOCK_ABUSE_EMAIL: on
+  Wardlock's origin, never the reported site's, so the site's scripts
+  cannot reach it. It shows the site, the page (prefilled from ?page=), a
+  reason, optional details and an optional contact address, and posts to
+  itself on the same host, like the login form; a sent report replaces the
+  form with a thank-you, and a refused one shows the entries again with the
+  message under its field. No scripts:
   the same strict Content-Security-Policy as the login page, whose styles
   it shares (colours mirror packages/ui/styles/tokens.css).
 -->
@@ -246,7 +248,7 @@
         It has gone to the operator of this server, who will review it. You will
         hear back only if you left an address and they need more detail.
       </p>
-      <a class="back" href="{{.Back}}">Back to the site</a>
+      <a class="back" href="{{.BackURL}}">Back to the site</a>
       {{else}}
       <h1>Report this site</h1>
       <p class="lead">
@@ -256,7 +258,8 @@
       {{with .Alone}}
       <p class="error alone" role="alert">{{.}}</p>
       {{end}}
-      <form method="post" action="/.wardlock/report">
+      <form method="post" action="/report">
+        <input type="hidden" name="site" value="{{.Site}}" />
         <input type="hidden" name="back" value="{{.Back}}" />
         <fieldset>
           <legend>What is wrong?</legend>

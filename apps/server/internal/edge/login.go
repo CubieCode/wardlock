@@ -94,7 +94,7 @@ func (e *Edge) loginPage(w http.ResponseWriter, r *http.Request, data loginData,
 	if data.oauth {
 		data.OAuth = e.access.OAuthProviders()
 	}
-	data.ReportURL = e.reportURL(data.Next)
+	data.ReportURL = e.reportURL(canonicalHost(r.Host), data.Next)
 	var body bytes.Buffer
 	if err := pages.ExecuteTemplate(&body, "login.html", data); err != nil {
 		e.log.ErrorContext(r.Context(), "render login page", slog.Any("error", err))

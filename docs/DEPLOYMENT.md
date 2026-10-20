@@ -175,7 +175,7 @@ sudo install -m 0644 deploy/wardlockd.service /etc/systemd/system/wardlockd.serv
 sudo systemctl daemon-reload && sudo systemctl enable --now wardlockd
 ```
 
-On first start with no owners, the log shows a one-time setup URL: `journalctl -u wardlockd | grep setup_url`. Or run `sudo -u wardlock wardlockd admin create --email you@example.com` with the same environment as the service. Afterwards owners sign in with an emailed code or a passkey, and invite further owners from the dashboard. To add owners only yourself, set `WARDLOCK_INVITES=operator` ([Operator controls](#operator-controls)).
+On first start with no owners, the log shows a one-time setup URL: `journalctl -u wardlockd | grep setup_url`. Or run `sudo -u wardlock wardlockd admin create --email you@example.com` with the same environment as the service. Afterwards owners sign in with an emailed code or a passkey. Add further owners with `wardlockd admin create`; owners can also invite others through the API (`POST /api/v0/owners`), though the dashboard and CLI have no invite action. To keep adding owners to yourself, set `WARDLOCK_INVITES=operator` ([Operator controls](#operator-controls)).
 
 <details>
 <summary>The unit's hardening</summary>

@@ -65,20 +65,15 @@ type Report struct {
 // ReportsEnabled reports whether visitors may report sites.
 func (s *Service) ReportsEnabled() bool { return s.c.AbuseEmail != "" }
 
-// SendReport checks a report, counts it against the per-IP and per-site
-// limits (valid or not) and emails it to the abuse address in the
-// background. Share-link tokens are removed from every field the reporter
-// wrote. It returns ErrReportsOff, a *ReportFieldError or a
+// SendReport checks a report, counts it against the per-IP, per-network
+// and instance-wide limits and emails it to the abuse address in the
+// background. Only a valid report is counted, so nobody can spend the
+// limits with junk. Share-link tokens are removed from every field the
+// reporter wrote. It returns ErrReportsOff, a *ReportFieldError or a
 // *RateLimitError.
 func (s *Service) SendReport(ctx context.Context, r Report) error {
 	if !s.ReportsEnabled() {
 		return ErrReportsOff
-	}
-	if err := allowAttempt(s.ipAttempts, "report-ip:"+ipKey(r.IP), s.limits.ReportsPerIP); err != nil {
-		return err
-	}
-	if err := s.allowSiteAttempt("report", r.SiteID, r.IP, s.limits.ReportsPerSite); err != nil {
-		return err
 	}
 	reason := ""
 	for _, rr := range ReportReasons {
@@ -89,7 +84,7 @@ func (s *Service) SendReport(ctx context.Context, r Report) error {
 	if reason == "" {
 		return &ReportFieldError{"reason", "Choose what is wrong with the site."}
 	}
-	details := strings.TrimSpace(r.Details)
+	details := strings.TrimSpace(strings.ReplaceAll(r.Details, "\r\n", "\n"))
 	if !utf8.ValidString(details) || utf8.RuneCountInString(details) > MaxReportDetails {
 		return &ReportFieldError{"details", fmt.Sprintf("Keep the details to %d characters or fewer.", MaxReportDetails)}
 	}
@@ -104,6 +99,15 @@ func (s *Service) SendReport(ctx context.Context, r Report) error {
 			return &ReportFieldError{"contact", "Enter an email address like name@example.com, or leave it empty."}
 		}
 		contact = addr
+	}
+	if err := allowAttempt(s.ipAttempts, "report-ip:"+ipKey(r.IP), s.limits.ReportsPerIP); err != nil {
+		return err
+	}
+	if err := allowAttempt(s.netAttempts, "report-net:"+netKey(r.IP), s.limits.ReportsPerNetwork); err != nil {
+		return err
+	}
+	if err := allowAttempt(s.siteAttempts, "report-total", s.limits.ReportsTotal); err != nil {
+		return err
 	}
 	msg, err := mail.AbuseReportMessage(netmail.Address{Address: s.c.AbuseEmail}, mail.AbuseReport{
 		Site: r.Site, SiteID: r.SiteID, SiteName: r.SiteName, Reason: reason,

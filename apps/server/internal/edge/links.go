@@ -217,7 +217,7 @@ type viewData struct {
 // token.
 func (e *Edge) viewPage(w http.ResponseWriter, r *http.Request, data viewData, status int) {
 	data.Site = canonicalHost(r.Host)
-	data.ReportURL = e.reportURL(cleanPath(r.URL.Path))
+	data.ReportURL = e.reportURL(data.Site, cleanPath(r.URL.Path))
 	var body bytes.Buffer
 	if err := pages.ExecuteTemplate(&body, "view.html", data); err != nil {
 		e.log.ErrorContext(r.Context(), "render view page", slog.Any("error", err))

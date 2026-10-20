@@ -112,13 +112,16 @@ func newPolicyEdge(t testing.TB, opts ...func(*access.Config)) *policyEdge {
 		DashboardHost: "wardlock.localhost",
 		AuthHost:      "auth.wardlock.localhost",
 		Dashboard:     http.HandlerFunc(func(http.ResponseWriter, *http.Request) { p.dashboardHits++ }),
-		Health:        http.NotFoundHandler(),
-		Sites:         siteSource{baseDomain: "wardlock.localhost", owners: db.Owners(), sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(), renditions: db.Renditions()},
-		Blobs:         blobs,
-		Invalidator:   notifier,
-		Access:        acc,
-		Recorder:      p,
-		Log:           log,
+		// The report form (A2.13) lives on the dashboard host.
+		DashboardOrigin: "http://wardlock.localhost",
+		SiteOrigin:      func(host string) string { return "http://" + host },
+		Health:          http.NotFoundHandler(),
+		Sites:           siteSource{baseDomain: "wardlock.localhost", owners: db.Owners(), sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(), renditions: db.Renditions()},
+		Blobs:           blobs,
+		Invalidator:     notifier,
+		Access:          acc,
+		Recorder:        p,
+		Log:             log,
 	})
 	if err != nil {
 		t.Fatal(err)
