@@ -40,6 +40,7 @@ const docs: Site = {
   hostname: 'docs.sites.example.test',
   url: 'https://docs.sites.example.test/',
   createdAt: now,
+  unavailable: false,
 };
 
 function policy(path: string, extra: Partial<Policy> = {}): Policy {
