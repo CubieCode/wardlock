@@ -27,6 +27,8 @@ func domainFailed(err error) (*failure, error) {
 	case errors.Is(err, sites.ErrDomainTaken):
 		// Never which site, or whose.
 		return fail(http.StatusConflict, "domain_taken", "This hostname is already attached to a site on this server.", "hostname"), nil
+	case errors.Is(err, sites.ErrUnavailable):
+		return fail(http.StatusConflict, "site_unavailable", siteUnavailable, ""), nil
 	}
 	return nil, err
 }

@@ -70,7 +70,7 @@ func TestCustomDomainsThroughTheEdge(t *testing.T) {
 		DashboardHost: "wardlock.localhost",
 		Dashboard:     http.NotFoundHandler(),
 		Health:        http.NotFoundHandler(),
-		Sites:         siteSource{baseDomain: "wardlock.localhost", sites: p.db.Sites(), domains: p.db.Domains(), deploys: p.db.Deploys(), renditions: p.db.Renditions()},
+		Sites:         siteSource{baseDomain: "wardlock.localhost", owners: p.db.Owners(), sites: p.db.Sites(), domains: p.db.Domains(), deploys: p.db.Deploys(), renditions: p.db.Renditions()},
 		Blobs:         p.blobs,
 		Invalidator:   p.notifier,
 		Access:        p.acc,

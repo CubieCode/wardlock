@@ -266,6 +266,10 @@ func (p *Passkeys) FinishSignIn(ctx context.Context, c Client, ceremonyID string
 			}
 			return nil, err
 		}
+		if !o.SuspendedAt.IsZero() {
+			// Refused like an unknown passkey (A2.13).
+			return nil, errors.New("owner suspended")
+		}
 		var cred webauthn.Credential
 		if err := json.Unmarshal(row.Credential, &cred); err != nil {
 			lookupErr = fmt.Errorf("decode passkey %s: %w", row.ID, err)
@@ -298,7 +302,7 @@ func (p *Passkeys) FinishSignIn(ctx context.Context, c Client, ceremonyID string
 	if err != nil {
 		return store.Owner{}, NewSession{}, err
 	}
-	return p.svc.signIn(ctx, c, row.OwnerID, "passkey")
+	return p.svc.signIn(ctx, c, row.OwnerID, "passkey", ErrInvalidPasskey)
 }
 
 // List returns all of ownerID's passkeys, oldest first.

@@ -98,7 +98,8 @@ O4.4, O4.6 and O4.7 changed documents only (the launch checklist, the alpha docu
 <details>
 <summary>Implementation detail</summary>
 
-- `wardlockd admin create`, `wardlockd gc` and `wardlockd backup PATH` (an online SQLite backup) run one task against the same data directory, and `wardlockd version` prints the build. With `WARDLOCK_OPERATOR_ADDR` set, `serve` also opens an operator listener for `/healthz`, `/readyz` and `/metrics` (DEPLOYMENT "Health, readiness and metrics").
+- `wardlockd admin create`, the operator commands (`admin list-owners`, `list-sites`, `suspend-owner`, `reinstate-owner`, `takedown-site`, `restore-site`, `teardown-site`; A2.13), `wardlockd gc` and `wardlockd backup PATH` (an online SQLite backup) run one task against the same data directory, and `wardlockd version` prints the build. With `WARDLOCK_OPERATOR_ADDR` set, `serve` also opens an operator listener for `/healthz`, `/readyz` and `/metrics` (DEPLOYMENT "Health, readiness and metrics").
+- **Unavailable-site watch (A2.13).** An operator command runs in another process, so it cannot call the running server's `Notifier`. `serve` polls the set of unavailable sites (taken down, or owned by a suspended owner) every 2 seconds (`cmd/wardlockd/unavailable.go`) and notifies each site that joined or left it, so the edge drops its cached copy. It remembers the custom domains of each unavailable site, so when one is torn down by `admin teardown-site` it removes their certificates in automatic TLS mode (a site taken down and torn down within one interval, or while the server was stopped, is never seen, and its certificates expire unrenewed). Sessions and API tokens need no watch: they are checked against the database on every request.
 - `serve.go` mounts the API under `/api/` on the dashboard host and hands the edge the resulting `http.Handler`, so the edge never imports the API.
 
 </details>
@@ -113,7 +114,7 @@ flowchart TD
   H -->|yes| OK[200 health]
   H -->|no| N[canonical host: lowercase, no port, no trailing dot]
   N --> DH{dashboard host?}
-  DH -->|yes| DASH[/api/* to API, else dashboard SPA/]
+  DH -->|yes| DASH[/report form, /api/* to API, else dashboard SPA/]
   DH -->|no| S{site for host? <br/> name.base or verified custom domain}
   S -->|no| NF[404 No site]
   S -->|yes| RES{path starts /.wardlock/?}
@@ -135,6 +136,8 @@ F0.1 implements health, host routing, the dashboard and `/.wardlock/health`; C1.
 - **Interfaces.** The edge reads sites through its own `SiteSource` interface (host to site, active manifest), opens file bodies through a `BlobOpener` and subscribes to an `Invalidator`; `cmd/wardlockd` adapts `store` and the deploys `BlobStore` and `Notifier` to them, so the edge imports neither `store` nor `deploys`.
 - **Cache.** It caches each served host's site and active manifest in memory (hits only, so a new site is found on its first request) and drops a site's hosts when the `Notifier` (in-process in v1) reports a change to it; a cached small file is served without touching the database. Concurrent misses on one host share a single load. The cache has no LRU or size cap: it holds one entry per served host and one manifest per served site, so it is bounded by the number of sites and active custom domains times the deploy file limit (20,000 files by default).
 - **Invalidation.** Anything that changes what a host serves must call the site's `Notifier`: activation, rollback, teardown and site deletion (C1.2) do, and so does every custom-domain change that alters what a host serves (C1.9: added, verified, lapsed, recovered or removed), or the edge would keep serving the old mapping.
+- **Unavailable sites (A2.13).** `SiteSource` reports whether a site is unavailable; the edge then answers every path with the `403` unavailable page before any access decision, except `/.wardlock/health`; the page also sends `Clear-Site-Data: "cache", "storage"`. A taken-down site with nothing published is an unknown host.
+- **Abuse report form (A2.13).** `internal/edge/report.go` serves `/report` on the dashboard host, before the dashboard handler, answered only when `WARDLOCK_ABUSE_EMAIL` is set. It looks the `site` host up through the same cache as a visitor's request, so only a host serving a published site has a form; the rate limits and the email are `access.Service.SendReport`.
 - **TLS ask.** `/.wardlock/tls-ask` is matched before host routing, on any `Host`, and handed to `Config.TLSAsk` (proxy mode only; a plain 404 otherwise).
 - **Access step (A2.1).** The access step asks the edge's `Access` interface, satisfied by `*access.Service`, for a decision on plain values: site ID, cleaned path, the `__Host-wardlock_site` cookie value and whether the client accepts HTML. The decision (`Allow`, `Login` or `Unauthorized`, plus `Protected`, the governing policy, `Via` for the access log and whether to clear the cookie) is the one place that switches `Cache-Control` to `private` and adds the protected-site headers.
 - **Fallback files.** When the file that answers comes from another path (`404.html`, the SPA index, a clean URL's `page.html`), the edge asks again for that file's path and answers a plain 404 if it is not allowed, so a public path never leaks a protected fallback. `/.wardlock/*` is answered before any decision.
@@ -270,7 +273,7 @@ Every table is in the diagram below, and `internal/store/schema_test.go` checks 
 <details>
 <summary>Migrations and conventions</summary>
 
-Migration `0002_core_schema.sql` creates every table below; `0003_deploy_spa_and_owner_blobs.sql` (C1.2) moves the SPA fallback flag from sites to deploys, adds `owner_blobs` and the optional columns the API contract exposes (`owner_sessions.user_agent`, `domains.verified_at` and `failure_detail`, `cli_login_requests.client_name`); `0004_owner_passkeys.sql` (C1.6) adds `owner_passkeys`; `0005_deploy_renditions.sql` (A2.6) adds `deploy_renditions`; `0006_policy_allowlist_and_email_codes.sql` (A2.4) adds `policy_allowlist` and `visitor_email_codes`; `0007_deploy_immutable_assets.sql` (C1.10) adds `deploys.immutable_assets`, the long-term caching opt-in. Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
+Migration `0002_core_schema.sql` creates every table below; `0003_deploy_spa_and_owner_blobs.sql` (C1.2) moves the SPA fallback flag from sites to deploys, adds `owner_blobs` and the optional columns the API contract exposes (`owner_sessions.user_agent`, `domains.verified_at` and `failure_detail`, `cli_login_requests.client_name`); `0004_owner_passkeys.sql` (C1.6) adds `owner_passkeys`; `0005_deploy_renditions.sql` (A2.6) adds `deploy_renditions`; `0006_policy_allowlist_and_email_codes.sql` (A2.4) adds `policy_allowlist` and `visitor_email_codes`; `0007_deploy_immutable_assets.sql` (C1.10) adds `deploys.immutable_assets`, the long-term caching opt-in. `0008_operator_controls.sql` (A2.13) adds the nullable `owners.suspended_at` and `sites.taken_down_at` (UTC Unix milliseconds) that operator commands set. Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
 
 Columns follow the portable-SQL rules: text IDs (UUIDv7, `store.NewID`) generated in Go, timestamps as UTC Unix milliseconds in `INTEGER` (Postgres `BIGINT`), booleans as `INTEGER` with `CHECK (x IN (0, 1))`, upserts with `ON CONFLICT … DO UPDATE` (or `DO NOTHING`). Token, session and code columns hold only HMAC hashes (a visitor email code's address too), and the policy password only an Argon2id hash; the domain verification token is stored as is because it is published in DNS. `access_log` has no foreign keys, so it can later move to a separate store and outlive the sites it mentions. A site session's link and policy are composite foreign keys `(site_id, share_link_id)` and `(site_id, policy_id)` onto `UNIQUE (site_id, id)` in `share_links` and `policies`, so a session can never name another site's link or policy. A policy's allowlist entries and visitor email codes (A2.4) use the same `(site_id, policy_id)` key and go with the policy. Deleting a site cascades to its domains, deploys and their manifests, policies (with their allowlists and email codes), share links and site sessions; the active deploy cannot be deleted on its own.
 
@@ -316,6 +319,7 @@ erDiagram
     TEXT invited_by FK
     INTEGER created_at
     INTEGER accepted_at "first sign-in"
+    INTEGER suspended_at "operator suspension"
   }
   owner_login_codes {
     TEXT id PK
@@ -380,6 +384,7 @@ erDiagram
     TEXT name UK
     INTEGER created_at
     TEXT active_deploy_id FK
+    INTEGER taken_down_at "operator takedown"
   }
   domains {
     TEXT id PK
@@ -532,7 +537,7 @@ Access-log writes go into an in-memory buffer flushed in batches (every second o
 - **Recording.** The pipeline is `internal/access/accesslog`. The edge wraps the response writer of each request that reaches the access decision to capture the status, then hands its `AccessRecorder` a plain `edge.AccessRecord` (cleaned path without query, `Via` and link public ID from the request's `access.Decision` (not the second decision a fallback file gets), the client IP from `RemoteAddr` as the trusted-proxy middleware left it, User-Agent); `cmd/wardlockd` adapts it to `accesslog.Writer.Record` through `accesslog.ParseVia`, so the edge never depends on the writer or `store`. The edge records a handler panic before any status as 500 and re-raises it.
 - **Cheap work on the request goroutine.** `Record` truncates the IP, drops any query or fragment, reduces any `wl_<public id>_<secret>` in the path or User-Agent to its public ID, caps lengths, normalises `via` (an unknown value, or `link` without a public ID, becomes `none`; a status outside 100 to 599 is dropped and counted) so no entry can fail its batch's checks, assigns an ID and makes a non-blocking send into a bounded channel (`WARDLOCK_ACCESS_LOG_BUFFER`); when the channel is full it counts a drop.
 - **Writing.** One writer goroutine appends batches in a transaction through `store.AccessLog`, with a 10-second bound per write; a failed batch is logged and counted as dropped, not retried, so it cannot back up the buffer. Drops are logged from whichever goroutine sees them, at most every 10 seconds, because the writer goroutine may be the one stuck. `Close`, called after the HTTP server has shut down and before the database closes, stops accepting entries, drains the channel and writes the rest within `platform.ShutdownTimeout`. `Close` relies on the store honouring context cancellation to return at its deadline.
-- **Pruning.** A second goroutine prunes entries older than the retention period at start and hourly, in chunks of 1,000 rows (`DELETE … WHERE id IN (SELECT … LIMIT …)`), each within the 10-second bound, until none are left or the writer closes, so a large backlog never holds the write lock for long or delays batches. Pruning has no index on `occurred_at` alone, so each chunk scans; adding one needs a migration (follow-up).
+- **Pruning.** A second goroutine prunes entries older than the retention period, except those of a taken-down site or a suspended owner's site, at start and hourly, in chunks of 1,000 rows (`DELETE … WHERE id IN (SELECT … LIMIT …)`), each within the 10-second bound, until none are left or the writer closes, so a large backlog never holds the write lock for long or delays batches. Pruning has no index on `occurred_at` alone, so each chunk scans; adding one needs a migration (follow-up).
 - **Reading.** `store.AccessLog` lists a site's entries, or one link's on a site, newest first with an `(occurred_at, id)` cursor and a limit clamped to 1 to 1,000, joined to `sites` on the owner, so a foreign or deleted site lists nothing. `access.Service` serves them to the API as `LinkAccessLog` (D3.3) and `SiteAccessLog` (A2.12).
 
 </details>
@@ -554,7 +559,7 @@ The trusted-proxy middleware runs before everything in every mode, so the edge, 
 
 - `internal/tls` holds the certmagic `Manager`, the on-demand decision (`OnDemand`, backed by the `Domains` repository's active-hostname lookup through a one-method interface), the redirect and the trusted-proxy middleware.
 - Three certmagic configurations share one certificate cache: one solves DNS-01 for names in the base domain's zone; one solves HTTP-01/TLS-ALPN-01 for a dashboard host outside that zone; and one obtains on-demand certificates the same way and answers every handshake (the dashboard cannot share it, because certmagic obtains a config's managed names only on demand once it has on-demand issuance).
-- certmagic keeps serving a cached on-demand certificate after the decision would deny it, until renewal or restart, so `Manager.RemoveCertificate` (C1.9) evicts a custom domain's certificate from the cache and deletes it from storage when the domain lapses, is removed or its site is torn down; it refuses managed names.
+- certmagic keeps serving a cached on-demand certificate after the decision would deny it, until renewal or restart, so `Manager.RemoveCertificate` (C1.9) evicts a custom domain's certificate from the cache and deletes it from storage when the domain lapses, is removed or its site is torn down (by `admin teardown-site`, through the unavailable-site watch); it refuses managed names.
 - `tls.Ask` answers `/.wardlock/tls-ask` in proxy mode with the same `OnDemand` decision, only for a peer `PeerFrom` marks trusted whose request carries no forwarding headers (a visitor request the proxy relays always does).
 - Storage is a certmagic `Storage` passed in by `cmd/wardlockd` (file storage in `<data dir>/certs` in v1).
 - The trusted-proxy middleware, from a trusted peer, rewrites `RemoteAddr` to the client from `X-Forwarded-For` (right to left, skipping trusted hops); from any other peer it strips the forwarding headers. The connecting peer, and whether it is a trusted proxy, stays in the request context (`tls.PeerFrom`) for checks that must identify the proxy itself, such as `/.wardlock/tls-ask` (C1.9).

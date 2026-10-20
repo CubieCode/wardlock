@@ -244,4 +244,5 @@ func sitesContract(t *testing.T, open Opener) {
 			t.Fatalf("List(new owner) = %v, %v; want none", got, err)
 		}
 	})
+	sitesOperatorContract(t, open)
 }

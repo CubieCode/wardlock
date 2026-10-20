@@ -219,6 +219,15 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
         }
         onLinkCreated={() => setLinksVersion((n) => n + 1)}
       />
+      {site.unavailable && (
+        <Notice tone="warning">
+          <strong>The operator of this server has taken this site down.</strong>{' '}
+          Visitors see an unavailable page at every address of the site. Its
+          deploys, domains and access records are kept as they are: you can
+          change who has access, but not deploy, roll back, change its domains,
+          delete a policy or tear it down until the operator restores it.
+        </Notice>
+      )}
 
       <Card title="Address and access">
         <CopyField label="Site address" value={site.url} />
@@ -299,7 +308,9 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
                 key={deploy.id}
                 deploy={deploy}
                 onRollback={
-                  site.activeDeployId ? () => setRollbackTo(deploy) : undefined
+                  site.activeDeployId && !site.unavailable
+                    ? () => setRollbackTo(deploy)
+                    : undefined
                 }
               />
             ))}
@@ -324,16 +335,25 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
       </Card>
 
       <Card title="Tear down this site">
-        <p>
-          Deletes the site with its deploys and access settings, stops serving{' '}
-          <code>{site.hostname}</code> and frees the name{' '}
-          <strong>{site.name}</strong>.
-        </p>
-        <div>
-          <Button type="button" onClick={() => setTearingDown(true)}>
-            Tear down site
-          </Button>
-        </div>
+        {site.unavailable ? (
+          <p>
+            A site the operator has taken down cannot be torn down here. Ask the
+            operator of this server about it.
+          </p>
+        ) : (
+          <>
+            <p>
+              Deletes the site with its deploys and access settings, stops
+              serving <code>{site.hostname}</code> and frees the name{' '}
+              <strong>{site.name}</strong>.
+            </p>
+            <div>
+              <Button type="button" onClick={() => setTearingDown(true)}>
+                Tear down site
+              </Button>
+            </div>
+          </>
+        )}
       </Card>
 
       {rollbackTo && (

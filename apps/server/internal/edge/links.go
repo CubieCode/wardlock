@@ -207,6 +207,8 @@ type viewData struct {
 	Ticket string
 	// Gone replaces the button with "this link no longer works".
 	Gone bool
+	// ReportURL links to the abuse report form; "" when reports are off.
+	ReportURL string
 }
 
 // viewPage renders the use-limited interstitial (or, with Gone, its
@@ -215,6 +217,7 @@ type viewData struct {
 // token.
 func (e *Edge) viewPage(w http.ResponseWriter, r *http.Request, data viewData, status int) {
 	data.Site = canonicalHost(r.Host)
+	data.ReportURL = e.reportURL(data.Site, cleanPath(r.URL.Path))
 	var body bytes.Buffer
 	if err := pages.ExecuteTemplate(&body, "view.html", data); err != nil {
 		e.log.ErrorContext(r.Context(), "render view page", slog.Any("error", err))

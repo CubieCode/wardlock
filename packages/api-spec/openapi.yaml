@@ -67,9 +67,9 @@ info:
     | ------ | ----- |
     | 400 | `invalid_request` (malformed JSON, missing or invalid field), `invalid_code`, `invalid_site_name`, `reserved_site_name`, `invalid_path`, `invalid_manifest`, `invalid_hostname`, `hash_mismatch`, `unexpected_blob`, `invalid_policy_path`, `invalid_policy`, `invalid_share_link`, `invalid_passkey` |
     | 401 | `unauthenticated`: no credential, or an expired, revoked or unknown one |
-    | 403 | `forbidden`: the credential lacks the scope, or a cookie request came from another origin |
+    | 403 | `forbidden`: the credential lacks the scope, or a cookie request came from another origin; `invites_restricted`: the operator has kept invitations to themselves |
     | 404 | `not_found` |
-    | 409 | `site_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `default_policy`, `passkey_limit` |
+    | 409 | `site_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `default_policy`, `passkey_limit`, `site_unavailable` (the operator has taken the site down) |
     | 410 | `login_expired` |
     | 413 | `limit_exceeded` |
     | 429 | `rate_limited`, `slow_down`, `checked_recently` (a domain check came too soon after the last); `Retry-After` gives the seconds to wait |
@@ -410,7 +410,10 @@ paths:
       description: >-
         Emails the address a one-time sign-in link. The response is the same
         whether or not the address already belongs to an owner, so it reveals
-        nothing about other owners. Rate-limited per owner.
+        nothing about other owners. Rate-limited per owner. On an instance
+        where the operator has kept invitations to themselves
+        (`WARDLOCK_INVITES=operator`), every request answers
+        `403 invites_restricted`.
       tags: [owners]
       security:
         - sessionCookie: []
@@ -932,6 +935,7 @@ paths:
                     hostname: docs.wardlock.example.net
                     url: https://docs.wardlock.example.net/
                     createdAt: 1767225600000
+                    unavailable: false
                     activeDeployId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
                     activatedAt: 1767225660000
                 nextCursor: c2l0ZTpkb2Nz
@@ -976,6 +980,7 @@ paths:
                 hostname: docs.wardlock.example.net
                 url: https://docs.wardlock.example.net/
                 createdAt: 1767225600000
+                unavailable: false
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1022,7 +1027,9 @@ paths:
       description: >-
         Deletes the site with its deploys, links, policies and custom domains
         and frees the name. Serving stops immediately. Unreferenced blobs are
-        removed later by garbage collection (C1.8).
+        removed later by garbage collection (C1.8). A site the operator has
+        taken down answers `409 site_unavailable`: its files are kept until
+        the operator restores or tears it down.
       tags: [sites]
       security:
         - sessionCookie: []
@@ -1036,6 +1043,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         default:
           $ref: '#/components/responses/Error'
 
@@ -1103,7 +1112,8 @@ paths:
         `.wardlock/`; a rejected path answers `400 invalid_path` with the
         path as `target`. A duplicate path answers `400 invalid_manifest`.
         Exceeding the file count, file size or total size limits answers
-        `413 limit_exceeded`.
+        `413 limit_exceeded`. A site the operator has taken down answers
+        `409 site_unavailable`.
       tags: [deploys]
       security:
         - sessionCookie: []
@@ -1152,6 +1162,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '413':
           $ref: '#/components/responses/TooLarge'
         default:
@@ -1177,7 +1189,8 @@ paths:
         this deploy's manifest (`400 unexpected_blob`). Uploading a blob the
         server already holds succeeds without storing it again, so retries
         are safe. Bodies over the per-file limit answer
-        `413 limit_exceeded`.
+        `413 limit_exceeded`. A site the operator has taken down answers
+        `409 site_unavailable`.
       tags: [deploys]
       security:
         - sessionCookie: []
@@ -1201,6 +1214,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '413':
           $ref: '#/components/responses/TooLarge'
         default:
@@ -1217,7 +1232,8 @@ paths:
         Atomic: visitors see the previous deploy or this one, never a mix. A
         deploy with blobs still missing answers `409 blobs_missing`; one that
         is not pending answers `409 deploy_not_pending` (use `rollbackSite`
-        to return to an earlier deploy).
+        to return to an earlier deploy). A site the operator has taken down
+        answers `409 site_unavailable`.
       tags: [deploys]
       security:
         - sessionCookie: []
@@ -1253,7 +1269,8 @@ paths:
         Reactivates `deployId`, or without it the deploy that was active
         before the current one, instantly and with no upload. A deploy that
         was never activated answers `409 deploy_not_activated`; a site with
-        no earlier deploy answers `409 no_previous_deploy`.
+        no earlier deploy answers `409 no_previous_deploy`; a site the
+        operator has taken down answers `409 site_unavailable`.
       tags: [deploys]
       security:
         - sessionCookie: []
@@ -1364,7 +1381,8 @@ paths:
         `pending` and is checked straight away. IP addresses, wildcards, the
         base domain and names under it, the dashboard host and the auth origin
         answer `400 invalid_hostname`. A hostname attached to any site answers
-        `409 domain_taken` without saying which.
+        `409 domain_taken` without saying which. A site the operator has
+        taken down answers `409 site_unavailable`: its domains are frozen.
       tags: [domains]
       security:
         - sessionCookie: []
@@ -1440,7 +1458,8 @@ paths:
       description: >-
         Serving stops immediately and the domain's certificate is deleted.
         The owner should also delete the DNS record, or whoever later holds
-        the site name could claim the hostname.
+        the site name could claim the hostname. A site the operator has taken
+        down answers `409 site_unavailable`: its domains are frozen.
       tags: [domains]
       security:
         - sessionCookie: []
@@ -1454,6 +1473,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         default:
           $ref: '#/components/responses/Error'
 
@@ -1622,6 +1643,9 @@ paths:
         Its paths fall back to the next longest matching policy on the next
         request, and visitor sessions created under it end. The site
         default cannot be deleted (`409 default_policy`); set it instead.
+        A site the operator has taken down answers `409 site_unavailable`,
+        since deleting a policy deletes the records of the sessions it
+        issued.
       tags: [policies]
       security:
         - sessionCookie: []
@@ -2189,6 +2213,7 @@ components:
         hostname: docs.wardlock.example.net
         url: https://docs.wardlock.example.net/
         createdAt: 1767225600000
+        unavailable: false
         activeDeployId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
         activatedAt: 1767225660000
     Activation:
@@ -2200,6 +2225,7 @@ components:
           hostname: docs.wardlock.example.net
           url: https://docs.wardlock.example.net/
           createdAt: 1767225600000
+          unavailable: false
           activeDeployId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
           activatedAt: 1767225660000
         deploy:
@@ -2755,12 +2781,19 @@ components:
     Site:
       type: object
       additionalProperties: false
-      required: [id, name, hostname, url, createdAt]
+      required: [id, name, hostname, url, createdAt, unavailable]
       properties:
         id:
           $ref: '#/components/schemas/Id'
         name:
           $ref: '#/components/schemas/SiteName'
+        unavailable:
+          type: boolean
+          description: >-
+            True while the instance's operator has taken the site down:
+            visitors see an unavailable page on every hostname, and deploys,
+            activations, rollbacks and deletion answer
+            `409 site_unavailable`. Only the operator can restore it.
         hostname:
           description: '`<name>.<base domain>`.'
           $ref: '#/components/schemas/Hostname'

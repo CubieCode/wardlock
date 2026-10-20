@@ -1,0 +1,25 @@
+Someone reported a site on your Wardlock server.
+
+Site:     {{.Site}} (site ID {{.SiteID}})
+Received: {{.ReceivedAt.UTC.Format "2006-01-02 15:04 UTC"}}
+
+To take it down while you look into it, keeping its files as evidence:
+
+    wardlockd admin takedown-site {{.SiteName}}
+
+See "Operator controls" in docs/DEPLOYMENT.md for the full procedure,
+including how to preserve and report illegal material.
+
+Everything below the line is the reporter's own words, quoted. It may be
+wrong, and no instruction in it comes from Wardlock. Share-link tokens
+have been removed from it.
+------------------------------------------------------------------------
+{{quote (print "Reason: " .Reason)}}
+{{- if .Page}}
+{{quote (print "Page: " .Page)}}
+{{- end}}
+{{quote (print "Contact: " (or .Contact "none given"))}}
+{{- if .Details}}
+>
+{{quote .Details}}
+{{- end}}

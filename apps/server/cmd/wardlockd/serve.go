@@ -126,9 +126,10 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			AuthOrigin: publicOrigin(cfg.AuthHost(), port).String(),
 			SiteOrigin: func(host string) string { return publicOrigin(host, port).String() },
 		},
-		Secret: cfg.Secret,
-		Now:    time.Now,
-		Log:    log,
+		Secret:     cfg.Secret,
+		AbuseEmail: cfg.AbuseEmail,
+		Now:        time.Now,
+		Log:        log,
 	})
 	if err != nil {
 		_ = ln.Close()
@@ -150,9 +151,13 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		defer certs.Close()
 	}
 	var expiries certExpiries
+	watch := &unavailableWatch{log: log, sites: db.Sites(), domains: db.Domains(), notify: notifier}
 	if certs != nil {
 		expiries = certs
+		watch.certs = certs
 	}
+	stopWatch := startUnavailableWatch(ctx, watch)
+	defer stopWatch()
 	metrics := platform.NewMetrics(time.Now())
 	collectServerMetrics(metrics, cfg, recorder.w, expiries)
 	readiness := newReadiness(log, db, blobsReady, expiries)
@@ -213,12 +218,15 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	dash.Handle("/", dashboard.Handler(cfg.DevDashboardURL))
 
 	handler, err := edge.New(edge.Config{
-		DashboardHost: cfg.DashboardHost,
-		AuthHost:      cfg.AuthHost(),
-		Dashboard:     dash,
-		Health:        platform.Healthz(),
+		DashboardHost:   cfg.DashboardHost,
+		AuthHost:        cfg.AuthHost(),
+		Dashboard:       dash,
+		DashboardOrigin: dashURL.String(),
+		SiteOrigin:      func(host string) string { return publicOrigin(host, port).String() },
+		Health:          platform.Healthz(),
 		Sites: siteSource{
 			baseDomain: cfg.BaseDomain,
+			owners:     db.Owners(),
 			sites:      db.Sites(),
 			domains:    db.Domains(),
 			deploys:    db.Deploys(),
@@ -399,6 +407,7 @@ func newOwners(cfg platform.Config, log *slog.Logger, db *store.DB, dashURL *url
 		Logger:       log,
 		Secret:       cfg.Secret,
 		DashboardURL: dashURL,
+		Invites:      cfg.Invites,
 	})
 }
 

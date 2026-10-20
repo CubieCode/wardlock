@@ -9,6 +9,7 @@ import (
 	"fmt"
 	htmltemplate "html/template"
 	netmail "net/mail"
+	"strings"
 	texttemplate "text/template"
 	"time"
 )
@@ -19,7 +20,7 @@ var templateFS embed.FS
 // Parsed once; templates are read-only after parsing.
 var (
 	textTemplates = texttemplate.Must(texttemplate.New("").
-			Funcs(texttemplate.FuncMap{"minutes": minutes, "days": days}).
+			Funcs(texttemplate.FuncMap{"minutes": minutes, "days": days, "quote": quote}).
 			ParseFS(templateFS, "templates/*.txt.tmpl"))
 	htmlTemplates = htmltemplate.Must(htmltemplate.New("").ParseFS(templateFS, "templates/*.html.tmpl"))
 )
@@ -50,6 +51,17 @@ type Invite struct {
 	// InvitedBy is the inviting owner's address.
 	InvitedBy string
 	ValidFor  time.Duration
+}
+
+// AbuseReport is a visitor's report about a site, for the operator
+// (A2.13). Every field but SiteID, SiteName and ReceivedAt is the
+// reporter's words, with share-link tokens already removed.
+type AbuseReport struct {
+	// Site is the host the report was made on; SiteName the site's name.
+	Site, SiteID, SiteName string
+	Reason                 string
+	Page, Details, Contact string
+	ReceivedAt             time.Time
 }
 
 // layout is the HTML body shared by every code message.
@@ -108,6 +120,16 @@ func InviteMessage(to netmail.Address, d Invite) (Message, error) {
 	return Message{To: to, Subject: "You're invited to Wardlock on " + d.Host, Text: text.String(), HTML: body.String()}, nil
 }
 
+// AbuseReportMessage builds the plain-text report sent to the operator's
+// abuse address. Reporters' words never reach the subject.
+func AbuseReportMessage(to netmail.Address, d AbuseReport) (Message, error) {
+	var text bytes.Buffer
+	if err := textTemplates.ExecuteTemplate(&text, "report.txt.tmpl", d); err != nil {
+		return Message{}, fmt.Errorf("render report.txt.tmpl: %w", err)
+	}
+	return Message{To: to, Subject: "Abuse report: " + d.Site, Text: text.String()}, nil
+}
+
 func render(to netmail.Address, subject, textName string, data any, html layout) (Message, error) {
 	var text, body bytes.Buffer
 	if err := textTemplates.ExecuteTemplate(&text, textName, data); err != nil {
@@ -117,6 +139,13 @@ func render(to netmail.Address, subject, textName string, data any, html layout)
 		return Message{}, fmt.Errorf("render html: %w", err)
 	}
 	return Message{To: to, Subject: subject, Text: text.String(), HTML: body.String()}, nil
+}
+
+// quote prefixes every line of s with "> ", so text a reporter wrote can
+// never pass for a line of Wardlock's own.
+func quote(s string) string {
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+	return "> " + strings.ReplaceAll(s, "\n", "\n> ")
 }
 
 func minutes(d time.Duration) int { return int(d.Round(time.Minute) / time.Minute) }

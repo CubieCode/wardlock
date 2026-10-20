@@ -72,6 +72,16 @@ func TestLoadConfig(t *testing.T) {
 		{"s3 file size at the limit", s3Env(map[string]string{"WARDLOCK_MAX_FILE_SIZE": "5368709120"}), false, func(c platform.Config) bool {
 			return c.MaxFileSize == 5<<30
 		}},
+		{"operator control defaults", nil, false, func(c platform.Config) bool {
+			return c.Invites == "owners" && c.AbuseEmail == ""
+		}},
+		{"operator controls", map[string]string{"WARDLOCK_INVITES": "Operator", "WARDLOCK_ABUSE_EMAIL": "abuse@example.test"}, false,
+			func(c platform.Config) bool {
+				return c.Invites == "operator" && c.AbuseEmail == "abuse@example.test"
+			}},
+		{"unknown invitation mode", map[string]string{"WARDLOCK_INVITES": "nobody"}, true, nil},
+		{"abuse address with a name", map[string]string{"WARDLOCK_ABUSE_EMAIL": "Abuse <abuse@example.test>"}, true, nil},
+		{"abuse address not an address", map[string]string{"WARDLOCK_ABUSE_EMAIL": "abuse"}, true, nil},
 		{"unknown blob backend", map[string]string{"WARDLOCK_BLOB_BACKEND": "gcs"}, true, nil},
 		{"s3 setting with filesystem blobs", map[string]string{"WARDLOCK_S3_BUCKET": "wardlock-blobs"}, true, nil},
 		{"blob directory with s3", s3Env(map[string]string{"WARDLOCK_BLOB_DIR": "/mnt/blobs"}), true, nil},

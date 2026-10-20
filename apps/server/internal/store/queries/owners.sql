@@ -3,14 +3,14 @@ INSERT INTO owners (id, email, invited_by, created_at, accepted_at)
 VALUES (sqlc.arg(id), sqlc.arg(email), sqlc.narg(invited_by), sqlc.arg(created_at), sqlc.narg(accepted_at));
 
 -- name: GetOwner :one
-SELECT id, email, invited_by, created_at, accepted_at FROM owners WHERE id = sqlc.arg(id);
+SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners WHERE id = sqlc.arg(id);
 
 -- name: CreateOwnerLoginCode :exec
 INSERT INTO owner_login_codes (id, owner_id, purpose, code_hash, attempts, created_at, expires_at, used_at)
 VALUES (sqlc.arg(id), sqlc.narg(owner_id), sqlc.arg(purpose), sqlc.arg(code_hash), sqlc.arg(attempts), sqlc.arg(created_at), sqlc.arg(expires_at), sqlc.narg(used_at));
 
 -- name: GetOwnerByEmail :one
-SELECT id, email, invited_by, created_at, accepted_at FROM owners WHERE email = sqlc.arg(email);
+SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners WHERE email = sqlc.arg(email);
 
 -- name: CountOwners :one
 SELECT COUNT(*) FROM owners;
@@ -42,6 +42,21 @@ WHERE id = sqlc.arg(id) AND used_at IS NULL AND expires_at > sqlc.arg(used_at);
 -- name: RetireOwnerLoginCodes :exec
 UPDATE owner_login_codes SET used_at = sqlc.arg(used_at)
 WHERE owner_id = sqlc.arg(owner_id) AND purpose = sqlc.arg(purpose) AND used_at IS NULL;
+
+-- Suspension (A2.13). Suspending keeps the first time; reinstating clears it.
+-- name: SuspendOwner :execrows
+UPDATE owners SET suspended_at = COALESCE(suspended_at, sqlc.arg(suspended_at)) WHERE id = sqlc.arg(id);
+
+-- name: ReinstateOwner :execrows
+UPDATE owners SET suspended_at = NULL WHERE id = sqlc.arg(id);
+
+-- Instance-wide, for `wardlockd admin list-owners` only: every owner by
+-- address, after the cursor.
+-- name: ListAllOwners :many
+SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners
+WHERE email > sqlc.arg(after_email)
+ORDER BY email
+LIMIT sqlc.arg(row_limit);
 
 -- name: RetireSetupCodes :exec
 UPDATE owner_login_codes SET used_at = sqlc.arg(used_at)

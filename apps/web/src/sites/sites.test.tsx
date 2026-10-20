@@ -35,6 +35,7 @@ function site(name: string, extra: Partial<Site> = {}): Site {
     hostname: `${name}.sites.example.test`,
     url: `https://${name}.sites.example.test/`,
     createdAt: now - 48 * hour,
+    unavailable: false,
     ...extra,
   };
 }
@@ -141,6 +142,19 @@ describe('site list', () => {
     expect(
       screen.getByRole('link', { name: 'Sites' }).getAttribute('aria-current'),
     ).toBe('page');
+  });
+
+  it('marks a site the operator has taken down', async () => {
+    const docs = site('docs', { unavailable: true, activatedAt: now - hour });
+    const { api } = fakeServer({
+      'GET /api/v0/sites': () => Response.json({ items: [docs] }),
+      ...oneSite(docs, [], [policy('/', 'protected')]),
+    });
+    render(<App api={api} />);
+    const list = await screen.findByRole('list', { name: 'Sites' });
+    const badge = within(list).getByText('Taken down');
+    expect(badge.className).toContain('wl-badge-warning');
+    expect(list.textContent).not.toContain('Protected');
   });
 
   it('explains an empty list without offering unbuilt actions', async () => {
@@ -278,6 +292,50 @@ describe('site detail', () => {
         .getByRole('link', { name: 'View access log' })
         .getAttribute('href'),
     ).toBe('/sites/docs/access-log');
+  });
+
+  it('explains a taken-down site and offers no action it would refuse', async () => {
+    at('/sites/docs');
+    const down = { ...docs, unavailable: true };
+    const { api } = fakeServer(
+      oneSite(
+        down,
+        [live, earlier],
+        [policy('/', 'protected'), policy('/drafts/', 'protected')],
+      ),
+    );
+    render(<App api={api} />);
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'docs' }),
+    ).toBeTruthy();
+    expect(screen.getByText('Taken down').className).toContain(
+      'wl-badge-warning',
+    );
+    expect(
+      screen.getByText(/operator of this server has taken this site down/)
+        .textContent,
+    ).toContain('The operator of this server has taken this site down.');
+    // Nothing to open, roll back to or tear down.
+    expect(screen.queryByRole('button', { name: 'Open site' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Roll back/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Tear down site' })).toBeNull();
+    // Domains are frozen and no policy may be deleted; editing stays.
+    expect(
+      await screen.findByText(/its domains stay as they are/),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add domain' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Delete / })).toBeNull();
+    expect(
+      (await screen.findAllByRole('button', { name: /^Edit/ })).length,
+    ).toBeGreaterThan(0);
+    const teardown = screen.getByRole('region', {
+      name: 'Tear down this site',
+    });
+    expect(teardown.textContent).toContain('Ask the operator of this server');
+    // Access can still be changed.
+    expect(
+      screen.getByRole('region', { name: 'Address and access' }),
+    ).toBeTruthy();
   });
 
   it('shows the same not-found page for missing and foreign sites', async () => {

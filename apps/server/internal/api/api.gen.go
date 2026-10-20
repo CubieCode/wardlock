@@ -1100,6 +1100,9 @@ type Site struct {
 	// Examples: docs
 	Name SiteName `json:"name"`
 
+	// Unavailable True while the instance's operator has taken the site down: visitors see an unavailable page on every hostname, and deploys, activations, rollbacks and deletion answer `409 site_unavailable`. Only the operator can restore it.
+	Unavailable bool `json:"unavailable"`
+
 	// Url The site's URL on the base domain.
 	Url string `json:"url"`
 }
@@ -4846,6 +4849,20 @@ func (response DeleteSite404JSONResponse) VisitDeleteSiteResponse(w http.Respons
 	return err
 }
 
+type DeleteSite409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeleteSite409JSONResponse) VisitDeleteSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteSitedefaultJSONResponse struct {
 	Body       Error
 	StatusCode int
@@ -5215,6 +5232,20 @@ func (response CreateDeploy404JSONResponse) VisitCreateDeployResponse(w http.Res
 	return err
 }
 
+type CreateDeploy409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateDeploy409JSONResponse) VisitCreateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateDeploy413JSONResponse struct{ TooLargeJSONResponse }
 
 func (response CreateDeploy413JSONResponse) VisitCreateDeployResponse(w http.ResponseWriter) error {
@@ -5413,6 +5444,20 @@ func (response UploadDeployBlob404JSONResponse) VisitUploadDeployBlobResponse(w 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadDeployBlob409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UploadDeployBlob409JSONResponse) VisitUploadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5709,6 +5754,20 @@ func (response RemoveDomain404JSONResponse) VisitRemoveDomainResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDomain409JSONResponse struct{ ConflictJSONResponse }
+
+func (response RemoveDomain409JSONResponse) VisitRemoveDomainResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }

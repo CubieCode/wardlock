@@ -62,6 +62,10 @@ SET status = ?1,
 WHERE user_code = ?7
   AND status = 'pending'
   AND expires_at > ?6
+  -- A suspended owner decides nothing, even racing the suspension (A2.13).
+  AND NOT EXISTS (
+    SELECT 1 FROM owners WHERE owners.id = ?2 AND owners.suspended_at IS NOT NULL
+  )
 `
 
 type DecideCLILoginParams struct {
@@ -102,6 +106,18 @@ func (q *Queries) DeleteCLILoginsExpiredBefore(ctx context.Context, before int64
 	return err
 }
 
+const denyApprovedCLILogins = `-- name: DenyApprovedCLILogins :exec
+UPDATE cli_login_requests SET status = 'denied'
+WHERE owner_id = ?1 AND status = 'approved'
+`
+
+// Suspension denies the owner's approved logins the CLI has not yet
+// collected (A2.13).
+func (q *Queries) DenyApprovedCLILogins(ctx context.Context, ownerID sql.NullString) error {
+	_, err := q.db.ExecContext(ctx, denyApprovedCLILogins, ownerID)
+	return err
+}
+
 const getCLILoginByDeviceCodeHash = `-- name: GetCLILoginByDeviceCodeHash :one
 SELECT id, device_code_hash, user_code, status, owner_id, scope_deploy, scope_manage, api_token_id, created_at, expires_at, decided_at, client_name
 FROM cli_login_requests WHERE device_code_hash = ?1
@@ -129,7 +145,10 @@ func (q *Queries) GetCLILoginByDeviceCodeHash(ctx context.Context, deviceCodeHas
 
 const redeemCLILogin = `-- name: RedeemCLILogin :execrows
 UPDATE cli_login_requests SET status = 'redeemed', api_token_id = ?1
-WHERE id = ?2 AND status = 'approved' AND expires_at > ?3
+WHERE cli_login_requests.id = ?2 AND status = 'approved' AND expires_at > ?3
+  AND NOT EXISTS (
+    SELECT 1 FROM owners WHERE owners.id = cli_login_requests.owner_id AND owners.suspended_at IS NOT NULL
+  )
 `
 
 type RedeemCLILoginParams struct {

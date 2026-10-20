@@ -242,6 +242,10 @@ func (publicAccess) EmailCodeLogin(context.Context, access.EmailCodeAttempt) (ac
 
 func (publicAccess) OAuthProviders() []access.ProviderInfo { return nil }
 
+func (publicAccess) ReportsEnabled() bool { return false }
+
+func (publicAccess) SendReport(context.Context, access.Report) error { return access.ErrReportsOff }
+
 func (publicAccess) StartOAuth(context.Context, access.OAuthStart) (access.OAuthStarted, error) {
 	return access.OAuthStarted{}, access.ErrUnknownProvider
 }

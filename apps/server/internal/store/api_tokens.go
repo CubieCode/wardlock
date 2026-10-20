@@ -85,8 +85,9 @@ type CLILoginDecision struct {
 // APITokens stores API tokens and the CLI login requests that mint them.
 type APITokens interface {
 	Create(ctx context.Context, t APIToken) error
-	// GetByPublicID finds a token by its public ID, whatever its state;
-	// callers compare the hash and check expiry and revocation.
+	// GetByPublicID finds a token by its public ID, whatever its state,
+	// unless its owner is suspended (ErrNotFound); callers compare the hash
+	// and check expiry and revocation.
 	// Instance-wide: Bearer authentication calls it for every owner.
 	GetByPublicID(ctx context.Context, publicID string) (APIToken, error)
 	// Touch moves the token's last use forward to at; an earlier at
@@ -104,11 +105,13 @@ type APITokens interface {
 	GetCLILoginByDeviceCodeHash(ctx context.Context, hash string) (CLILoginRequest, error)
 	// DecideCLILogin approves or denies the pending request with the
 	// decision's user code. A missing, decided or expired (at d.At) request
-	// is ErrNotFound.
+	// is ErrNotFound, and so is any decision by a suspended owner, read in
+	// the same statement.
 	DecideCLILogin(ctx context.Context, d CLILoginDecision) error
 	// RedeemCLILogin creates t and marks the approved request loginID
-	// redeemed with it, in one transaction. A request that is not approved
-	// or has expired at now is ErrNotFound, and t is not created.
+	// redeemed with it, in one transaction. A request that is not approved,
+	// has expired at now or belongs to a suspended owner is ErrNotFound,
+	// and t is not created.
 	RedeemCLILogin(ctx context.Context, loginID string, t APIToken, now time.Time) error
 	// DeleteCLILoginsExpiredBefore removes requests that expired before t.
 	DeleteCLILoginsExpiredBefore(ctx context.Context, t time.Time) error

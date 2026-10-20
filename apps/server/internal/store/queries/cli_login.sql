@@ -19,11 +19,24 @@ SET status = sqlc.arg(status),
     decided_at = sqlc.arg(decided_at)
 WHERE user_code = sqlc.arg(user_code)
   AND status = 'pending'
-  AND expires_at > sqlc.arg(decided_at);
+  AND expires_at > sqlc.arg(decided_at)
+  -- A suspended owner decides nothing, even racing the suspension (A2.13).
+  AND NOT EXISTS (
+    SELECT 1 FROM owners WHERE owners.id = sqlc.arg(owner_id) AND owners.suspended_at IS NOT NULL
+  );
 
 -- name: RedeemCLILogin :execrows
 UPDATE cli_login_requests SET status = 'redeemed', api_token_id = sqlc.arg(api_token_id)
-WHERE id = sqlc.arg(id) AND status = 'approved' AND expires_at > sqlc.arg(now);
+WHERE cli_login_requests.id = sqlc.arg(id) AND status = 'approved' AND expires_at > sqlc.arg(now)
+  AND NOT EXISTS (
+    SELECT 1 FROM owners WHERE owners.id = cli_login_requests.owner_id AND owners.suspended_at IS NOT NULL
+  );
+
+-- Suspension denies the owner's approved logins the CLI has not yet
+-- collected (A2.13).
+-- name: DenyApprovedCLILogins :exec
+UPDATE cli_login_requests SET status = 'denied'
+WHERE owner_id = sqlc.arg(owner_id) AND status = 'approved';
 
 -- name: DeleteCLILoginsExpiredBefore :exec
 DELETE FROM cli_login_requests WHERE expires_at < sqlc.arg(before);

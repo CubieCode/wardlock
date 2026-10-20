@@ -23,6 +23,7 @@ Usage:
 Commands:
   serve                         Start the server
   admin create --email ADDRESS  Create an owner and print a one-time sign-in URL
+  admin help                    Operator controls: suspend owners, take sites down
   gc                            Prune deploy history and remove unreferenced blobs
   backup PATH                   Write a consistent copy of the database to PATH
   version                       Print the version

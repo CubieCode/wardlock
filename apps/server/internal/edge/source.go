@@ -28,6 +28,9 @@ type ServedSite struct {
 	// ActivatedAt is when the active deploy was activated; it is every
 	// file's Last-Modified.
 	ActivatedAt time.Time
+	// Unavailable means the operator has taken the site down or suspended
+	// its owner (A2.13): every host answers the unavailable page.
+	Unavailable bool
 }
 
 // ServedFile is one entry of the active deploy's manifest.
@@ -67,7 +70,7 @@ type BlobOpener interface {
 }
 
 // Invalidator reports that a site's served state changed (activation,
-// rollback, teardown, domain changes). The deploys Notifier satisfies it.
+// rollback, teardown, domain changes, takedown and suspension). The deploys Notifier satisfies it.
 type Invalidator interface {
 	Subscribe(fn func(siteID string)) (unsubscribe func())
 }
@@ -100,4 +103,8 @@ type Access interface {
 	FinishOAuth(ctx context.Context, cb access.OAuthCallback) (access.OAuthFinished, error)
 	// RedeemOAuth exchanges a site code for the session cookie.
 	RedeemOAuth(ctx context.Context, r access.OAuthRedeem) (access.OAuthRedeemed, error)
+	// ReportsEnabled reports whether visitors may report sites (A2.13).
+	ReportsEnabled() bool
+	// SendReport checks, limits and sends a visitor's abuse report.
+	SendReport(ctx context.Context, r access.Report) error
 }

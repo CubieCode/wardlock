@@ -13,34 +13,43 @@ import (
 	"database/sql"
 )
 
-const createOwnerSession = `-- name: CreateOwnerSession :exec
+const createOwnerSession = `-- name: CreateOwnerSession :execrows
 INSERT INTO owner_sessions (id, owner_id, token_hash, created_at, last_seen_at, expires_at, revoked_at, user_agent)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+SELECT CAST(?1 AS TEXT), owners.id, CAST(?2 AS TEXT), CAST(?3 AS INTEGER),
+  CAST(?4 AS INTEGER), CAST(?5 AS INTEGER), CAST(?6 AS INTEGER),
+  CAST(?7 AS TEXT)
+FROM owners WHERE owners.id = ?8 AND owners.suspended_at IS NULL
 `
 
 type CreateOwnerSessionParams struct {
 	ID         string
-	OwnerID    string
 	TokenHash  string
 	CreatedAt  int64
 	LastSeenAt int64
 	ExpiresAt  int64
 	RevokedAt  sql.NullInt64
 	UserAgent  sql.NullString
+	OwnerID    string
 }
 
-func (q *Queries) CreateOwnerSession(ctx context.Context, arg CreateOwnerSessionParams) error {
-	_, err := q.db.ExecContext(ctx, createOwnerSession,
+// Inserts nothing for an unknown or suspended owner, in the same statement
+// that reads the suspension, so a session can never be created by a
+// sign-in that raced a suspension (A2.13).
+func (q *Queries) CreateOwnerSession(ctx context.Context, arg CreateOwnerSessionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, createOwnerSession,
 		arg.ID,
-		arg.OwnerID,
 		arg.TokenHash,
 		arg.CreatedAt,
 		arg.LastSeenAt,
 		arg.ExpiresAt,
 		arg.RevokedAt,
 		arg.UserAgent,
+		arg.OwnerID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const createSiteSession = `-- name: CreateSiteSession :exec
@@ -80,10 +89,13 @@ func (q *Queries) CreateSiteSession(ctx context.Context, arg CreateSiteSessionPa
 }
 
 const getOwnerSessionByTokenHash = `-- name: GetOwnerSessionByTokenHash :one
-SELECT id, owner_id, token_hash, created_at, last_seen_at, expires_at, revoked_at, user_agent
-FROM owner_sessions WHERE token_hash = ?1
+SELECT owner_sessions.id, owner_sessions.owner_id, owner_sessions.token_hash, owner_sessions.created_at,
+  owner_sessions.last_seen_at, owner_sessions.expires_at, owner_sessions.revoked_at, owner_sessions.user_agent
+FROM owner_sessions JOIN owners ON owners.id = owner_sessions.owner_id
+WHERE owner_sessions.token_hash = ?1 AND owners.suspended_at IS NULL
 `
 
+// A suspended owner's sessions are never found (A2.13).
 func (q *Queries) GetOwnerSessionByTokenHash(ctx context.Context, tokenHash string) (OwnerSession, error) {
 	row := q.db.QueryRowContext(ctx, getOwnerSessionByTokenHash, tokenHash)
 	var i OwnerSession
@@ -190,6 +202,22 @@ func (q *Queries) ListOwnerSessions(ctx context.Context, arg ListOwnerSessionsPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const revokeAllOwnerSessions = `-- name: RevokeAllOwnerSessions :exec
+UPDATE owner_sessions SET revoked_at = COALESCE(revoked_at, ?1)
+WHERE owner_id = ?2
+`
+
+type RevokeAllOwnerSessionsParams struct {
+	RevokedAt sql.NullInt64
+	OwnerID   string
+}
+
+// Suspension revokes every session the owner has (A2.13).
+func (q *Queries) RevokeAllOwnerSessions(ctx context.Context, arg RevokeAllOwnerSessionsParams) error {
+	_, err := q.db.ExecContext(ctx, revokeAllOwnerSessions, arg.RevokedAt, arg.OwnerID)
+	return err
 }
 
 const revokeOwnerSession = `-- name: RevokeOwnerSession :execrows

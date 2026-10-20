@@ -66,6 +66,18 @@ var (
 	ErrInvalidCursor = errors.New("invalid cursor")
 	// ErrRateLimited is matched by every *RateLimitError.
 	ErrRateLimited = errors.New("rate limited")
+	// ErrInvitesRestricted means owners may not invite: the operator set
+	// WARDLOCK_INVITES=operator, so only `wardlockd admin create` adds
+	// owners (A2.13).
+	ErrInvitesRestricted = errors.New("invitations are restricted to the operator")
+)
+
+// Invitation modes (WARDLOCK_INVITES).
+const (
+	// InvitesOwners lets every owner invite others (the default).
+	InvitesOwners = "owners"
+	// InvitesOperator leaves inviting to `wardlockd admin create`.
+	InvitesOperator = "operator"
 )
 
 // RateLimitError says a limit was hit and when to retry.
@@ -90,6 +102,9 @@ type Config struct {
 	Now func() time.Time
 	// Limits defaults to DefaultLimits().
 	Limits Limits
+	// Invites is InvitesOwners (the default when empty) or
+	// InvitesOperator.
+	Invites string
 }
 
 // Service is owner authentication. It is safe for concurrent use.
@@ -102,6 +117,7 @@ type Service struct {
 	dash     *url.URL
 	now      func() time.Time
 	limits   Limits
+	invites  string
 	limiter  *limiter
 	// addressLimiter counts email-code sends per address in a bounded
 	// table of its own: addresses cost nothing to invent, so filling it
@@ -124,6 +140,13 @@ func New(cfg Config) (*Service, error) {
 	if cfg.Limits == (Limits{}) {
 		cfg.Limits = DefaultLimits()
 	}
+	switch cfg.Invites {
+	case "":
+		cfg.Invites = InvitesOwners
+	case InvitesOwners, InvitesOperator:
+	default:
+		return nil, fmt.Errorf("owners: unknown invitation mode %q", cfg.Invites)
+	}
 	return &Service{
 		owners:         cfg.Owners,
 		sessions:       cfg.Sessions,
@@ -133,6 +156,7 @@ func New(cfg Config) (*Service, error) {
 		dash:           cfg.DashboardURL,
 		now:            cfg.Now,
 		limits:         cfg.Limits,
+		invites:        cfg.Invites,
 		limiter:        newLimiter(cfg.Now),
 		addressLimiter: newLimiter(cfg.Now),
 	}, nil
@@ -315,7 +339,7 @@ func (s *Service) RedeemSignInLink(ctx context.Context, c Client, code string) (
 		}
 		return store.Owner{}, NewSession{}, err
 	}
-	return s.signIn(ctx, c, lc.OwnerID, "signin_url")
+	return s.signIn(ctx, c, lc.OwnerID, "signin_url", ErrInvalidCode)
 }
 
 // validCode finds an unused, unexpired high-entropy code of purpose.
@@ -363,6 +387,10 @@ func (s *Service) sendEmailCode(ctx context.Context, email string) error {
 	if err != nil {
 		return err
 	}
+	if !o.SuspendedAt.IsZero() {
+		// As for an unknown address: nothing is sent (A2.13).
+		return nil
+	}
 	now := s.now()
 	code := sixDigits()
 	if err := s.owners.ReplaceLoginCode(ctx, store.OwnerLoginCode{
@@ -402,7 +430,7 @@ func (s *Service) VerifyEmailCode(ctx context.Context, c Client, email, code str
 		return store.Owner{}, NewSession{}, ErrInvalidCode
 	}
 	o, err := s.owners.GetByEmail(ctx, email)
-	if errors.Is(err, store.ErrNotFound) {
+	if errors.Is(err, store.ErrNotFound) || err == nil && !o.SuspendedAt.IsZero() {
 		return store.Owner{}, NewSession{}, ErrInvalidCode
 	}
 	if err != nil {
@@ -436,21 +464,39 @@ func (s *Service) VerifyEmailCode(ctx context.Context, c Client, email, code str
 		}
 		return store.Owner{}, NewSession{}, err
 	}
-	return s.signIn(ctx, c, o.ID, "email_code")
+	return s.signIn(ctx, c, o.ID, "email_code", ErrInvalidCode)
 }
 
-// signIn records the owner's first sign-in and starts a session.
-func (s *Service) signIn(ctx context.Context, c Client, ownerID, method string) (store.Owner, NewSession, error) {
-	if err := s.owners.MarkAccepted(ctx, ownerID, s.now()); err != nil {
-		return store.Owner{}, NewSession{}, err
-	}
+// signIn records the owner's first sign-in and starts a session. A
+// suspended owner is refused with the method's own rejection, so sign-in
+// says no more than a wrong code or passkey does (A2.13).
+func (s *Service) signIn(ctx context.Context, c Client, ownerID, method string, refused error) (store.Owner, NewSession, error) {
 	o, err := s.owners.Get(ctx, ownerID)
 	if err != nil {
 		return store.Owner{}, NewSession{}, err
 	}
+	if !o.SuspendedAt.IsZero() {
+		s.log.LogAttrs(ctx, slog.LevelInfo, "suspended owner refused sign-in", slog.String("owner_id", ownerID), slog.String("method", method))
+		return store.Owner{}, NewSession{}, refused
+	}
+	if err := s.owners.MarkAccepted(ctx, ownerID, s.now()); err != nil {
+		return store.Owner{}, NewSession{}, err
+	}
+	if o.AcceptedAt.IsZero() {
+		if o, err = s.owners.Get(ctx, ownerID); err != nil {
+			return store.Owner{}, NewSession{}, err
+		}
+	}
 	sess, err := s.startSession(ctx, c, ownerID, method)
+	if errors.Is(err, errSuspended) {
+		return store.Owner{}, NewSession{}, refused
+	}
 	return o, sess, err
 }
+
+// errSuspended means the owner was suspended while a session was being
+// started; callers answer with their method's own rejection.
+var errSuspended = errors.New("owner suspended")
 
 func (s *Service) startSession(ctx context.Context, c Client, ownerID, method string) (NewSession, error) {
 	now := s.now()
@@ -465,6 +511,10 @@ func (s *Service) startSession(ctx context.Context, c Client, ownerID, method st
 		UserAgent:  truncateUserAgent(c.UserAgent),
 	}
 	if err := s.sessions.CreateOwner(ctx, row); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			// Suspended since the sign-in was checked (A2.13).
+			return NewSession{}, errSuspended
+		}
 		return NewSession{}, err
 	}
 	s.log.LogAttrs(ctx, slog.LevelInfo, "owner signed in",
@@ -537,6 +587,9 @@ func (s *Service) Me(ctx context.Context, ownerID string) (store.Owner, error) {
 // nothing. The result is the same in every case: after validation and the
 // rate limit, everything runs in the background.
 func (s *Service) Invite(ctx context.Context, inviterID, email string) error {
+	if s.invites == InvitesOperator {
+		return ErrInvitesRestricted
+	}
 	email, err := NormaliseEmail(email)
 	if err != nil {
 		return err
@@ -556,7 +609,7 @@ func (s *Service) invite(ctx context.Context, inviterID, email string) error {
 	var ownerID, link string
 	o, err := s.owners.GetByEmail(ctx, email)
 	switch {
-	case err == nil && !o.AcceptedAt.IsZero():
+	case err == nil && (!o.AcceptedAt.IsZero() || !o.SuspendedAt.IsZero()):
 		return nil
 	case err == nil:
 		ownerID = o.ID
@@ -754,4 +807,72 @@ func decodeCursor(c string) (time.Time, string, error) {
 		return time.Time{}, "", ErrInvalidCursor
 	}
 	return time.UnixMilli(n).UTC(), id, nil
+}
+
+// Suspend suspends the owner with email (`wardlockd admin suspend-owner`,
+// A2.13): their dashboard sessions are revoked, approved CLI logins not yet
+// collected are denied, their API tokens are refused while the suspension
+// lasts and sign-in is refused like a wrong code. Their sites stop serving
+// once the server notices (see store.Sites.UnavailableIDs). Suspending a
+// suspended owner changes nothing. An unknown address is ErrNotFound.
+func (s *Service) Suspend(ctx context.Context, email string) (store.Owner, error) {
+	o, err := s.operatorOwner(ctx, email)
+	if err != nil {
+		return store.Owner{}, err
+	}
+	if err := s.owners.Suspend(ctx, o.ID, s.now()); err != nil {
+		return store.Owner{}, fmt.Errorf("suspend owner: %w", err)
+	}
+	s.log.LogAttrs(ctx, slog.LevelInfo, "operator suspended owner", slog.String("owner_id", o.ID))
+	return s.owners.Get(ctx, o.ID)
+}
+
+// Reinstate lifts the owner's suspension (`wardlockd admin
+// reinstate-owner`): their API tokens and sites work again; they sign in
+// afresh. An unknown address is ErrNotFound.
+func (s *Service) Reinstate(ctx context.Context, email string) (store.Owner, error) {
+	o, err := s.operatorOwner(ctx, email)
+	if err != nil {
+		return store.Owner{}, err
+	}
+	if err := s.owners.Reinstate(ctx, o.ID); err != nil {
+		return store.Owner{}, fmt.Errorf("reinstate owner: %w", err)
+	}
+	s.log.LogAttrs(ctx, slog.LevelInfo, "operator reinstated owner", slog.String("owner_id", o.ID))
+	return s.owners.Get(ctx, o.ID)
+}
+
+// ListAll calls fn for every owner on the instance, ordered by address
+// (`wardlockd admin list-owners`).
+func (s *Service) ListAll(ctx context.Context, fn func(store.Owner) error) error {
+	for after := ""; ; {
+		page, err := s.owners.ListAll(ctx, after, operatorPage)
+		if err != nil {
+			return fmt.Errorf("list owners: %w", err)
+		}
+		for _, o := range page {
+			if err := fn(o); err != nil {
+				return err
+			}
+		}
+		if len(page) < operatorPage {
+			return nil
+		}
+		after = page[len(page)-1].Email
+	}
+}
+
+// operatorPage is how many rows the operator listings read at a time.
+const operatorPage = 500
+
+func (s *Service) operatorOwner(ctx context.Context, email string) (store.Owner, error) {
+	email, err := NormaliseEmail(email)
+	if err != nil {
+		return store.Owner{}, err
+	}
+	o, err := s.owners.GetByEmail(ctx, email)
+	if errors.Is(err, store.ErrNotFound) {
+		return store.Owner{}, ErrNotFound
+	}
+	return o, err
 }

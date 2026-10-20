@@ -160,6 +160,10 @@
       footer span {
         color: var(--accent);
       }
+      footer a {
+        color: var(--accent-strong);
+        text-underline-offset: 2px;
+      }
       @media (max-width: 30rem) {
         body {
           justify-content: flex-start;
@@ -195,6 +199,9 @@
       </form>
       {{end}}
     </main>
-    <footer>Protected by <span>Wardlock</span></footer>
+    <footer>
+      Protected by <span>Wardlock</span>{{with .ReportURL}} ·
+      <a href="{{.}}">Report this site</a>{{end}}
+    </footer>
   </body>
 </html>

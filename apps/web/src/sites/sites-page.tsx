@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ApiClient } from '@wardlock/apiclient-ts';
-import { Button, EmptyState, Notice, PageHeader } from '@wardlock/ui';
+import {
+  Button,
+  EmptyState,
+  Notice,
+  PageHeader,
+  StatusBadge,
+} from '@wardlock/ui';
 import { useEffect, useState } from 'react';
 import { useTitle } from '../shell/page.js';
 import { useFlash } from './flash.js';
@@ -133,7 +139,11 @@ export function SitesPage({ api }: { api: ApiClient }) {
                     {site.hostname}
                   </span>
                 </div>
-                <PolicyBadge policy={policy} />
+                {site.unavailable ? (
+                  <StatusBadge tone="warning">Taken down</StatusBadge>
+                ) : (
+                  <PolicyBadge policy={policy} />
+                )}
                 <span className="site-row-deploy">
                   {site.activatedAt !== undefined ? (
                     <>

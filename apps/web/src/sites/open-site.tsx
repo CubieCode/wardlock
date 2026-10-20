@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ApiClient } from '@wardlock/apiclient-ts';
-import { Button, Notice, PageHeader } from '@wardlock/ui';
+import { Button, Notice, PageHeader, StatusBadge } from '@wardlock/ui';
 import { useState, type ReactNode } from 'react';
 import type { Policy, Site } from './format.js';
 
@@ -75,9 +75,15 @@ export function SiteHeading({
     <>
       <div className="site-heading">
         <PageHeader title={site.name} description={description} />
-        <Button type="button" disabled={busy} onClick={open}>
-          {busy ? 'Opening…' : 'Open site'}
-        </Button>
+        {site.unavailable ? (
+          // Visitors see only the unavailable page, so there is nothing to
+          // open.
+          <StatusBadge tone="warning">Taken down</StatusBadge>
+        ) : (
+          <Button type="button" disabled={busy} onClick={open}>
+            {busy ? 'Opening…' : 'Open site'}
+          </Button>
+        )}
       </div>
       {failure && <Notice tone="danger">{failure}</Notice>}
     </>

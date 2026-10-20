@@ -33,6 +33,8 @@ func policyFailed(err error) (*failure, error) {
 		return fail(http.StatusBadRequest, "invalid_policy", message, target), nil
 	case errors.Is(err, access.ErrDefaultPolicy):
 		return fail(http.StatusConflict, "default_policy", "The site default policy cannot be deleted; set it instead.", ""), nil
+	case errors.Is(err, access.ErrSiteUnavailable):
+		return fail(http.StatusConflict, "site_unavailable", siteUnavailable, ""), nil
 	}
 	return nil, err
 }

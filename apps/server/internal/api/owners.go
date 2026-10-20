@@ -200,6 +200,10 @@ func classifyOwnerError(err error) (ownerError, bool) {
 		return ownerError{status: http.StatusUnauthorized, body: unauthenticatedError()}, true
 	case errors.Is(err, owners.ErrNotFound):
 		return ownerError{status: http.StatusNotFound, body: Error{Code: "not_found", Message: "Not found."}}, true
+	case errors.Is(err, owners.ErrInvitesRestricted):
+		return ownerError{status: http.StatusForbidden, body: Error{
+			Code: "invites_restricted", Message: "Only the operator of this server can invite owners. Ask them to add the person with wardlockd admin create.",
+		}}, true
 	}
 	return ownerError{}, false
 }
@@ -368,6 +372,8 @@ func (s *Server) InviteOwner(ctx context.Context, req InviteOwnerRequestObject) 
 		switch e.status {
 		case http.StatusBadRequest:
 			return InviteOwner400JSONResponse{BadRequestJSONResponse(e.body)}, nil
+		case http.StatusForbidden:
+			return InviteOwner403JSONResponse{ForbiddenJSONResponse(e.body)}, nil
 		case http.StatusTooManyRequests:
 			return InviteOwner429JSONResponse{RateLimitedJSONResponse{Body: e.body, Headers: RateLimitedResponseHeaders{RetryAfter: e.retryAfter}}}, nil
 		}

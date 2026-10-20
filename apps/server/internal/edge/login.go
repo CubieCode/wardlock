@@ -56,6 +56,9 @@ type loginData struct {
 	OAuth      []access.ProviderInfo
 	OAuthError string
 	oauth      bool
+	// ReportURL links to the abuse report form (A2.13); "" when reports
+	// are off.
+	ReportURL string
 }
 
 func newLoginData(r *http.Request, d access.Decision, next string) loginData {
@@ -91,6 +94,7 @@ func (e *Edge) loginPage(w http.ResponseWriter, r *http.Request, data loginData,
 	if data.oauth {
 		data.OAuth = e.access.OAuthProviders()
 	}
+	data.ReportURL = e.reportURL(canonicalHost(r.Host), data.Next)
 	var body bytes.Buffer
 	if err := pages.ExecuteTemplate(&body, "login.html", data); err != nil {
 		e.log.ErrorContext(r.Context(), "render login page", slog.Any("error", err))

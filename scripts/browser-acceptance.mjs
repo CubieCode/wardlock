@@ -28,7 +28,17 @@ const dataDir = mkdtempSync(join(tmpdir(), 'wardlock-acceptance-'));
 const origin = `http://wardlock.localhost:${port}`;
 // dev:// writes mail under the working directory's .local/mail.
 const mailDir = join(dataDir, '.local', 'mail');
-const server = spawn(resolve('.local/bin/wardlockd'), ['serve'], {
+const wardlockd = resolve('.local/bin/wardlockd');
+// The operator controls spec (A2.13) runs `wardlockd admin` with the same
+// settings against the same data directory.
+const secret = randomBytes(32).toString('base64url');
+const serverEnv = {
+  WARDLOCK_HTTP_ADDR: `127.0.0.1:${port}`,
+  WARDLOCK_BASE_DOMAIN: 'wardlock.localhost',
+  WARDLOCK_DATA_DIR: dataDir,
+  WARDLOCK_SECRET: secret,
+};
+const server = spawn(wardlockd, ['serve'], {
   cwd: dataDir,
   stdio: ['ignore', 'inherit', 'pipe'],
   env: {
@@ -44,7 +54,9 @@ const server = spawn(resolve('.local/bin/wardlockd'), ['serve'], {
     WARDLOCK_SMTP_FROM: '',
     // A fresh server key per run; nothing persists past the throwaway data
     // directory.
-    WARDLOCK_SECRET: randomBytes(32).toString('base64url'),
+    WARDLOCK_SECRET: secret,
+    // Abuse reports (A2.13) go to a synthetic address in the mail sink.
+    WARDLOCK_ABUSE_EMAIL: 'abuse@example.test',
     // OAuth providers (A2.5) with synthetic clients, so login pages list
     // them; the browser test stops at the provider and never reaches it.
     WARDLOCK_GITHUB_CLIENT_ID: 'acceptance-github-client',
@@ -103,6 +115,8 @@ try {
         WARDLOCK_ACCEPTANCE_ORIGIN: origin,
         WARDLOCK_ACCEPTANCE_SETUP_URL: setupURL,
         WARDLOCK_ACCEPTANCE_MAIL_DIR: mailDir,
+        WARDLOCK_ACCEPTANCE_WARDLOCKD: wardlockd,
+        WARDLOCK_ACCEPTANCE_ADMIN_ENV: JSON.stringify(serverEnv),
       },
     },
   );

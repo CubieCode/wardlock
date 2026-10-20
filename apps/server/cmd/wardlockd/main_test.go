@@ -34,7 +34,7 @@ func TestCommands(t *testing.T) {
 		{[]string{"version"}, nil, "wardlockd dev"},
 		{[]string{"help"}, nil, "serve"},
 		{[]string{"--help"}, nil, "admin create --email"},
-		{[]string{"admin", "--help"}, nil, "admin create --email ADDRESS"},
+		{[]string{"admin", "--help"}, nil, "create --email ADDRESS"},
 		{[]string{"admin"}, errUsage, ""},
 		{[]string{"admin", "create"}, errUsage, ""},
 		{[]string{"admin", "delete"}, errUsage, ""},

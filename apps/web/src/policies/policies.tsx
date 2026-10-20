@@ -164,7 +164,9 @@ export function PoliciesCard({
               setOpen({ kind: 'edit', policy });
             }}
             onDelete={
-              policy.path === '/'
+              // A taken-down site keeps its policies: deleting one would
+              // delete the records of the sessions it issued.
+              policy.path === '/' || site.unavailable
                 ? undefined
                 : () => {
                     setDone(null);

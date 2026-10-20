@@ -77,6 +77,12 @@ type Config struct {
 	DNSResolvers []string
 	// OAuth is the operator's OAuth and OIDC providers (A2.5).
 	OAuth OAuthConfig
+	// Invites is who may invite owners (WARDLOCK_INVITES, A2.13): "owners"
+	// (the default) or "operator", leaving it to `wardlockd admin create`.
+	Invites string
+	// AbuseEmail receives visitors' abuse reports (WARDLOCK_ABUSE_EMAIL,
+	// A2.13); "" shows no report link and serves no report form.
+	AbuseEmail string
 	// Secret is the decoded WARDLOCK_SECRET: the server key for token,
 	// code and session hashes. Empty when unset; commands that need it
 	// call RequireSecret.
@@ -192,6 +198,9 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 	if err := cfg.loadOAuth(get); err != nil {
 		return Config{}, err
 	}
+	if err := cfg.loadOperator(get); err != nil {
+		return Config{}, err
+	}
 	if raw := get("WARDLOCK_SECRET", ""); raw != "" {
 		key, err := decodeSecret(raw)
 		if err != nil {
@@ -200,6 +209,23 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		cfg.Secret = key
 	}
 	return cfg, nil
+}
+
+// loadOperator reads the operator controls' variables (A2.13).
+func (c *Config) loadOperator(get func(key, fallback string) string) error {
+	switch c.Invites = strings.ToLower(get("WARDLOCK_INVITES", "owners")); c.Invites {
+	case "owners", "operator":
+	default:
+		return fmt.Errorf("%w: WARDLOCK_INVITES must be owners or operator", ErrInvalidConfig)
+	}
+	if raw := get("WARDLOCK_ABUSE_EMAIL", ""); raw != "" {
+		a, err := mail.ParseAddress(raw)
+		if err != nil || a.Name != "" || a.Address != raw {
+			return fmt.Errorf("%w: WARDLOCK_ABUSE_EMAIL must be a plain email address, such as abuse@example.com", ErrInvalidConfig)
+		}
+		c.AbuseEmail = a.Address
+	}
+	return nil
 }
 
 // loadAccessLog reads the WARDLOCK_ACCESS_LOG_* variables.

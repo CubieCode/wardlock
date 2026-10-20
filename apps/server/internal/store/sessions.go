@@ -66,10 +66,15 @@ type OwnerSessionQuery struct {
 
 // Sessions stores dashboard (owner) and visitor (site) sessions.
 type Sessions interface {
+	// CreateOwner stores a dashboard session. An unknown or suspended
+	// owner is ErrNotFound and nothing is stored: the suspension is read in
+	// the same statement, so a sign-in racing a suspension cannot leave a
+	// session behind.
 	CreateOwner(ctx context.Context, s OwnerSession) error
 	CreateSite(ctx context.Context, s SiteSession) error
 	// GetOwnerByTokenHash finds a dashboard session by its cookie token
-	// hash, whatever its state; callers check expiry and revocation.
+	// hash, whatever its state, unless its owner is suspended
+	// (ErrNotFound); callers check expiry and revocation.
 	GetOwnerByTokenHash(ctx context.Context, hash string) (OwnerSession, error)
 	// TouchOwner moves the session's last use forward to at; an earlier at
 	// changes nothing.
@@ -94,7 +99,7 @@ func (db *DB) Sessions() Sessions { return sessionsRepo{db} }
 type sessionsRepo struct{ db *DB }
 
 func (r sessionsRepo) CreateOwner(ctx context.Context, s OwnerSession) error {
-	return mapErr("create owner session", r.db.q.CreateOwnerSession(ctx, sqlcgen.CreateOwnerSessionParams{
+	n, err := r.db.q.CreateOwnerSession(ctx, sqlcgen.CreateOwnerSessionParams{
 		ID:         s.ID,
 		OwnerID:    s.OwnerID,
 		TokenHash:  s.TokenHash,
@@ -103,7 +108,8 @@ func (r sessionsRepo) CreateOwner(ctx context.Context, s OwnerSession) error {
 		ExpiresAt:  ms(s.ExpiresAt),
 		RevokedAt:  nullMs(s.RevokedAt),
 		UserAgent:  nullString(s.UserAgent),
-	}))
+	})
+	return rowsAffected("create owner session", n, err)
 }
 
 func ownerSessionFromRow(row sqlcgen.OwnerSession) OwnerSession {

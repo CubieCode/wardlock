@@ -160,6 +160,36 @@ func accessLogContract(t *testing.T, open Opener) {
 			t.Fatalf("second Prune() = %d, %v; want 0", n, err)
 		}
 	})
+	t.Run("PruneKeepsHeldSites", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o, suspended := f.owner(), f.owner()
+		down, held, free := f.site(o.ID), f.site(suspended.ID), f.site(o.ID)
+		f.must(f.r.Sites.TakeDown(t.Context(), down.ID, now))
+		f.must(f.r.Owners.Suspend(t.Context(), suspended.ID, now))
+		var entries []store.AccessEntry
+		for _, id := range []string{down.ID, held.ID, free.ID} {
+			e := valid()
+			e.SiteID, e.OccurredAt = id, now.Add(-time.Hour)
+			entries = append(entries, e)
+		}
+		f.must(f.r.AccessLog.Append(t.Context(), entries))
+		n, err := f.r.AccessLog.Prune(t.Context(), now, 100)
+		if err != nil || n != 1 {
+			t.Fatalf("Prune() = %d, %v; want only the free site's entry", n, err)
+		}
+		for owner, site := range map[string]string{o.ID: down.ID, suspended.ID: held.ID} {
+			got, err := f.r.AccessLog.ListBySite(t.Context(), owner, site, store.AccessCursor{}, 10)
+			if err != nil || len(got) != 1 {
+				t.Fatalf("held site %s entries = %v, %v", site, got, err)
+			}
+		}
+		// Once restored, retention applies again.
+		f.must(f.r.Sites.Restore(t.Context(), down.ID))
+		if n, err := f.r.AccessLog.Prune(t.Context(), now, 100); err != nil || n != 1 {
+			t.Fatalf("Prune() after restore = %d, %v; want 1", n, err)
+		}
+	})
 	t.Run("PruneInChunks", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, open)

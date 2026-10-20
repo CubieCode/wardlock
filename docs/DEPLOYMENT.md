@@ -115,7 +115,7 @@ Setting `auto` agrees to the CA's terms of service. Wardlock certifies the sites
 
 - `*.<base domain>` through DNS-01. One wildcard covers every site and the auth origin `auth.<base domain>` (A2.5).
 - The dashboard host: through DNS-01 with the same token when it is the base domain itself or deeper inside its zone (one label under it is already covered by the wildcard), otherwise through HTTP-01 or TLS-ALPN-01, so the token needs no access to the dashboard's zone.
-- Custom domains (C1.9) on demand, at the first TLS handshake for the name, through HTTP-01 or TLS-ALPN-01, and only while the domain is verified and active. A name that has never been active (unverified or pending domains, nested names under the base domain, IP addresses) gets no certificate and the handshake fails. When a domain lapses or is removed (or its site is torn down), Wardlock drops its certificate from memory and deletes it from storage, so the next handshake asks the decision again and fails; the edge answers the host with the same 404 as an unknown host meanwhile.
+- Custom domains (C1.9) on demand, at the first TLS handshake for the name, through HTTP-01 or TLS-ALPN-01, and only while the domain is verified and active. A name that has never been active (unverified or pending domains, nested names under the base domain, IP addresses) gets no certificate and the handshake fails. When a domain lapses or is removed (or its site is torn down, including by `wardlockd admin teardown-site`, unless the site was taken down and torn down within 2 seconds or while the server was stopped), Wardlock drops its certificate from memory and deletes it from storage, so the next handshake asks the decision again and fails; the edge answers the host with the same 404 as an unknown host meanwhile.
 
 DNS-01 records are created under `_acme-challenge.<base domain>` and removed after validation.
 
@@ -175,7 +175,7 @@ sudo install -m 0644 deploy/wardlockd.service /etc/systemd/system/wardlockd.serv
 sudo systemctl daemon-reload && sudo systemctl enable --now wardlockd
 ```
 
-On first start with no owners, the log shows a one-time setup URL: `journalctl -u wardlockd | grep setup_url`. Or run `sudo -u wardlock wardlockd admin create --email you@example.com` with the same environment as the service. Afterwards owners sign in with an emailed code or a passkey, and invite further owners from the dashboard.
+On first start with no owners, the log shows a one-time setup URL: `journalctl -u wardlockd | grep setup_url`. Or run `sudo -u wardlock wardlockd admin create --email you@example.com` with the same environment as the service. Afterwards owners sign in with an emailed code or a passkey. Add further owners with `wardlockd admin create`; owners can also invite others through the API (`POST /api/v0/owners`), though the dashboard and CLI have no invite action. To keep adding owners to yourself, set `WARDLOCK_INVITES=operator` ([Operator controls](#operator-controls)).
 
 <details>
 <summary>The unit's hardening</summary>
@@ -637,12 +637,12 @@ Every request for a published site's content (A2.8) adds one entry to the access
 <details>
 <summary>Variables</summary>
 
-| Variable                             | Default | Meaning                                                          |
-| ------------------------------------ | ------- | ---------------------------------------------------------------- |
-| `WARDLOCK_ACCESS_LOG_IPV4_PREFIX`    | `24`    | leading bits of an IPv4 address kept, 0 to 32; 0 stores no IP    |
-| `WARDLOCK_ACCESS_LOG_IPV6_PREFIX`    | `48`    | leading bits of an IPv6 address kept, 0 to 128; 0 stores no IP   |
-| `WARDLOCK_ACCESS_LOG_RETENTION_DAYS` | `90`    | days to keep entries, 0 to 36500; 0 keeps them forever           |
-| `WARDLOCK_ACCESS_LOG_BUFFER`         | `10000` | entries that may wait for a write, 1 to 1000000, before dropping |
+| Variable                             | Default | Meaning                                                                                            |
+| ------------------------------------ | ------- | -------------------------------------------------------------------------------------------------- |
+| `WARDLOCK_ACCESS_LOG_IPV4_PREFIX`    | `24`    | leading bits of an IPv4 address kept, 0 to 32; 0 stores no IP                                      |
+| `WARDLOCK_ACCESS_LOG_IPV6_PREFIX`    | `48`    | leading bits of an IPv6 address kept, 0 to 128; 0 stores no IP                                     |
+| `WARDLOCK_ACCESS_LOG_RETENTION_DAYS` | `90`    | days to keep entries, 0 to 36500; 0 keeps them forever (taken-down sites' entries are always kept) |
+| `WARDLOCK_ACCESS_LOG_BUFFER`         | `10000` | entries that may wait for a write, 1 to 1000000, before dropping                                   |
 
 </details>
 
@@ -656,7 +656,87 @@ The defaults keep enough of an address to tell networks apart, not individual ho
 <details>
 <summary>Batched writes, dropped entries and retention</summary>
 
-Entries are written in batches off the request path: serving never waits on the database. If the database falls behind and the buffer fills, new entries are dropped rather than slowing visitors; the server logs a warning (`access log entries dropped`, at most every 10 seconds) with the running total, and a failed batch write is logged and counted the same way. On shutdown the server writes what is buffered within the shutdown timeout. Retention runs at start and hourly beside the writer, deleting entries older than the retention period (including those of deleted sites) 1,000 at a time so the database is never locked for long.
+Entries are written in batches off the request path: serving never waits on the database. If the database falls behind and the buffer fills, new entries are dropped rather than slowing visitors; the server logs a warning (`access log entries dropped`, at most every 10 seconds) with the running total, and a failed batch write is logged and counted the same way. On shutdown the server writes what is buffered within the shutdown timeout. Retention runs at start and hourly beside the writer, deleting entries older than the retention period (including those of deleted sites) 1,000 at a time so the database is never locked for long. It never prunes the entries of a taken-down site or a suspended owner's sites, which are evidence ([Operator controls](#operator-controls)); they are pruned by age again once the site is restored or the owner reinstated, or once the site is torn down.
+
+</details>
+
+## Operator controls
+
+The operator manages owners and sites from the server host with `wardlockd admin` (A2.13), run as the service user with the same environment as the service, like `admin create`. The server does not need to be running; a running server picks up each change within about 2 seconds.
+
+```sh
+sudo -u wardlock wardlockd admin list-sites            # NAME OWNER STATUS ID
+sudo -u wardlock wardlockd admin takedown-site docs    # or any hostname it answers on
+sudo -u wardlock wardlockd admin suspend-owner owner@example.com
+# Docker: docker compose -f deploy/compose.yaml exec wardlockd wardlockd admin list-owners
+```
+
+For an instance others deploy to, also set `WARDLOCK_ABUSE_EMAIL` so visitors can [report abuse](#abuse-reports), and read [Preserving and reporting illegal material](#preserving-and-reporting-illegal-material) before you need it.
+
+### Operator commands
+
+| Command                         | What it does                                                                                                   |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `admin create --email ADDRESS`  | Creates an owner and prints a one-time sign-in URL                                                             |
+| `admin list-owners`             | Lists `EMAIL STATUS CREATED ID`; status is `active`, `invited` or `suspended DATE`                             |
+| `admin suspend-owner ADDRESS`   | Signs the owner out everywhere, refuses their sign-in and API tokens, makes their sites unavailable            |
+| `admin reinstate-owner ADDRESS` | Undoes a suspension; tokens and sites work again and the owner signs in again                                  |
+| `admin list-sites`              | Lists `NAME OWNER STATUS ID`; status is `serving`, `nothing published`, `taken down DATE` or `owner suspended` |
+| `admin takedown-site SITE`      | Every page of the site answers "This site is unavailable"; deploys, files and access log are kept              |
+| `admin restore-site SITE`       | Serves the same active deploy again                                                                            |
+| `admin teardown-site SITE`      | Deletes a taken-down site, as an owner's teardown does                                                         |
+
+`SITE` is a site name or any hostname the site answers on (its `<name>.<base domain>` host or an active custom domain), so you can paste the host from a report.
+
+| Variable               | Default  | Meaning                                                                                       |
+| ---------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| `WARDLOCK_INVITES`     | `owners` | `owners`: any owner may invite another; `operator`: only `wardlockd admin create` adds owners |
+| `WARDLOCK_ABUSE_EMAIL` | empty    | plain address (no display name) that receives abuse reports; empty turns reports off          |
+
+<details>
+<summary>What suspension and takedown do, and what they keep</summary>
+
+- **Suspending an owner** revokes every dashboard session for good and denies any approved CLI login not yet collected, in one transaction. While suspended, their API tokens are refused, and sign-in by email code, sign-in link or passkey fails with the same neutral error as a wrong code or passkey (no code is sent, as for an unknown address), so the suspension is not revealed to anyone guessing addresses. Invitations to the address send nothing. Every site they own answers the unavailable page. **Reinstating** makes their tokens and sites work again; they sign in again, since the old sessions stay revoked.
+- **Taking a site down** makes every path on every host of the site (base-domain and custom domains) answer `403` with a neutral "This site is unavailable" page, whatever the policy, cookie, share link or `Bearer` token. It says the operator of this server took the site offline, with no reason and no owner, and is not cached or indexed. Only `/.wardlock/health` still answers; a taken-down site with nothing published answers like a missing site (404). The page also sends `Clear-Site-Data: "cache", "storage"`, so a service worker or cached pages the site left in a visitor's browser cannot keep answering in its place. The owner's dashboard shows the site as "Taken down"; they can still read it, create and update policies, and create, rotate and revoke share links, so they can change who has access. They cannot deploy (or upload to a pending deploy), activate, roll back or delete it, add or remove custom domains, or delete a policy (`409 site_unavailable`): domains stay as they were reported, and deleting a policy would delete the sessions that record who had access. The command's output says what is kept and what the owner can no longer do.
+- **Nothing is deleted.** Garbage collection skips every deploy of a taken-down site or a suspended owner's site, and access-log retention skips their entries, so restoring serves the same deploy, and evidence (files, custom domains, share-link and session records and the access log) stays in place. A sign-in or CLI-login approval is stored only if the owner is not suspended, checked in the same SQL statement, so nothing created while a suspension races it survives reinstatement.
+- **Tearing down** works only on a taken-down site, so a typo cannot delete a serving one, and deletes only while the site is still taken down (a `restore-site` racing it wins; the command then says the site is not taken down). It deletes the site's domains, deploys, policies and share links as an owner's teardown does, and frees the name; garbage collection later removes files nothing references, and its access-log entries are pruned by age again. In automatic TLS mode the running server's watch, which remembers each unavailable site's custom domains, removes their certificates once the site is gone. Only a site taken down and torn down within the watch's 2-second interval, or while the server was stopped, keeps its certificates until they expire, unrenewed.
+- **How a running server notices.** Sessions and tokens are checked against the database on every request; a running server also polls for sites that became unavailable or available again every 2 seconds and drops its cached copy of them.
+- **Logs** name IDs only: `operator suspended owner` with `owner_id`, `operator took down site` with `site_id`, and so on.
+- **Invites.** With `WARDLOCK_INVITES=operator` the invite API answers `403 invites_restricted`. The dashboard and CLI have no invite action today, so nothing changes there.
+
+</details>
+
+### Abuse reports
+
+With `WARDLOCK_ABUSE_EMAIL` set (to a plain address such as `abuse@example.com`), the footer of the login page, the share-link "Click to view" page and the unavailable page links "Report this site" to a form on the dashboard host, `https://<dashboard host>/report?site=<host>&page=<path>`. Reports arrive by email through the normal mailer ([SMTP](#smtp)) with the subject `Abuse report: <host>`, and include the `wardlockd admin takedown-site <name>` command to act on them. Unset, no page shows the link and `/report` answers 404.
+
+<details>
+<summary>The form, limits, what the email holds and what is never sent</summary>
+
+- The link never appears on the site's own pages, only on Wardlock's. The form is on the dashboard host, not the site's origin, because the reported site's own scripts and service workers run there and could script, fake or flood a form. It is rendered by the server (not the dashboard app) with the login pages' headers.
+- The form exists only for a host that serves a published site, taken down or not; any other host, a site with nothing published, and the dashboard and auth hosts answer like an unknown host (404), so it reveals nothing beyond visiting the host.
+- The form names the site and asks for the page (prefilled with host and path, editable, at most 2,000 characters), a reason (Phishing or a scam; Malware or a harmful download; Illegal content; Sexual content involving a child; Copyright or trademark infringement; Something else), optional details (at most 2,000 characters) and an optional contact address (at most 254 characters). It accepts only same-origin posts, runs no scripts and is never cached. "Back to the site" links to the site's origin. The thank-you page says the report went to the operator.
+- Only valid reports count against the limits (an invalid one is refused first): 5 per IP, 20 per network (IPv4 /24, IPv6 /48) and 200 across the instance, per hour; over a limit it answers `429` with `Retry-After` and "Too many reports have been sent. Try again in …". There is no per-site limit, which a reported site could spend to silence its reporters.
+- Before sending, any `t=` query parameter value in the page or details becomes `[removed]` and anything shaped like a Wardlock token (`wl_<id>_<secret>`) becomes `[token removed]`, so a reporter cannot forward a working share link by mistake.
+- The plain-text email starts with your lines: the site, site ID, time received, the `takedown-site` command and a pointer to this section. Below a rule come the reporter's reason, page, contact address and details, introduced as their own words (which may be wrong and contain no instruction from Wardlock) and every line quoted with `> `, so a reporter cannot forge instruction lines. The reporter's IP is never sent or logged; the server logs `abuse report sent` with `site_id` and `reason` only.
+
+</details>
+
+### Preserving and reporting illegal material
+
+If a site hosts material that may be illegal, take it offline and keep the evidence; do not delete it. This is a minimum procedure; the full acceptable use policy and abuse procedure come with O4.13.
+
+1. **Triage** the report. Do not open suspected child sexual abuse material more than you must to confirm what it is, and never download, copy or forward it except as the authorities direct.
+2. **Take the site down** with `wardlockd admin takedown-site SITE`, and suspend the owner with `suspend-owner` if warranted. Both keep every deploy and file.
+3. **Preserve evidence.** Do not tear down the site, delete deploys or delete blobs or bucket objects. The site's access log is kept whatever the retention setting while it stays taken down. Take a database backup (`wardlockd backup PATH`, see [Backups](#backups)) and note the site ID, owner ID, times and the report.
+4. **Report** it. In New Zealand, report child sexual abuse material and other objectionable material to the Department of Internal Affairs ([dia.govt.nz](https://www.dia.govt.nz), Digital Child Exploitation team), and other illegal material or threats to the NZ Police ([police.govt.nz](https://www.police.govt.nz); 111 if urgent). Outside New Zealand, report to the relevant authority.
+5. **Tear down** (`wardlockd admin teardown-site SITE`) only once the authorities say you may, or no longer need the material.
+6. **Contact the owner**, unless the authorities ask you not to.
+
+<details>
+<summary>Why the evidence survives, and buckets</summary>
+
+Garbage collection already skips every deploy of a taken-down site or a suspended owner's site, so its files stay in the blob directory or bucket however long the investigation takes, and access-log retention skips its entries until the site is restored, the owner reinstated or the site torn down. Custom domains are frozen and policies cannot be deleted, so the hosts in a report and the session records of who had access stay too. With the S3 backend, check that no bucket lifecycle rule expires or deletes objects (current or noncurrent versions) during that time, and keep the database backup from step 3 with the bucket: the backup records which files the site's deploys list. Restoring a site with `restore-site` serves the same deploy again if the report turns out to be unfounded.
 
 </details>
 

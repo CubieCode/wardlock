@@ -35,6 +35,13 @@ type Config struct {
 	AuthHost string
 	// Dashboard serves the dashboard pages and the owner API.
 	Dashboard http.Handler
+	// DashboardOrigin is the dashboard's public origin (such as
+	// https://wardlock.example.com), where the abuse report form lives
+	// (A2.13); "" shows no report links.
+	DashboardOrigin string
+	// SiteOrigin returns a site host's public origin, for the report
+	// form's link back to the site; nil links to the bare path.
+	SiteOrigin func(host string) string
 	// Health answers /healthz on every host.
 	Health http.Handler
 	// Sites finds the site for a host and its active manifest.
@@ -111,6 +118,11 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if host == e.cfg.DashboardHost {
+		if cleanPath(r.URL.Path) == ReportPath {
+			// Wardlock's own page, before the dashboard app.
+			e.report(w, r)
+			return
+		}
 		e.cfg.Dashboard.ServeHTTP(w, r)
 		return
 	}
@@ -126,9 +138,20 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A site with nothing published is indistinguishable from no site,
-	// whatever the method or path.
+	// whatever the method or path, taken down or not.
 	if s.site.ActiveDeployID == "" {
 		noSite(w)
+		return
+	}
+	// A site the operator took down answers the unavailable page on every
+	// path and host, whatever its policies; only health stays reachable.
+	if s.site.Unavailable {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if clean := cleanPath(r.URL.Path); clean == ReservedPrefix+"health" {
+			e.serveReserved(w, r, s.site, clean)
+		} else {
+			e.unavailablePage(w, r, clean)
+		}
 		return
 	}
 

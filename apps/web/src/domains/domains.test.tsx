@@ -37,6 +37,7 @@ const docs: Site = {
   hostname: 'docs.sites.example.test',
   url: 'https://docs.sites.example.test/',
   createdAt: now - 48 * 60 * minute,
+  unavailable: false,
 };
 
 function domain(

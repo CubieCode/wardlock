@@ -25,6 +25,9 @@ var (
 	// ErrNameTaken means any site on the instance, of any owner, holds the
 	// name. Site names are public through DNS, so saying so reveals nothing.
 	ErrNameTaken = errors.New("site name taken")
+	// ErrUnavailable means the operator has taken the site down; only the
+	// operator can restore or tear it down (A2.13).
+	ErrUnavailable = errors.New("site taken down by the operator")
 )
 
 // reserved are the names SPEC "Sites" keeps for Wardlock itself.
@@ -166,22 +169,13 @@ func (s *Service) Delete(ctx context.Context, ownerID, name string) error {
 	if err != nil {
 		return err
 	}
+	if !site.TakenDownAt.IsZero() {
+		return ErrUnavailable
+	}
 	// The site's custom domains go with it, and so do their certificates.
-	var hostnames []string
-	if s.c.Certs != nil {
-		for after := ""; ; {
-			ds, err := s.c.Domains.List(ctx, ownerID, site.ID, after, checkPage)
-			if err != nil {
-				return fmt.Errorf("list domains: %w", err)
-			}
-			for _, d := range ds {
-				hostnames = append(hostnames, d.Hostname)
-			}
-			if len(ds) < checkPage {
-				break
-			}
-			after = ds[len(ds)-1].Hostname
-		}
+	hostnames, err := s.hostnames(ctx, site)
+	if err != nil {
+		return err
 	}
 	if err := s.c.Sites.Delete(ctx, ownerID, site.ID); err != nil {
 		return storeErr("delete site", err)

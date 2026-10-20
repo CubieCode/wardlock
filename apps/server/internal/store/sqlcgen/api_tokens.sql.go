@@ -50,12 +50,16 @@ func (q *Queries) CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) 
 }
 
 const getAPITokenByPublicID = `-- name: GetAPITokenByPublicID :one
-SELECT id, owner_id, public_id, token_hash, name, scope_deploy, scope_manage, created_at, expires_at, last_used_at, revoked_at
-FROM api_tokens WHERE public_id = ?1
+SELECT api_tokens.id, api_tokens.owner_id, api_tokens.public_id, api_tokens.token_hash, api_tokens.name,
+  api_tokens.scope_deploy, api_tokens.scope_manage, api_tokens.created_at, api_tokens.expires_at,
+  api_tokens.last_used_at, api_tokens.revoked_at
+FROM api_tokens JOIN owners ON owners.id = api_tokens.owner_id
+WHERE api_tokens.public_id = ?1 AND owners.suspended_at IS NULL
 `
 
 // Instance-wide: Bearer authentication looks a token up by its public ID
-// before comparing the HMAC.
+// before comparing the HMAC. A suspended owner's tokens are never found
+// (A2.13); they work again once the owner is reinstated.
 func (q *Queries) GetAPITokenByPublicID(ctx context.Context, publicID string) (ApiToken, error) {
 	row := q.db.QueryRowContext(ctx, getAPITokenByPublicID, publicID)
 	var i ApiToken

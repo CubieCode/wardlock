@@ -50,6 +50,14 @@ type Limits struct {
 	// OAuthStartsPerIP counts OAuth sign-ins started per client (A2.5):
 	// each holds a pending flow in memory until the provider answers.
 	OAuthStartsPerIP Rate
+	// ReportsPerIP, ReportsPerNetwork and ReportsTotal count abuse reports
+	// sent (A2.13): per client, per network (netKey) and across the
+	// instance, so the operator's inbox cannot be flooded. Only valid
+	// reports count, and there is no per-site limit, which a reported
+	// site could spend to silence its reporters.
+	ReportsPerIP      Rate
+	ReportsPerNetwork Rate
+	ReportsTotal      Rate
 }
 
 // DefaultLimits are the limits used when Config.Limits is zero.
@@ -66,6 +74,9 @@ func DefaultLimits() Limits {
 		EmailVerifyPerAddress: Rate{N: 10, Per: 15 * time.Minute},
 		EmailVerifyPerSite:    Rate{N: 300, Per: 15 * time.Minute},
 		OAuthStartsPerIP:      Rate{N: 30, Per: 15 * time.Minute},
+		ReportsPerIP:          Rate{N: 5, Per: time.Hour},
+		ReportsPerNetwork:     Rate{N: 20, Per: time.Hour},
+		ReportsTotal:          Rate{N: 200, Per: time.Hour},
 	}
 }
 

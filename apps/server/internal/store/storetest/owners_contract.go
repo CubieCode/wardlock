@@ -356,6 +356,7 @@ func ownersContract(t *testing.T, open Opener) {
 			t.Fatal("setup retirement wrong")
 		}
 	})
+	ownersOperatorContract(t, open)
 }
 
 // validLoginCode returns an unused code for ownerID ("" for setup), valid

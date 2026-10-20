@@ -32,6 +32,7 @@ const docs: Site = {
   hostname: 'docs.sites.example.test',
   url: 'https://docs.sites.example.test/',
   createdAt: now,
+  unavailable: false,
 };
 
 function policy(visibility: Policy['visibility']): Policy {

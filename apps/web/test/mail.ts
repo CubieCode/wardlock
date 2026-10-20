@@ -71,6 +71,22 @@ export function mailbox(address: string) {
   };
 }
 
+/**
+ * Waits for a message to `address` containing `text` and returns it. For
+ * shared addresses, such as the operator's abuse address, which several
+ * specs write to at once.
+ */
+export async function messageWith(address: string, text: string) {
+  let message = '';
+  await expect
+    .poll(() => {
+      message = messagesTo(address).find((m) => m.includes(text)) ?? '';
+      return message !== '';
+    })
+    .toBe(true);
+  return message;
+}
+
 /** The synthetic owner each project and theme signs in as. */
 export const ownerFor = (project: string, scheme: string) =>
   `${project}-${scheme}@example.test`;

@@ -29,7 +29,10 @@ func sessionsContract(t *testing.T, open Opener) {
 					other.ID = store.NewID()
 					f.must(f.r.Sessions.CreateOwner(f.t.Context(), other))
 				}, want: store.ErrConflict},
-				{name: "unknown owner", mutate: func(_ *fixture, s *store.OwnerSession) { s.OwnerID = store.NewID() }, want: store.ErrConstraint},
+				{name: "unknown owner", mutate: func(_ *fixture, s *store.OwnerSession) { s.OwnerID = store.NewID() }, want: store.ErrNotFound},
+				{name: "suspended owner", mutate: func(f *fixture, s *store.OwnerSession) {
+					f.must(f.r.Owners.Suspend(f.t.Context(), s.OwnerID, now))
+				}, want: store.ErrNotFound},
 				{name: "expires at creation", mutate: func(_ *fixture, s *store.OwnerSession) { s.ExpiresAt = s.CreatedAt }, want: store.ErrConstraint},
 				{name: "seen before creation", mutate: func(_ *fixture, s *store.OwnerSession) { s.LastSeenAt = s.CreatedAt.Add(-time.Second) }, want: store.ErrConstraint},
 			})
