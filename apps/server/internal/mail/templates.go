@@ -72,9 +72,12 @@ type Screening struct {
 	Categories []string
 	// Minors means the endpoint flagged sexual content involving minors:
 	// the message says to preserve and report rather than review.
-	Minors    bool
-	Uses      []ScreeningUse
-	CheckedAt time.Time
+	Minors bool
+	// Unscreenable means it is flagged because an image in it could not
+	// be screened.
+	Unscreenable bool
+	Uses         []ScreeningUse
+	CheckedAt    time.Time
 }
 
 // ScreeningUse is a site serving a screened file: the site's name, the
@@ -160,15 +163,26 @@ func AbuseReportMessage(to netmail.Address, d AbuseReport) (Message, error) {
 }
 
 // ScreeningMessage builds the plain-text notice to the operator's abuse
-// address. The subject names neither the file nor the categories.
+// address that a file was withheld, sent at once. The subject names
+// neither the file nor the categories.
 func ScreeningMessage(to netmail.Address, d Screening) (Message, error) {
 	var text bytes.Buffer
 	if err := textTemplates.ExecuteTemplate(&text, "screening.txt.tmpl", d); err != nil {
 		return Message{}, fmt.Errorf("render screening.txt.tmpl: %w", err)
 	}
+	return Message{To: to, Subject: "Content screening withheld a file", Text: text.String()}, nil
+}
+
+// FlaggedMessage builds the plain-text digest to the operator's abuse
+// address of files flagged for review: one per screening pass.
+func FlaggedMessage(to netmail.Address, files []Screening) (Message, error) {
+	var text bytes.Buffer
+	if err := textTemplates.ExecuteTemplate(&text, "flagged.txt.tmpl", files); err != nil {
+		return Message{}, fmt.Errorf("render flagged.txt.tmpl: %w", err)
+	}
 	subject := "Content screening flagged a file"
-	if d.Status == "quarantined" {
-		subject = "Content screening withheld a file"
+	if len(files) > 1 {
+		subject = fmt.Sprintf("Content screening flagged %d files", len(files))
 	}
 	return Message{To: to, Subject: subject, Text: text.String()}, nil
 }

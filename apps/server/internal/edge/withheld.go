@@ -34,14 +34,21 @@ func (e *Edge) withheld(s *served, f ServedFile) bool {
 
 // withheldFile answers a request that would serve a quarantined file with
 // 451, whatever the method, range or validators: an HTML page gets the
-// neutral withheld page, anything else a line of plain text. The answer is
-// never stored, so releasing the file takes effect at once.
-func (e *Edge) withheldFile(w http.ResponseWriter, r *http.Request, f ServedFile) {
+// neutral withheld page, anything else a line of plain text, with the
+// protected-site headers on a protected site. The answer is never stored,
+// so releasing the file takes effect at once.
+func (e *Edge) withheldFile(w http.ResponseWriter, r *http.Request, f ServedFile, protected bool) {
+	h := w.Header()
+	if protected {
+		// decide set these already; set again so this answer never
+		// depends on that.
+		protectedHeaders(h)
+		addVary(h, "Cookie")
+	}
 	if strings.HasPrefix(mime.TypeByExtension(path.Ext(f.Path)), "text/html") {
 		e.page(w, r, "withheld.html", unavailableData{Site: canonicalHost(r.Host)}, http.StatusUnavailableForLegalReasons)
 		return
 	}
-	h := w.Header()
 	h.Set("Cache-Control", "no-store")
 	h.Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusUnavailableForLegalReasons)

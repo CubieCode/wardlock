@@ -39,6 +39,9 @@ func TestMigration0010(t *testing.T) {
 		`UPDATE owners SET moderation_exempt = 1 WHERE id = 'o1'`,
 		`INSERT INTO moderation_results (sha256, kind, status, queued_at, next_attempt_at) VALUES ('` + a + `', 'image', 'pending', 1, 1)`,
 		`UPDATE moderation_results SET status = 'quarantined', categories = 'sexual', next_attempt_at = NULL, checked_at = 2 WHERE sha256 = '` + a + `'`,
+		`UPDATE moderation_results SET kind = 'image,text', reason = 'unscreenable', decoded_sha256 = '` + a + `' WHERE sha256 = '` + a + `'`,
+		// kind defaults to '' (nothing covered yet).
+		`INSERT INTO moderation_results (sha256, status, queued_at) VALUES ('` + strings.Repeat("c", 64) + `', 'pending', 1)`,
 	} {
 		if err := db.ExecForTest(ctx, ok); err != nil {
 			t.Errorf("%s: %v", ok, err)
@@ -54,6 +57,10 @@ func TestMigration0010(t *testing.T) {
 		`INSERT INTO moderation_results (sha256, kind, status, queued_at) VALUES ('` + strings.Repeat("b", 64) + `', 'image', 'banned', 1)`,
 		`INSERT INTO moderation_results (sha256, kind, status, attempts, queued_at) VALUES ('` + strings.Repeat("b", 64) + `', 'image', 'pending', -1, 1)`,
 		`INSERT INTO moderation_results (sha256, kind, status) VALUES ('` + strings.Repeat("b", 64) + `', 'image', 'pending')`,
+		`UPDATE moderation_results SET kind = 'text,image' WHERE sha256 = '` + a + `'`,
+		`UPDATE moderation_results SET decoded_sha256 = 'abc' WHERE sha256 = '` + a + `'`,
+		`UPDATE moderation_results SET decoded_sha256 = '` + strings.Repeat("A", 64) + `' WHERE sha256 = '` + a + `'`,
+		`UPDATE moderation_results SET reason = NULL WHERE sha256 = '` + a + `'`,
 	} {
 		if err := db.ExecForTest(ctx, bad); err == nil {
 			t.Errorf("%s succeeded, want a constraint error", bad)

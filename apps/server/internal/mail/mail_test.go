@@ -250,12 +250,24 @@ func TestScreeningMessages(t *testing.T) {
 	}
 	flagged := base
 	flagged.Status, flagged.Categories = "flagged", []string{"violence", "hate"}
-	f, err := mail.ScreeningMessage(abuse, flagged)
+	f, err := mail.FlaggedMessage(abuse, []mail.Screening{flagged})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.Subject != "Content screening flagged a file" || !strings.Contains(f.Text, "still served") || !strings.Contains(f.Text, "violence, hate") {
+	if f.Subject != "Content screening flagged a file" || !strings.Contains(f.Text, "It is still served") || !strings.Contains(f.Text, "violence, hate") ||
+		strings.Contains(f.Text, "Reason:") || strings.Contains(f.Text, "moderation confirm") {
 		t.Errorf("flag notice %q:\n%s", f.Subject, f.Text)
+	}
+	// The digest lists every file of a pass, unscreenable ones with why.
+	other := mail.Screening{SHA256: strings.Repeat("cd", 32), Status: "flagged", Unscreenable: true, CheckedAt: fixedNow()}
+	f, err = mail.FlaggedMessage(abuse, []mail.Screening{flagged, other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"2 files", "They are still served", sha, other.SHA256, "Reason:     unscreenable", "No site serves it", "moderation release SHA256", "takedown-site"} {
+		if !strings.Contains(f.Subject+f.Text, want) {
+			t.Errorf("digest lacks %q:\n%s", want, f.Text)
+		}
 	}
 
 	o, err := mail.WithheldMessage(recipient, mail.Withheld{Site: "docs", Host: "admin.example.test", Paths: []string{"img/a.png", "b.png"}, Contact: "abuse@example.test"})

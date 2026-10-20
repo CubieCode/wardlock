@@ -105,6 +105,8 @@ type ModerationResult struct {
 	Kind          string
 	Status        string
 	Categories    string
+	Reason        string
+	DecodedSha256 sql.NullString
 	Attempts      int64
 	QueuedAt      int64
 	NextAttemptAt sql.NullInt64

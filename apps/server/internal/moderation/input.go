@@ -4,16 +4,70 @@
 package moderation
 
 import (
+	"bufio"
 	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/xml"
+	"errors"
+	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/gif"
+	"image/jpeg"
+	"image/png"
+	"io"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"wardlock.nz/server/internal/deploys"
 )
 
-// MaxImageSize is the largest image sent: OpenAI's limit for image inputs
-// to the moderation endpoint. Larger images are recorded as skipped.
+// MaxImageSize is the largest image sent as it is: OpenAI's limit for
+// image inputs to the moderation endpoint. A larger PNG, JPEG or GIF is
+// decoded and sent scaled down; any other larger image is unscreenable.
 const MaxImageSize = 20 << 20
+
+// Image limits for what the server decodes itself: a GIF's frames (sent as
+// PNG), an icon's PNG images and images over MaxImageSize.
+const (
+	// MaxPixels bounds an image the server decodes, so a small file that
+	// claims a huge canvas cannot exhaust memory; larger ones are
+	// unscreenable.
+	MaxPixels = 40_000_000
+	// ScaledSide is the longest side of an image scaled down to fit
+	// MaxImageSize.
+	ScaledSide = 2048
+	// GIFFrames is how many frames of an animated GIF are sent: the first,
+	// the middle and the last of the first MaxGIFFrames.
+	GIFFrames    = 3
+	MaxGIFFrames = 500
+)
+
+// Embedded image limits: images in data: URIs in a page or SVG are decoded
+// and screened as images, at most MaxEmbedded per file, nested SVG data
+// URIs at most embedDepth deep. A file with more is unscreenable beyond
+// the first MaxEmbedded.
+const (
+	MaxEmbedded = 16
+	embedDepth  = 2
+)
+
+// MaxScanSize bounds how much of a page, text or SVG file is read to find
+// its text and embedded images; the rest of a larger file is unscreenable.
+const MaxScanSize = 64 << 20
+
+// MaxDecodedSize bounds what a gzip file is decompressed to when checking
+// it against the file it stands for; a larger one is never offered.
+const MaxDecodedSize = 1 << 30
 
 // Text limits. The endpoint documents no input limit; a page's extracted
 // text is sent as pieces of at most TextChunk characters, split at
@@ -24,29 +78,214 @@ const (
 	MaxTextChunks = 10
 )
 
-// imageType returns the media type of an image the endpoint accepts (PNG,
-// JPEG, WEBP or a GIF that is not animated), judged by its bytes rather
-// than its name; ok is false for anything else.
-func imageType(b []byte) (string, bool) {
-	switch t := http.DetectContentType(b); t {
-	case "image/png", "image/jpeg", "image/webp":
-		return t, true
-	case "image/gif":
-		return t, gifFrames(b) == 1
+// sniffSize is how much of a file sniff looks at.
+const sniffSize = 1024
+
+// class is what a file's bytes are, as far as screening cares.
+type class int
+
+const (
+	classOther      class = iota
+	classImage            // PNG, JPEG, WEBP or GIF: the endpoint's formats
+	classIcon             // ICO: screened through the PNG images it holds
+	classOtherImage       // an image format neither the endpoint nor the server reads
+	classMarkup           // HTML, XML or SVG: text and embedded images
+	classText             // other text
+	classGzip
+)
+
+// sniff classifies a file by its first bytes (http.DetectContentType plus
+// the image and markup formats it does not know), never by its name.
+func sniff(head []byte) (class, string) {
+	t := http.DetectContentType(head)
+	switch t {
+	case "image/png", "image/jpeg", "image/webp", "image/gif":
+		return classImage, t
+	case "image/x-icon":
+		return classIcon, t
+	case "image/bmp":
+		return classOtherImage, "a BMP image"
+	case "application/x-gzip":
+		return classGzip, t
 	}
-	return "", false
+	if len(head) >= 12 && string(head[4:8]) == "ftyp" {
+		switch string(head[8:12]) {
+		case "avif", "avis":
+			return classOtherImage, "an AVIF image"
+		case "heic", "heix", "hevc", "heim", "heis", "mif1", "msf1":
+			return classOtherImage, "a HEIF image"
+		}
+	}
+	if bytes.HasPrefix(head, []byte("II*\x00")) || bytes.HasPrefix(head, []byte("MM\x00*")) {
+		return classOtherImage, "a TIFF image"
+	}
+	if bytes.HasPrefix(head, []byte("\xff\x0a")) || bytes.HasPrefix(head, []byte("\x00\x00\x00\x0cJXL \x0d\x0a\x87\x0a")) {
+		return classOtherImage, "a JPEG XL image"
+	}
+	switch {
+	case strings.HasPrefix(t, "text/html"), strings.HasPrefix(t, "text/xml"):
+		return classMarkup, t
+	case strings.HasPrefix(t, "text/"):
+		if isSVG(head) {
+			return classMarkup, "image/svg+xml"
+		}
+		return classText, t
+	}
+	return classOther, t
 }
 
-// gifFrames counts the image descriptors in a GIF without decoding it; 0
-// for a malformed file.
-func gifFrames(b []byte) int {
+// isSVG reports whether text starts, after any whitespace, byte order mark,
+// comments or doctype, with an <svg element.
+func isSVG(head []byte) bool {
+	b := bytes.TrimPrefix(head, []byte("\xef\xbb\xbf"))
+	for {
+		b = bytes.TrimLeftFunc(b, unicode.IsSpace)
+		switch {
+		case bytes.HasPrefix(b, []byte("<!--")):
+			i := bytes.Index(b, []byte("-->"))
+			if i < 0 {
+				return false
+			}
+			b = b[i+3:]
+		case bytes.HasPrefix(b, []byte("<!")) || bytes.HasPrefix(b, []byte("<?")):
+			i := bytes.IndexByte(b, '>')
+			if i < 0 {
+				return false
+			}
+			b = b[i+1:]
+		default:
+			return len(b) > 4 && strings.EqualFold(string(b[:4]), "<svg") && (b[4] == '>' || b[4] == '/' || unicode.IsSpace(rune(b[4])))
+		}
+	}
+}
+
+// unscreenable is an image screening cannot send, with what it is.
+type unscreenable struct{ what string }
+
+func (u unscreenable) Error() string { return "unscreenable: " + u.what }
+
+// imageInputs turns an image's bytes into what is sent: the bytes
+// themselves for a PNG, JPEG or WEBP the endpoint takes, PNG frames for a
+// GIF, the largest PNG an icon holds, or a scaled-down JPEG for a PNG or
+// JPEG over MaxImageSize. An unscreenable error says why there is nothing.
+func imageInputs(b []byte) ([]Input, error) {
+	c, t := sniff(head(b))
+	switch c {
+	case classIcon:
+		p := iconPNG(b)
+		if p == nil {
+			return nil, unscreenable{"an icon without PNG images"}
+		}
+		return imageInputs(p)
+	case classOtherImage:
+		return nil, unscreenable{t}
+	case classImage:
+	default:
+		return nil, unscreenable{"not a readable image"}
+	}
+	switch t {
+	case "image/gif":
+		return gifInputs(b)
+	case "image/webp":
+		if len(b) > MaxImageSize {
+			return nil, unscreenable{"a WEBP image over 20 MB"}
+		}
+		return []Input{{Image: b, ImageType: t}}, nil
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(b))
+	if err != nil {
+		return nil, unscreenable{"a damaged " + strings.TrimPrefix(t, "image/") + " image"}
+	}
+	if len(b) <= MaxImageSize {
+		return []Input{{Image: b, ImageType: t}}, nil
+	}
+	if cfg.Width*cfg.Height > MaxPixels {
+		return nil, unscreenable{"an image too large to scale"}
+	}
+	img, _, err := image.Decode(bytes.NewReader(b))
+	if err != nil {
+		return nil, unscreenable{"a damaged " + strings.TrimPrefix(t, "image/") + " image"}
+	}
+	in, err := encodeJPEG(scale(img, ScaledSide))
+	if err != nil {
+		return nil, err
+	}
+	return []Input{in}, nil
+}
+
+func head(b []byte) []byte { return b[:min(len(b), sniffSize)] }
+
+// gifInputs decodes up to GIFFrames frames of a GIF (the first, middle and
+// last of its first MaxGIFFrames), each drawn over the frames before it,
+// and returns them as PNG. Frames are split out and decoded one at a time,
+// so a GIF of many frames cannot exhaust memory, and anything after the
+// last whole frame (a truncated file, trailing junk) is ignored.
+func gifInputs(b []byte) ([]Input, error) {
+	hdr, frames := gifSplit(b)
+	if len(frames) == 0 {
+		return nil, unscreenable{"a GIF image with no readable frame"}
+	}
+	frames = frames[:min(len(frames), MaxGIFFrames)]
+	cfg, err := gif.DecodeConfig(bytes.NewReader(hdr))
+	if err != nil || cfg.Width*cfg.Height > MaxPixels || cfg.Width == 0 || cfg.Height == 0 {
+		return nil, unscreenable{"a GIF image too large or damaged"}
+	}
+	want := map[int]bool{0: true, len(frames) / 2: true, len(frames) - 1: true}
+	canvas := image.NewRGBA(image.Rect(0, 0, cfg.Width, cfg.Height))
+	var out []Input
+	for i, f := range frames {
+		one := append(append(append([]byte{}, hdr...), f...), 0x3B)
+		img, err := gif.Decode(bytes.NewReader(one))
+		if err != nil {
+			if i == 0 {
+				return nil, unscreenable{"a GIF image with no readable frame"}
+			}
+			break
+		}
+		draw.Draw(canvas, img.Bounds(), img, img.Bounds().Min, draw.Over)
+		if !want[i] {
+			continue
+		}
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, canvas); err != nil {
+			return nil, fmt.Errorf("encode GIF frame: %w", err)
+		}
+		out = append(out, Input{Image: buf.Bytes(), ImageType: "image/png"})
+		if len(out) == GIFFrames {
+			break
+		}
+	}
+	for i := range out {
+		if len(out[i].Image) > MaxImageSize {
+			img, err := png.Decode(bytes.NewReader(out[i].Image))
+			if err != nil {
+				return nil, fmt.Errorf("decode GIF frame: %w", err)
+			}
+			if out[i], err = encodeJPEG(scale(img, ScaledSide)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
+}
+
+// gifSplit walks a GIF's blocks without decoding them. hdr is the header,
+// logical screen descriptor and global colour table; each frame is the
+// extensions before an image descriptor (its graphic control extension
+// among them), the descriptor, its local colour table and its image data.
+// Walking stops at the trailer or at the first block that is not whole.
+func gifSplit(b []byte) (hdr []byte, frames [][]byte) {
 	if len(b) < 13 || (!bytes.HasPrefix(b, []byte("GIF87a")) && !bytes.HasPrefix(b, []byte("GIF89a"))) {
-		return 0
+		return nil, nil
 	}
 	i := 13
 	if b[10]&0x80 != 0 { // global colour table
 		i += 3 << (int(b[10]&0x07) + 1)
 	}
+	if i > len(b) {
+		return nil, nil
+	}
+	hdr = b[:i]
 	// skipBlocks skips data sub-blocks from j, returning the index after
 	// the terminator or -1.
 	skipBlocks := func(j int) int {
@@ -60,19 +299,19 @@ func gifFrames(b []byte) int {
 		}
 		return -1
 	}
-	frames := 0
+	start := i
 	for i < len(b) {
 		switch b[i] {
 		case 0x21: // extension: label, then sub-blocks
 			if i+2 > len(b) {
-				return 0
+				return hdr, frames
 			}
 			if i = skipBlocks(i + 2); i < 0 {
-				return 0
+				return hdr, frames
 			}
 		case 0x2C: // image descriptor
 			if i+10 > len(b) {
-				return 0
+				return hdr, frames
 			}
 			flags := b[i+9]
 			i += 10
@@ -80,19 +319,259 @@ func gifFrames(b []byte) int {
 				i += 3 << (int(flags&0x07) + 1)
 			}
 			if i >= len(b) {
-				return 0
+				return hdr, frames
 			}
 			if i = skipBlocks(i + 1); i < 0 { // after the LZW minimum code size
-				return 0
+				return hdr, frames
 			}
-			frames++
-		case 0x3B: // trailer
-			return frames
-		default:
-			return 0
+			frames = append(frames, b[start:i])
+			start = i
+		default: // the trailer, or junk
+			return hdr, frames
 		}
 	}
-	return frames
+	return hdr, frames
+}
+
+// iconPNG returns the largest PNG image an ICO or CUR file holds, nil when
+// it holds none (only bitmaps, which the standard library cannot read).
+func iconPNG(b []byte) []byte {
+	if len(b) < 6 {
+		return nil
+	}
+	n := int(binary.LittleEndian.Uint16(b[4:6]))
+	var best []byte
+	for e := range n {
+		off := 6 + 16*e
+		if off+16 > len(b) {
+			break
+		}
+		size := int(binary.LittleEndian.Uint32(b[off+8 : off+12]))
+		at := int(binary.LittleEndian.Uint32(b[off+12 : off+16]))
+		if at < 0 || size <= 0 || at > len(b) || size > len(b)-at {
+			continue
+		}
+		if data := b[at : at+size]; bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")) && len(data) > len(best) {
+			best = data
+		}
+	}
+	return best
+}
+
+// scale draws img over white, scaled (nearest neighbour) so its longer side
+// is at most side.
+func scale(img image.Image, side int) *image.RGBA {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w > side || h > side {
+		if w >= h {
+			w, h = side, max(1, h*side/w)
+		} else {
+			w, h = max(1, w*side/h), side
+		}
+	}
+	scaled := image.NewRGBA(image.Rect(0, 0, w, h))
+	sw, sh := b.Dx(), b.Dy()
+	for y := range h {
+		sy := b.Min.Y + y*sh/h
+		for x := range w {
+			scaled.Set(x, y, img.At(b.Min.X+x*sw/w, sy))
+		}
+	}
+	dst := image.NewRGBA(scaled.Bounds())
+	draw.Draw(dst, dst.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
+	draw.Draw(dst, dst.Bounds(), scaled, image.Point{}, draw.Over)
+	return dst
+}
+
+func encodeJPEG(img image.Image) (Input, error) {
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 85}); err != nil {
+		return Input{}, fmt.Errorf("encode scaled image: %w", err)
+	}
+	if buf.Len() > MaxImageSize {
+		return Input{}, unscreenable{"an image too large even scaled down"}
+	}
+	return Input{Image: buf.Bytes(), ImageType: "image/jpeg"}, nil
+}
+
+// dataURI finds the start of an image in a data: URI; the base64 payload
+// follows the match.
+var dataURI = regexp.MustCompile(`(?i)data:image/([a-z0-9.+-]+)(?:;[a-z0-9._=-]+)*;base64,`)
+
+// embedded is what a page or SVG embeds in base64 data: URIs: the images
+// to send, the text of embedded SVGs, and why anything could not be.
+type embedded struct {
+	images []Input
+	text   []string
+	why    []string
+}
+
+// findEmbedded collects the images in b's data: URIs, up to MaxEmbedded in
+// all; an embedded SVG contributes its text and, up to embedDepth deep,
+// its own embedded images.
+func findEmbedded(b []byte, depth int, e *embedded, count *int) {
+	for _, m := range dataURI.FindAllSubmatchIndex(b, -1) {
+		end := m[1]
+		for end < len(b) && (isBase64(b[end]) || b[end] == '\n' || b[end] == '\r' || b[end] == ' ' || b[end] == '\t') {
+			end++
+		}
+		if *count >= MaxEmbedded {
+			e.why = append(e.why, fmt.Sprintf("more than %d embedded images", MaxEmbedded))
+			return
+		}
+		*count++
+		payload := strings.Map(func(r rune) rune {
+			if unicode.IsSpace(r) {
+				return -1
+			}
+			return r
+		}, string(b[m[1]:end]))
+		raw, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(payload, "="))
+		if err != nil || len(raw) == 0 {
+			e.why = append(e.why, "an embedded image that does not decode")
+			continue
+		}
+		if c, _ := sniff(head(raw)); c == classMarkup {
+			if depth < embedDepth {
+				e.text = append(e.text, markupText(raw))
+				findEmbedded(raw, depth+1, e, count)
+			} else {
+				e.why = append(e.why, "embedded images nested too deep")
+			}
+			continue
+		}
+		ins, err := imageInputs(raw)
+		var u unscreenable
+		switch {
+		case errors.As(err, &u):
+			e.why = append(e.why, "embedded "+u.what)
+		case err != nil:
+			e.why = append(e.why, "an embedded image that could not be read")
+		default:
+			e.images = append(e.images, ins...)
+		}
+	}
+}
+
+// markupText is the text a reader sees in an HTML, XML or SVG file: the A2.6
+// plain-text conversion for HTML, plus the text of SVG elements (which
+// that conversion leaves out), and all character data of an XML or SVG
+// file.
+func markupText(b []byte) string {
+	if c, t := sniff(head(b)); c == classMarkup && !strings.HasPrefix(t, "text/html") {
+		return xmlText(b, false)
+	}
+	_, txt := deploys.Render(b, &url.URL{Path: "/"})
+	if svg := xmlText(b, true); svg != "" {
+		return string(txt) + "\n" + svg
+	}
+	return string(txt)
+}
+
+// xmlText collects b's character data, skipping <script> and <style>, and
+// with inSVG only inside <svg> elements. The tokenizer is lenient (HTML
+// entities, unclosed elements); it stops at the first error, keeping what
+// it found.
+func xmlText(b []byte, inSVG bool) string {
+	if inSVG && !bytes.Contains(bytes.ToLower(b), []byte("<svg")) {
+		return ""
+	}
+	d := xml.NewDecoder(bytes.NewReader(b))
+	d.Strict = false
+	d.AutoClose = xml.HTMLAutoClose
+	d.Entity = xml.HTMLEntity
+	var out strings.Builder
+	svg, skip := 0, 0
+	for out.Len() < MaxTextChunks*TextChunk*4 {
+		tok, err := d.Token()
+		if err != nil {
+			break
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch strings.ToLower(t.Name.Local) {
+			case "svg":
+				svg++
+			case "script", "style":
+				skip++
+			}
+		case xml.EndElement:
+			switch strings.ToLower(t.Name.Local) {
+			case "svg":
+				svg = max(0, svg-1)
+			case "script", "style":
+				skip = max(0, skip-1)
+			}
+		case xml.CharData:
+			if skip == 0 && (!inSVG || svg > 0) {
+				if text := strings.TrimSpace(string(t)); text != "" {
+					out.WriteString(text)
+					out.WriteByte('\n')
+				}
+			}
+		}
+	}
+	return strings.TrimSpace(out.String())
+}
+
+func isBase64(c byte) bool {
+	return 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z' || '0' <= c && c <= '9' || c == '+' || c == '/' || c == '='
+}
+
+// gunzipHash returns the SHA-256 of what r, a gzip file, decompresses to,
+// or "" when it is not exactly one gzip member with nothing after it, or
+// decompresses to more than MaxDecodedSize. Browsers that are sent it as
+// Content-Encoding: gzip see exactly those bytes.
+func gunzipHash(r io.Reader) (string, error) {
+	br := bufio.NewReader(r)
+	zr, err := gzip.NewReader(br)
+	if err != nil {
+		var re readErr
+		if errors.As(err, &re) {
+			return "", re.err
+		}
+		return "", nil
+	}
+	zr.Multistream(false)
+	h := sha256.New()
+	n, err := io.Copy(h, io.LimitReader(zr, MaxDecodedSize+1))
+	if err != nil {
+		var re readErr
+		if errors.As(err, &re) {
+			return "", re.err
+		}
+		return "", nil
+	}
+	if n > MaxDecodedSize {
+		return "", nil
+	}
+	if _, err := br.Peek(1); !errors.Is(err, io.EOF) {
+		var re readErr
+		if errors.As(err, &re) {
+			return "", re.err
+		}
+		return "", nil // a second member or trailing bytes
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// readErr marks a failure to read the blob itself (retried), as opposed
+// to bytes that are not gzip.
+type readErr struct{ err error }
+
+func (e readErr) Error() string { return e.err.Error() }
+func (e readErr) Unwrap() error { return e.err }
+
+// blobReader wraps blob reads so their failures are told from bad data.
+type blobReader struct{ r io.Reader }
+
+func (b blobReader) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) {
+		err = readErr{err}
+	}
+	return n, err
 }
 
 // chunkText splits text into at most MaxTextChunks pieces of at most

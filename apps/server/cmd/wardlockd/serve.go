@@ -161,8 +161,15 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	defer stopWatch()
 	// Content screening (A2.15): the quarantine list is kept whether or not
 	// screening is on, so a file once withheld stays withheld.
+	// The list is loaded before the server listens, so a restart never
+	// serves a quarantined file; the server does not start without it.
 	quarantine := moderation.NewQuarantine()
-	modSvc := newModeration(cfg, log, db, blobs, mailer, quarantine)
+	if err := quarantine.Load(ctx, db.Moderation().Quarantined); err != nil {
+		_ = ln.Close()
+		return err
+	}
+	screened := deploys.NewLocalNotifier()
+	modSvc := newModeration(cfg, log, db, blobs, mailer, quarantine, screened)
 	stopModeration := startModeration(ctx, log, db, modSvc, quarantine, notifier)
 	defer stopModeration()
 	metrics := platform.NewMetrics(time.Now())
@@ -243,9 +250,10 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			domains:    db.Domains(),
 			deploys:    db.Deploys(),
 			renditions: db.Renditions(),
+			moderation: screenedSites(modSvc, db),
 		},
 		Blobs:       blobs,
-		Invalidator: notifier,
+		Invalidator: invalidators{notifier, screened},
 		Access:      accessSvc,
 		Recorder:    recorder,
 		TLSAsk:      tlsAsk(cfg, db, log),

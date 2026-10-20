@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -20,16 +21,27 @@ const (
 	ModerationAllowed     ModerationStatus = "allowed"     // nothing to act on, or released
 	ModerationFlagged     ModerationStatus = "flagged"     // for the operator to review; served
 	ModerationQuarantined ModerationStatus = "quarantined" // withheld on every site
-	ModerationSkipped     ModerationStatus = "skipped"     // could not be sent
+	ModerationSkipped     ModerationStatus = "skipped"     // nothing in it to screen
 )
 
-// ModerationKind says what screening sends for a hash.
+// ModerationUnscreenable is the reason recorded for a flagged hash holding
+// an image that could not be screened (A2.15): it is served and listed for
+// the operator to review.
+const ModerationUnscreenable = "unscreenable"
+
+// ModerationKind says what screening covered for a hash, decided from its
+// bytes and the paths that serve it.
 type ModerationKind string
 
 const (
-	ModerationImage ModerationKind = "image" // the file itself
-	ModerationText  ModerationKind = "text"  // an HTML page's extracted text
+	ModerationNone      ModerationKind = ""           // nothing to screen, or not screened yet
+	ModerationImage     ModerationKind = "image"      // the file as an image
+	ModerationText      ModerationKind = "text"       // its text, as a page or text file
+	ModerationImageText ModerationKind = "image,text" // both
 )
+
+// HasText reports whether k covers text.
+func (k ModerationKind) HasText() bool { return k == ModerationText || k == ModerationImageText }
 
 // ModerationResult is one content hash's row: the queue entry while
 // NextAttemptAt is set, and the verdict.
@@ -38,8 +50,14 @@ type ModerationResult struct {
 	Kind       ModerationKind
 	Status     ModerationStatus
 	Categories []string // the OpenAI categories the endpoint flagged
-	Attempts   int
-	QueuedAt   time.Time
+	// Reason qualifies the status: ModerationUnscreenable for a flagged
+	// image that could not be screened, else "".
+	Reason string
+	// Decoded is, for a gzip file, the SHA-256 of what it decompresses to;
+	// "" otherwise.
+	Decoded  string
+	Attempts int
+	QueuedAt time.Time
 	// NextAttemptAt is when the hash is next due for screening; zero when
 	// it is not queued.
 	NextAttemptAt time.Time
@@ -48,15 +66,26 @@ type ModerationResult struct {
 	ConfirmedAt, DiscardedAt, ReleasedAt time.Time
 }
 
-// ModerationSource is a file screening may send for a hash: one listing it
-// in a serving deploy of an owner who is not exempt.
+// ModerationVerdict is what screening a queued hash came to.
+type ModerationVerdict struct {
+	// Status is the new verdict; "" keeps the current one (screening found
+	// nothing the endpoint could judge), which a hash never screened
+	// cannot do.
+	Status     ModerationStatus
+	Categories []string
+	Reason     string
+	// Kind is what was covered; Decoded what a gzip file decompresses to.
+	Kind    ModerationKind
+	Decoded string
+}
+
+// ModerationSource is what screening needs about a hash that a serving
+// deploy of an owner who is not exempt lists.
 type ModerationSource struct {
-	Path string
 	Size int64
-	// TextSHA256 and TextSize name the page's plain-text rendition; ""
-	// when it has none.
-	TextSHA256 string
-	TextSize   int64
+	// TextServed means a path that serves it as text (.html, .htm, .xhtml,
+	// .svg, .txt, .md, .xml) lists it.
+	TextServed bool
 }
 
 // ModerationUse is a site whose active deploy lists a hash.
@@ -64,28 +93,46 @@ type ModerationUse struct {
 	SiteID, SiteName    string
 	OwnerID, OwnerEmail string
 	Path                string
+	// Unavailable means the site is taken down or its owner suspended.
+	Unavailable bool
+}
+
+// ModerationState is what the edge needs about one file of a deploy.
+type ModerationState struct {
+	SHA256 string
+	// Status is ModerationPending for a hash never queued.
+	Status ModerationStatus
+	// Decoded is, for a gzip file, the SHA-256 of what it decompresses to.
+	Decoded string
 }
 
 // Moderation stores content screening's queue and verdicts and the owners'
 // exemptions. It is instance-wide: it backs the screening worker, the
 // edge's quarantine list and `wardlockd admin`, never an owner API handler.
 type Moderation interface {
-	// EnqueueUnscreened queues every image (.png, .jpg, .jpeg, .webp, .gif)
-	// and HTML page (.html, .htm) in any letter case that an active deploy
-	// lists, on a site neither taken down nor of a suspended owner, of an
-	// owner who is not exempt, and that has never been queued, due at at.
-	// It returns how many hashes it queued.
-	EnqueueUnscreened(ctx context.Context, at time.Time) (int, error)
+	// EnqueueSite queues, due at at, every file the site's active deploy
+	// lists that was never queued, and queues again each screened hash it
+	// lists under a path served as text (.html, .htm, .xhtml, .svg, .txt,
+	// .md, .xml, any letter case) whose text was never screened, unless it
+	// is quarantined. Nothing when the site is taken down or has no active
+	// deploy, or its owner is exempt or suspended. It returns how many
+	// hashes it queued.
+	EnqueueSite(ctx context.Context, siteID string, at time.Time) (int, error)
+	// ScreenedSites returns up to limit site IDs after after, in order, of
+	// the sites EnqueueSite would queue files for.
+	ScreenedSites(ctx context.Context, after string, limit int) ([]string, error)
 	// Due returns up to limit queued hashes due at or before now, the
-	// longest waiting first.
+	// longest waiting first, with their kind and current status.
 	Due(ctx context.Context, now time.Time, limit int) ([]ModerationResult, error)
-	// Source returns a file screening may send for sha256; ErrNotFound when
-	// there is none any more.
+	// Source returns what screening needs about sha256; ErrNotFound when no
+	// serving deploy of an owner who is not exempt lists it any more.
 	Source(ctx context.Context, sha256 string) (ModerationSource, error)
-	// Record stores a verdict for a queued hash and takes it off the queue,
-	// clearing any earlier operator decision. ErrNotFound when it is not
-	// queued.
-	Record(ctx context.Context, sha256 string, status ModerationStatus, categories []string, at time.Time) error
+	// Record stores a verdict for a queued hash and takes it off the queue.
+	// A new status clears any earlier operator decision; the same status
+	// keeps it. A verdict with no Status keeps the current one and records
+	// only Kind and Decoded. ErrNotFound when the hash is not queued (or,
+	// keeping the verdict, was never screened).
+	Record(ctx context.Context, sha256 string, v ModerationVerdict, at time.Time) error
 	// Retry counts a failed attempt and makes the queued hash due again at
 	// next. ErrNotFound when it is not queued.
 	Retry(ctx context.Context, sha256 string, attempts int, next time.Time) error
@@ -113,6 +160,9 @@ type Moderation interface {
 	// Rescan queues a hash again, due at at, keeping its verdict until the
 	// new one. ErrNotFound for a hash never queued.
 	Rescan(ctx context.Context, sha256 string, at time.Time) error
+	// DeployScreening returns each file hash of a deploy with its status
+	// and what a gzip file decompresses to.
+	DeployScreening(ctx context.Context, deployID string) ([]ModerationState, error)
 	// Backlog counts the queued hashes.
 	Backlog(ctx context.Context) (int, error)
 	// SetExempt exempts the owner from screening or ends the exemption.
@@ -126,12 +176,24 @@ func (db *DB) Moderation() Moderation { return moderationRepo{db} }
 
 type moderationRepo struct{ db *DB }
 
-func (r moderationRepo) EnqueueUnscreened(ctx context.Context, at time.Time) (int, error) {
-	n, err := r.db.q.EnqueueUnscreened(ctx, ms(at))
+func (r moderationRepo) EnqueueSite(ctx context.Context, siteID string, at time.Time) (int, error) {
+	n, err := r.db.q.EnqueueSite(ctx, sqlcgen.EnqueueSiteParams{SiteID: siteID, At: ms(at)})
 	if err != nil {
-		return 0, mapErr("queue unscreened files", err)
+		return 0, mapErr("queue site files", err)
 	}
-	return int(n), nil
+	m, err := r.db.q.RequeueSiteText(ctx, sqlcgen.RequeueSiteTextParams{SiteID: siteID, At: nullMs(at)})
+	if err != nil {
+		return 0, mapErr("queue site text", err)
+	}
+	return int(n + m), nil
+}
+
+func (r moderationRepo) ScreenedSites(ctx context.Context, after string, limit int) ([]string, error) {
+	ids, err := r.db.q.ListScreenedSites(ctx, sqlcgen.ListScreenedSitesParams{After: after, RowLimit: int64(limit)})
+	if err != nil {
+		return nil, mapErr("list screened sites", err)
+	}
+	return ids, nil
 }
 
 func (r moderationRepo) Due(ctx context.Context, now time.Time, limit int) ([]ModerationResult, error) {
@@ -141,25 +203,35 @@ func (r moderationRepo) Due(ctx context.Context, now time.Time, limit int) ([]Mo
 	}
 	out := make([]ModerationResult, len(rows))
 	for i, row := range rows {
-		out[i] = ModerationResult{SHA256: row.Sha256, Kind: ModerationKind(row.Kind), Attempts: int(row.Attempts)}
+		out[i] = ModerationResult{SHA256: row.Sha256, Kind: ModerationKind(row.Kind), Status: ModerationStatus(row.Status), Attempts: int(row.Attempts)}
 	}
 	return out, nil
 }
 
 func (r moderationRepo) Source(ctx context.Context, sha256 string) (ModerationSource, error) {
-	row, err := r.db.q.ModerationSource(ctx, sha256)
+	size, err := r.db.q.ModerationSource(ctx, sha256)
 	if err != nil {
 		return ModerationSource{}, mapErr("find screening source", err)
 	}
-	return ModerationSource{Path: row.Path, Size: row.Size, TextSHA256: row.TextSha256, TextSize: row.TextSize}, nil
+	texts, err := r.db.q.CountModerationTextPaths(ctx, sha256)
+	if err != nil {
+		return ModerationSource{}, mapErr("count screening text paths", err)
+	}
+	return ModerationSource{Size: size, TextServed: texts > 0}, nil
 }
 
-func (r moderationRepo) Record(ctx context.Context, sha256 string, status ModerationStatus, categories []string, at time.Time) error {
-	if status == ModerationPending {
+func (r moderationRepo) Record(ctx context.Context, sha256 string, v ModerationVerdict, at time.Time) error {
+	decoded := sql.NullString{String: v.Decoded, Valid: v.Decoded != ""}
+	if v.Status == "" {
+		n, err := r.db.q.KeepModerationVerdict(ctx, sqlcgen.KeepModerationVerdictParams{Sha256: sha256, Kind: string(v.Kind), DecodedSha256: decoded})
+		return rowsAffected("record screening coverage", n, err)
+	}
+	if v.Status == ModerationPending {
 		return fmt.Errorf("record screening verdict: %w: pending is not a verdict", ErrConstraint)
 	}
 	n, err := r.db.q.RecordModerationVerdict(ctx, sqlcgen.RecordModerationVerdictParams{
-		Sha256: sha256, Status: string(status), Categories: strings.Join(categories, ","), CheckedAt: nullMs(at),
+		Sha256: sha256, Status: string(v.Status), Categories: strings.Join(v.Categories, ","), Reason: v.Reason,
+		Kind: string(v.Kind), DecodedSha256: decoded, CheckedAt: nullMs(at),
 	})
 	return rowsAffected("record screening verdict", n, err)
 }
@@ -191,7 +263,7 @@ func moderationFromRow(row sqlcgen.ModerationResult) ModerationResult {
 	}
 	return ModerationResult{
 		SHA256: row.Sha256, Kind: ModerationKind(row.Kind), Status: ModerationStatus(row.Status), Categories: cats,
-		Attempts: int(row.Attempts), QueuedAt: fromMs(row.QueuedAt), NextAttemptAt: fromNullMs(row.NextAttemptAt),
+		Reason: row.Reason, Decoded: row.DecodedSha256.String, Attempts: int(row.Attempts), QueuedAt: fromMs(row.QueuedAt), NextAttemptAt: fromNullMs(row.NextAttemptAt),
 		CheckedAt: fromNullMs(row.CheckedAt), ConfirmedAt: fromNullMs(row.ConfirmedAt),
 		DiscardedAt: fromNullMs(row.DiscardedAt), ReleasedAt: fromNullMs(row.ReleasedAt),
 	}
@@ -224,7 +296,10 @@ func (r moderationRepo) Uses(ctx context.Context, sha256 string) ([]ModerationUs
 	}
 	out := make([]ModerationUse, len(rows))
 	for i, row := range rows {
-		out[i] = ModerationUse{SiteID: row.SiteID, SiteName: row.SiteName, OwnerID: row.OwnerID, OwnerEmail: row.OwnerEmail, Path: row.Path}
+		out[i] = ModerationUse{
+			SiteID: row.SiteID, SiteName: row.SiteName, OwnerID: row.OwnerID, OwnerEmail: row.OwnerEmail, Path: row.Path,
+			Unavailable: row.TakenDownAt.Valid || row.SuspendedAt.Valid,
+		}
 	}
 	return out, nil
 }
@@ -259,6 +334,18 @@ func (r moderationRepo) decided(ctx context.Context, what, sha256 string, n int6
 func (r moderationRepo) Rescan(ctx context.Context, sha256 string, at time.Time) error {
 	n, err := r.db.q.RescanModeration(ctx, sqlcgen.RescanModerationParams{Sha256: sha256, At: nullMs(at)})
 	return rowsAffected("rescan", n, err)
+}
+
+func (r moderationRepo) DeployScreening(ctx context.Context, deployID string) ([]ModerationState, error) {
+	rows, err := r.db.q.ListDeployScreening(ctx, deployID)
+	if err != nil {
+		return nil, mapErr("list deploy screening", err)
+	}
+	out := make([]ModerationState, len(rows))
+	for i, row := range rows {
+		out[i] = ModerationState{SHA256: row.Sha256, Status: ModerationStatus(row.Status), Decoded: row.DecodedSha256}
+	}
+	return out, nil
 }
 
 func (r moderationRepo) Backlog(ctx context.Context) (int, error) {

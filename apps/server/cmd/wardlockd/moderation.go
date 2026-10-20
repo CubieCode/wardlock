@@ -15,6 +15,7 @@ import (
 	"text/tabwriter"
 
 	"wardlock.nz/server/internal/deploys"
+	"wardlock.nz/server/internal/edge"
 	"wardlock.nz/server/internal/mail"
 	"wardlock.nz/server/internal/moderation"
 	"wardlock.nz/server/internal/platform"
@@ -23,8 +24,9 @@ import (
 
 // newModeration is content screening (A2.15) over the database and blobs:
 // with a Moderator when the operator turned it on, without one (operator
-// decisions only) otherwise.
-func newModeration(cfg platform.Config, log *slog.Logger, db *store.DB, blobs moderation.BlobOpener, mailer mail.Mailer, q *moderation.Quarantine) *moderation.Service {
+// decisions only) otherwise. screened, when not nil, is told each site
+// whose files' screening state changed, for the edge.
+func newModeration(cfg platform.Config, log *slog.Logger, db *store.DB, blobs moderation.BlobOpener, mailer mail.Mailer, q *moderation.Quarantine, screened deploys.Notifier) *moderation.Service {
 	c := moderation.Config{
 		Store:         db.Moderation(),
 		Blobs:         blobs,
@@ -38,20 +40,24 @@ func newModeration(cfg platform.Config, log *slog.Logger, db *store.DB, blobs mo
 	if cfg.Moderation.Provider == platform.ModerationOpenAI {
 		c.Moderator = moderation.NewOpenAI(moderation.OpenAIConfig{Key: cfg.Moderation.OpenAIKey})
 	}
+	if screened != nil {
+		c.Invalidate = func(siteID string) { screened.Notify(context.Background(), siteID) }
+	}
 	return moderation.New(c)
 }
 
-// startModeration keeps the quarantine list current from the database and,
-// when screening is on, runs the screening worker, woken by every change
-// to a site's served state. The returned stop waits for both; call it
-// before the database closes.
+// startModeration keeps the quarantine list current from the database
+// (serve has loaded it once already) and, when screening is on, runs the
+// screening worker, which queues a site's files as soon as its served
+// state changes. The returned stop waits for both; call it before the
+// database closes.
 func startModeration(ctx context.Context, log *slog.Logger, db *store.DB, svc *moderation.Service, q *moderation.Quarantine, notifier deploys.Notifier) func() {
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	wg.Go(func() { q.Watch(ctx, db.Moderation().Quarantined, moderation.QuarantineInterval, log) })
 	unsubscribe := func() {}
 	if svc.Enabled() {
-		unsubscribe = notifier.Subscribe(func(string) { svc.Wake() })
+		unsubscribe = notifier.Subscribe(svc.Changed)
 		wg.Go(func() { svc.Run(ctx) })
 	}
 	return func() {
@@ -61,26 +67,54 @@ func startModeration(ctx context.Context, log *slog.Logger, db *store.DB, svc *m
 	}
 }
 
-// collectModerationMetrics adds the screening backlog and the number of
-// withheld hashes to /metrics.
+// invalidators is an edge.Invalidator over several: a site's served state
+// changes (deploys) and its files' screening state (moderation).
+type invalidators []edge.Invalidator
+
+func (is invalidators) Subscribe(fn func(siteID string)) func() {
+	unsubs := make([]func(), len(is))
+	for i, inv := range is {
+		unsubs[i] = inv.Subscribe(fn)
+	}
+	return func() {
+		for _, u := range unsubs {
+			u()
+		}
+	}
+}
+
+// collectModerationMetrics adds the screening backlog, the number of
+// withheld hashes and the provider's failures to /metrics.
 func collectModerationMetrics(m *platform.Metrics, svc *moderation.Service, q *moderation.Quarantine) {
 	m.Collect(func(ctx context.Context, e *platform.Exposition) {
 		if n, err := svc.Backlog(ctx); err == nil {
 			e.Gauge("wardlock_moderation_backlog", "Content hashes waiting to be screened, retries included.", platform.Sample{Value: float64(n)})
 		}
 		e.Gauge("wardlock_moderation_quarantined", "Content hashes withheld by content screening.", platform.Sample{Value: float64(q.Len())})
+		if !svc.Enabled() {
+			return
+		}
+		paused := 0.0
+		if svc.Paused() {
+			paused = 1
+		}
+		e.Gauge("wardlock_moderation_paused", "1 while screening is paused after a provider failure or rate limit.", platform.Sample{Value: paused})
+		e.Counter("wardlock_moderation_provider_errors_total",
+			"Provider failures that paused screening: a refused key, a rate limit or a request it called malformed.",
+			platform.Sample{Value: float64(svc.ProviderErrors())})
 	})
 }
 
 const moderationUsage = `Usage:
   wardlockd admin moderation <command>
 
-  list                     List flagged and quarantined files with the sites serving them
+  list                     List flagged (including unscreenable) and quarantined files with
+                           the sites serving them
   release SHA256           Serve the file again everywhere
   confirm SHA256           Keep a quarantined file withheld, and its stored copy held, indefinitely
   discard SHA256           Keep a quarantined file withheld; garbage collection removes its
                            stored copy once no deploy lists it
-  rescan SHA256            Screen the file again; its current verdict holds until then
+  rescan SHA256            Screen the file again; its verdict holds unless screening gives a new one
   disable --owner ADDRESS  Never send this owner's content for screening
   enable --owner ADDRESS   Screen this owner's content again (the default)
 
@@ -171,7 +205,7 @@ func adminModeration(ctx context.Context, args []string, getenv func(string) str
 		"release": "Released " + sha + ". Every site serving it serves it again.",
 		"confirm": "Confirmed " + sha + ". It stays withheld, and its stored copy is kept even once no deploy lists it.",
 		"discard": "Discarded " + sha + ". It stays withheld; garbage collection removes its stored copy once no deploy lists it.",
-		"rescan":  "Queued " + sha + " for screening again. Its current verdict holds until the new one.",
+		"rescan":  "Queued " + sha + " for screening again. Its current verdict holds unless screening gives a new one.",
 	}[cmd])
 	return nil
 }
@@ -189,6 +223,10 @@ func listModeration(ctx context.Context, a *adminEnv, out io.Writer) error {
 	fmt.Fprintln(tw, "SHA256\tSTATUS\tCATEGORIES\tCHECKED\tSITES")
 	for _, r := range rs {
 		cats := strings.Join(r.Categories, ",")
+		if r.Reason != "" {
+			// An unscreenable image: served, for the operator to look at.
+			cats = strings.Trim(cats+","+r.Reason, ",")
+		}
 		if cats == "" {
 			cats = "-"
 		}
@@ -231,4 +269,13 @@ func moderationAttr(cfg platform.Config) string {
 		return "off"
 	}
 	return cfg.Moderation.Provider
+}
+
+// screenedSites is the moderation store for the edge's site source when
+// screening is on, nil when it is off.
+func screenedSites(svc *moderation.Service, db *store.DB) store.Moderation {
+	if !svc.Enabled() {
+		return nil
+	}
+	return db.Moderation()
 }

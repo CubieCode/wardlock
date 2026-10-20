@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"slices"
 	"strconv"
@@ -32,10 +33,14 @@ const openAITimeout = 2 * time.Minute
 // maxOpenAIResponse bounds the response body read.
 const maxOpenAIResponse = 1 << 20
 
+// maxRetryAfter bounds the wait a Retry-After header can ask for.
+const maxRetryAfter = 24 * time.Hour
+
 // OpenAI is a Moderator over OpenAI's moderation endpoint
 // (https://platform.openai.com/docs/api-reference/moderations). It sends
 // text as an array of strings and an image as a base64 data URL, and never
-// puts the key or the content in an error or log line.
+// puts the key, the content or the provider's error message (which can
+// quote either) in an error or log line.
 type OpenAI struct {
 	key    platform.Secret
 	url    string
@@ -74,6 +79,14 @@ type openAIImagePart struct {
 	ImageURL struct {
 		URL string `json:"url"`
 	} `json:"image_url"`
+}
+
+type openAIError struct {
+	Error struct {
+		Type  string `json:"type"`
+		Param string `json:"param"`
+		Code  string `json:"code"`
+	} `json:"error"`
 }
 
 type openAIResponse struct {
@@ -118,14 +131,33 @@ func (o *OpenAI) Moderate(ctx context.Context, in Input) (Verdict, error) {
 		return Verdict{}, &RetryError{}
 	}
 	defer func() { _ = res.Body.Close() }()
-	switch res.StatusCode {
-	case http.StatusOK:
-	case http.StatusBadRequest, http.StatusRequestEntityTooLarge:
+	after := retryAfter(res.Header.Get("Retry-After"), time.Now())
+	switch s := res.StatusCode; {
+	case s == http.StatusOK:
+	case s == http.StatusRequestEntityTooLarge:
 		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, maxOpenAIResponse))
-		return Verdict{}, fmt.Errorf("%w: provider answered %d", ErrRejected, res.StatusCode)
+		return Verdict{}, fmt.Errorf("%w: provider answered %d", ErrRejected, s)
+	case s == http.StatusBadRequest:
+		// Only an error about this input (an image it cannot read, text
+		// too long) rejects the input; a request the provider calls
+		// malformed otherwise (a model it does not know, a field it does
+		// not take) would fail every input alike.
+		var e openAIError
+		_ = json.NewDecoder(io.LimitReader(res.Body, maxOpenAIResponse)).Decode(&e)
+		code := safeCode(e.Error.Code)
+		if inputError(e.Error.Param, e.Error.Code) {
+			return Verdict{}, fmt.Errorf("%w: provider answered %d (%s)", ErrRejected, s, code)
+		}
+		return Verdict{}, &RetryError{Status: s, Global: true, Code: code, After: after}
+	case s >= 500, s == http.StatusRequestTimeout, s == http.StatusConflict:
+		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, maxOpenAIResponse))
+		return Verdict{}, &RetryError{Status: s, After: after}
 	default:
-		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, maxOpenAIResponse))
-		return Verdict{}, &RetryError{Status: res.StatusCode, After: retryAfter(res.Header.Get("Retry-After"), time.Now())}
+		// A refused key (401, 403), a rate limit (429) and anything else
+		// the provider says about the request rather than the input.
+		var e openAIError
+		_ = json.NewDecoder(io.LimitReader(res.Body, maxOpenAIResponse)).Decode(&e)
+		return Verdict{}, &RetryError{Status: s, Global: true, Code: safeCode(e.Error.Code), After: after}
 	}
 	var out openAIResponse
 	if err := json.NewDecoder(io.LimitReader(res.Body, maxOpenAIResponse)).Decode(&out); err != nil {
@@ -146,21 +178,51 @@ func (o *OpenAI) Moderate(ctx context.Context, in Input) (Verdict, error) {
 	return v, nil
 }
 
-// retryAfter reads a Retry-After header: seconds or an HTTP date. 0 when
-// absent or unreadable.
+// inputError reports whether a 400's error is about the input itself: the
+// parameter it names is the input (input, input[0], input[0].image_url)
+// or its code is about an image (invalid_image, image_too_large,
+// invalid_image_format, ...).
+func inputError(param, code string) bool {
+	return param == "input" || strings.HasPrefix(param, "input[") || strings.HasPrefix(param, "input.") ||
+		strings.Contains(strings.ToLower(code), "image")
+}
+
+// safeCode keeps a provider error code fit for a log line: at most 64 of
+// [A-Za-z0-9_.-], "" otherwise.
+func safeCode(c string) string {
+	if len(c) > 64 {
+		return ""
+	}
+	for _, r := range c {
+		if !codeChar(r) {
+			return ""
+		}
+	}
+	return c
+}
+
+func codeChar(r rune) bool {
+	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || '0' <= r && r <= '9' || r == '_' || r == '-' || r == '.'
+}
+
+// retryAfter reads a Retry-After header: seconds or an HTTP date, at most
+// maxRetryAfter. 0 when absent or unreadable.
 func retryAfter(h string, now time.Time) time.Duration {
 	h = strings.TrimSpace(h)
 	if h == "" {
 		return 0
 	}
 	if s, err := strconv.ParseFloat(h, 64); err == nil {
-		if s <= 0 {
+		switch {
+		case math.IsNaN(s) || s <= 0:
 			return 0
+		case s >= maxRetryAfter.Seconds():
+			return maxRetryAfter
 		}
 		return time.Duration(s * float64(time.Second))
 	}
 	if t, err := http.ParseTime(h); err == nil && t.After(now) {
-		return t.Sub(now)
+		return min(t.Sub(now), maxRetryAfter)
 	}
 	return 0
 }

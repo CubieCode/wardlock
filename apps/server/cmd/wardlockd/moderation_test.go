@@ -5,8 +5,10 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,6 +22,7 @@ import (
 	"wardlock.nz/server/internal/mail"
 	"wardlock.nz/server/internal/moderation"
 	"wardlock.nz/server/internal/moderation/moderationtest"
+	"wardlock.nz/server/internal/moderation/testimages"
 	"wardlock.nz/server/internal/sites/sitestest"
 	"wardlock.nz/server/internal/store"
 )
@@ -32,12 +35,17 @@ func hashOf(body string) string {
 // publishAs creates a site of ownerID and activates a deploy of files on
 // it.
 func (p *policyEdge) publishAs(ownerID, name string, spa bool, files map[string]string) {
+	p.t.Helper()
+	p.publishWith(ownerID, name, deploys.Manifest{SPA: spa}, files)
+}
+
+// publishWith is publishAs with m's options.
+func (p *policyEdge) publishWith(ownerID, name string, m deploys.Manifest, files map[string]string) {
 	t, ctx := p.t, p.t.Context()
 	t.Helper()
 	if err := p.db.Sites().Create(ctx, store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: p.now()}, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
-	m := deploys.Manifest{SPA: spa}
 	for path, body := range files {
 		m.Files = append(m.Files, store.DeployFile{Path: path, SHA256: hashOf(body), Size: int64(len(body))})
 	}
@@ -100,11 +108,10 @@ func TestContentScreeningThroughTheEdge(t *testing.T) {
 	ctx := t.Context()
 	const (
 		badPage = "<h1>Notes</h1><p>forbidden-words here</p>"
-		badPNG  = "\x89PNG\r\n\x1a\nbad-image-bytes"
-		okPNG   = "\x89PNG\r\n\x1a\nfine-image-bytes"
 		minors  = "<p>minors-marker</p>"
 		violent = "<p>violent-marker</p>"
 	)
+	badPNG, okPNG := testimages.PNG("bad-image-bytes", 0), testimages.PNG("fine-image-bytes", 0)
 	p.publishAs(p.owner.ID, "docs", false, map[string]string{
 		"index.html":       "<p>Home page</p>",
 		"bad.html":         badPage,
@@ -131,7 +138,7 @@ func TestContentScreeningThroughTheEdge(t *testing.T) {
 	if err := p.db.Moderation().SetExempt(ctx, exempt.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	const exemptPNG = "\x89PNG\r\n\x1a\nbad-image-bytes but exempt"
+	exemptPNG := testimages.PNG("bad-image-bytes but exempt", 0)
 	p.publishAs(exempt.ID, "trusted", false, map[string]string{"index.html": "<p>Trusted forbidden-words</p>", "pic.png": exemptPNG})
 
 	// A custom domain on docs.
@@ -165,7 +172,8 @@ func TestContentScreeningThroughTheEdge(t *testing.T) {
 
 	// Each unique image and page once: the pages of docs, lost, app and
 	// shop (index.html bodies differ) and two images. Nothing of the
-	// exempt owner's; no stylesheet or precompressed file.
+	// exempt owner's; nothing of the stylesheet or the precompressed file,
+	// neither an image nor served as text.
 	sent := fake.Sent()
 	var texts, images int
 	for _, in := range sent {
@@ -234,7 +242,13 @@ func TestContentScreeningThroughTheEdge(t *testing.T) {
 	_, token := p.link("docs", access.NewLink{Label: "review"})
 	p.do(http.MethodGet, host, withT("/", token), "", html).expect(t, http.StatusOK, "Home page", "")
 	p.do(http.MethodGet, host, withT("/bad.html", token), "", html).withheld(t, true, "forbidden-words")
-	p.do(http.MethodGet, host, "/img/bad.png", "", bearer(token)).withheld(t, false, "bad-image-bytes")
+	plain := p.do(http.MethodGet, host, "/img/bad.png", "", bearer(token))
+	plain.withheld(t, false, "bad-image-bytes")
+	// The plain-text 451 carries the protected-site headers too.
+	if plain.h.Get("X-Robots-Tag") != "noindex" || plain.h.Get("Cross-Origin-Resource-Policy") != "same-origin" ||
+		plain.h.Get("Referrer-Policy") != "no-referrer" || !slices.Contains(plain.h.Values("Vary"), "Cookie") {
+		t.Fatalf("protected 451 headers %v", plain.h)
+	}
 	p.do(http.MethodGet, custom, withT("/img/bad.png", token), "", nil).withheld(t, false, "bad-image-bytes")
 	p.noRawTokens(t, p.accessRecords())
 
@@ -293,11 +307,9 @@ func TestContentScreeningThroughTheEdge(t *testing.T) {
 	if err := mod.Release(ctx, hashOf(badPNG)); err != nil {
 		t.Fatal(err)
 	}
-	hs, err := p.db.Moderation().Quarantined(ctx)
-	if err != nil {
+	if err := p.quarantine.Load(ctx, p.db.Moderation().Quarantined); err != nil {
 		t.Fatal(err)
 	}
-	p.quarantine.Replace(hs)
 	p.do(http.MethodGet, "shop.wardlock.localhost", "/logo.png", "", nil).expect(t, http.StatusOK, "bad-image-bytes", "")
 	p.do(http.MethodGet, host, "/bad.html", "", bearer(token)).withheld(t, true, "forbidden-words")
 }
@@ -346,12 +358,13 @@ func TestAdminModeration(t *testing.T) {
 	if err := db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
-	q, f := strings.Repeat("1", 64), strings.Repeat("2", 64)
-	d := store.Deploy{ID: store.NewID(), SiteID: site.ID, FileCount: 2, TotalSize: 10, CreatedAt: time.Now()}
-	if err := db.Deploys().Create(ctx, o.ID, d, []store.DeployFile{{Path: "q.png", SHA256: q, Size: 5}, {Path: "f.png", SHA256: f, Size: 5}}, store.Quotas{}); err != nil {
+	q, f, u := strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("4", 64)
+	d := store.Deploy{ID: store.NewID(), SiteID: site.ID, FileCount: 3, TotalSize: 15, CreatedAt: time.Now()}
+	files := []store.DeployFile{{Path: "q.png", SHA256: q, Size: 5}, {Path: "f.png", SHA256: f, Size: 5}, {Path: "u.avif", SHA256: u, Size: 5}}
+	if err := db.Deploys().Create(ctx, o.ID, d, files, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, h := range []string{q, f} {
+	for _, h := range []string{q, f, u} {
 		if err := db.Deploys().RecordUpload(ctx, o.ID, store.Blob{SHA256: h, Size: 5, CreatedAt: time.Now()}); err != nil {
 			t.Fatal(err)
 		}
@@ -359,18 +372,21 @@ func TestAdminModeration(t *testing.T) {
 	if _, err := db.Deploys().Activate(ctx, o.ID, site.ID, d.ID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Moderation().EnqueueUnscreened(ctx, time.Now()); err != nil {
+	if _, err := db.Moderation().EnqueueSite(ctx, site.ID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Moderation().Record(ctx, q, store.ModerationQuarantined, []string{"sexual"}, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Moderation().Record(ctx, f, store.ModerationFlagged, []string{"violence"}, time.Now()); err != nil {
-		t.Fatal(err)
+	for h, v := range map[string]store.ModerationVerdict{
+		q: {Status: store.ModerationQuarantined, Categories: []string{"sexual"}, Kind: store.ModerationImage},
+		f: {Status: store.ModerationFlagged, Categories: []string{"violence"}, Kind: store.ModerationImage},
+		u: {Status: store.ModerationFlagged, Reason: store.ModerationUnscreenable, Kind: store.ModerationImage},
+	} {
+		if err := db.Moderation().Record(ctx, h, v, time.Now()); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	out := must("list")
-	for _, want := range []string{q, f, "quarantined", "flagged", "docs/q.png", "sexual", "violence"} {
+	for _, want := range []string{q, f, u, "quarantined", "flagged", "docs/q.png", "sexual", "violence", "unscreenable", "docs/u.avif"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("list lacks %q:\n%s", want, out)
 		}
@@ -447,7 +463,7 @@ func TestServeWithScreening(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	for _, want := range []string{"wardlock_moderation_backlog 0", "wardlock_moderation_quarantined 0"} {
+	for _, want := range []string{"wardlock_moderation_backlog 0", "wardlock_moderation_quarantined 0", "wardlock_moderation_paused 0", "wardlock_moderation_provider_errors_total 0"} {
 		if !strings.Contains(string(body), want) {
 			t.Fatalf("/metrics lacks %q:\n%s", want, body)
 		}
@@ -455,5 +471,128 @@ func TestServeWithScreening(t *testing.T) {
 	s.stop()
 	if logs := s.logs.String(); strings.Contains(logs, key) || !strings.Contains(logs, `"moderation":"openai"`) {
 		t.Fatalf("start-up logs:\n%s", logs)
+	}
+}
+
+// TestScreeningCacheAndSiblings checks what screening changes in serving
+// on a screened site (A2.15): a file not screened yet is never cached for
+// long, a gzip sibling is offered only once screening found it
+// decompresses to exactly its file (never an abusive one with a benign
+// base), and a brotli sibling is never offered; a site of an exempt owner
+// is served as before.
+func TestScreeningCacheAndSiblings(t *testing.T) {
+	p := newPolicyEdge(t)
+	ctx := t.Context()
+	screened := p.screening()
+	gz := func(b string) string {
+		var buf bytes.Buffer
+		w := gzip.NewWriter(&buf)
+		_, _ = w.Write([]byte(b))
+		_ = w.Close()
+		return buf.String()
+	}
+	const page, asset, js = "<p>Benign page</p>", "/assets/app-3f2a9c1b.js", "console.log('app')"
+	files := map[string]string{"index.html": page, "index.html.gz": gz(page), "index.html.br": "brotli-bytes", asset[1:]: js}
+	docs := map[string]string{"other.html": "<p>Other</p>", "other.html.gz": gz("<p>abusive-sibling</p>")}
+	maps.Copy(docs, files)
+	p.publishWith(p.owner.ID, "docs", deploys.Manifest{ImmutableAssets: true}, docs)
+	exempt := store.Owner{ID: store.NewID(), Email: "trusted@example.test", CreatedAt: p.now()}
+	if err := p.db.Owners().Create(ctx, exempt); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.db.Moderation().SetExempt(ctx, exempt.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	p.publishWith(exempt.ID, "trusted", deploys.Manifest{ImmutableAssets: true}, files)
+	const docsHost, trustedHost = "docs.wardlock.localhost", "trusted.wardlock.localhost"
+	both := http.Header{"Accept-Encoding": {"br, gzip"}}
+	encoding := func(host, target string, h http.Header, want, body string) {
+		t.Helper()
+		r := p.do(http.MethodGet, host, target, "", h)
+		if r.code != http.StatusOK || r.h.Get("Content-Encoding") != want || (body != "" && r.body != body) {
+			t.Fatalf("%s%s: %d, encoding %q, body %.30q; want %q", host, target, r.code, r.h.Get("Content-Encoding"), r.body, want)
+		}
+	}
+	cache := func(host, target, want string) {
+		t.Helper()
+		if r := p.do(http.MethodGet, host, target, "", nil); r.code != http.StatusOK || r.h.Get("Cache-Control") != want {
+			t.Fatalf("%s%s: %d, Cache-Control %q, want %q", host, target, r.code, r.h.Get("Cache-Control"), want)
+		}
+	}
+
+	// Not screened yet: revalidated on every use, and only the file itself.
+	cache(docsHost, asset, "public, no-cache")
+	cache(docsHost, "/", "public, no-cache")
+	encoding(docsHost, "/", both, "", page)
+	// The exempt owner's site is not screened: as before.
+	cache(trustedHost, asset, "public, max-age=31536000, immutable")
+	encoding(trustedHost, "/", both, "br", "brotli-bytes")
+
+	mod := moderation.New(moderation.Config{
+		Store: p.db.Moderation(), Blobs: p.blobs, Moderator: moderationtest.New(),
+		Policy: moderation.Policy{Quarantine: []string{"sexual"}}, Quarantine: p.quarantine,
+		Invalidate: func(id string) { screened.Notify(ctx, id) },
+		Now:        p.now, Jitter: func() float64 { return 0 }, Log: p.log,
+	})
+	mod.Pass(ctx)
+
+	cache(docsHost, asset, "public, max-age=31536000, immutable")
+	cache(docsHost, "/", "public, max-age=0, must-revalidate")
+	// The checked gzip sibling is offered; brotli never is.
+	encoding(docsHost, "/", both, "gzip", gz(page))
+	encoding(docsHost, "/", http.Header{"Accept-Encoding": {"br"}}, "", page)
+	// A gzip sibling holding other bytes than its file is never offered.
+	r := p.do(http.MethodGet, docsHost, "/other.html", "", both)
+	if r.code != http.StatusOK || r.h.Get("Content-Encoding") != "" || r.body != "<p>Other</p>" {
+		t.Fatalf("other.html: %d %q %q", r.code, r.h.Get("Content-Encoding"), r.body)
+	}
+}
+
+// TestServeLoadsQuarantineFirst checks a restarted server withholds a
+// quarantined file from its very first request, with screening off: the
+// list is loaded before the server listens.
+func TestServeLoadsQuarantineFirst(t *testing.T) {
+	dir := t.TempDir()
+	env := map[string]string{"WARDLOCK_DATA_DIR": dir, "WARDLOCK_SECRET": testSecret}
+	if err := run(t.Context(), []string{"admin", "create", "--email", "owner@example.test"}, func(k string) string { return env[k] }, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	db, err := store.Open(t.Context(), filepath.Join(dir, "wardlock.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	o, err := db.Owners().GetByEmail(ctx, "owner@example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	site := store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "docs", CreatedAt: time.Now()}
+	if err := db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
+		t.Fatal(err)
+	}
+	q := strings.Repeat("1", 64)
+	d := store.Deploy{ID: store.NewID(), SiteID: site.ID, FileCount: 1, TotalSize: 5, CreatedAt: time.Now()}
+	if err := db.Deploys().Create(ctx, o.ID, d, []store.DeployFile{{Path: "q.png", SHA256: q, Size: 5}}, store.Quotas{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Deploys().RecordUpload(ctx, o.ID, store.Blob{SHA256: q, Size: 5, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Deploys().Activate(ctx, o.ID, site.ID, d.ID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Moderation().EnqueueSite(ctx, site.ID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	v := store.ModerationVerdict{Status: store.ModerationQuarantined, Categories: []string{"sexual"}, Kind: store.ModerationImage}
+	if err := db.Moderation().Record(ctx, q, v, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s := startServer(t, dir)
+	if code, body := s.do(s.addr, http.MethodGet, "docs.wardlock.localhost", "/q.png", nil); code != http.StatusUnavailableForLegalReasons {
+		t.Fatalf("first request: %d %q, want 451", code, body)
 	}
 }

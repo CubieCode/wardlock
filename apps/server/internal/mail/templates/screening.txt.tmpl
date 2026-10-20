@@ -1,10 +1,5 @@
-{{if eq .Status "quarantined" -}}
 Content screening withheld a file on your Wardlock server. It is no longer
 served on any site or address; the rest of each site keeps working.
-{{- else -}}
-Content screening flagged a file on your Wardlock server for your review.
-It is still served.
-{{- end}}
 
 File:       sha256 {{.SHA256}}
 Categories: {{range $i, $c := .Categories}}{{if $i}}, {{end}}{{$c}}{{end}}

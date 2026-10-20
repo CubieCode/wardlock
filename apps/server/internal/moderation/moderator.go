@@ -3,8 +3,9 @@
 
 // Package moderation screens uploaded content (A2.15): the Moderator
 // interface and its OpenAI implementation, the background worker that
-// queues each unique image and HTML page once per content hash after a
-// deploy is activated and records a verdict, the notices to the operator
+// queues each unique file once per content hash after a deploy is
+// activated, decides from its bytes what to send (images, text, images
+// embedded in pages and SVGs) and records a verdict, the notices to the operator
 // and owners, the operator's decisions, and the quarantine list the edge
 // consults so a withheld file is served nowhere. Screening is off unless the
 // operator configures a provider; the quarantine list and operator
@@ -25,12 +26,12 @@ type Moderator interface {
 	Moderate(ctx context.Context, in Input) (Verdict, error)
 }
 
-// Input is what is sent: either Text, in pieces the provider classifies
+// Input is one request: either Text, in pieces the provider classifies
 // together, or one image.
 type Input struct {
 	Text []string
-	// Image is the file's bytes; ImageType its media type (image/png,
-	// image/jpeg, image/webp or image/gif).
+	// Image is the image's bytes; ImageType its media type (image/png,
+	// image/jpeg or image/webp).
 	Image     []byte
 	ImageType string
 }
@@ -42,26 +43,39 @@ type Verdict struct {
 }
 
 var (
-	// ErrRejected means the provider refused the input itself (HTTP 400):
-	// retrying cannot help, so the hash is recorded as skipped.
+	// ErrRejected means the provider refused this input itself (an image
+	// it cannot read, an input too large): retrying cannot help, so the
+	// input counts as unscreenable.
 	ErrRejected = errors.New("moderation: input rejected")
 	// ErrUnavailable means the attempt failed for a reason that may pass:
-	// a rate limit, a server error, a network failure, or a key the
-	// provider refused (fixed by the operator). The hash is retried.
+	// a rate limit, a server error, a network failure, a key the provider
+	// refused or a request it calls malformed (fixed by the operator or a
+	// new release). The hash is retried.
 	ErrUnavailable = errors.New("moderation: provider unavailable")
 )
 
-// RetryError is an ErrUnavailable that says how long to wait before trying
-// again (a Retry-After header), when the provider gave one.
+// RetryError is an ErrUnavailable with what is known about it.
 type RetryError struct {
+	// After is how long the provider asked to wait (Retry-After); 0 when
+	// it did not say.
 	After time.Duration
 	// Status is the provider's HTTP status, 0 for a network failure.
 	Status int
+	// Global means the failure is not this input's: a refused key, a rate
+	// limit or a request the provider calls malformed fails every input
+	// alike, so the whole worker pauses and the operator is alerted.
+	Global bool
+	// Code is the provider's error code, when it gave one (letters,
+	// digits, '_', '-' and '.' only; never its message).
+	Code string
 }
 
 func (e *RetryError) Error() string {
-	if e.Status == 0 {
+	switch {
+	case e.Status == 0:
 		return "moderation: provider unreachable"
+	case e.Code != "":
+		return fmt.Sprintf("moderation: provider answered %d (%s)", e.Status, e.Code)
 	}
 	return fmt.Sprintf("moderation: provider answered %d", e.Status)
 }

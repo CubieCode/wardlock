@@ -258,10 +258,11 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// path, never a fallback (SPEC "Serving"); a response that sets a
 		// cookie is still not stored (storeGuard).
 		if e.withheld(s, res.file) {
-			e.withheldFile(w, r, res.file)
+			e.withheldFile(w, r, res.file, protected)
 			return
 		}
-		immutable := s.site.ImmutableAssets && res.status == http.StatusOK &&
+		// Never long-term while screening may still withhold it.
+		immutable := s.site.ImmutableAssets && res.status == http.StatusOK && !res.file.Pending &&
 			"/"+res.file.Path == clean && hashedAsset(res.file.Path)
 		e.serveFile(w, r, s, res.file, res.status, protected, strip, immutable)
 	}
