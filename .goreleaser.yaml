@@ -5,14 +5,14 @@
 # windows on amd64 and arm64, archives, checksums, an SPDX SBOM per archive,
 # and the multi-arch image ghcr.io/cubiecode/wardlock.
 #
-# Publishing is disabled. CI runs `goreleaser release --snapshot --clean`
+# CI runs `goreleaser release --snapshot --clean` on pull requests and main
 # (.github/workflows/release.yml), which never pushes or creates a release:
 # snapshot images are loaded into the local Docker daemon as
 # <version>-amd64 and <version>-arm64. Outside a snapshot, the image and the
 # GitHub release are also skipped unless WARDLOCK_PUBLISH=true, which only the
-# disabled publish job sets. Enabling it is O4.4 and needs explicit
-# authorisation. Module tags (apps/cli/vX.Y.Z and friends) are separate; see
-# docs/DEPLOYMENT.md.
+# release workflow's publish job sets, and only for a pushed vX.Y.Z tag. The
+# release is always a draft. Module tags (apps/cli/vX.Y.Z and friends) are
+# separate; see docs/DEPLOYMENT.md.
 version: 2
 project_name: wardlock
 dist: .local/goreleaser
