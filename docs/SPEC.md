@@ -93,7 +93,7 @@ The goal is that adding one DNS record is all an owner has to do. The record nam
 - A request a protected policy does not allow gets `401`: browsers (requests that accept `text/html`) see the login page at the same URL, other clients a short plain-text body with `WWW-Authenticate: Bearer`. Neither says whether the path exists.
 - Owners read and set policies through the API (`listPolicies`, `setPolicy`, `deletePolicy`); `wardlock policy set` (added with A2.3) sets them from the CLI.
 - A protected policy that enables share links accepts a valid link token for a path in the link's scope (A2.2; see Share links), checked on every request that carries one.
-- Owners signed in to the dashboard are not automatically signed in to sites (they are on another domain). To open a protected site, an owner uses a share link like any visitor; the dashboard has no separate "open as owner" action.
+- Owners signed in to the dashboard are not automatically signed in to sites (they are on another domain). The site page's **Open site** button (D3.6) opens the site in a new tab: a public site (its `/` policy is public) at its address; any other site through a new share link created with `createShareLink`, labelled "Opened from dashboard", expiring in 10 minutes, with no use limit and scoped to the whole site. The link appears in the link list and access log like any other and can be revoked. The tab is opened from the click itself, so pop-up blockers allow it, and without a reference back to the dashboard; if the link cannot be created the tab is closed and the page shows an error. There is no separate owner session on sites.
 
 ## Share links (A2.2)
 

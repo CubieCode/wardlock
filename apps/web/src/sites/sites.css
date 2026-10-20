@@ -189,3 +189,12 @@
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
+
+/* Site heading: the name, with Open site beside it or below on small screens */
+.site-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-4);
+}
