@@ -11,6 +11,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"image/color"
+	"image/color/palette"
+	"image/png"
 	"strings"
 	"testing"
 
@@ -61,9 +63,63 @@ func TestGIFSplit(t *testing.T) {
 	}
 }
 
+// TestGIFSampling checks frames are sampled evenly across the whole
+// animation, first and last included, and that an animation over the
+// frame cap is unscreenable.
+func TestGIFSampling(t *testing.T) {
+	cs := make([]color.Color, 31)
+	for i := range cs {
+		cs[i] = palette.Plan9[i*8] // exact palette colours, all different
+	}
+	ins, err := (&decoder{}).gifInputs([]byte(testimages.GIF(cs...)))
+	if err != nil || len(ins) != GIFFrames {
+		t.Fatalf("%d frames, %v; want %d", len(ins), err, GIFFrames)
+	}
+	for j, in := range ins {
+		img, err := png.Decode(bytes.NewReader(in.Image))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := color.RGBAModel.Convert(cs[j*30/(GIFFrames-1)])
+		if got := color.RGBAModel.Convert(img.At(0, 0)); got != want {
+			t.Errorf("frame %d: %v, want frame %d's %v", j, got, j*30/(GIFFrames-1), want)
+		}
+	}
+	long := make([]color.Color, MaxGIFFrames+1)
+	for i := range long {
+		long[i] = color.Black
+	}
+	var u unscreenable
+	if _, err := (&decoder{}).gifInputs([]byte(testimages.GIF(long...))); !errors.As(err, &u) {
+		t.Fatalf("over the frame cap: %v", err)
+	}
+}
+
+func TestDataPayload(t *testing.T) {
+	for _, c := range []struct {
+		doc, want string
+	}{
+		{`url("data:image/svg+xml;utf8,<svg a='1'>x y</svg>")`, `<svg a='1'>x y</svg>`},
+		{`url('data:image/svg+xml,%3Csvg%3E')`, `<svg>`},
+		{`url(data:image/svg+xml,%3Csvg%3Ehi%3C/svg%3E) more`, `<svg>hi</svg>`},
+		{`src=data:image/svg+xml,%3Csvg%3E next`, `<svg>`},
+		{`"data:image/png;base64,` + base64.StdEncoding.EncodeToString([]byte("PNG!")) + `"`, "PNG!"},
+	} {
+		m := dataURI.FindSubmatchIndex([]byte(c.doc))
+		var opener byte
+		if m[0] > 0 {
+			opener = c.doc[m[0]-1]
+		}
+		got, err := dataPayload([]byte(c.doc), m[1], c.doc[m[2]:m[3]], opener)
+		if err != nil || string(got) != c.want {
+			t.Errorf("dataPayload(%q) = %q, %v; want %q", c.doc, got, err, c.want)
+		}
+	}
+}
+
 func TestImageInputs(t *testing.T) {
 	png := testimages.PNG("x", 0)
-	ins, err := imageInputs([]byte(png))
+	ins, err := (&decoder{}).imageInputs([]byte(png))
 	if err != nil || len(ins) != 1 || string(ins[0].Image) != png || ins[0].ImageType != "image/png" {
 		t.Fatalf("PNG: %+v, %v", ins, err)
 	}
@@ -74,7 +130,7 @@ func TestImageInputs(t *testing.T) {
 		"GIF89a\x01\x00\x01\x00\x00\x00\x00\x3b":                         "a GIF image with no readable frame",
 		"\x00\x00\x01\x00\x00\x00":                                       "an icon without PNG images",
 	} {
-		_, err := imageInputs([]byte(b))
+		_, err := (&decoder{}).imageInputs([]byte(b))
 		var u unscreenable
 		if !errors.As(err, &u) || u.what != what {
 			t.Errorf("imageInputs(%.16q) = %v, want unscreenable %q", b, err, what)
@@ -83,7 +139,7 @@ func TestImageInputs(t *testing.T) {
 	// A canvas too large to decode is unscreenable, however small the file.
 	huge := testimages.PNGHeader(10_000, 10_000, MaxImageSize)
 	var u unscreenable
-	if _, err := imageInputs([]byte(huge)); !errors.As(err, &u) {
+	if _, err := (&decoder{}).imageInputs([]byte(huge)); !errors.As(err, &u) {
 		t.Fatalf("huge canvas: %v", err)
 	}
 }
@@ -96,7 +152,7 @@ func TestFindEmbedded(t *testing.T) {
 	page := `<img src="data:image/png;base64,` + wrapped + `"> <div style="background:url(DATA:image/bmp;base64,Qk0gYml0bWFw)">`
 	var e embedded
 	n := 0
-	findEmbedded([]byte(page), 0, &e, &n)
+	(&decoder{}).findEmbedded([]byte(page), 0, &e, &n)
 	if len(e.images) != 1 || string(e.images[0].Image) != png || len(e.why) != 1 || e.why[0] != "embedded a BMP image" {
 		t.Fatalf("embedded: %d images, why %q", len(e.images), e.why)
 	}

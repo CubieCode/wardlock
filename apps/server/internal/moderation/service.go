@@ -97,6 +97,8 @@ type Service struct {
 	cursor string
 	// flagged collects the pass's flagged files for one digest.
 	flagged []mail.Screening
+
+	dec decoder
 }
 
 // New returns a Service.
@@ -363,7 +365,14 @@ func (s *Service) screen(ctx context.Context, r store.ModerationResult, sites *s
 		default:
 			v.Status = store.ModerationAllowed
 		}
-		if len(p.why) > 0 && v.Status != store.ModerationQuarantined {
+		switch {
+		case len(p.why) > 0 && r.Status == store.ModerationQuarantined && v.Status != store.ModerationQuarantined:
+			// Part of it could not be judged this time, and that part may
+			// be what was withheld: a rescan never lowers a quarantine
+			// unless every input was judged clean of quarantine
+			// categories.
+			v.Status, v.Categories = "", nil
+		case len(p.why) > 0 && v.Status != store.ModerationQuarantined:
 			v.Status, v.Reason = store.ModerationFlagged, store.ModerationUnscreenable
 		}
 	case r.Status != store.ModerationPending:
@@ -407,6 +416,9 @@ func (s *Service) plan(ctx context.Context, r store.ModerationResult, src store.
 	var p plan
 	image := c == classImage || c == classIcon || c == classOtherImage
 	text := src.TextServed || c == classMarkup
+	// Any text may embed images in data: URIs, stylesheets and scripts
+	// included, though their source is not screened as text.
+	scan := text || c == classText
 	readAll := func(limit int64) ([]byte, error) {
 		if _, err := blob.Seek(0, io.SeekStart); err != nil {
 			return nil, fmt.Errorf("seek blob: %w", err)
@@ -427,7 +439,7 @@ func (s *Service) plan(ctx context.Context, r store.ModerationResult, src store.
 		if err != nil {
 			return plan{}, err
 		}
-		ins, err := imageInputs(b)
+		ins, err := s.dec.imageInputs(b)
 		var u unscreenable
 		switch {
 		case errors.As(err, &u):
@@ -444,25 +456,27 @@ func (s *Service) plan(ctx context.Context, r store.ModerationResult, src store.
 			return plan{}, fmt.Errorf("read blob: %w", err)
 		}
 	}
-	if text {
+	if scan {
 		body, err := readAll(MaxScanSize)
 		if err != nil {
 			return plan{}, err
 		}
 		if src.Size > MaxScanSize {
-			p.why = append(p.why, "a page too large to read in full")
+			p.why = append(p.why, "a text file too large to read in full")
 		}
-		// The most a browser shows of it: a text file is shown as it is,
-		// anything else under a page's name is rendered as HTML.
 		var pieces []string
-		if c == classText {
+		switch {
+		case !text:
+		case c == classText:
+			// The most a browser shows of it: a text file is shown as it
+			// is, anything else under a page's name is rendered as HTML.
 			pieces = append(pieces, string(body[:min(len(body), deploys.DefaultMaxRenditionSource)]))
-		} else {
+		default:
 			pieces = append(pieces, markupText(body[:min(len(body), deploys.DefaultMaxRenditionSource)]))
 		}
 		var e embedded
 		count := 0
-		findEmbedded(body, 0, &e, &count)
+		s.dec.findEmbedded(body, 0, &e, &count)
 		pieces = append(pieces, e.text...)
 		if chunks := chunkText(strings.Join(pieces, "\n")); len(chunks) > 0 {
 			p.inputs = append(p.inputs, Input{Text: chunks})
@@ -544,16 +558,24 @@ func (s *Service) record(ctx context.Context, r store.ModerationResult, v store.
 		attrs = append(attrs, slog.Bool("verdict_kept", true))
 	}
 	s.c.Log.LogAttrs(ctx, slog.LevelInfo, "screened file", attrs...)
-	first := r.Status == store.ModerationPending
-	if !first && (v.Status == "" || v.Status == store.ModerationAllowed || v.Status == store.ModerationSkipped) {
+	// The edge reloads its sites when a hash has its first verdict or a
+	// gzip file is known to hold its base's bytes (a sibling to offer);
+	// notices go out once per change of status.
+	reload := r.Status == store.ModerationPending || v.Decoded != ""
+	changed := v.Status != "" && v.Status != r.Status
+	notice := changed && (v.Status == store.ModerationQuarantined || v.Status == store.ModerationFlagged)
+	if !reload && !notice {
 		return
 	}
 	uses, err := s.c.Store.Uses(ctx, r.SHA256)
 	if err != nil {
 		s.logErr(ctx, "list sites serving a screened file", err)
 	}
-	if first {
+	if reload {
 		sites.add(uses)
+	}
+	if !notice {
+		return
 	}
 	d := mail.Screening{
 		SHA256: r.SHA256, Status: string(v.Status), Categories: v.Categories, Minors: slices.Contains(v.Categories, MinorsCategory),
@@ -568,10 +590,7 @@ func (s *Service) record(ctx context.Context, r store.ModerationResult, v store.
 			s.c.Quarantine.add(r.SHA256)
 		}
 		s.notifyOperator(ctx, d)
-		// A rescan that keeps a quarantine tells owners nothing new.
-		if r.Status != store.ModerationQuarantined {
-			s.notifyOwners(ctx, uses)
-		}
+		s.notifyOwners(ctx, uses)
 	case store.ModerationFlagged:
 		s.mu.Lock()
 		s.flagged = append(s.flagged, d)

@@ -48,7 +48,9 @@ WHERE deploy_files.sha256 = ?1
   AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
   AND (lower(deploy_files.path) LIKE '%.html' OR lower(deploy_files.path) LIKE '%.htm'
     OR lower(deploy_files.path) LIKE '%.xhtml' OR lower(deploy_files.path) LIKE '%.svg'
-    OR lower(deploy_files.path) LIKE '%.txt' OR lower(deploy_files.path) LIKE '%.md'
+    OR lower(deploy_files.path) LIKE '%.txt' OR lower(deploy_files.path) LIKE '%.text'
+    OR lower(deploy_files.path) LIKE '%.md' OR lower(deploy_files.path) LIKE '%.markdown'
+    OR lower(deploy_files.path) LIKE '%.csv' OR lower(deploy_files.path) LIKE '%.json'
     OR lower(deploy_files.path) LIKE '%.xml')
 `
 
@@ -527,7 +529,9 @@ WHERE next_attempt_at IS NULL AND status NOT IN ('pending', 'quarantined') AND k
       AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
       AND (lower(deploy_files.path) LIKE '%.html' OR lower(deploy_files.path) LIKE '%.htm'
     OR lower(deploy_files.path) LIKE '%.xhtml' OR lower(deploy_files.path) LIKE '%.svg'
-    OR lower(deploy_files.path) LIKE '%.txt' OR lower(deploy_files.path) LIKE '%.md'
+    OR lower(deploy_files.path) LIKE '%.txt' OR lower(deploy_files.path) LIKE '%.text'
+    OR lower(deploy_files.path) LIKE '%.md' OR lower(deploy_files.path) LIKE '%.markdown'
+    OR lower(deploy_files.path) LIKE '%.csv' OR lower(deploy_files.path) LIKE '%.json'
     OR lower(deploy_files.path) LIKE '%.xml')
   )
 `
@@ -538,9 +542,10 @@ type RequeueSiteTextParams struct {
 }
 
 // Queues again, keeping the verdict, each screened hash the site's active
-// deploy lists under a path served as text (.html, .htm, .xhtml, .svg,
-// .txt, .md, .xml) when its text was never screened. A quarantined hash is
-// withheld already, so it is left alone.
+// deploy lists under a path the edge serves as displayed text
+// (edge.TextTypes: .html, .htm, .xhtml, .svg, .txt, .text, .md, .markdown,
+// .csv, .json, .xml) when its text was never screened. A quarantined hash
+// is withheld already, so it is left alone.
 func (q *Queries) RequeueSiteText(ctx context.Context, arg RequeueSiteTextParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, requeueSiteText, arg.At, arg.SiteID)
 	if err != nil {

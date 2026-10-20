@@ -5,7 +5,6 @@ package edge
 
 import (
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"path"
@@ -198,10 +197,7 @@ func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f Se
 		e.serveRendition(w, r, s, rd, rtype, status, protected)
 		return
 	}
-	ctype := mime.TypeByExtension(path.Ext(f.Path))
-	if ctype == "" {
-		ctype = "application/octet-stream" // never sniff
-	}
+	ctype := contentType(f.Path)
 	if status == http.StatusOK && strings.HasPrefix(ctype, "text/html") {
 		alternateLinks(w.Header(), r, f)
 	}

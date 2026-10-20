@@ -11,6 +11,7 @@ import (
 	"maps"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -19,6 +20,7 @@ import (
 
 	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/deploys"
+	"wardlock.nz/server/internal/edge"
 	"wardlock.nz/server/internal/mail"
 	"wardlock.nz/server/internal/moderation"
 	"wardlock.nz/server/internal/moderation/moderationtest"
@@ -594,5 +596,32 @@ func TestServeLoadsQuarantineFirst(t *testing.T) {
 	s := startServer(t, dir)
 	if code, body := s.do(s.addr, http.MethodGet, "docs.wardlock.localhost", "/q.png", nil); code != http.StatusUnavailableForLegalReasons {
 		t.Fatalf("first request: %d %q, want 451", code, body)
+	}
+}
+
+// TestTextTypesMatchScreening checks content screening treats as text
+// exactly the extensions the edge serves as displayed text (edge.TextTypes,
+// pinned in code), and not stylesheets or scripts.
+func TestTextTypesMatchScreening(t *testing.T) {
+	p := newPolicyEdge(t)
+	ctx := t.Context()
+	files := map[string]string{}
+	for ext := range edge.TextTypes {
+		files["f"+strings.ToUpper(ext)] = "text for " + ext
+	}
+	files["s.css"], files["s.js"] = "css source", "js source"
+	p.publishAs(p.owner.ID, "docs", false, files)
+	for name, body := range files {
+		src, err := p.db.Moderation().Source(ctx, hashOf(body))
+		want := !strings.HasSuffix(name, ".css") && !strings.HasSuffix(name, ".js")
+		if err != nil || src.TextServed != want {
+			t.Errorf("%s: TextServed %v, %v; want %v", name, src.TextServed, err, want)
+		}
+		if want {
+			r := p.do(http.MethodGet, host, "/"+name, "", nil)
+			if r.h.Get("Content-Type") != edge.TextTypes[strings.ToLower(path.Ext(name))] {
+				t.Errorf("%s served as %q", name, r.h.Get("Content-Type"))
+			}
+		}
 	}
 }

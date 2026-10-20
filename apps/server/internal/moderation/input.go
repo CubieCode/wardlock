@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -46,19 +47,31 @@ const (
 	// ScaledSide is the longest side of an image scaled down to fit
 	// MaxImageSize.
 	ScaledSide = 2048
-	// GIFFrames is how many frames of an animated GIF are sent: the first,
-	// the middle and the last of the first MaxGIFFrames.
-	GIFFrames    = 3
-	MaxGIFFrames = 500
+	// GIFFrames is how many frames of an animated GIF are sent, evenly
+	// spaced across the whole animation. Every frame is decoded (each
+	// drawn over the ones before it, as browsers do), so an animation of
+	// more than MaxGIFFrames frames, or whose frames add up to more than
+	// MaxGIFPixels pixels, is unscreenable.
+	GIFFrames    = 10
+	MaxGIFFrames = 2000
+	MaxGIFPixels = 1_000_000_000
 )
 
-// Embedded image limits: images in data: URIs in a page or SVG are decoded
-// and screened as images, at most MaxEmbedded per file, nested SVG data
-// URIs at most embedDepth deep. A file with more is unscreenable beyond
-// the first MaxEmbedded.
+// decoder does the image decoding screening needs, one image at a time
+// whatever the worker's concurrency, so the memory it takes stays bounded:
+// a canvas of at most MaxPixels (4 bytes a pixel, 8 for a 16-bit PNG) plus
+// the scaled copy.
+type decoder struct{ mu sync.Mutex }
+
+// Embedded image limits: images in data: URIs (base64, percent-encoded or
+// plain) in a page, SVG, stylesheet, script or other text file are decoded
+// and screened as images, at most MaxEmbedded per file and MaxEmbeddedSize
+// bytes of them in all, nested SVG data URIs at most embedDepth deep. A
+// file with more is unscreenable beyond those.
 const (
-	MaxEmbedded = 16
-	embedDepth  = 2
+	MaxEmbedded     = 16
+	MaxEmbeddedSize = 64 << 20
+	embedDepth      = 2
 )
 
 // MaxScanSize bounds how much of a page, text or SVG file is read to find
@@ -168,7 +181,7 @@ func (u unscreenable) Error() string { return "unscreenable: " + u.what }
 // themselves for a PNG, JPEG or WEBP the endpoint takes, PNG frames for a
 // GIF, the largest PNG an icon holds, or a scaled-down JPEG for a PNG or
 // JPEG over MaxImageSize. An unscreenable error says why there is nothing.
-func imageInputs(b []byte) ([]Input, error) {
+func (d *decoder) imageInputs(b []byte) ([]Input, error) {
 	c, t := sniff(head(b))
 	switch c {
 	case classIcon:
@@ -176,7 +189,7 @@ func imageInputs(b []byte) ([]Input, error) {
 		if p == nil {
 			return nil, unscreenable{"an icon without PNG images"}
 		}
-		return imageInputs(p)
+		return d.imageInputs(p)
 	case classOtherImage:
 		return nil, unscreenable{t}
 	case classImage:
@@ -185,7 +198,7 @@ func imageInputs(b []byte) ([]Input, error) {
 	}
 	switch t {
 	case "image/gif":
-		return gifInputs(b)
+		return d.gifInputs(b)
 	case "image/webp":
 		if len(b) > MaxImageSize {
 			return nil, unscreenable{"a WEBP image over 20 MB"}
@@ -202,6 +215,8 @@ func imageInputs(b []byte) ([]Input, error) {
 	if cfg.Width*cfg.Height > MaxPixels {
 		return nil, unscreenable{"an image too large to scale"}
 	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	img, _, err := image.Decode(bytes.NewReader(b))
 	if err != nil {
 		return nil, unscreenable{"a damaged " + strings.TrimPrefix(t, "image/") + " image"}
@@ -215,24 +230,54 @@ func imageInputs(b []byte) ([]Input, error) {
 
 func head(b []byte) []byte { return b[:min(len(b), sniffSize)] }
 
-// gifInputs decodes up to GIFFrames frames of a GIF (the first, middle and
-// last of its first MaxGIFFrames), each drawn over the frames before it,
-// and returns them as PNG. Frames are split out and decoded one at a time,
-// so a GIF of many frames cannot exhaust memory, and anything after the
-// last whole frame (a truncated file, trailing junk) is ignored.
-func gifInputs(b []byte) ([]Input, error) {
+// gifInputs decodes every frame of a GIF, each drawn over the frames
+// before it, and returns up to GIFFrames of them, evenly spaced from the
+// first to the last, as PNG. Frames are split out and decoded one at a
+// time, so only the canvas and one frame are held, and anything after the
+// last whole frame (a truncated file, trailing junk) is ignored, as is
+// everything from a frame that does not decode.
+func (d *decoder) gifInputs(b []byte) ([]Input, error) {
 	hdr, frames := gifSplit(b)
 	if len(frames) == 0 {
 		return nil, unscreenable{"a GIF image with no readable frame"}
 	}
-	frames = frames[:min(len(frames), MaxGIFFrames)]
+	if len(frames) > MaxGIFFrames {
+		return nil, unscreenable{fmt.Sprintf("an animation of more than %d frames", MaxGIFFrames)}
+	}
 	cfg, err := gif.DecodeConfig(bytes.NewReader(hdr))
 	if err != nil || cfg.Width*cfg.Height > MaxPixels || cfg.Width == 0 || cfg.Height == 0 {
 		return nil, unscreenable{"a GIF image too large or damaged"}
 	}
-	want := map[int]bool{0: true, len(frames) / 2: true, len(frames) - 1: true}
+	n := len(frames)
+	k := min(GIFFrames, n)
+	want := map[int]bool{}
+	for j := range k {
+		if k == 1 {
+			want[0] = true
+		} else {
+			want[j*(n-1)/(k-1)] = true
+		}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	canvas := image.NewRGBA(image.Rect(0, 0, cfg.Width, cfg.Height))
 	var out []Input
+	snapshot := func() error {
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, canvas); err != nil {
+			return fmt.Errorf("encode GIF frame: %w", err)
+		}
+		in := Input{Image: buf.Bytes(), ImageType: "image/png"}
+		if len(in.Image) > MaxImageSize {
+			var err error
+			if in, err = encodeJPEG(scale(canvas, ScaledSide)); err != nil {
+				return err
+			}
+		}
+		out = append(out, in)
+		return nil
+	}
+	pixels, last := 0, -1
 	for i, f := range frames {
 		one := append(append(append([]byte{}, hdr...), f...), 0x3B)
 		img, err := gif.Decode(bytes.NewReader(one))
@@ -240,30 +285,24 @@ func gifInputs(b []byte) ([]Input, error) {
 			if i == 0 {
 				return nil, unscreenable{"a GIF image with no readable frame"}
 			}
+			// Browsers stop at a damaged frame too: what was shown last
+			// counts.
+			if last != i-1 {
+				if err := snapshot(); err != nil {
+					return nil, err
+				}
+			}
 			break
+		}
+		if pixels += img.Bounds().Dx() * img.Bounds().Dy(); pixels > MaxGIFPixels {
+			return nil, unscreenable{"an animation too large to decode"}
 		}
 		draw.Draw(canvas, img.Bounds(), img, img.Bounds().Min, draw.Over)
-		if !want[i] {
-			continue
-		}
-		var buf bytes.Buffer
-		if err := png.Encode(&buf, canvas); err != nil {
-			return nil, fmt.Errorf("encode GIF frame: %w", err)
-		}
-		out = append(out, Input{Image: buf.Bytes(), ImageType: "image/png"})
-		if len(out) == GIFFrames {
-			break
-		}
-	}
-	for i := range out {
-		if len(out[i].Image) > MaxImageSize {
-			img, err := png.Decode(bytes.NewReader(out[i].Image))
-			if err != nil {
-				return nil, fmt.Errorf("decode GIF frame: %w", err)
-			}
-			if out[i], err = encodeJPEG(scale(img, ScaledSide)); err != nil {
+		if want[i] {
+			if err := snapshot(); err != nil {
 				return nil, err
 			}
+			last = i
 		}
 	}
 	return out, nil
@@ -395,39 +434,72 @@ func encodeJPEG(img image.Image) (Input, error) {
 	return Input{Image: buf.Bytes(), ImageType: "image/jpeg"}, nil
 }
 
-// dataURI finds the start of an image in a data: URI; the base64 payload
-// follows the match.
-var dataURI = regexp.MustCompile(`(?i)data:image/([a-z0-9.+-]+)(?:;[a-z0-9._=-]+)*;base64,`)
+// dataURI finds the start of an image in a data: URI; the payload follows
+// the match, base64 when the parameters say so, percent-encoded or plain
+// otherwise.
+var dataURI = regexp.MustCompile(`(?i)data:image/[a-z0-9.+-]+((?:;[a-z0-9._=-]+)*),`)
 
-// embedded is what a page or SVG embeds in base64 data: URIs: the images
-// to send, the text of embedded SVGs, and why anything could not be.
+// embedded is what a file embeds in data: URIs: the images to send, the
+// text of embedded SVGs, and why anything could not be.
 type embedded struct {
 	images []Input
+	size   int
 	text   []string
 	why    []string
 }
 
-// findEmbedded collects the images in b's data: URIs, up to MaxEmbedded in
-// all; an embedded SVG contributes its text and, up to embedDepth deep,
-// its own embedded images.
-func findEmbedded(b []byte, depth int, e *embedded, count *int) {
-	for _, m := range dataURI.FindAllSubmatchIndex(b, -1) {
-		end := m[1]
+// dataPayload returns the bytes of the data: URI whose payload starts at
+// b[at], given its parameters and the byte before "data:" (a quote or
+// parenthesis that closes it, or none).
+func dataPayload(b []byte, at int, params string, opener byte) ([]byte, error) {
+	if strings.Contains(strings.ToLower(params), ";base64") {
+		end := at
 		for end < len(b) && (isBase64(b[end]) || b[end] == '\n' || b[end] == '\r' || b[end] == ' ' || b[end] == '\t') {
 			end++
 		}
-		if *count >= MaxEmbedded {
-			e.why = append(e.why, fmt.Sprintf("more than %d embedded images", MaxEmbedded))
-			return
-		}
-		*count++
 		payload := strings.Map(func(r rune) rune {
 			if unicode.IsSpace(r) {
 				return -1
 			}
 			return r
-		}, string(b[m[1]:end]))
-		raw, err := base64.RawStdEncoding.DecodeString(strings.TrimRight(payload, "="))
+		}, string(b[at:end]))
+		return base64.RawStdEncoding.DecodeString(strings.TrimRight(payload, "="))
+	}
+	var stop func(c byte) bool
+	switch opener {
+	case '"', '\'':
+		stop = func(c byte) bool { return c == opener }
+	case '(':
+		stop = func(c byte) bool { return c == ')' || c == '"' || c == '\'' }
+	default:
+		stop = func(c byte) bool { return c == '"' || c == '\'' || c == ')' || c == '<' || c == '>' || c <= ' ' }
+	}
+	end := at
+	for end < len(b) && !stop(b[end]) {
+		end++
+	}
+	raw := string(b[at:end])
+	if un, err := url.PathUnescape(raw); err == nil {
+		raw = un
+	}
+	return []byte(raw), nil
+}
+
+// findEmbedded collects the images in b's data: URIs, up to MaxEmbedded
+// and MaxEmbeddedSize in all; an embedded SVG contributes its text and, up
+// to embedDepth deep, its own embedded images.
+func (d *decoder) findEmbedded(b []byte, depth int, e *embedded, count *int) {
+	for _, m := range dataURI.FindAllSubmatchIndex(b, -1) {
+		if *count >= MaxEmbedded {
+			e.why = append(e.why, fmt.Sprintf("more than %d embedded images", MaxEmbedded))
+			return
+		}
+		*count++
+		var opener byte
+		if m[0] > 0 {
+			opener = b[m[0]-1]
+		}
+		raw, err := dataPayload(b, m[1], string(b[m[2]:m[3]]), opener)
 		if err != nil || len(raw) == 0 {
 			e.why = append(e.why, "an embedded image that does not decode")
 			continue
@@ -435,13 +507,13 @@ func findEmbedded(b []byte, depth int, e *embedded, count *int) {
 		if c, _ := sniff(head(raw)); c == classMarkup {
 			if depth < embedDepth {
 				e.text = append(e.text, markupText(raw))
-				findEmbedded(raw, depth+1, e, count)
+				d.findEmbedded(raw, depth+1, e, count)
 			} else {
 				e.why = append(e.why, "embedded images nested too deep")
 			}
 			continue
 		}
-		ins, err := imageInputs(raw)
+		ins, err := d.imageInputs(raw)
 		var u unscreenable
 		switch {
 		case errors.As(err, &u):
@@ -449,7 +521,13 @@ func findEmbedded(b []byte, depth int, e *embedded, count *int) {
 		case err != nil:
 			e.why = append(e.why, "an embedded image that could not be read")
 		default:
-			e.images = append(e.images, ins...)
+			for _, in := range ins {
+				if e.size += len(in.Image); e.size > MaxEmbeddedSize {
+					e.why = append(e.why, "embedded images over 64 MiB in all")
+					return
+				}
+				e.images = append(e.images, in)
+			}
 		}
 	}
 }

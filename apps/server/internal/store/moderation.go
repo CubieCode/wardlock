@@ -83,8 +83,9 @@ type ModerationVerdict struct {
 // deploy of an owner who is not exempt lists.
 type ModerationSource struct {
 	Size int64
-	// TextServed means a path that serves it as text (.html, .htm, .xhtml,
-	// .svg, .txt, .md, .xml) lists it.
+	// TextServed means a path the edge serves as displayed text lists it
+	// (edge.TextTypes: .html, .htm, .xhtml, .svg, .txt, .text, .md,
+	// .markdown, .csv, .json, .xml).
 	TextServed bool
 }
 
@@ -112,8 +113,8 @@ type ModerationState struct {
 type Moderation interface {
 	// EnqueueSite queues, due at at, every file the site's active deploy
 	// lists that was never queued, and queues again each screened hash it
-	// lists under a path served as text (.html, .htm, .xhtml, .svg, .txt,
-	// .md, .xml, any letter case) whose text was never screened, unless it
+	// lists under a path served as displayed text (the edge.TextTypes
+	// extensions, any letter case) whose text was never screened, unless it
 	// is quarantined. Nothing when the site is taken down or has no active
 	// deploy, or its owner is exempt or suspended. It returns how many
 	// hashes it queued.

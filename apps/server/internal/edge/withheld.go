@@ -5,9 +5,7 @@ package edge
 
 import (
 	"io"
-	"mime"
 	"net/http"
-	"path"
 	"strings"
 )
 
@@ -45,7 +43,7 @@ func (e *Edge) withheldFile(w http.ResponseWriter, r *http.Request, f ServedFile
 		protectedHeaders(h)
 		addVary(h, "Cookie")
 	}
-	if strings.HasPrefix(mime.TypeByExtension(path.Ext(f.Path)), "text/html") {
+	if strings.HasPrefix(contentType(f.Path), "text/html") {
 		e.page(w, r, "withheld.html", unavailableData{Site: canonicalHost(r.Host)}, http.StatusUnavailableForLegalReasons)
 		return
 	}

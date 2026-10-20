@@ -181,6 +181,7 @@ func TestOutcomes(t *testing.T) {
 	files := map[string]string{
 		"ok.png": png1("plain", 0), "nsfw.png": png1("nsfw", 0), "minor.html": "<p>minor</p>", "threat.htm": "<p>threat</p>",
 		"empty.html": "<p>   </p>", "doc.txt": "plain words", "site.css": "body { content: 'nsfw' }",
+		"data.json": `{"note": "nsfw"}`, "table.CSV": "a,threat",
 	}
 	w.publish(w.owner.ID, files)
 	q := moderation.NewQuarantine()
@@ -189,8 +190,9 @@ func TestOutcomes(t *testing.T) {
 		files["ok.png"]: store.ModerationAllowed, files["nsfw.png"]: store.ModerationQuarantined,
 		files["minor.html"]: store.ModerationQuarantined, files["threat.htm"]: store.ModerationFlagged,
 		files["empty.html"]: store.ModerationAllowed, files["doc.txt"]: store.ModerationAllowed,
-		// A stylesheet is neither an image nor served as text: nothing is
-		// sent.
+		// JSON and CSV are shown as text; a stylesheet's source is not
+		// screened.
+		files["data.json"]: store.ModerationQuarantined, files["table.CSV"]: store.ModerationFlagged,
 		files["site.css"]: store.ModerationSkipped,
 	} {
 		if r := w.result(body); r.Status != want {
@@ -203,13 +205,13 @@ func TestOutcomes(t *testing.T) {
 	if r := w.result(files["ok.png"]); r.Kind != store.ModerationImage {
 		t.Errorf("image kind %q", r.Kind)
 	}
-	if !q.Has(hashOf(files["nsfw.png"])) || !q.Has(hashOf(files["minor.html"])) || q.Has(hashOf(files["threat.htm"])) || q.Len() != 2 {
+	if !q.Has(hashOf(files["nsfw.png"])) || !q.Has(hashOf(files["minor.html"])) || q.Has(hashOf(files["threat.htm"])) || q.Len() != 3 {
 		t.Fatalf("quarantine has %d", q.Len())
 	}
-	// Five sent: the empty page has no text and the stylesheet nothing to
+	// Seven sent: the empty page has no text and the stylesheet nothing to
 	// send.
-	if n := len(w.fake.Sent()); n != 5 {
-		t.Fatalf("sent %d, want 5", n)
+	if n := len(w.fake.Sent()); n != 7 {
+		t.Fatalf("sent %d, want 7", n)
 	}
 	for _, never := range []string{"nsfw", "minor", "threat", "plain"} {
 		if strings.Contains(w.logs.String(), "msg=\""+never) || strings.Contains(w.logs.String(), "<p>"+never) || strings.Contains(w.logs.String(), "\x89PNG") {
@@ -523,7 +525,7 @@ func TestProviderErrors(t *testing.T) {
 
 // TestImages checks what is sent for each kind of image: GIF frames as
 // PNG (an animated GIF's first, middle and last; trailing junk and a cut
-// frame tolerated), a large PNG scaled down, an icon's PNG, and that
+// frame tolerated; every frame of a short one), a large PNG scaled down, an icon's PNG, and that
 // formats nothing can read are served but flagged unscreenable, listed for
 // review and in the operator's digest.
 func TestImages(t *testing.T) {
@@ -563,8 +565,9 @@ func TestImages(t *testing.T) {
 		}
 		return n
 	}
-	// anim: red, green (the middle), blue; junk: green; cut: blue.
-	if count(red) != 1 || count(green) != 2 || count(blue) != 2 {
+	// anim: all five frames (red, red, green, red, blue); junk: green;
+	// cut: blue.
+	if count(red) != 3 || count(green) != 2 || count(blue) != 2 {
 		t.Errorf("GIF frames sent: %v", colours)
 	}
 	scaled := false
@@ -641,8 +644,15 @@ func TestEmbedded(t *testing.T) {
 	svgText := `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><text>svg-words</text></svg>`
 	inline := `<p>Text</p><svg><text>svg-words</text></svg>`
 	many := "<p>icons</p>" + strings.Repeat(`<img src="`+uri(png1("icon", 0))+`">`, moderation.MaxEmbedded+1)
+	// Stylesheets and scripts: their images are screened, plain and
+	// percent-encoded SVG data: URIs as text, but never their source.
+	css := `.a { background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><text>svg-words</text></svg>") } /* nsfw */`
+	js := `const icon = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Ctext%3Esvg-words%3C%2Ftext%3E%3C%2Fsvg%3E"; // nsfw`
+	jsImage := `img.src = '` + uri(png1("nsfw", 0)) + `';`
+	cssUnquoted := `.b{background:url(data:image/svg+xml;charset=utf-8,%3Csvg%3E%3Ctext%3Esvg-words%3C/text%3E%3C/svg%3E)}`
 	w.publish(w.owner.ID, map[string]string{
 		"page.html": page, "nested.html": nested, "logo.svg": svgText, "drawn.svg": svgWithImage, "inline.html": inline, "many.html": many,
+		"a.css": css, "b.js": js, "c.js": jsImage, "d.css": cssUnquoted,
 	})
 	q := moderation.NewQuarantine()
 	w.service(q).Pass(t.Context())
@@ -656,6 +666,18 @@ func TestEmbedded(t *testing.T) {
 	}
 	if r := w.result(many); r.Status != store.ModerationFlagged || r.Reason != store.ModerationUnscreenable {
 		t.Errorf("too many embedded images: %+v", r)
+	}
+	for body, want := range map[string]store.ModerationStatus{
+		css: store.ModerationFlagged, js: store.ModerationFlagged, jsImage: store.ModerationQuarantined, cssUnquoted: store.ModerationFlagged,
+	} {
+		if r := w.result(body); r.Status != want || r.Kind != store.ModerationNone {
+			t.Errorf("%.30q: %+v, want %s", body, r, want)
+		}
+	}
+	for _, in := range w.fake.Sent() {
+		if strings.Contains(strings.Join(in.Text, " "), "nsfw") || strings.Contains(strings.Join(in.Text, " "), "background") {
+			t.Fatalf("stylesheet or script source sent as text: %q", in.Text)
+		}
 	}
 }
 
@@ -718,8 +740,8 @@ func TestRescans(t *testing.T) {
 	if r := w.result(img); r.Status != store.ModerationQuarantined || r.ConfirmedAt.IsZero() || !r.NextAttemptAt.IsZero() {
 		t.Fatalf("after a rejected rescan: %+v", r)
 	}
-	// The same verdict again: the confirmation stands, the operator hears
-	// of it, owners do not.
+	// The same verdict again: the confirmation stands, and nobody is told
+	// again.
 	if err := svc.Rescan(ctx, hashOf(img)); err != nil {
 		t.Fatal(err)
 	}
@@ -730,8 +752,8 @@ func TestRescans(t *testing.T) {
 	if n := len(box.to(w.owner.Email)); n != 1 {
 		t.Fatalf("%d owner notices after the rescan, want still 1", n)
 	}
-	if n := len(box.to(abuse)); n != 2 {
-		t.Fatalf("%d operator notices, want 2", n)
+	if n := len(box.to(abuse)); n != 1 {
+		t.Fatalf("%d operator notices, want 1", n)
 	}
 	// A new verdict replaces both.
 	if err := svc.Rescan(ctx, hashOf(img)); err != nil {
@@ -742,6 +764,46 @@ func TestRescans(t *testing.T) {
 	moderation.New(c).Pass(ctx)
 	if r := w.result(img); r.Status != store.ModerationAllowed || !r.ConfirmedAt.IsZero() {
 		t.Fatalf("after a rescan with a new verdict: %+v", r)
+	}
+}
+
+// TestRescanKeepsQuarantine checks a rescan never lowers a quarantine
+// because part of the file could not be judged: a page withheld for an
+// embedded image stays withheld when the image is rejected on the rescan
+// and its text is clean, and is released only when every input is judged
+// clean.
+func TestRescanKeepsQuarantine(t *testing.T) {
+	w := newWorld(t)
+	ctx := t.Context()
+	w.fake.Flag("nsfw", "sexual")
+	page := `<p>Clean words</p><img src="data:image/png;base64,` + base64.StdEncoding.EncodeToString([]byte(png1("nsfw", 0))) + `">`
+	w.publish(w.owner.ID, map[string]string{"index.html": page})
+	q := moderation.NewQuarantine()
+	svc := w.service(q)
+	svc.Pass(ctx)
+	if r := w.result(page); r.Status != store.ModerationQuarantined {
+		t.Fatalf("first verdict: %+v", r)
+	}
+	if err := svc.Confirm(ctx, hashOf(page)); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Rescan(ctx, hashOf(page)); err != nil {
+		t.Fatal(err)
+	}
+	// The text first (judged clean), then the image (rejected).
+	w.fake.Fail(nil, moderation.ErrRejected)
+	svc.Pass(ctx)
+	if r := w.result(page); r.Status != store.ModerationQuarantined || r.ConfirmedAt.IsZero() || !q.Has(hashOf(page)) {
+		t.Fatalf("after a rescan that could not judge the image: %+v", r)
+	}
+	// Every input judged clean: released.
+	if err := svc.Rescan(ctx, hashOf(page)); err != nil {
+		t.Fatal(err)
+	}
+	w.fake = moderationtest.New()
+	moderation.New(w.config(q)).Pass(ctx)
+	if r := w.result(page); r.Status != store.ModerationAllowed {
+		t.Fatalf("after a clean rescan: %+v", r)
 	}
 }
 
@@ -817,6 +879,22 @@ func TestInvalidate(t *testing.T) {
 	svc.Pass(t.Context())
 	if len(got) != 1 {
 		t.Fatalf("invalidated again: %v", got)
+	}
+	// A gzip sibling recorded without a new verdict (a rescan) announces
+	// its site again, so the edge offers it.
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, _ = zw.Write([]byte("<p>page</p>"))
+	_ = zw.Close()
+	w.publish(w.owner.ID, map[string]string{"index.html": "<p>page</p>", "index.html.gz": buf.String()})
+	svc.Pass(t.Context())
+	n := len(got)
+	if err := svc.Rescan(t.Context(), hashOf(buf.String())); err != nil {
+		t.Fatal(err)
+	}
+	svc.Pass(t.Context())
+	if len(got) != n+1 {
+		t.Fatalf("invalidated %v after the sibling's rescan, want one more than %d", got, n)
 	}
 }
 

@@ -13,9 +13,10 @@ WHERE sites.id = sqlc.arg(site_id)
 ON CONFLICT (sha256) DO NOTHING;
 
 -- Queues again, keeping the verdict, each screened hash the site's active
--- deploy lists under a path served as text (.html, .htm, .xhtml, .svg,
--- .txt, .md, .xml) when its text was never screened. A quarantined hash is
--- withheld already, so it is left alone.
+-- deploy lists under a path the edge serves as displayed text
+-- (edge.TextTypes: .html, .htm, .xhtml, .svg, .txt, .text, .md, .markdown,
+-- .csv, .json, .xml) when its text was never screened. A quarantined hash
+-- is withheld already, so it is left alone.
 -- name: RequeueSiteText :execrows
 UPDATE moderation_results SET next_attempt_at = sqlc.arg(at), attempts = 0
 WHERE next_attempt_at IS NULL AND status NOT IN ('pending', 'quarantined') AND kind NOT IN ('text', 'image,text')
@@ -28,7 +29,9 @@ WHERE next_attempt_at IS NULL AND status NOT IN ('pending', 'quarantined') AND k
       AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
       AND (lower(deploy_files.path) LIKE '%.html' OR lower(deploy_files.path) LIKE '%.htm'
     OR lower(deploy_files.path) LIKE '%.xhtml' OR lower(deploy_files.path) LIKE '%.svg'
-    OR lower(deploy_files.path) LIKE '%.txt' OR lower(deploy_files.path) LIKE '%.md'
+    OR lower(deploy_files.path) LIKE '%.txt' OR lower(deploy_files.path) LIKE '%.text'
+    OR lower(deploy_files.path) LIKE '%.md' OR lower(deploy_files.path) LIKE '%.markdown'
+    OR lower(deploy_files.path) LIKE '%.csv' OR lower(deploy_files.path) LIKE '%.json'
     OR lower(deploy_files.path) LIKE '%.xml')
   );
 
@@ -69,7 +72,9 @@ WHERE deploy_files.sha256 = sqlc.arg(sha256)
   AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
   AND (lower(deploy_files.path) LIKE '%.html' OR lower(deploy_files.path) LIKE '%.htm'
     OR lower(deploy_files.path) LIKE '%.xhtml' OR lower(deploy_files.path) LIKE '%.svg'
-    OR lower(deploy_files.path) LIKE '%.txt' OR lower(deploy_files.path) LIKE '%.md'
+    OR lower(deploy_files.path) LIKE '%.txt' OR lower(deploy_files.path) LIKE '%.text'
+    OR lower(deploy_files.path) LIKE '%.md' OR lower(deploy_files.path) LIKE '%.markdown'
+    OR lower(deploy_files.path) LIKE '%.csv' OR lower(deploy_files.path) LIKE '%.json'
     OR lower(deploy_files.path) LIKE '%.xml');
 
 -- A new verdict replaces the old one; the operator's decision on it stands
