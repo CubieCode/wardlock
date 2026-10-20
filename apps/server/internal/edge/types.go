@@ -13,12 +13,16 @@ import (
 // text or a page, by lowercase extension. They are pinned here rather than
 // read from the host's mime.types, so what a visitor's browser displays,
 // and what content screening treats as text (A2.15), is the same on every
-// host. Scripts and stylesheets are left to the standard table: browsers
+// host; the types are the ones Debian's mime.types gives (text types with
+// charset=utf-8, as Go adds). Scripts and stylesheets are left to the standard table: browsers
 // show them too, but screening does not read them as text.
 var TextTypes = map[string]string{
 	".html":     "text/html; charset=utf-8",
 	".htm":      "text/html; charset=utf-8",
+	".shtml":    "text/html; charset=utf-8",
 	".xhtml":    "application/xhtml+xml",
+	".xht":      "application/xhtml+xml",
+	".xhtm":     "application/xhtml+xml",
 	".svg":      "image/svg+xml",
 	".txt":      "text/plain; charset=utf-8",
 	".text":     "text/plain; charset=utf-8",

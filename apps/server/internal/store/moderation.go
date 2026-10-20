@@ -84,8 +84,8 @@ type ModerationVerdict struct {
 type ModerationSource struct {
 	Size int64
 	// TextServed means a path the edge serves as displayed text lists it
-	// (edge.TextTypes: .html, .htm, .xhtml, .svg, .txt, .text, .md,
-	// .markdown, .csv, .json, .xml).
+	// (edge.TextTypes: .html, .htm, .shtml, .xhtml, .xht, .xhtm, .svg, .txt,
+	// .text, .md, .markdown, .csv, .json, .xml).
 	TextServed bool
 }
 

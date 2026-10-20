@@ -98,7 +98,7 @@ type Service struct {
 	// flagged collects the pass's flagged files for one digest.
 	flagged []mail.Screening
 
-	dec decoder
+	dec *decoder
 }
 
 // New returns a Service.
@@ -118,7 +118,7 @@ func New(c Config) *Service {
 	if c.Log == nil {
 		c.Log = slog.New(slog.DiscardHandler)
 	}
-	return &Service{c: c, wake: make(chan struct{}, 1), changed: map[string]bool{}}
+	return &Service{c: c, wake: make(chan struct{}, 1), changed: map[string]bool{}, dec: newDecoder()}
 }
 
 // Enabled reports whether a Moderator is configured.
@@ -439,7 +439,7 @@ func (s *Service) plan(ctx context.Context, r store.ModerationResult, src store.
 		if err != nil {
 			return plan{}, err
 		}
-		ins, err := s.dec.imageInputs(b)
+		ins, err := s.dec.imageInputs(ctx, b)
 		var u unscreenable
 		switch {
 		case errors.As(err, &u):
@@ -476,7 +476,9 @@ func (s *Service) plan(ctx context.Context, r store.ModerationResult, src store.
 		}
 		var e embedded
 		count := 0
-		s.dec.findEmbedded(body, 0, &e, &count)
+		if err := s.dec.findEmbedded(ctx, body, 0, &e, &count); err != nil {
+			return plan{}, err
+		}
 		pieces = append(pieces, e.text...)
 		if chunks := chunkText(strings.Join(pieces, "\n")); len(chunks) > 0 {
 			p.inputs = append(p.inputs, Input{Text: chunks})

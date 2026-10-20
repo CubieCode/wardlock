@@ -681,6 +681,43 @@ func TestEmbedded(t *testing.T) {
 	}
 }
 
+// TestBundles checks data: URIs in real-world-looking minified bundles:
+// payloads a script assembles at runtime, empty, unclosed and non-image
+// ones are skipped without flagging the file, a payload of any media type
+// is screened when its bytes are an image, and only a non-empty payload
+// claiming to be an image that does not decode is unscreenable.
+func TestBundles(t *testing.T) {
+	w := newWorld(t)
+	w.fake.Flag("nsfw", "sexual")
+	gif1x1 := "R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="
+	b64 := func(b string) string { return base64.StdEncoding.EncodeToString([]byte(b)) }
+	bundle := `!function(){"use strict";var e=function(t){return"data:image/png;base64,"+t},n=function(t){return"data:image/svg+xml,"+encodeURIComponent(t)},` +
+		"r=function(t){return`data:image/svg+xml;utf8,${t}`};const o=\"data:image/gif;base64," + gif1x1 + "\",i='data:;base64,'+btoa(s),a=\"data:text/plain,hello\";" +
+		`l.src=URL.createObjectURL(new Blob([x],{type:"image/png"}));var metadata:image/png,x;c.toDataURL("image/png")}();` +
+		"\n//# sourceMappingURL=data:application/json;charset=utf-8;base64," + b64(`{"version":3,"sources":["a.js"]}`) +
+		"\nvar cut=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA"
+	styles := `.a{background:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg'/%3e")}.b{background:url(data:image/png;base64,)}` +
+		`.c{mask:url('data:image/svg+xml;charset=utf-8,')}.d{background-image:url(data:image/gif;base64,` + gif1x1 + `)}`
+	// Media types that say nothing: screened by what the bytes are.
+	disguised := `x="data:application/octet-stream;base64,` + b64(png1("nsfw", 0)) + `";y='data:;base64,` + b64(png1("nsfw", 0)) + `'`
+	broken := `img.src="data:image/png;base64,A";`
+	w.publish(w.owner.ID, map[string]string{"app.min.js": bundle, "app.min.css": styles, "d.js": disguised, "broken.js": broken})
+	w.service(nil).Pass(t.Context())
+	for body, want := range map[string]store.ModerationStatus{
+		bundle: store.ModerationAllowed, styles: store.ModerationAllowed, disguised: store.ModerationQuarantined,
+	} {
+		if r := w.result(body); r.Status != want || r.Reason != "" {
+			t.Errorf("%.30q: %+v, want %s", body, r, want)
+		}
+	}
+	if r := w.result(broken); r.Status != store.ModerationFlagged || r.Reason != store.ModerationUnscreenable {
+		t.Errorf("an image payload that does not decode: %+v", r)
+	}
+	if strings.Contains(w.logs.String(), "does not decode") && strings.Count(w.logs.String(), "does not decode") != 1 {
+		t.Errorf("payloads reported as undecodable:\n%s", w.logs.String())
+	}
+}
+
 // TestPageText checks a page is sent as its plain text, in chunks, and
 // truncated past the limit.
 func TestPageText(t *testing.T) {
