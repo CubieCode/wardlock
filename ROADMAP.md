@@ -480,7 +480,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: `feat/o4.11-publish-job`
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/86
 - Depends on: O4.1, O4.9
 - Scope: The launch checklist's "Publish job ready to enable" line. In `.github/workflows/release.yml`, trigger on `v*` tags (the server/CLI `v0.1.0` tag, not the `apps/*/v*` and `packages/*/v*` module tags), add the ghcr.io login (with `packages: write` and `contents: write` scoped to the publish job only), and remove `if: false` so the job runs only on such a tag push with `WARDLOCK_PUBLISH=true`. Snapshots on PRs and main stay as they are and never publish. Keep the GitHub release a draft. Update the workflow header, `docs/DEPLOYMENT.md`'s release steps and the launch checklist row. No tag is pushed.
 - Acceptance: The workflow shows publishing can only run from a `v*` tag push; PR and main runs still skip `publish`; `pnpm check` passes; nothing tagged, published or pushed to ghcr.io.
