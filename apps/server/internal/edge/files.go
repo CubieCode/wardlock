@@ -165,11 +165,16 @@ func hashedAsset(name string) bool {
 		return false
 	}
 	for _, c := range []byte(stem[i+1:]) {
-		if !('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '_') {
+		if !hashChar(c) {
 			return false
 		}
 	}
 	return true
+}
+
+// hashChar reports whether c is in [A-Za-z0-9_].
+func hashChar(c byte) bool {
+	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '_'
 }
 
 // serveFile writes f (or a precompressed sibling, or the rendition

@@ -153,7 +153,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.10: Long-term caching for hashed assets
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: `feat/c1.10-immutable-assets`
 - PR:
 - Depends on: C1.3, C1.5, A2.12

@@ -17,11 +17,15 @@ export async function createSite(request: APIRequestContext, name: string) {
   expect(res.status()).toBe(201);
 }
 
-/** Uploads a one-page deploy saying `text` and makes it live. */
+/**
+ * Uploads a one-page deploy saying `text`, with the given deploy options,
+ * and makes it live.
+ */
 export async function publish(
   request: APIRequestContext,
   site: string,
   text: string,
+  options: { immutableAssets?: boolean } = {},
 ) {
   const body = Buffer.from(`<!doctype html><title>${text}</title><p>${text}`);
   const sha256 = createHash('sha256').update(body).digest('hex');
@@ -29,6 +33,7 @@ export async function publish(
   const created = await request.post(base, {
     data: {
       message: text,
+      ...options,
       files: [{ path: 'index.html', sha256, size: body.length }],
     },
     headers,
