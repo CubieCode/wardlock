@@ -166,7 +166,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: feat/c1.11-s3-blobstore
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/91
 - Depends on: C1.2, C1.8
 - Scope: A second `deploys.BlobStore` implementation backed by any S3-compatible object store (AWS S3, Cloudflare R2, MinIO, Backblaze B2, Wasabi, Garage), chosen by configuration; the filesystem store stays the default. `Has` via `HeadObject`; `Put` streams while hashing to a temporary key, verifies SHA-256 and size, then copies to the final key (a mismatch stores nothing); `Open` returns a seekable reader that fetches ranges on demand, so the edge's Range and content sniffing work without downloading whole files; `Delete` removes the object. Garbage collection gets an S3 equivalent of the filesystem-specific sweeps (stale temporary keys). Configuration such as `WARDLOCK_BLOB_BACKEND=s3`, `WARDLOCK_S3_ENDPOINT`, `_BUCKET`, `_REGION`, `_PREFIX` and path-style addressing, with credentials from the standard AWS environment and files; credentials never logged; readiness checks the bucket. Docs: DEPLOYMENT (setup, bucket permissions, request costs, backups by bucket versioning or replication since `wardlockd backup` does not copy the bucket), ARCHITECTURE, `.env.example`. Still single-instance: the database, limiters and certificates stay local.
 - Acceptance: The `BlobStore` contract tests run against both implementations, the S3 one against an in-process fake (no Docker or network in `pnpm check`); tests for hash mismatch, ranged reads and seeks, missing blobs, GC of stale temporary keys and config validation; the new dependency justified in the PR and `go.sum` updated; `pnpm check` and `git diff --check` pass.
