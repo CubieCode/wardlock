@@ -671,7 +671,7 @@ sudo -u wardlock wardlockd admin suspend-owner owner@example.com
 # Docker: docker compose -f deploy/compose.yaml exec wardlockd wardlockd admin list-owners
 ```
 
-For an instance others deploy to, also set `WARDLOCK_ABUSE_EMAIL` so visitors can [report abuse](#abuse-reports), and read [Preserving and reporting illegal material](#preserving-and-reporting-illegal-material) before you need it.
+For an instance others deploy to, also set `WARDLOCK_ABUSE_EMAIL` so visitors can [report abuse](#abuse-reports), and read [Handling abuse reports](#handling-abuse-reports) and [Preserving and reporting illegal material](#preserving-and-reporting-illegal-material) before you need them. Owners agree to the [acceptable use policy](ACCEPTABLE-USE.md) when they create their account: the setup page and the sign-in link from an invitation or `admin create` show it at `/acceptable-use` on the dashboard host.
 
 ### Operator commands
 
@@ -722,9 +722,33 @@ With `WARDLOCK_ABUSE_EMAIL` set (to a plain address such as `abuse@example.com`)
 
 </details>
 
+### Handling abuse reports
+
+Work through every report, from the form or elsewhere, in the same order: check it, act in proportion, tell the owner, and write down what you did. The [acceptable use policy](ACCEPTABLE-USE.md) is what you hold owners to.
+
+| The report shows                                                        | Act                                                                                        | Owner                                              |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| Sexual content involving a child, or other material that may be illegal | Take down, suspend, then [preserve and report](#preserving-and-reporting-illegal-material) | After reporting, unless the authorities say not to |
+| Phishing, malware or a scam                                             | Take down at once; suspend if the owner made it or it recurs                               | Tell them after the takedown                       |
+| Other sexual content, impersonation, spam or another policy breach      | Take down, or ask the owner to remove it within a set time                                 | Tell them what to change and by when               |
+| Infringement of someone's copyright, trademark or privacy               | Ask the owner to remove it; take down if they do not, or the harm is serious               | Pass on the complaint, without the reporter        |
+| Nothing that breaks the policy, or a site that no longer exists         | Nothing                                                                                    | Nothing                                            |
+
+<details>
+<summary>Triage, contacting the owner and keeping records</summary>
+
+- **Triage.** Open the reported page in a private browser window. A protected site shows only its login page (reports have share-link tokens removed); then rely on the report and, if needed, ask the reporter for more detail through the contact address they left, never for copies of suspected child sexual abuse material. Do not open such material beyond what you must to confirm what it is. Check that the site still exists (`wardlockd admin list-sites`) and who owns it. Reports can be mistaken or malicious: a rival may report a site to have it removed, so decide on what the site shows, not on what the report says. When in doubt about material that may be illegal, take the site down while you decide; `restore-site` undoes it.
+- **Speed.** Act on child sexual abuse material, phishing and malware the same day you see the report: they harm visitors every hour they stay up. Other reports can wait for a reply from the owner.
+- **Contacting the owner.** Email the owner's address from `list-owners`. Say which site and page, which rule of the policy it breaks, what you have done (taken down, suspended) and what they can do (remove the content and ask for a restore, or reply if they think the report is wrong). Never forward the reporter's contact address or words without their consent; summarise instead. For material you have reported to the authorities, ask them before contacting the owner: warning a suspect can destroy evidence. A suspended owner cannot sign in, so email is the only channel.
+- **Restoring.** If the owner fixes a site, they cannot deploy while it is taken down: `restore-site` it, ask them to deploy the fix straight away, and check it. Reinstate a suspended owner with `reinstate-owner` only once you are satisfied.
+- **Records.** Keep a private log of each report: when it arrived, the site name and ID, the owner ID, the reason, what you saw, what you did and when (with the commands' output), every message to or from the owner and the authorities, and the outcome. Log IDs and summaries, not the reported material or copies of it. The server logs each operator action with IDs only (`operator took down site`, `site_id`), which you can match to your notes. Keep the records at least as long as the evidence, and store them with your backups, not on the server alone.
+- **Repeat offenders.** An owner whose sites are taken down more than once for clear breaches should be suspended; with `WARDLOCK_INVITES=operator`, nobody else can invite them back.
+
+</details>
+
 ### Preserving and reporting illegal material
 
-If a site hosts material that may be illegal, take it offline and keep the evidence; do not delete it. This is a minimum procedure; the full acceptable use policy and abuse procedure come with O4.13.
+If a site hosts material that may be illegal, take it offline and keep the evidence; do not delete it. These steps follow [Handling abuse reports](#handling-abuse-reports) for the "illegal" row of its table.
 
 1. **Triage** the report. Do not open suspected child sexual abuse material more than you must to confirm what it is, and never download, copy or forward it except as the authorities direct.
 2. **Take the site down** with `wardlockd admin takedown-site SITE`, and suspend the owner with `suspend-owner` if warranted. Both keep every deploy and file.

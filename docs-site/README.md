@@ -9,6 +9,7 @@ A static site generated from the user-facing pages of [`docs/`](../docs), meant 
 | `docs/SPEC.md`           | `spec.html`           |
 | `docs/DEPLOYMENT.md`     | `deployment.html`     |
 | `docs/SECURITY-MODEL.md` | `security-model.html` |
+| `docs/ACCEPTABLE-USE.md` | `acceptable-use.html` |
 
 The build also writes `index.html`, `404.html`, `style.css` and `site.js`, a few lines that open any collapsed `<details>` block around the target of a `#fragment` link so links into folded sections land on visible text (the pages work without it). `docs/ARCHITECTURE.md`, `docs/MODULES.md` and `docs/DESIGN-SYSTEM.md` are contributor documentation and stay in the repository; links to them, and to any other file in the repository, become links to GitHub. To publish another page, add it to `pages` in `src/render.mjs`.
 

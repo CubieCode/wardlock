@@ -5,6 +5,7 @@ import { Button, Notice, PanelLayout, TextField } from '@wardlock/ui';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Redirect, useTitle } from '../shell/page.js';
 import { navigate, useLocation } from '../shell/router.js';
+import { PolicyAgreement } from '../policy/acceptable-use.js';
 import { failure, unreachable } from './messages.js';
 import { useSession } from './session.js';
 
@@ -109,6 +110,7 @@ export function SetupPage() {
           {busy ? 'Creating owner…' : 'Create owner and sign in'}
         </Button>
       </form>
+      <PolicyAgreement />
     </PanelLayout>
   );
 }

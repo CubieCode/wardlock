@@ -14,6 +14,7 @@ It is pronounced "ward-lock", not "warlock". A warded lock has internal obstruct
 - [SPEC](docs/SPEC.md): what Wardlock does, rule by rule: sites, deploys, policies, share links, sign-in methods, renditions and the CLI.
 - [DEPLOYMENT](docs/DEPLOYMENT.md): running your own instance: DNS, TLS, systemd, Docker, reverse proxies, SMTP, OAuth, backups and upgrades.
 - [SECURITY-MODEL](docs/SECURITY-MODEL.md): what Wardlock defends against, how, and which risks it accepts.
+- [ACCEPTABLE-USE](docs/ACCEPTABLE-USE.md): what owners may not publish, how operators screen and enforce it, and how to report abuse (a draft awaiting legal review).
 - [ARCHITECTURE](docs/ARCHITECTURE.md): components, request flow, data model, upload protocol and what each built item added.
 - [MODULES](docs/MODULES.md): package boundaries and how they are enforced.
 - [DESIGN](DESIGN.md) and [DESIGN-SYSTEM](docs/DESIGN-SYSTEM.md): the dashboard's character, tokens and components.

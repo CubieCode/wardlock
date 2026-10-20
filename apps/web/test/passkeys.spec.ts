@@ -69,6 +69,7 @@ for (const scheme of schemes) {
 
     await test.step('an owner with no passkeys adds one', async () => {
       await page.goto(await inbox.signInLink());
+      await page.getByRole('button', { name: 'Continue' }).click();
       await expect(
         page.getByRole('heading', { level: 1, name: 'Overview' }),
       ).toBeVisible();

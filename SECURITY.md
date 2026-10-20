@@ -16,6 +16,10 @@ In scope: the server (`wardlockd`), the dashboard, the CLI, the API clients and 
 
 Out of scope: content that owners choose to publish, attacks requiring control of the server or its configuration, and denial of service by volume. See [docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.md) for the threat model.
 
+## Reporting abuse
+
+To report a site hosted on a Wardlock server (phishing, malware, illegal or sexual content), use the **Report this site** link on its sign-in, share-link or unavailable page, which goes to that server's operator, not to this project. What owners may not publish is in the [acceptable use policy](docs/ACCEPTABLE-USE.md).
+
 ## Supported versions
 
 Only the latest commit on `main` is supported until the first release.

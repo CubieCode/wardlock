@@ -422,6 +422,23 @@ describe('signed in', () => {
   });
 });
 
+/** Shows the policy line on the sign-in-link page, then continues past it. */
+async function continuePastPolicy() {
+  await screen.findByRole('heading', { level: 1, name: 'Welcome to Wardlock' });
+  expectPolicyLink();
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+}
+
+/** The agreement line, linking to the policy in a new tab. */
+function expectPolicyLink() {
+  expect(screen.getByText(/By continuing you agree to the/).textContent).toBe(
+    'By continuing you agree to the acceptable use policy.',
+  );
+  const link = screen.getByRole('link', { name: 'acceptable use policy' });
+  expect(link.getAttribute('href')).toBe('/acceptable-use');
+  expect(link.getAttribute('target')).toBe('_blank');
+}
+
 describe('one-time links', () => {
   it('redeems a sign-in link once and drops the code from the address', async () => {
     at('/sign-in?code=EXAMPLEsignInCode');
@@ -440,6 +457,7 @@ describe('one-time links', () => {
         <App api={server.api} />
       </StrictMode>,
     );
+    await continuePastPolicy();
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Overview' }),
     ).toBeTruthy();
@@ -455,6 +473,12 @@ describe('one-time links', () => {
       'POST /api/v0/auth/sign-in-link': () => held.promise,
     });
     render(<App api={server.api} />);
+    await screen.findByRole('heading', { name: 'Welcome to Wardlock' });
+    // Nothing is redeemed until the owner continues past the policy, but
+    // the code has already left the address bar.
+    expect(here()).toBe('/sign-in?next=%2Fsomewhere');
+    expect(server.count('POST /api/v0/auth/sign-in-link')).toBe(0);
+    await continuePastPolicy();
     await screen.findByText('Checking your sign-in link…');
     await waitFor(() =>
       expect(server.count('POST /api/v0/auth/sign-in-link')).toBe(1),
@@ -479,6 +503,7 @@ describe('one-time links', () => {
       'POST /api/v0/auth/sign-in-link': invalidCode,
     });
     render(<App api={api} />);
+    await continuePastPolicy();
     expect(
       await screen.findByRole('heading', {
         name: 'This sign-in link no longer works',
@@ -502,6 +527,7 @@ describe('one-time links', () => {
     render(<App api={server.api} />);
     await screen.findByRole('heading', { name: 'Create the first owner' });
     await waitFor(() => expect(here()).toBe('/setup'));
+    expectPolicyLink();
     type('Email address', 'owner@example.test');
     fireEvent.click(
       screen.getByRole('button', { name: 'Create owner and sign in' }),
@@ -551,5 +577,20 @@ describe('one-time links', () => {
     expect(
       await screen.findByRole('heading', { name: 'Set up Wardlock' }),
     ).toBeTruthy();
+  });
+});
+
+describe('acceptable use policy', () => {
+  it('shows the policy to a signed-out visitor without a server', async () => {
+    at('/acceptable-use');
+    const server = fakeServer({ 'GET /api/v0/me': unauthenticated });
+    render(<App api={server.api} />);
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Acceptable use policy' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Draft for legal review/)).toBeTruthy();
+    expect(here()).toBe('/acceptable-use');
+    await act(async () => {});
+    expect(document.title).toBe('Acceptable use policy · Wardlock');
   });
 });

@@ -84,6 +84,7 @@ Every v1 item in the foundation, core, access, dashboard and operations areas is
 | O4.9  | CI no longer uploads unused snapshot and docs-site artifacts                                                                              | (CI only)                                                                   |
 | O4.11 | The release workflow's publish job, run only on an authorised `v*` tag                                                                    | DEPLOYMENT "Releases and module tags"                                       |
 | O4.12 | `deploy/vps/`: one VPS with automatic TLS and R2 blob storage                                                                             | DEPLOYMENT "VPS with automatic TLS and R2 (O4.12)"                          |
+| O4.13 | `/acceptable-use`, bundled from `docs/ACCEPTABLE-USE.md`, and the policy line and Continue step on the setup and sign-in-link pages       | SPEC "Dashboard"                                                            |
 
 O4.4, O4.6 and O4.7 changed documents only (the launch checklist, the alpha documentation refresh and the CLA text).
 
