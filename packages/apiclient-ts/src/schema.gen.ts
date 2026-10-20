@@ -195,7 +195,7 @@ export interface paths {
     put?: never;
     /**
      * Invite another owner by email.
-     * @description Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+     * @description Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner. On an instance where the operator has kept invitations to themselves (`WARDLOCK_INVITES=operator`), every request answers `403 invites_restricted`.
      */
     post: operations['inviteOwner'];
     delete?: never;
@@ -493,7 +493,7 @@ export interface paths {
     post?: never;
     /**
      * Tear down a site.
-     * @description Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8).
+     * @description Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8). A site the operator has taken down answers `409 site_unavailable`: its files are kept until the operator restores or tears it down.
      */
     delete: operations['deleteSite'];
     options?: never;
@@ -522,7 +522,7 @@ export interface paths {
     put?: never;
     /**
      * Create a deploy from a manifest.
-     * @description Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+     * @description Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
      */
     post: operations['createDeploy'];
     delete?: never;
@@ -589,7 +589,7 @@ export interface paths {
     put?: never;
     /**
      * Make a pending deploy the site's active deploy.
-     * @description Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy).
+     * @description Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A site the operator has taken down answers `409 site_unavailable`.
      */
     post: operations['activateDeploy'];
     delete?: never;
@@ -615,7 +615,7 @@ export interface paths {
     put?: never;
     /**
      * Reactivate an earlier deploy.
-     * @description Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+     * @description Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
      */
     post: operations['rollbackSite'];
     delete?: never;
@@ -1175,6 +1175,8 @@ export interface components {
     Site: {
       id: components['schemas']['Id'];
       name: components['schemas']['SiteName'];
+      /** @description True while the instance's operator has taken the site down: visitors see an unavailable page on every hostname, and deploys, activations, rollbacks and deletion answer `409 site_unavailable`. Only the operator can restore it. */
+      unavailable: boolean;
       /** @description `<name>.<base domain>`. */
       hostname: components['schemas']['Hostname'];
       /**
@@ -2594,6 +2596,7 @@ export interface operations {
            *           "hostname": "docs.wardlock.example.net",
            *           "url": "https://docs.wardlock.example.net/",
            *           "createdAt": 1767225600000,
+           *           "unavailable": false,
            *           "activeDeployId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10",
            *           "activatedAt": 1767225660000
            *         }
@@ -2640,7 +2643,8 @@ export interface operations {
            *       "name": "docs",
            *       "hostname": "docs.wardlock.example.net",
            *       "url": "https://docs.wardlock.example.net/",
-           *       "createdAt": 1767225600000
+           *       "createdAt": 1767225600000,
+           *       "unavailable": false
            *     }
            */
           'application/json': components['schemas']['Site'];
@@ -2708,6 +2712,7 @@ export interface operations {
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
       default: components['responses']['Error'];
     };
   };
@@ -2848,6 +2853,7 @@ export interface operations {
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
       413: components['responses']['TooLarge'];
       default: components['responses']['Error'];
     };

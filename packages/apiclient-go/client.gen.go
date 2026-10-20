@@ -1099,6 +1099,9 @@ type Site struct {
 	// Examples: docs
 	Name SiteName `json:"name"`
 
+	// Unavailable True while the instance's operator has taken the site down: visitors see an unavailable page on every hostname, and deploys, activations, rollbacks and deletion answer `409 site_unavailable`. Only the operator can restore it.
+	Unavailable bool `json:"unavailable"`
+
 	// Url The site's URL on the base domain.
 	Url string `json:"url"`
 }
@@ -1693,7 +1696,7 @@ type ClientInterface interface {
 
 	// InviteOwnerWithBody Invite another owner by email.
 	//
-	// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+	// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner. On an instance where the operator has kept invitations to themselves (`WARDLOCK_INVITES=operator`), every request answers `403 invites_restricted`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1702,7 +1705,7 @@ type ClientInterface interface {
 
 	// InviteOwner Invite another owner by email.
 	//
-	// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+	// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner. On an instance where the operator has kept invitations to themselves (`WARDLOCK_INVITES=operator`), every request answers `403 invites_restricted`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1807,7 +1810,7 @@ type ClientInterface interface {
 
 	// DeleteSite Tear down a site.
 	//
-	// Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8).
+	// Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8). A site the operator has taken down answers `409 site_unavailable`: its files are kept until the operator restores or tears it down.
 	//
 	// Corresponds with DELETE /api/v0/sites/{site} (the `DeleteSite` operationId).
 	DeleteSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1833,7 +1836,7 @@ type ClientInterface interface {
 
 	// CreateDeployWithBody Create a deploy from a manifest.
 	//
-	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1842,7 +1845,7 @@ type ClientInterface interface {
 
 	// CreateDeploy Create a deploy from a manifest.
 	//
-	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1851,7 +1854,7 @@ type ClientInterface interface {
 
 	// ActivateDeploy Make a pending deploy the site's active deploy.
 	//
-	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy).
+	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
 	ActivateDeploy(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1989,7 +1992,7 @@ type ClientInterface interface {
 
 	// RollbackSiteWithBody Reactivate an earlier deploy.
 	//
-	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1998,7 +2001,7 @@ type ClientInterface interface {
 
 	// RollbackSite Reactivate an earlier deploy.
 	//
-	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2410,7 +2413,7 @@ func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*htt
 
 // InviteOwnerWithBody Invite another owner by email.
 //
-// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner. On an instance where the operator has kept invitations to themselves (`WARDLOCK_INVITES=operator`), every request answers `403 invites_restricted`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2429,7 +2432,7 @@ func (c *Client) InviteOwnerWithBody(ctx context.Context, contentType string, bo
 
 // InviteOwner Invite another owner by email.
 //
-// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner. On an instance where the operator has kept invitations to themselves (`WARDLOCK_INVITES=operator`), every request answers `403 invites_restricted`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2664,7 +2667,7 @@ func (c *Client) CreateSite(ctx context.Context, body CreateSiteJSONRequestBody,
 
 // DeleteSite Tear down a site.
 //
-// Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8).
+// Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8). A site the operator has taken down answers `409 site_unavailable`: its files are kept until the operator restores or tears it down.
 //
 // Corresponds with DELETE /api/v0/sites/{site} (the `DeleteSite` operationId).
 func (c *Client) DeleteSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2730,7 +2733,7 @@ func (c *Client) ListDeploys(ctx context.Context, site SiteName, params *ListDep
 
 // CreateDeployWithBody Create a deploy from a manifest.
 //
-// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2749,7 +2752,7 @@ func (c *Client) CreateDeployWithBody(ctx context.Context, site SiteName, conten
 
 // CreateDeploy Create a deploy from a manifest.
 //
-// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2768,7 +2771,7 @@ func (c *Client) CreateDeploy(ctx context.Context, site SiteName, body CreateDep
 
 // ActivateDeploy Make a pending deploy the site's active deploy.
 //
-// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy).
+// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A site the operator has taken down answers `409 site_unavailable`.
 //
 // Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
 func (c *Client) ActivateDeploy(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3086,7 +3089,7 @@ func (c *Client) DeletePolicy(ctx context.Context, site SiteName, policyId Polic
 
 // RollbackSiteWithBody Reactivate an earlier deploy.
 //
-// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -3105,7 +3108,7 @@ func (c *Client) RollbackSiteWithBody(ctx context.Context, site SiteName, conten
 
 // RollbackSite Reactivate an earlier deploy.
 //
-// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -5497,7 +5500,7 @@ type ClientWithResponsesInterface interface {
 
 	// InviteOwnerWithBodyWithResponse Invite another owner by email.
 	//
-	// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+	// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner. On an instance where the operator has kept invitations to themselves (`WARDLOCK_INVITES=operator`), every request answers `403 invites_restricted`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5506,7 +5509,7 @@ type ClientWithResponsesInterface interface {
 
 	// InviteOwnerWithResponse Invite another owner by email.
 	//
-	// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+	// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner. On an instance where the operator has kept invitations to themselves (`WARDLOCK_INVITES=operator`), every request answers `403 invites_restricted`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5623,7 +5626,7 @@ type ClientWithResponsesInterface interface {
 
 	// DeleteSiteWithResponse Tear down a site.
 	//
-	// Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8).
+	// Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8). A site the operator has taken down answers `409 site_unavailable`: its files are kept until the operator restores or tears it down.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -5657,7 +5660,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateDeployWithBodyWithResponse Create a deploy from a manifest.
 	//
-	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5666,7 +5669,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateDeployWithResponse Create a deploy from a manifest.
 	//
-	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5675,7 +5678,7 @@ type ClientWithResponsesInterface interface {
 
 	// ActivateDeployWithResponse Make a pending deploy the site's active deploy.
 	//
-	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy).
+	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -5835,7 +5838,7 @@ type ClientWithResponsesInterface interface {
 
 	// RollbackSiteWithBodyWithResponse Reactivate an earlier deploy.
 	//
-	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5844,7 +5847,7 @@ type ClientWithResponsesInterface interface {
 
 	// RollbackSiteWithResponse Reactivate an earlier deploy.
 	//
-	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -7415,6 +7418,8 @@ type DeleteSiteResponse struct {
 	JSON403 *Forbidden
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *Error
 }
@@ -7432,6 +7437,11 @@ func (r DeleteSiteResponse) GetJSON403() *Forbidden {
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
 func (r DeleteSiteResponse) GetJSON404() *NotFound {
 	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeleteSiteResponse) GetJSON409() *Conflict {
+	return r.JSON409
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -7702,6 +7712,8 @@ type CreateDeployResponse struct {
 	JSON403 *Forbidden
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
 	// JSON413 the response for an HTTP 413 `application/json` response
 	JSON413 *TooLarge
 	// JSONDefault the response for an HTTP default `application/json` response
@@ -7731,6 +7743,11 @@ func (r CreateDeployResponse) GetJSON403() *Forbidden {
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
 func (r CreateDeployResponse) GetJSON404() *NotFound {
 	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateDeployResponse) GetJSON409() *Conflict {
+	return r.JSON409
 }
 
 // GetJSON413 returns the response for an HTTP 413 `application/json` response
@@ -9453,7 +9470,7 @@ func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors 
 
 // InviteOwnerWithBodyWithResponse Invite another owner by email.
 //
-// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner. On an instance where the operator has kept invitations to themselves (`WARDLOCK_INVITES=operator`), every request answers `403 invites_restricted`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9468,7 +9485,7 @@ func (c *ClientWithResponses) InviteOwnerWithBodyWithResponse(ctx context.Contex
 
 // InviteOwnerWithResponse Invite another owner by email.
 //
-// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner.
+// Emails the address a one-time sign-in link. The response is the same whether or not the address already belongs to an owner, so it reveals nothing about other owners. Rate-limited per owner. On an instance where the operator has kept invitations to themselves (`WARDLOCK_INVITES=operator`), every request answers `403 invites_restricted`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9663,7 +9680,7 @@ func (c *ClientWithResponses) CreateSiteWithResponse(ctx context.Context, body C
 
 // DeleteSiteWithResponse Tear down a site.
 //
-// Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8).
+// Deletes the site with its deploys, links, policies and custom domains and frees the name. Serving stops immediately. Unreferenced blobs are removed later by garbage collection (C1.8). A site the operator has taken down answers `409 site_unavailable`: its files are kept until the operator restores or tears it down.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -9721,7 +9738,7 @@ func (c *ClientWithResponses) ListDeploysWithResponse(ctx context.Context, site 
 
 // CreateDeployWithBodyWithResponse Create a deploy from a manifest.
 //
-// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9736,7 +9753,7 @@ func (c *ClientWithResponses) CreateDeployWithBodyWithResponse(ctx context.Conte
 
 // CreateDeployWithResponse Create a deploy from a manifest.
 //
-// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`.
+// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9751,7 +9768,7 @@ func (c *ClientWithResponses) CreateDeployWithResponse(ctx context.Context, site
 
 // ActivateDeployWithResponse Make a pending deploy the site's active deploy.
 //
-// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy).
+// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A site the operator has taken down answers `409 site_unavailable`.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -10019,7 +10036,7 @@ func (c *ClientWithResponses) DeletePolicyWithResponse(ctx context.Context, site
 
 // RollbackSiteWithBodyWithResponse Reactivate an earlier deploy.
 //
-// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10034,7 +10051,7 @@ func (c *ClientWithResponses) RollbackSiteWithBodyWithResponse(ctx context.Conte
 
 // RollbackSiteWithResponse Reactivate an earlier deploy.
 //
-// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`.
+// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -11444,6 +11461,13 @@ func ParseDeleteSiteResponse(rsp *http.Response) (*DeleteSiteResponse, error) {
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -11680,6 +11704,13 @@ func ParseCreateDeployResponse(rsp *http.Response) (*CreateDeployResponse, error
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
 		var dest TooLarge

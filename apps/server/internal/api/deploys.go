@@ -67,6 +67,8 @@ func failed(err error) (*failure, error) {
 		{deploys.ErrNotPending, http.StatusConflict, "deploy_not_pending", "This deploy has been activated before; use rollback to return to it.", ""},
 		{deploys.ErrNotActivated, http.StatusConflict, "deploy_not_activated", "This deploy was never activated.", ""},
 		{deploys.ErrNoPreviousDeploy, http.StatusConflict, "no_previous_deploy", "The site has no earlier deploy to roll back to.", ""},
+		{deploys.ErrSiteUnavailable, http.StatusConflict, "site_unavailable", siteUnavailable, ""},
+		{sites.ErrUnavailable, http.StatusConflict, "site_unavailable", siteUnavailable, ""},
 	} {
 		if errors.Is(err, m.err) {
 			return fail(m.status, m.code, m.message, m.target), nil
@@ -74,6 +76,9 @@ func failed(err error) (*failure, error) {
 	}
 	return nil, err
 }
+
+// siteUnavailable explains a site_unavailable refusal.
+const siteUnavailable = "The operator of this server has taken this site down. Its deploys are kept as they are until the operator restores it."
 
 const (
 	defaultLimit = 50
@@ -113,6 +118,8 @@ func (s *Server) siteBody(site store.Site) Site {
 		Hostname:  host,
 		Url:       s.siteURL(host),
 		CreatedAt: site.CreatedAt.UnixMilli(),
+		// Owners see that their site is down, never why (A2.13).
+		Unavailable: !site.TakenDownAt.IsZero(),
 	}
 	if site.ActiveDeployID != "" {
 		out.ActiveDeployId = &site.ActiveDeployID

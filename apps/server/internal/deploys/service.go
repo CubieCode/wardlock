@@ -27,6 +27,9 @@ var (
 	ErrNotPending       = errors.New("deploy is not pending")
 	ErrNotActivated     = errors.New("deploy was never activated")
 	ErrNoPreviousDeploy = errors.New("no previous deploy")
+	// ErrSiteUnavailable means the operator has taken the site down: its
+	// deploys are kept as they are until it is restored (A2.13).
+	ErrSiteUnavailable = errors.New("site taken down by the operator")
 )
 
 // TargetError is an input error about one manifest path or field. Message
@@ -97,12 +100,22 @@ func (s *Service) site(ctx context.Context, ownerID, name string) (store.Site, e
 	return site, storeErr("find site", err)
 }
 
+// changeable returns the site unless the operator has taken it down, when
+// deploys, activations and rollbacks are refused with ErrSiteUnavailable.
+func (s *Service) changeable(ctx context.Context, ownerID, name string) (store.Site, error) {
+	site, err := s.site(ctx, ownerID, name)
+	if err == nil && !site.TakenDownAt.IsZero() {
+		return store.Site{}, ErrSiteUnavailable
+	}
+	return site, err
+}
+
 // Create records a pending deploy from m and returns it with the hashes the
 // owner still has to upload, each once. A hash counts as held only when
 // this owner uploaded it and the blob is still stored, so the answer never
 // reveals another owner's content.
 func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manifest) (store.Deploy, []string, error) {
-	site, err := s.site(ctx, ownerID, siteName)
+	site, err := s.changeable(ctx, ownerID, siteName)
 	if err != nil {
 		return store.Deploy{}, nil, err
 	}
@@ -219,7 +232,7 @@ func (c *countingReader) Read(p []byte) (int, error) {
 // it the site's active deploy atomically and notifies subscribers. It fails with ErrBlobsMissing until the owner has
 // uploaded every blob, and ErrNotPending once activated (see Rollback).
 func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID string) (store.Site, store.Deploy, error) {
-	site, err := s.site(ctx, ownerID, siteName)
+	site, err := s.changeable(ctx, ownerID, siteName)
 	if err != nil {
 		return store.Site{}, store.Deploy{}, err
 	}
@@ -254,7 +267,7 @@ func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID stri
 // Rollback reactivates deployID, or with "" the deploy active before the
 // current one, and notifies subscribers.
 func (s *Service) Rollback(ctx context.Context, ownerID, siteName, deployID string) (store.Site, store.Deploy, error) {
-	site, err := s.site(ctx, ownerID, siteName)
+	site, err := s.changeable(ctx, ownerID, siteName)
 	if err != nil {
 		return store.Site{}, store.Deploy{}, err
 	}
