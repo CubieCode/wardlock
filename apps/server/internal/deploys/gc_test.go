@@ -128,7 +128,7 @@ func (w *gcWorld) owner() string {
 
 func (w *gcWorld) site(ownerID, name string) {
 	w.t.Helper()
-	err := w.db.Sites().Create(w.t.Context(), store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: gcEpoch})
+	err := w.db.Sites().Create(w.t.Context(), store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: gcEpoch}, store.Quotas{})
 	if err != nil {
 		w.t.Fatal(err)
 	}

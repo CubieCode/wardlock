@@ -62,7 +62,7 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 	if err := db.Owners().Create(ctx, owner); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Sites().Create(ctx, site); err != nil {
+	if err := db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 

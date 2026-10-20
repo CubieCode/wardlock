@@ -19,7 +19,7 @@ func gcContract(t *testing.T, open Opener) {
 		f.t.Helper()
 		d := f.validDeploy(siteID)
 		d.CreatedAt = now.Add(at)
-		f.must(f.r.Deploys.Create(f.t.Context(), ownerID, d, []store.DeployFile{{Path: "index.html", SHA256: h, Size: 5}}))
+		f.must(f.r.Deploys.Create(f.t.Context(), ownerID, d, []store.DeployFile{{Path: "index.html", SHA256: h, Size: 5}}, store.Quotas{}))
 		return d
 	}
 	activate := func(f *fixture, ownerID, siteID string, d store.Deploy) {

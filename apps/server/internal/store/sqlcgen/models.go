@@ -101,17 +101,34 @@ type Domain struct {
 }
 
 type Owner struct {
-	ID          string
-	Email       string
-	InvitedBy   sql.NullString
-	CreatedAt   int64
-	AcceptedAt  sql.NullInt64
-	SuspendedAt sql.NullInt64
+	ID               string
+	Email            string
+	InvitedBy        sql.NullString
+	CreatedAt        int64
+	AcceptedAt       sql.NullInt64
+	SuspendedAt      sql.NullInt64
+	MaxStorageBytes  sql.NullInt64
+	MaxSites         sql.NullInt64
+	MaxDeploysPerDay sql.NullInt64
+	StoredBytes      int64
 }
 
 type OwnerBlob struct {
 	OwnerID   string
 	Sha256    string
+	CreatedAt int64
+}
+
+type OwnerBlobRef struct {
+	OwnerID string
+	Sha256  string
+	Size    int64
+	Deploys int64
+}
+
+type OwnerDeployLog struct {
+	OwnerID   string
+	DeployID  string
 	CreatedAt int64
 }
 

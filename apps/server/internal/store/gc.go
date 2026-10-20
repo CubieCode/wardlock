@@ -35,7 +35,8 @@ type GC interface {
 	PrunableDeploys(ctx context.Context, keep int, pendingBefore time.Time, after DeployCursor, limit int) ([]PrunableDeploy, error)
 	// DeletePrunableDeploy deletes the deploy and its manifest unless, when
 	// the delete runs, it is its site's active deploy or a pending deploy
-	// created at or after pendingBefore. deleted reports which.
+	// created at or after pendingBefore. deleted reports which. Storage
+	// only it held goes back to its owner's quota (A2.14).
 	DeletePrunableDeploy(ctx context.Context, id string, pendingBefore time.Time) (deleted bool, err error)
 	// UnreferencedBlobs returns up to limit blobs that no deploy lists, that
 	// were first recorded before createdBefore and that no owner has
@@ -84,11 +85,30 @@ func (r gcRepo) PrunableDeploys(ctx context.Context, keep int, pendingBefore tim
 }
 
 func (r gcRepo) DeletePrunableDeploy(ctx context.Context, id string, pendingBefore time.Time) (bool, error) {
-	n, err := r.db.q.DeletePrunableDeploy(ctx, sqlcgen.DeletePrunableDeployParams{ID: id, PendingBefore: ms(pendingBefore)})
-	if err != nil {
-		return false, mapErr("delete prunable deploy", err)
+	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
+		owner, err := q.DeployOwner(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return errNothingDeleted
+		}
+		if err != nil {
+			return mapErr("find deploy owner", err)
+		}
+		if err := releaseDeploys(ctx, q, owner, id); err != nil {
+			return err
+		}
+		n, err := q.DeletePrunableDeploy(ctx, sqlcgen.DeletePrunableDeployParams{ID: id, PendingBefore: ms(pendingBefore)})
+		if err != nil {
+			return mapErr("delete prunable deploy", err)
+		}
+		if n == 0 {
+			return errNothingDeleted // undo the release
+		}
+		return nil
+	})
+	if errors.Is(err, errNothingDeleted) {
+		return false, nil
 	}
-	return n > 0, nil
+	return err == nil, err
 }
 
 func (r gcRepo) UnreferencedBlobs(ctx context.Context, createdBefore time.Time, afterSHA256 string, limit int) ([]Blob, error) {

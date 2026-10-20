@@ -124,6 +124,24 @@ func TestLoadConfig(t *testing.T) {
 		}},
 		{"operator address without a port", map[string]string{"WARDLOCK_OPERATOR_ADDR": "127.0.0.1"}, true, nil},
 		{"operator address shared with the edge", map[string]string{"WARDLOCK_OPERATOR_ADDR": "127.0.0.1:8080"}, true, nil},
+		{"quota defaults", nil, false, func(c platform.Config) bool {
+			return c.MaxVideoSize == 10<<20 && c.BlockedExtensions == nil &&
+				c.MaxOwnerStorage == 0 && c.MaxOwnerSites == 0 && c.MaxOwnerDeploysPerDay == 0
+		}},
+		{"quota settings", map[string]string{
+			"WARDLOCK_MAX_VIDEO_SIZE": "0", "WARDLOCK_BLOCKED_EXTENSIONS": " EXE, .msi,,dmg ,exe,app-image ",
+			"WARDLOCK_MAX_OWNER_STORAGE": "5368709120", "WARDLOCK_MAX_OWNER_SITES": "25", "WARDLOCK_MAX_OWNER_DEPLOYS_PER_DAY": "200",
+		}, false, func(c platform.Config) bool {
+			return c.MaxVideoSize == 0 && slices.Equal(c.BlockedExtensions, []string{".app-image", ".dmg", ".exe", ".msi"}) &&
+				c.MaxOwnerStorage == 5<<30 && c.MaxOwnerSites == 25 && c.MaxOwnerDeploysPerDay == 200
+		}},
+		{"negative video size", map[string]string{"WARDLOCK_MAX_VIDEO_SIZE": "-1"}, true, nil},
+		{"video size with unit", map[string]string{"WARDLOCK_MAX_VIDEO_SIZE": "10MiB"}, true, nil},
+		{"negative storage quota", map[string]string{"WARDLOCK_MAX_OWNER_STORAGE": "-5"}, true, nil},
+		{"site quota not a number", map[string]string{"WARDLOCK_MAX_OWNER_SITES": "many"}, true, nil},
+		{"deploy quota fraction", map[string]string{"WARDLOCK_MAX_OWNER_DEPLOYS_PER_DAY": "1.5"}, true, nil},
+		{"blocked extension with a path", map[string]string{"WARDLOCK_BLOCKED_EXTENSIONS": "exe,bin/sh"}, true, nil},
+		{"blocked extension with an inner dot", map[string]string{"WARDLOCK_BLOCKED_EXTENSIONS": "tar.gz"}, true, nil},
 		{"zero file size", map[string]string{"WARDLOCK_MAX_FILE_SIZE": "0"}, true, nil},
 		{"negative file count", map[string]string{"WARDLOCK_MAX_DEPLOY_FILES": "-1"}, true, nil},
 		{"file count too large", map[string]string{"WARDLOCK_MAX_DEPLOY_FILES": "99999999999999999999"}, true, nil},

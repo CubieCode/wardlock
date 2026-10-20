@@ -1184,6 +1184,9 @@ type CheckedRecently = Error
 // Conflict The body of every error response.
 type Conflict = Error
 
+// FileTypeBlocked The body of every error response.
+type FileTypeBlocked = Error
+
 // Forbidden The body of every error response.
 type Forbidden = Error
 
@@ -1792,7 +1795,7 @@ type ClientInterface interface {
 
 	// CreateSiteWithBody Create an empty site.
 	//
-	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1801,7 +1804,7 @@ type ClientInterface interface {
 
 	// CreateSite Create an empty site.
 	//
-	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1836,7 +1839,7 @@ type ClientInterface interface {
 
 	// CreateDeployWithBody Create a deploy from a manifest.
 	//
-	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
+	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1845,7 +1848,7 @@ type ClientInterface interface {
 
 	// CreateDeploy Create a deploy from a manifest.
 	//
-	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
+	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2629,7 +2632,7 @@ func (c *Client) ListSites(ctx context.Context, params *ListSitesParams, reqEdit
 
 // CreateSiteWithBody Create an empty site.
 //
-// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2648,7 +2651,7 @@ func (c *Client) CreateSiteWithBody(ctx context.Context, contentType string, bod
 
 // CreateSite Create an empty site.
 //
-// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2733,7 +2736,7 @@ func (c *Client) ListDeploys(ctx context.Context, site SiteName, params *ListDep
 
 // CreateDeployWithBody Create a deploy from a manifest.
 //
-// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
+// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2752,7 +2755,7 @@ func (c *Client) CreateDeployWithBody(ctx context.Context, site SiteName, conten
 
 // CreateDeploy Create a deploy from a manifest.
 //
-// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
+// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -5608,7 +5611,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateSiteWithBodyWithResponse Create an empty site.
 	//
-	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5617,7 +5620,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateSiteWithResponse Create an empty site.
 	//
-	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5660,7 +5663,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateDeployWithBodyWithResponse Create a deploy from a manifest.
 	//
-	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
+	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5669,7 +5672,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateDeployWithResponse Create a deploy from a manifest.
 	//
-	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
+	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -7346,6 +7349,8 @@ type CreateSiteResponse struct {
 	JSON403 *Forbidden
 	// JSON409 the response for an HTTP 409 `application/json` response
 	JSON409 *Conflict
+	// JSON413 the response for an HTTP 413 `application/json` response
+	JSON413 *TooLarge
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *Error
 }
@@ -7373,6 +7378,11 @@ func (r CreateSiteResponse) GetJSON403() *Forbidden {
 // GetJSON409 returns the response for an HTTP 409 `application/json` response
 func (r CreateSiteResponse) GetJSON409() *Conflict {
 	return r.JSON409
+}
+
+// GetJSON413 returns the response for an HTTP 413 `application/json` response
+func (r CreateSiteResponse) GetJSON413() *TooLarge {
+	return r.JSON413
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -7716,6 +7726,8 @@ type CreateDeployResponse struct {
 	JSON409 *Conflict
 	// JSON413 the response for an HTTP 413 `application/json` response
 	JSON413 *TooLarge
+	// JSON422 the response for an HTTP 422 `application/json` response
+	JSON422 *FileTypeBlocked
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *Error
 }
@@ -7753,6 +7765,11 @@ func (r CreateDeployResponse) GetJSON409() *Conflict {
 // GetJSON413 returns the response for an HTTP 413 `application/json` response
 func (r CreateDeployResponse) GetJSON413() *TooLarge {
 	return r.JSON413
+}
+
+// GetJSON422 returns the response for an HTTP 422 `application/json` response
+func (r CreateDeployResponse) GetJSON422() *FileTypeBlocked {
+	return r.JSON422
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -9664,7 +9681,7 @@ func (c *ClientWithResponses) ListSitesWithResponse(ctx context.Context, params 
 
 // CreateSiteWithBodyWithResponse Create an empty site.
 //
-// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9679,7 +9696,7 @@ func (c *ClientWithResponses) CreateSiteWithBodyWithResponse(ctx context.Context
 
 // CreateSiteWithResponse Create an empty site.
 //
-// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9752,7 +9769,7 @@ func (c *ClientWithResponses) ListDeploysWithResponse(ctx context.Context, site 
 
 // CreateDeployWithBodyWithResponse Create a deploy from a manifest.
 //
-// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
+// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9767,7 +9784,7 @@ func (c *ClientWithResponses) CreateDeployWithBodyWithResponse(ctx context.Conte
 
 // CreateDeployWithResponse Create a deploy from a manifest.
 //
-// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
+// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -11425,6 +11442,13 @@ func ParseCreateSiteResponse(rsp *http.Response) (*CreateSiteResponse, error) {
 		}
 		response.JSON409 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest TooLarge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON413 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -11732,6 +11756,13 @@ func ParseCreateDeployResponse(rsp *http.Response) (*CreateDeployResponse, error
 			return nil, err
 		}
 		response.JSON413 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest FileTypeBlocked
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

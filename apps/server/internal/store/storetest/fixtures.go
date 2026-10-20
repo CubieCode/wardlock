@@ -60,7 +60,7 @@ func (f *fixture) validSite(ownerID string) store.Site {
 func (f *fixture) site(ownerID string) store.Site {
 	f.t.Helper()
 	s := f.validSite(ownerID)
-	f.must(f.r.Sites.Create(f.t.Context(), s))
+	f.must(f.r.Sites.Create(f.t.Context(), s, store.Quotas{}))
 	return s
 }
 
@@ -73,7 +73,7 @@ func sha(c byte) string { return strings.Repeat(string(c), 64) }
 func (f *fixture) deploy(ownerID, siteID string) store.Deploy {
 	f.t.Helper()
 	d := f.validDeploy(siteID)
-	f.must(f.r.Deploys.Create(f.t.Context(), ownerID, d, []store.DeployFile{{Path: "index.html", SHA256: sha('a'), Size: 5}}))
+	f.must(f.r.Deploys.Create(f.t.Context(), ownerID, d, []store.DeployFile{{Path: "index.html", SHA256: sha('a'), Size: 5}}, store.Quotas{}))
 	return d
 }
 
@@ -85,7 +85,7 @@ func (f *fixture) deployFiles(ownerID, siteID string, files ...store.DeployFile)
 	for _, file := range files {
 		d.TotalSize += file.Size
 	}
-	f.must(f.r.Deploys.Create(f.t.Context(), ownerID, d, files))
+	f.must(f.r.Deploys.Create(f.t.Context(), ownerID, d, files, store.Quotas{}))
 	return d
 }
 

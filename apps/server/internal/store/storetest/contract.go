@@ -80,6 +80,7 @@ func suites() []suite {
 		{"Renditions", renditionsContract},
 		{"PasswordSessions", passwordSessionsContract},
 		{"EmailCodes", emailCodesContract},
+		{"Quotas", quotasContract},
 	}
 }
 

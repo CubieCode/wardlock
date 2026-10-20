@@ -725,3 +725,56 @@ func TestDeployImmutableAssetsFlag(t *testing.T) {
 		t.Fatalf("deploy %+v (%v)", res.Deploy, err)
 	}
 }
+
+// TestDeployRefusals shows the server's limit and quota refusals as the
+// server words them, naming the file and the limit, and for a refused file
+// how to leave it out.
+func TestDeployRefusals(t *testing.T) {
+	refuse := func(status int, code, message, target string) *refusal {
+		return &refusal{status, apiclient.Error{Code: code, Message: message, Target: &target}}
+	}
+	tests := []struct {
+		name         string
+		deploy, site *refusal
+		want         []string
+		hint         bool
+	}{
+		{"video over its limit", refuse(413, "limit_exceeded", "media/intro.mp4 is a video file of 15 MiB; the limit for video files is 10 MiB.", "media/intro.mp4"), nil,
+			[]string{"media/intro.mp4 is a video file of 15 MiB; the limit for video files is 10 MiB.", "list media/intro.mp4 in .wardlockignore"}, true},
+		{"blocked type", refuse(422, "file_type_blocked", "setup.exe is a .exe file, a type this server does not accept.", "setup.exe"), nil,
+			[]string{"setup.exe is a .exe file", "list setup.exe in .wardlockignore"}, true},
+		{"storage quota", refuse(413, "limit_exceeded", "This deploy adds 6 MiB of new files to the 1 GiB you already store; your storage limit is 1 GiB.", "files"), nil,
+			[]string{"your storage limit is 1 GiB"}, false},
+		{"daily deploys", refuse(413, "limit_exceeded", "You have created 20 deploys in the last 24 hours, the most this server allows you.", "deploys"), nil,
+			[]string{"20 deploys in the last 24 hours"}, false},
+		{"site quota", nil, refuse(413, "limit_exceeded", "You already have 3 sites, the most this server allows you.", "name"),
+			[]string{"You already have 3 sites"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newFakeAPI(t)
+			srv.refuseDeploy, srv.refuseSite = tt.deploy, tt.site
+			a, _, errOut := ciApp(t, srv)
+			writeFiles(t, workDir(t, a), map[string]string{"index.html": "x", "media/intro.mp4": "v", "setup.exe": "e"})
+			dest := "docs"
+			if tt.site != nil {
+				dest = "fresh"
+			}
+			err := run(t.Context(), a, []string{"deploy", ".", dest})
+			if code := exitCode(errOut, err); code != 1 {
+				t.Fatalf("exit %d, stderr %q", code, errOut)
+			}
+			for _, want := range append(tt.want, "server "+srv.URL+": ") {
+				if !strings.Contains(errOut.String(), want) {
+					t.Errorf("stderr %q lacks %q", errOut, want)
+				}
+			}
+			if got := strings.Contains(errOut.String(), ".wardlockignore"); got != tt.hint {
+				t.Errorf("ignore hint shown = %v, want %v: %q", got, tt.hint, errOut)
+			}
+			if len(srv.uploads) != 0 {
+				t.Errorf("uploaded %v after a refusal", srv.uploads)
+			}
+		})
+	}
+}

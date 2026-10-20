@@ -100,9 +100,18 @@ const getOwner = `-- name: GetOwner :one
 SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners WHERE id = ?1
 `
 
-func (q *Queries) GetOwner(ctx context.Context, id string) (Owner, error) {
+type GetOwnerRow struct {
+	ID          string
+	Email       string
+	InvitedBy   sql.NullString
+	CreatedAt   int64
+	AcceptedAt  sql.NullInt64
+	SuspendedAt sql.NullInt64
+}
+
+func (q *Queries) GetOwner(ctx context.Context, id string) (GetOwnerRow, error) {
 	row := q.db.QueryRowContext(ctx, getOwner, id)
-	var i Owner
+	var i GetOwnerRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
@@ -118,9 +127,18 @@ const getOwnerByEmail = `-- name: GetOwnerByEmail :one
 SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners WHERE email = ?1
 `
 
-func (q *Queries) GetOwnerByEmail(ctx context.Context, email string) (Owner, error) {
+type GetOwnerByEmailRow struct {
+	ID          string
+	Email       string
+	InvitedBy   sql.NullString
+	CreatedAt   int64
+	AcceptedAt  sql.NullInt64
+	SuspendedAt sql.NullInt64
+}
+
+func (q *Queries) GetOwnerByEmail(ctx context.Context, email string) (GetOwnerByEmailRow, error) {
 	row := q.db.QueryRowContext(ctx, getOwnerByEmail, email)
-	var i Owner
+	var i GetOwnerByEmailRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
@@ -200,17 +218,26 @@ type ListAllOwnersParams struct {
 	RowLimit   int64
 }
 
+type ListAllOwnersRow struct {
+	ID          string
+	Email       string
+	InvitedBy   sql.NullString
+	CreatedAt   int64
+	AcceptedAt  sql.NullInt64
+	SuspendedAt sql.NullInt64
+}
+
 // Instance-wide, for `wardlockd admin list-owners` only: every owner by
 // address, after the cursor.
-func (q *Queries) ListAllOwners(ctx context.Context, arg ListAllOwnersParams) ([]Owner, error) {
+func (q *Queries) ListAllOwners(ctx context.Context, arg ListAllOwnersParams) ([]ListAllOwnersRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAllOwners, arg.AfterEmail, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Owner
+	var items []ListAllOwnersRow
 	for rows.Next() {
-		var i Owner
+		var i ListAllOwnersRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Email,

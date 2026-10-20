@@ -17,7 +17,7 @@ func sitesContract(t *testing.T, open Opener) {
 		t.Parallel()
 		f := newFixture(t, open)
 		want := f.validSite(f.owner().ID)
-		f.must(f.r.Sites.Create(t.Context(), want))
+		f.must(f.r.Sites.Create(t.Context(), want, store.Quotas{}))
 		got, err := f.r.Sites.Get(t.Context(), want.OwnerID, want.ID)
 		if err != nil {
 			t.Fatal(err)
@@ -30,7 +30,7 @@ func sitesContract(t *testing.T, open Opener) {
 		t.Parallel()
 		runInsertCases(t, open,
 			func(f *fixture) store.Site { return f.validSite(f.owner().ID) },
-			func(f *fixture, s store.Site) error { return f.r.Sites.Create(f.t.Context(), s) },
+			func(f *fixture, s store.Site) error { return f.r.Sites.Create(f.t.Context(), s, store.Quotas{}) },
 			[]insertCase[store.Site]{
 				{name: "valid"},
 				{name: "one character", mutate: func(_ *fixture, s *store.Site) { s.Name = "a" }},
@@ -101,7 +101,7 @@ func sitesContract(t *testing.T, open Opener) {
 		// child rows were deleted with it.
 		s2 := s
 		s2.ID = store.NewID()
-		f.must(f.r.Sites.Create(t.Context(), s2))
+		f.must(f.r.Sites.Create(t.Context(), s2, store.Quotas{}))
 		dom.ID, dom.SiteID = store.NewID(), s2.ID
 		f.must(f.r.Domains.Create(t.Context(), o.ID, dom))
 		l.ID, l.SiteID = store.NewID(), s2.ID
@@ -111,7 +111,7 @@ func sitesContract(t *testing.T, open Opener) {
 		sess.ID, sess.SiteID, sess.ShareLinkID, sess.PolicyID = store.NewID(), s2.ID, l.ID, p.ID
 		f.must(f.r.Sessions.CreateSite(t.Context(), sess))
 		d.SiteID = s2.ID
-		f.must(f.r.Deploys.Create(t.Context(), o.ID, d, []store.DeployFile{{Path: "index.html", SHA256: sha('a'), Size: 5}}))
+		f.must(f.r.Deploys.Create(t.Context(), o.ID, d, []store.DeployFile{{Path: "index.html", SHA256: sha('a'), Size: 5}}, store.Quotas{}))
 	})
 	t.Run("GetReportsActivation", func(t *testing.T) {
 		t.Parallel()
@@ -206,7 +206,7 @@ func sitesContract(t *testing.T, open Opener) {
 		for _, name := range []string{"charlie", "alpha", "bravo"} {
 			s := f.validSite(o.ID)
 			s.Name = name
-			f.must(f.r.Sites.Create(t.Context(), s))
+			f.must(f.r.Sites.Create(t.Context(), s, store.Quotas{}))
 		}
 		want := []string{"alpha", "bravo", "charlie"}
 		f.site(f.owner().ID) // another owner's site is never listed

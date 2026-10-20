@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -32,6 +34,10 @@ Owners:
   suspend-owner ADDRESS    Sign the owner out everywhere, refuse their sign-ins and
                            API tokens, and make their sites unavailable
   reinstate-owner ADDRESS  Lift a suspension: API tokens and sites work again
+  quota ADDRESS [--storage SIZE] [--sites N] [--deploys-per-day N]
+                           Show the owner's quotas and usage, or override them:
+                           SIZE is bytes or a number with KiB, MiB, GiB or TiB;
+                           0 is unlimited and "default" follows the instance
 
 Sites (by name or any hostname they answer on):
   list-sites               List every site, its owner and whether it is serving
@@ -59,6 +65,8 @@ func admin(ctx context.Context, args []string, getenv func(string) string, stdou
 		return nil
 	case "create":
 		return adminCreate(ctx, rest, getenv, stdout, stderr)
+	case "quota":
+		return adminQuota(ctx, rest, getenv, stdout, stderr)
 	}
 	run, ok := adminCommands[cmd]
 	if !ok || len(rest) != run.args {
@@ -96,6 +104,8 @@ type adminEnv struct {
 	db     *store.DB
 	owners *owners.Service
 	sites  *sites.Service
+	// quotas are the instance's per-owner quotas from the environment.
+	quotas store.Quotas
 }
 
 func (a *adminEnv) close() {
@@ -128,7 +138,7 @@ func openAdmin(ctx context.Context, getenv func(string) string, stderr io.Writer
 		Sites: db.Sites(), Domains: db.Domains(), Notifier: deploys.NewLocalNotifier(),
 		BaseDomain: cfg.BaseDomain, DashboardHost: cfg.DashboardHost, Now: time.Now, Log: log,
 	})
-	return &adminEnv{db: db, owners: svc, sites: sitesSvc}, nil
+	return &adminEnv{db: db, owners: svc, sites: sitesSvc, quotas: ownerQuotas(cfg)}, nil
 }
 
 // adminOwners is the owners service as `wardlockd admin` uses it, with
@@ -311,6 +321,136 @@ func teardownSite(ctx context.Context, a *adminEnv, args []string, out io.Writer
 	return nil
 }
 
+// adminQuota shows the owner's quotas and usage, after applying any
+// overrides given as flags.
+func adminQuota(ctx context.Context, args []string, getenv func(string) string, stdout, stderr io.Writer) error {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		fmt.Fprint(stderr, adminUsage)
+		return errUsage
+	}
+	email := args[0]
+	fs := flag.NewFlagSet("wardlockd admin quota", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	var changes []quotaChange
+	for _, q := range []struct {
+		name, usage string
+		parse       func(string) (int64, error)
+		field       func(*store.QuotaOverrides) **int64
+	}{
+		{"storage", "bytes stored (SIZE, 0 or default)", parseSize, func(o *store.QuotaOverrides) **int64 { return &o.StorageBytes }},
+		{"sites", "sites (N, 0 or default)", parseCount, func(o *store.QuotaOverrides) **int64 { return &o.Sites }},
+		{"deploys-per-day", "deploys in any 24 hours (N, 0 or default)", parseCount, func(o *store.QuotaOverrides) **int64 { return &o.DeploysPerDay }},
+	} {
+		fs.Func(q.name, q.usage, func(raw string) error {
+			c := quotaChange{field: q.field}
+			if raw != "default" {
+				v, err := q.parse(raw)
+				if err != nil {
+					return err
+				}
+				c.value = &v
+			}
+			changes = append(changes, c)
+			return nil
+		})
+	}
+	if err := fs.Parse(args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return errUsage
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprint(stderr, adminUsage)
+		return errUsage
+	}
+	a, err := openAdmin(ctx, getenv, stderr)
+	if err != nil {
+		return err
+	}
+	defer a.close()
+	if len(changes) > 0 {
+		_, over, _, err := a.owners.Quotas(ctx, email)
+		if err != nil {
+			return operatorErr(err, "owner", email)
+		}
+		for _, c := range changes {
+			*c.field(&over) = c.value
+		}
+		if _, err := a.owners.SetQuotas(ctx, email, over); err != nil {
+			return operatorErr(err, "owner", email)
+		}
+	}
+	o, over, usage, err := a.owners.Quotas(ctx, email)
+	if err != nil {
+		return operatorErr(err, "owner", email)
+	}
+	if len(changes) > 0 {
+		fmt.Fprintf(stdout, "Updated the quotas of %s (owner %s). Their next deploy or new site is checked against them.\n\n", o.Email, o.ID)
+	} else {
+		fmt.Fprintf(stdout, "Quotas of %s (owner %s):\n\n", o.Email, o.ID)
+	}
+	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "QUOTA\tUSED\tLIMIT\tSET BY")
+	limits := a.quotas.Apply(over)
+	for _, row := range []struct {
+		name        string
+		used, limit int64
+		override    *int64
+		format      func(int64) string
+	}{
+		{"storage", usage.StoredBytes, limits.StorageBytes, over.StorageBytes, deploys.FormatBytes},
+		{"sites", usage.Sites, limits.Sites, over.Sites, formatCount},
+		{"deploys per day", usage.DeploysToday, limits.DeploysPerDay, over.DeploysPerDay, formatCount},
+	} {
+		limit, by := "unlimited", "instance"
+		if row.limit > 0 {
+			limit = row.format(row.limit)
+		}
+		if row.override != nil {
+			by = "this owner"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", row.name, row.format(row.used), limit, by)
+	}
+	return tw.Flush()
+}
+
+// quotaChange is one quota flag: field's override becomes value, nil for
+// the instance default.
+type quotaChange struct {
+	field func(*store.QuotaOverrides) **int64
+	value *int64
+}
+
+// parseCount reads a whole number of sites or deploys, 0 for unlimited.
+func parseCount(raw string) (int64, error) {
+	v, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || v < 0 {
+		return 0, fmt.Errorf("%q is not a whole number, 0 or more, or default", raw)
+	}
+	return v, nil
+}
+
+// parseSize reads bytes, optionally with a binary unit (512MiB, 5 GiB),
+// 0 for unlimited.
+func parseSize(raw string) (int64, error) {
+	s := strings.TrimSpace(raw)
+	shift := 0
+	for i, unit := range []string{"KiB", "MiB", "GiB", "TiB"} {
+		if rest, ok := strings.CutSuffix(s, unit); ok {
+			s, shift = strings.TrimSpace(rest), 10*(i+1)
+			break
+		}
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || v < 0 || v > math.MaxInt64>>shift {
+		return 0, fmt.Errorf("%q is not a size: use bytes or a whole number with KiB, MiB, GiB or TiB (such as 5GiB), 0 or default", raw)
+	}
+	return v << shift, nil
+}
+
 func day(t time.Time) string { return t.UTC().Format("2006-01-02") }
 
 func stamp(t time.Time) string { return t.UTC().Format("2006-01-02 15:04 UTC") }
+
+func formatCount(n int64) string { return strconv.FormatInt(n, 10) }

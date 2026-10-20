@@ -148,7 +148,7 @@ func (p *policyEdge) publish(name string) store.Site {
 	t, ctx := p.t, p.t.Context()
 	t.Helper()
 	site := store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: name, CreatedAt: p.now()}
-	if err := p.db.Sites().Create(ctx, site); err != nil {
+	if err := p.db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	var m deploys.Manifest

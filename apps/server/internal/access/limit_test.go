@@ -334,7 +334,7 @@ func newFlood(t *testing.T, limits Limits) *flood {
 	if err := db.Owners().Create(t.Context(), o); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Sites().Create(t.Context(), site); err != nil {
+	if err := db.Sites().Create(t.Context(), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Set(t.Context(), o.ID, "harbour", Rule{

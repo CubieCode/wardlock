@@ -105,6 +105,13 @@ type Owners interface {
 	// ListAll returns up to limit owners on the instance ordered by
 	// address, starting after afterEmail ("" for the first page).
 	ListAll(ctx context.Context, afterEmail string, limit int) ([]Owner, error)
+	// Quotas returns the owner's quota overrides and what counts against
+	// them, with deploys counted over the DeployWindow before now (A2.14).
+	// An unknown owner is ErrNotFound.
+	Quotas(ctx context.Context, id string, now time.Time) (QuotaOverrides, OwnerUsage, error)
+	// SetQuotas replaces the owner's quota overrides. An unknown owner is
+	// ErrNotFound.
+	SetQuotas(ctx context.Context, id string, o QuotaOverrides) error
 }
 
 // Owners returns the SQLite Owners repository.
@@ -124,7 +131,7 @@ func (r ownersRepo) Get(ctx context.Context, id string) (Owner, error) {
 	return ownerFromRow(row), nil
 }
 
-func ownerFromRow(row sqlcgen.Owner) Owner {
+func ownerFromRow(row sqlcgen.GetOwnerRow) Owner {
 	return Owner{
 		ID:          row.ID,
 		Email:       row.Email,
@@ -180,7 +187,7 @@ func (r ownersRepo) GetByEmail(ctx context.Context, email string) (Owner, error)
 	if err != nil {
 		return Owner{}, mapErr("get owner by email", err)
 	}
-	return ownerFromRow(row), nil
+	return ownerFromRow(sqlcgen.GetOwnerRow(row)), nil
 }
 
 func (r ownersRepo) Count(ctx context.Context) (int, error) {
@@ -306,7 +313,33 @@ func (r ownersRepo) ListAll(ctx context.Context, afterEmail string, limit int) (
 	}
 	out := make([]Owner, len(rows))
 	for i, row := range rows {
-		out[i] = ownerFromRow(row)
+		out[i] = ownerFromRow(sqlcgen.GetOwnerRow(row))
 	}
 	return out, nil
+}
+
+func (r ownersRepo) Quotas(ctx context.Context, id string, now time.Time) (QuotaOverrides, OwnerUsage, error) {
+	row, err := r.db.q.GetOwnerQuotas(ctx, id)
+	if err != nil {
+		return QuotaOverrides{}, OwnerUsage{}, mapErr("get owner quotas", err)
+	}
+	u := OwnerUsage{StoredBytes: row.StoredBytes}
+	if u.Sites, err = r.db.q.CountOwnerSites(ctx, id); err != nil {
+		return QuotaOverrides{}, OwnerUsage{}, mapErr("count sites", err)
+	}
+	after := ms(now.Add(-DeployWindow))
+	if u.DeploysToday, err = r.db.q.CountOwnerDeploysSince(ctx, sqlcgen.CountOwnerDeploysSinceParams{OwnerID: id, After: after}); err != nil {
+		return QuotaOverrides{}, OwnerUsage{}, mapErr("count recent deploys", err)
+	}
+	return overridesFrom(row.MaxStorageBytes, row.MaxSites, row.MaxDeploysPerDay), u, nil
+}
+
+func (r ownersRepo) SetQuotas(ctx context.Context, id string, o QuotaOverrides) error {
+	n, err := r.db.q.SetOwnerQuotas(ctx, sqlcgen.SetOwnerQuotasParams{
+		MaxStorageBytes:  nullOverride(o.StorageBytes),
+		MaxSites:         nullOverride(o.Sites),
+		MaxDeploysPerDay: nullOverride(o.DeploysPerDay),
+		ID:               id,
+	})
+	return rowsAffected("set owner quotas", n, err)
 }

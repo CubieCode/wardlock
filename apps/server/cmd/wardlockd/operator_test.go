@@ -335,7 +335,7 @@ func TestAbuseReports(t *testing.T) {
 	site := p.publish("docs")
 	p.publish("other")
 	unpublished := store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: "drafts", CreatedAt: p.now()}
-	if err := p.db.Sites().Create(ctx, unpublished); err != nil {
+	if err := p.db.Sites().Create(ctx, unpublished, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	p.set("docs", "/internal/", store.Protected, true)
@@ -543,7 +543,7 @@ func TestAdminOperatorCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	site := store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "docs", CreatedAt: time.Now()}
-	if err := db.Sites().Create(t.Context(), site); err != nil {
+	if err := db.Sites().Create(t.Context(), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -617,7 +617,7 @@ func TestUnpublishedTakenDownSiteLooksMissing(t *testing.T) {
 	p := newPolicyEdge(t)
 	ctx := t.Context()
 	drafts := store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: "drafts", CreatedAt: p.now()}
-	if err := p.db.Sites().Create(ctx, drafts); err != nil {
+	if err := p.db.Sites().Create(ctx, drafts, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.operatorSites(sitestest.NewResolver()).TakeDown(ctx, "drafts"); err != nil {

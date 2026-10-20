@@ -46,6 +46,10 @@ func failed(err error) (*failure, error) {
 	if errors.As(err, &te) {
 		target, message = te.Target, te.Message
 	}
+	siteLimit := ""
+	if le := (*sites.LimitError)(nil); errors.As(err, &le) {
+		siteLimit = le.Message()
+	}
 	for _, m := range []struct {
 		err     error
 		status  int
@@ -60,7 +64,9 @@ func failed(err error) (*failure, error) {
 		{sites.ErrNameTaken, http.StatusConflict, "site_name_taken", "This site name is taken.", "name"},
 		{deploys.ErrInvalidPath, http.StatusBadRequest, "invalid_path", message, target},
 		{deploys.ErrInvalidManifest, http.StatusBadRequest, "invalid_manifest", message, target},
+		{sites.ErrLimitExceeded, http.StatusRequestEntityTooLarge, "limit_exceeded", siteLimit, "name"},
 		{deploys.ErrLimitExceeded, http.StatusRequestEntityTooLarge, "limit_exceeded", message, target},
+		{deploys.ErrBlockedType, http.StatusUnprocessableEntity, "file_type_blocked", message, target},
 		{deploys.ErrHashMismatch, http.StatusBadRequest, "hash_mismatch", "The body does not match the sha256 and size in the manifest.", ""},
 		{deploys.ErrUnexpectedBlob, http.StatusBadRequest, "unexpected_blob", "This hash is not in the deploy's manifest.", ""},
 		{deploys.ErrBlobsMissing, http.StatusConflict, "blobs_missing", "Some blobs have not been uploaded; upload every missing hash first.", target},

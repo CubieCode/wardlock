@@ -5,6 +5,9 @@ package deploys
 
 import (
 	"fmt"
+	"maps"
+	"path"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -23,13 +26,40 @@ type Limits struct {
 	MaxFileSize   int64 // bytes per file
 	MaxFiles      int   // files per deploy
 	MaxDeploySize int64 // total bytes per deploy
+	// MaxVideoSize is the per-file limit for video files (IsVideo), on top
+	// of MaxFileSize; 0 refuses video files altogether (A2.14).
+	MaxVideoSize int64
+	// BlockedExtensions are lowercase extensions with their dot, such as
+	// ".exe", that no deploy may contain (A2.14); nil blocks none.
+	BlockedExtensions map[string]bool
 }
 
-// DefaultLimits are SPEC's defaults: 25 MiB per file, 20,000 files and
-// 1 GiB per deploy.
+// DefaultLimits are SPEC's defaults: 25 MiB per file, 10 MiB per video
+// file, 20,000 files and 1 GiB per deploy, and no blocked extensions.
 func DefaultLimits() Limits {
-	return Limits{MaxFileSize: 25 << 20, MaxFiles: 20_000, MaxDeploySize: 1 << 30}
+	return Limits{MaxFileSize: 25 << 20, MaxFiles: 20_000, MaxDeploySize: 1 << 30, MaxVideoSize: 10 << 20}
 }
+
+// videoExtensions are the extensions IsVideo recognises. Detection is by
+// extension alone, so every server agrees: the host's MIME table is not
+// consulted (it varies between machines, and some map .ts, a TypeScript
+// file far more often than an MPEG transport stream, to video/mp2t).
+var videoExtensions = map[string]bool{
+	".3g2": true, ".3gp": true, ".asf": true, ".avi": true, ".f4v": true,
+	".flv": true, ".m2ts": true, ".m2v": true, ".m4v": true, ".mkv": true,
+	".mov": true, ".mp4": true, ".mpeg": true, ".mpg": true, ".mts": true,
+	".ogv": true, ".qt": true, ".vob": true, ".webm": true, ".wmv": true,
+}
+
+// IsVideo reports whether the path's extension, in any letter case, is a
+// video format's.
+func IsVideo(p string) bool { return videoExtensions[extension(p)] }
+
+// VideoExtensions returns the extensions IsVideo recognises, sorted.
+func VideoExtensions() []string { return slices.Sorted(maps.Keys(videoExtensions)) }
+
+// extension returns p's extension in lowercase with its dot, or "".
+func extension(p string) string { return strings.ToLower(path.Ext(p)) }
 
 // Manifest is what a client sends to create a deploy.
 type Manifest struct {
@@ -114,6 +144,17 @@ func (l Limits) validate(m *Manifest) error {
 			return &TargetError{Err: ErrInvalidManifest, Target: p, Message: fmt.Sprintf("%q gives size %d for a hash listed elsewhere with size %d.", p, f.Size, size)}
 		}
 		sizes[f.SHA256] = f.Size
+		if ext := extension(p); l.BlockedExtensions[ext] {
+			return &TargetError{Err: ErrBlockedType, Target: p, Message: fmt.Sprintf("%s is a %s file, a type this server does not accept.", p, ext)}
+		}
+		if IsVideo(p) {
+			if l.MaxVideoSize == 0 {
+				return &TargetError{Err: ErrLimitExceeded, Target: p, Message: fmt.Sprintf("%s is a video file; this server does not accept video files.", p)}
+			}
+			if f.Size > l.MaxVideoSize {
+				return &TargetError{Err: ErrLimitExceeded, Target: p, Message: fmt.Sprintf("%s is a video file of %s; the limit for video files is %s.", p, FormatBytes(f.Size), FormatBytes(l.MaxVideoSize))}
+			}
+		}
 		if f.Size > l.MaxFileSize {
 			return &TargetError{Err: ErrLimitExceeded, Target: p, Message: fmt.Sprintf("%s is %d bytes; the limit is %d.", p, f.Size, l.MaxFileSize)}
 		}
@@ -123,4 +164,30 @@ func (l Limits) validate(m *Manifest) error {
 		}
 	}
 	return nil
+}
+
+// FormatBytes writes n in the largest binary unit that holds it exactly,
+// such as "10 MiB", or else as bytes with a rounded figure alongside, such
+// as "15728641 bytes (15.0 MiB)", so a size just over a limit never reads
+// the same as the limit.
+func FormatBytes(n int64) string {
+	units := []string{"bytes", "KiB", "MiB", "GiB", "TiB"}
+	i := 0
+	for v := n; i < len(units)-1 && v >= 1024 && v%1024 == 0; v /= 1024 {
+		i++
+	}
+	if i > 0 {
+		return fmt.Sprintf("%d %s", n>>(10*i), units[i])
+	}
+	if n == 1 {
+		return "1 byte"
+	}
+	if n < 1024 {
+		return fmt.Sprintf("%d bytes", n)
+	}
+	f, i := float64(n), 0
+	for ; f >= 1024 && i < len(units)-1; f /= 1024 {
+		i++
+	}
+	return fmt.Sprintf("%d bytes (%.1f %s)", n, f, units[i])
 }

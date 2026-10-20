@@ -5,6 +5,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"time"
 
 	"wardlock.nz/server/internal/store/sqlcgen"
@@ -36,8 +39,12 @@ type OperatorSite struct {
 // owner's sites; another owner's site is ErrNotFound.
 type Sites interface {
 	// Create inserts s; ActiveDeployID and ActivatedAt are ignored (see
-	// Deploys.Activate). A name held by any site is ErrConflict.
-	Create(ctx context.Context, s Site) error
+	// Deploys.Activate). A name held by any site is ErrConflict. An owner
+	// who already has as many sites as quotas.Sites, after their own
+	// override (A2.14), gets a *QuotaError (ErrQuotaExceeded); concurrent
+	// creates by one owner are serialised so they cannot both take the
+	// last place.
+	Create(ctx context.Context, s Site, quotas Quotas) error
 	Get(ctx context.Context, ownerID, id string) (Site, error)
 	// GetByOwnerName finds one of ownerID's sites by name.
 	GetByOwnerName(ctx context.Context, ownerID, name string) (Site, error)
@@ -58,8 +65,9 @@ type Sites interface {
 	// taken-down site is ErrNotFound.
 	SetActiveDeploy(ctx context.Context, ownerID, siteID, deployID string) error
 	// Delete removes the site with its domains, deploys, policies, share
-	// links and site sessions, freeing the name. A taken-down site is
-	// ErrNotFound: only the operator can tear it down.
+	// links and site sessions, freeing the name and the storage only its
+	// deploys held. A taken-down site is ErrNotFound: only the operator can
+	// tear it down.
 	Delete(ctx context.Context, ownerID, id string) error
 
 	// Operator controls (A2.13), for `wardlockd admin` and the edge's
@@ -86,13 +94,31 @@ func (db *DB) Sites() Sites { return sitesRepo{db} }
 
 type sitesRepo struct{ db *DB }
 
-func (r sitesRepo) Create(ctx context.Context, s Site) error {
-	return mapErr("create site", r.db.q.CreateSite(ctx, sqlcgen.CreateSiteParams{
-		ID:        s.ID,
-		OwnerID:   s.OwnerID,
-		Name:      s.Name,
-		CreatedAt: ms(s.CreatedAt),
-	}))
+func (r sitesRepo) Create(ctx context.Context, s Site, quotas Quotas) error {
+	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
+		_, quotas, err := lockOwnerQuotas(ctx, q, s.OwnerID, quotas)
+		if errors.Is(err, ErrNotFound) {
+			return fmt.Errorf("create site: %w", ErrConstraint) // no such owner
+		}
+		if err != nil {
+			return err
+		}
+		if quotas.Sites > 0 {
+			n, err := q.CountOwnerSites(ctx, s.OwnerID)
+			if err != nil {
+				return mapErr("count sites", err)
+			}
+			if n >= quotas.Sites {
+				return &QuotaError{Quota: QuotaSites, Limit: quotas.Sites, Used: n, Adding: 1}
+			}
+		}
+		return mapErr("create site", q.CreateSite(ctx, sqlcgen.CreateSiteParams{
+			ID:        s.ID,
+			OwnerID:   s.OwnerID,
+			Name:      s.Name,
+			CreatedAt: ms(s.CreatedAt),
+		}))
+	})
 }
 
 func (r sitesRepo) Get(ctx context.Context, ownerID, id string) (Site, error) {
@@ -143,8 +169,17 @@ func (r sitesRepo) SetActiveDeploy(ctx context.Context, ownerID, siteID, deployI
 }
 
 func (r sitesRepo) Delete(ctx context.Context, ownerID, id string) error {
-	n, err := r.db.q.DeleteSite(ctx, sqlcgen.DeleteSiteParams{ID: id, OwnerID: ownerID})
-	return rowsAffected("delete site", n, err)
+	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
+		if err := requireSite(ctx, q, ownerID, id); err != nil {
+			return err
+		}
+		if err := releaseSite(ctx, q, ownerID, id); err != nil {
+			return err
+		}
+		// No row (a taken-down site) rolls the release back.
+		n, err := q.DeleteSite(ctx, sqlcgen.DeleteSiteParams{ID: id, OwnerID: ownerID})
+		return rowsAffected("delete site", n, err)
+	})
 }
 
 func (r sitesRepo) TakeDown(ctx context.Context, id string, at time.Time) error {
@@ -158,8 +193,18 @@ func (r sitesRepo) Restore(ctx context.Context, id string) error {
 }
 
 func (r sitesRepo) TearDown(ctx context.Context, id string) error {
-	n, err := r.db.q.TearDownSite(ctx, id)
-	return rowsAffected("tear down site", n, err)
+	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
+		site, err := q.GetSiteByID(ctx, id)
+		if err != nil {
+			return mapErr("tear down site", err)
+		}
+		if err := releaseSite(ctx, q, site.OwnerID, id); err != nil {
+			return err
+		}
+		// No row (restored meanwhile) rolls the release back.
+		n, err := q.TearDownSite(ctx, id)
+		return rowsAffected("tear down site", n, err)
+	})
 }
 
 func (r sitesRepo) ListAll(ctx context.Context, afterName string, limit int) ([]OperatorSite, error) {

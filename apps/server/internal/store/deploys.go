@@ -70,8 +70,14 @@ var (
 // anything else is ErrNotFound.
 type Deploys interface {
 	// Create records d and its manifest in one transaction on one of
-	// ownerID's sites.
-	Create(ctx context.Context, ownerID string, d Deploy, files []DeployFile) error
+	// ownerID's sites, within the owner's quotas: quotas with the owner's
+	// overrides applied (A2.14). The deploy counts towards the daily quota
+	// from d.CreatedAt, and its distinct hashes the owner's deploys do not
+	// already list count towards storage at once, pending or not. A deploy
+	// past either quota is a *QuotaError (ErrQuotaExceeded) and nothing is
+	// written; one that adds no new hashes is never refused for storage. Concurrent creates by one owner are serialised, so they
+	// cannot share the same headroom.
+	Create(ctx context.Context, ownerID string, d Deploy, files []DeployFile, quotas Quotas) error
 	Get(ctx context.Context, ownerID, siteID, id string) (Deploy, error)
 	// List returns up to limit of the site's deploys, newest first, older
 	// than before.
@@ -104,7 +110,8 @@ type Deploys interface {
 	// whether the transaction moved the active deploy: rolling back to the
 	// deploy that is active when it runs changes nothing.
 	Rollback(ctx context.Context, ownerID, siteID, deployID string, at time.Time) (d Deploy, changed bool, err error)
-	// Delete removes an inactive deploy; the active one is ErrConstraint.
+	// Delete removes an inactive deploy and hands back the storage only it
+	// held; the active one is ErrConstraint.
 	Delete(ctx context.Context, ownerID, id string) error
 	// PutBlob records a blob; recording one that exists is a no-op.
 	PutBlob(ctx context.Context, b Blob) error
@@ -115,12 +122,19 @@ func (db *DB) Deploys() Deploys { return deploysRepo{db} }
 
 type deploysRepo struct{ db *DB }
 
-func (r deploysRepo) Create(ctx context.Context, ownerID string, d Deploy, files []DeployFile) error {
+func (r deploysRepo) Create(ctx context.Context, ownerID string, d Deploy, files []DeployFile, quotas Quotas) error {
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		if err := requireSite(ctx, q, ownerID, d.SiteID); err != nil {
 			return err
 		}
-		err := q.CreateDeploy(ctx, sqlcgen.CreateDeployParams{
+		stored, quotas, err := lockOwnerQuotas(ctx, q, ownerID, quotas)
+		if err != nil {
+			return err
+		}
+		if err := logDeploy(ctx, q, ownerID, d, quotas.DeploysPerDay); err != nil {
+			return err
+		}
+		err = q.CreateDeploy(ctx, sqlcgen.CreateDeployParams{
 			ID:              d.ID,
 			SiteID:          d.SiteID,
 			Message:         nullString(d.Message),
@@ -145,8 +159,58 @@ func (r deploysRepo) Create(ctx context.Context, ownerID string, d Deploy, files
 				return mapErr("create deploy file", err)
 			}
 		}
-		return nil
+		return addStorage(ctx, q, ownerID, files, stored, quotas.StorageBytes)
 	})
+}
+
+// logDeploy counts d towards the owner's daily deploys, refusing it when
+// limit (0 for none) deploys were created in the window before it.
+func logDeploy(ctx context.Context, q *sqlcgen.Queries, ownerID string, d Deploy, limit int64) error {
+	after := ms(d.CreatedAt.Add(-DeployWindow))
+	if err := q.PruneOwnerDeployLog(ctx, sqlcgen.PruneOwnerDeployLogParams{OwnerID: ownerID, Before: after}); err != nil {
+		return mapErr("prune deploy log", err)
+	}
+	if limit > 0 {
+		n, err := q.CountOwnerDeploysSince(ctx, sqlcgen.CountOwnerDeploysSinceParams{OwnerID: ownerID, After: after})
+		if err != nil {
+			return mapErr("count recent deploys", err)
+		}
+		if n >= limit {
+			return &QuotaError{Quota: QuotaDeploysPerDay, Limit: limit, Used: n, Adding: 1}
+		}
+	}
+	err := q.LogOwnerDeploy(ctx, sqlcgen.LogOwnerDeployParams{OwnerID: ownerID, CreatedAt: ms(d.CreatedAt), DeployID: d.ID})
+	return mapErr("log deploy", err)
+}
+
+// addStorage counts each distinct hash in files once more for the owner and
+// adds the sizes of those new to them to stored, refusing the deploy when
+// that passes limit (0 for none).
+func addStorage(ctx context.Context, q *sqlcgen.Queries, ownerID string, files []DeployFile, stored, limit int64) error {
+	seen := make(map[string]bool, len(files))
+	var added int64
+	for _, f := range files {
+		if seen[f.SHA256] {
+			continue
+		}
+		seen[f.SHA256] = true
+		n, err := q.AddOwnerBlobRef(ctx, sqlcgen.AddOwnerBlobRefParams{OwnerID: ownerID, Sha256: f.SHA256, Size: f.Size})
+		if err != nil {
+			return mapErr("add owner blob ref", err)
+		}
+		if n == 1 {
+			added += f.Size
+		}
+	}
+	// A deploy adding nothing new is never refused, even over a lowered limit.
+	if limit > 0 && added > 0 && stored+added > limit {
+		return &QuotaError{Quota: QuotaStorage, Limit: limit, Used: stored, Adding: added}
+	}
+	if added == 0 {
+		return nil
+	}
+	err := q.SetOwnerStoredBytes(ctx, sqlcgen.SetOwnerStoredBytesParams{StoredBytes: stored + added, ID: ownerID})
+	return mapErr("add stored bytes", err)
 }
 
 func (r deploysRepo) Get(ctx context.Context, ownerID, siteID, id string) (Deploy, error) {
@@ -321,8 +385,20 @@ func setActive(ctx context.Context, q *sqlcgen.Queries, ownerID string, d *Deplo
 }
 
 func (r deploysRepo) Delete(ctx context.Context, ownerID, id string) error {
-	n, err := r.db.q.DeleteDeploy(ctx, sqlcgen.DeleteDeployParams{ID: id, OwnerID: ownerID})
-	return rowsAffected("delete deploy", n, err)
+	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
+		owner, err := q.DeployOwner(ctx, id)
+		if err != nil {
+			return mapErr("delete deploy", err)
+		}
+		if owner != ownerID {
+			return fmt.Errorf("delete deploy: %w", ErrNotFound)
+		}
+		if err := releaseDeploys(ctx, q, ownerID, id); err != nil {
+			return err
+		}
+		n, err := q.DeleteDeploy(ctx, sqlcgen.DeleteDeployParams{ID: id, OwnerID: ownerID})
+		return rowsAffected("delete deploy", n, err)
+	})
 }
 
 func (r deploysRepo) PutBlob(ctx context.Context, b Blob) error {

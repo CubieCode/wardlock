@@ -14,14 +14,17 @@ import (
 )
 
 // Errors returned by Service. Input errors arrive as *TargetError wrapping
-// ErrInvalidPath, ErrInvalidManifest or ErrLimitExceeded.
+// ErrInvalidPath, ErrInvalidManifest, ErrLimitExceeded or ErrBlockedType.
 var (
 	// ErrNotFound covers a missing site or deploy and one that belongs to
 	// another owner alike.
-	ErrNotFound         = errors.New("not found")
-	ErrInvalidPath      = errors.New("invalid path")
-	ErrInvalidManifest  = errors.New("invalid manifest")
-	ErrLimitExceeded    = errors.New("limit exceeded")
+	ErrNotFound        = errors.New("not found")
+	ErrInvalidPath     = errors.New("invalid path")
+	ErrInvalidManifest = errors.New("invalid manifest")
+	ErrLimitExceeded   = errors.New("limit exceeded")
+	// ErrBlockedType means the manifest lists a file whose extension the
+	// operator has blocked (A2.14).
+	ErrBlockedType      = errors.New("file type blocked")
 	ErrUnexpectedBlob   = errors.New("blob not in the deploy's manifest")
 	ErrBlobsMissing     = errors.New("deploy blobs missing")
 	ErrNotPending       = errors.New("deploy is not pending")
@@ -71,7 +74,11 @@ type Config struct {
 	Blobs    BlobStore
 	Notifier Notifier
 	Limits   Limits
-	Now      func() time.Time
+	// Quotas are the instance's per-owner limits (A2.14); Create checks
+	// StorageBytes and DeploysPerDay, with the owner's own overrides in
+	// their place when set.
+	Quotas store.Quotas
+	Now    func() time.Time
 	// Renditions records the Markdown and plain-text renditions generated
 	// for each HTML file at activation (A2.6); nil generates none.
 	Renditions store.Renditions
@@ -111,7 +118,8 @@ func (s *Service) changeable(ctx context.Context, ownerID, name string) (store.S
 }
 
 // Create records a pending deploy from m and returns it with the hashes the
-// owner still has to upload, each once. A hash counts as held only when
+// owner still has to upload, each once. A deploy past the owner's storage
+// or daily deploy quota is ErrLimitExceeded. A hash counts as held only when
 // this owner uploaded it and the blob is still stored, so the answer never
 // reveals another owner's content.
 func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manifest) (store.Deploy, []string, error) {
@@ -134,7 +142,10 @@ func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manife
 	for _, f := range m.Files {
 		d.TotalSize += f.Size
 	}
-	if err := s.c.Deploys.Create(ctx, ownerID, d, m.Files); err != nil {
+	if err := s.c.Deploys.Create(ctx, ownerID, d, m.Files, s.c.Quotas); err != nil {
+		if qe := (*store.QuotaError)(nil); errors.As(err, &qe) {
+			return store.Deploy{}, nil, quotaErr(qe)
+		}
 		return store.Deploy{}, nil, storeErr("create deploy", err)
 	}
 	missing, err := s.missing(ctx, ownerID, site.ID, d.ID)
@@ -142,6 +153,24 @@ func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manife
 		return store.Deploy{}, nil, err
 	}
 	return d, missing, nil
+}
+
+// quotaErr explains a refused deploy to its owner.
+func quotaErr(qe *store.QuotaError) error {
+	te := &TargetError{Err: ErrLimitExceeded, Target: "files"}
+	switch qe.Quota {
+	case store.QuotaDeploysPerDay:
+		te.Target = "deploys"
+		deploys := "deploys"
+		if qe.Limit == 1 {
+			deploys = "deploy"
+		}
+		te.Message = fmt.Sprintf("You have created %d %s in the last 24 hours, the most this server allows you. Try again later or ask the operator for a higher limit.", qe.Limit, deploys)
+	default:
+		te.Message = fmt.Sprintf("This deploy adds %s of new files to the %s you already store; your storage limit is %s. Delete a site you no longer need or ask the operator for a higher limit.",
+			FormatBytes(qe.Adding), FormatBytes(qe.Used), FormatBytes(qe.Limit))
+	}
+	return te
 }
 
 // missing returns the deploy's hashes the owner has not uploaded or whose

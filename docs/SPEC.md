@@ -136,7 +136,8 @@ The goal is that adding one DNS record is all an owner has to do. The record nam
 - A deploy uploads a directory: the client sends a manifest, uploads only the files the server does not hold, then activates the deploy.
 - Activation is atomic: a visitor sees either the previous deploy or the new one, never a mix.
 - Every deploy stays in history with its time, file count, total size and an optional message. **Rollback** reactivates any earlier deploy instantly, with no upload.
-- Default limits (configurable): 25 MiB per file, 20,000 files and 1 GiB per deploy, 50 deploys of history per site (older ones are pruned, never the active one).
+- Default limits (configurable): 25 MiB per file, 10 MiB per video file, 20,000 files and 1 GiB per deploy, 50 deploys of history per site (older ones are pruned, never the active one).
+- **Video files** (A2.14) have their own, lower per-file limit; an operator can refuse video entirely. **Blocked file types**: an operator can refuse files by extension, such as installers and executables (off by default). Each owner's storage, sites and daily deploys can also be limited: see [Owner quotas](#owner-quotas-a214).
 - **Garbage collection** (C1.8) removes old deploys beyond the history limit and file bodies no deploy lists, hourly and with `wardlockd gc`. It never touches a taken-down site or a suspended owner's site (A2.13).
 - Paths must be clean, valid UTF-8 and outside `.wardlock/`; a deploy with a bad path is rejected, naming it.
 
@@ -146,6 +147,39 @@ The goal is that adding one DNS record is all an owner has to do. The record nam
 - A deploy uploads a directory. The client sends a manifest of `{path, sha256, size}`; the server replies with the hashes it does not yet hold for that owner (each owner uploads a file once, even if another owner already published the same content); the client uploads only those; then the client activates the deploy. Unchanged files are never re-uploaded. The protocol is in ARCHITECTURE "Deploy upload protocol" and the operations in `packages/api-spec/openapi.yaml`.
 - **Garbage collection** (C1.8) runs hourly inside the server and on demand with `wardlockd gc`. It first prunes each site's deploys beyond the history limit, oldest first: never the active deploy, and never a deploy not yet activated that was created within the grace period (24 hours by default), since its upload may still be in progress. It then deletes file bodies that no remaining deploy lists, unless they were stored, or uploaded again by any owner, within the grace period. Deleting a body removes every owner's record of having uploaded it, so the next deploy that needs it asks for it again. Content another owner's deploy still lists is kept, and so is each owner's record of having uploaded it. Each run logs the deploys pruned, the bodies deleted and the bytes freed.
 - Paths are normalised to forward slashes, must be valid UTF-8, must not contain `..`, empty segments, control characters or invisible format characters (Unicode Cf, such as zero-width spaces and bidi overrides), and must not start with `.wardlock/`. Such deploys are rejected with the offending path named. The server keeps paths byte for byte without Unicode normalisation; the CLI (C1.5) sends them in NFC.
+
+</details>
+
+<details>
+<summary>Video files and blocked file types (A2.14)</summary>
+
+- **Which files are video.** A file is a video file when its extension, in any letter case, is one of `.3g2`, `.3gp`, `.asf`, `.avi`, `.f4v`, `.flv`, `.m2ts`, `.m2v`, `.m4v`, `.mkv`, `.mov`, `.mp4`, `.mpeg`, `.mpg`, `.mts`, `.ogv`, `.qt`, `.vob`, `.webm` or `.wmv`. Detection is by this fixed list only, never by the host's MIME table, so every server agrees; `.ts` is left out because it is far more often TypeScript than an MPEG transport stream. The manifest carries no content type to check.
+- **The video limit.** `WARDLOCK_MAX_VIDEO_SIZE` (default 10 MiB) applies to video files on top of the general per-file limit, whichever is lower; `0` refuses every video file. A deploy with a video file over it is refused when it is created with `413 limit_exceeded`, the file's path as `target` and a message naming the file, its size and the limit.
+- **Blocked file types.** `WARDLOCK_BLOCKED_EXTENSIONS` is a comma-separated list of extensions (empty by default: nothing is blocked). A deploy listing a file with one of them, in any letter case, is refused when it is created with `422 file_type_blocked`, the file's path as `target` and a message naming the file and its extension. Only the last extension counts: `setup.exe.txt` is a `.txt` file. DEPLOYMENT "Deploy storage and limits" suggests a list of executables and installers.
+- **In the CLI.** `wardlock deploy` shows the server's message and, when one file is at fault, how to leave it out with `.wardlockignore`. Nothing is uploaded.
+
+</details>
+
+## Owner quotas (A2.14)
+
+An operator can limit what each owner uses. All three quotas are off (unlimited) unless the operator sets them, and `wardlockd admin quota` can give one owner their own values.
+
+| Quota               | Counts                                                                | Checked when        | Refusal                                |
+| ------------------- | --------------------------------------------------------------------- | ------------------- | -------------------------------------- |
+| Storage             | Bytes of every distinct file the owner's kept deploys list, each once | A deploy is created | `413 limit_exceeded`, target `files`   |
+| Sites               | The owner's sites                                                     | A site is created   | `413 limit_exceeded`, target `name`    |
+| Deploys in 24 hours | Deploys the owner created in the 24 hours before this one             | A deploy is created | `413 limit_exceeded`, target `deploys` |
+
+Each refusal's message says which quota and its limit; nothing is written and a refused deploy counts towards neither quota. Operating them: [DEPLOYMENT](DEPLOYMENT.md#owner-quotas).
+
+<details>
+<summary>How usage is counted</summary>
+
+- **Storage** is the sum of the sizes of the distinct files listed by any of the owner's deploys, pending or activated, on any of their sites. A file listed by several deploys, paths or sites counts once, so an unchanged re-deploy costs nothing and only new or changed files count. Another owner storing the same content counts it against their own quota, never this owner's. Server-made renditions (A2.6) do not count. A deploy counts the moment it is created, before any upload, so two deploys started together cannot both use the same room. Storage comes back when a deploy is deleted: pruned by garbage collection beyond the history limit, or with its site when the owner or operator deletes the site. A deploy of a taken-down site or a suspended owner's site is kept, and keeps counting, until the operator acts (A2.13).
+- **Deploys in 24 hours** is a rolling window: a deploy stops counting 24 hours after it was created. Deleting a site or garbage collection does not hand deploys back.
+- **Limits and overrides.** The instance's values come from `WARDLOCK_MAX_OWNER_STORAGE`, `WARDLOCK_MAX_OWNER_SITES` and `WARDLOCK_MAX_OWNER_DEPLOYS_PER_DAY`; `0`, the default, is unlimited. The operator can override any of them for one owner (again `0` is unlimited) or clear an override so the owner follows the instance again. Lowering a limit below what an owner already uses deletes nothing: it refuses their next deploy that adds files, or their next site, until usage is back under it. A deploy of only files the owner already stores is never refused for storage.
+- **Concurrency.** Each check runs in the same transaction as the write it guards, with the owner's row locked, so concurrent deploys or site creations by one owner cannot together pass a limit.
+- **Cost.** The server keeps each owner's stored bytes as a running total, with a count per owner and file of the deploys listing it, updated in the transactions that create and delete deploys. Checking storage costs one lookup per distinct file in the new manifest, never a sum over the owner's files.
 
 </details>
 
@@ -357,14 +391,15 @@ Every request for a published site's content (after the access decision, allowed
 
 The operator of a server can act on abuse from the server host, without the dashboard. A running server picks up each change within about 2 seconds.
 
-| Command (`wardlockd admin …`) | Effect                                                                                            |
-| ----------------------------- | ------------------------------------------------------------------------------------------------- |
-| `list-owners`, `list-sites`   | List owners (email, status, created, ID) and sites (name, owner, status, ID)                      |
-| `suspend-owner ADDRESS`       | Signs the owner out, refuses their sign-in and API tokens, and makes all their sites unavailable  |
-| `reinstate-owner ADDRESS`     | Lets the owner sign in again; their tokens and sites work again                                   |
-| `takedown-site SITE`          | Every page of the site answers "This site is unavailable"; deploys, files and access log are kept |
-| `restore-site SITE`           | Serves the same active deploy again                                                               |
-| `teardown-site SITE`          | Deletes a taken-down site as an owner's teardown would                                            |
+| Command (`wardlockd admin …`) | Effect                                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `list-owners`, `list-sites`   | List owners (email, status, created, ID) and sites (name, owner, status, ID)                                       |
+| `suspend-owner ADDRESS`       | Signs the owner out, refuses their sign-in and API tokens, and makes all their sites unavailable                   |
+| `reinstate-owner ADDRESS`     | Lets the owner sign in again; their tokens and sites work again                                                    |
+| `takedown-site SITE`          | Every page of the site answers "This site is unavailable"; deploys, files and access log are kept                  |
+| `restore-site SITE`           | Serves the same active deploy again                                                                                |
+| `teardown-site SITE`          | Deletes a taken-down site as an owner's teardown would                                                             |
+| `quota ADDRESS [flags]`       | Shows an owner's [quotas](#owner-quotas-a214) and usage; `--storage`, `--sites`, `--deploys-per-day` override them |
 
 With `WARDLOCK_ABUSE_EMAIL` set, visitors can report a site from a "Report this site" link on Wardlock's own pages, which opens a form on the dashboard host (`/report`), never on the site's origin; reports are emailed to that address. Operating a server, the commands and the abuse procedure: [DEPLOYMENT](DEPLOYMENT.md#operator-controls). What owners may publish: the [acceptable use policy](ACCEPTABLE-USE.md) (O4.13).
 

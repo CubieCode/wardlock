@@ -862,6 +862,36 @@ func (s *Service) ListAll(ctx context.Context, fn func(store.Owner) error) error
 	}
 }
 
+// Quotas returns the quota overrides of the owner with email and what
+// counts against them now (`wardlockd admin quota`, A2.14). An unknown
+// address is ErrNotFound.
+func (s *Service) Quotas(ctx context.Context, email string) (store.Owner, store.QuotaOverrides, store.OwnerUsage, error) {
+	o, err := s.operatorOwner(ctx, email)
+	if err != nil {
+		return store.Owner{}, store.QuotaOverrides{}, store.OwnerUsage{}, err
+	}
+	over, usage, err := s.owners.Quotas(ctx, o.ID, s.now())
+	if err != nil {
+		return store.Owner{}, store.QuotaOverrides{}, store.OwnerUsage{}, fmt.Errorf("get owner quotas: %w", err)
+	}
+	return o, over, usage, nil
+}
+
+// SetQuotas replaces the quota overrides of the owner with email (A2.14).
+// The next deploy or new site they make is checked against them. An
+// unknown address is ErrNotFound.
+func (s *Service) SetQuotas(ctx context.Context, email string, over store.QuotaOverrides) (store.Owner, error) {
+	o, err := s.operatorOwner(ctx, email)
+	if err != nil {
+		return store.Owner{}, err
+	}
+	if err := s.owners.SetQuotas(ctx, o.ID, over); err != nil {
+		return store.Owner{}, fmt.Errorf("set owner quotas: %w", err)
+	}
+	s.log.LogAttrs(ctx, slog.LevelInfo, "operator set owner quotas", slog.String("owner_id", o.ID))
+	return o, nil
+}
+
 // operatorPage is how many rows the operator listings read at a time.
 const operatorPage = 500
 

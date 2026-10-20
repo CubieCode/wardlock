@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
@@ -33,6 +34,11 @@ type migration struct {
 // Migrate applies pending migrations in order, each in its own transaction,
 // and returns the versions it applied.
 func (db *DB) Migrate(ctx context.Context, now func() time.Time) ([]int64, error) {
+	return db.migrate(ctx, now, math.MaxInt64)
+}
+
+// migrate applies pending migrations up to version upTo.
+func (db *DB) migrate(ctx context.Context, now func() time.Time, upTo int64) ([]int64, error) {
 	all, err := loadMigrations(migrations.FS)
 	if err != nil {
 		return nil, err
@@ -52,7 +58,7 @@ func (db *DB) Migrate(ctx context.Context, now func() time.Time) ([]int64, error
 
 	var ran []int64
 	for _, m := range all {
-		if slices.Contains(applied, m.version) {
+		if slices.Contains(applied, m.version) || m.version > upTo {
 			continue
 		}
 		err := db.withTx(ctx, func(tx *sql.Tx, q *sqlcgen.Queries) error {
