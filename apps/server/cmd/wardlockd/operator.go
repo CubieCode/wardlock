@@ -26,12 +26,13 @@ type certExpiries interface {
 	Expiries() map[string]time.Time
 }
 
-// newReadiness checks the database, the blob directory and, in automatic
-// TLS mode, that every managed name has an unexpired certificate.
-func newReadiness(cfg platform.Config, log *slog.Logger, db *store.DB, certs certExpiries) *platform.Readiness {
+// newReadiness checks the database, the blob directory or bucket (blobs,
+// from openBlobs) and, in automatic TLS mode, that every managed name has
+// an unexpired certificate.
+func newReadiness(log *slog.Logger, db *store.DB, blobs platform.Check, certs certExpiries) *platform.Readiness {
 	checks := []platform.Check{
 		{Name: "database", Run: db.Check},
-		{Name: "blobs", Run: platform.DirWritable(cfg.BlobDir)},
+		blobs,
 	}
 	if certs != nil {
 		checks = append(checks, platform.Check{Name: "certificates", Run: func(context.Context) error {

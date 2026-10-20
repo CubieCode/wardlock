@@ -9,14 +9,18 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"wardlock.nz/server/internal/deploys"
+	"wardlock.nz/server/internal/deploys/s3test"
 )
 
 func hashOf(s string) string {
@@ -44,39 +48,322 @@ func files(t *testing.T, dir string) []string {
 	return out
 }
 
-func TestFSBlobStore(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "blobs")
-	bs := deploys.NewFSBlobStore(dir)
-	ctx := t.Context()
-	content := "hello, blob"
-	h := hashOf(content)
+// blobStore is one BlobStore implementation under the contract tests.
+type blobStore struct {
+	name string
+	// open returns an empty store and a function listing everything it
+	// holds, as slash-separated paths relative to its root.
+	open func(t *testing.T) (deploys.BlobStore, func() []string)
+}
 
-	if ok, err := bs.Has(ctx, h); err != nil || ok {
-		t.Fatalf("Has(new) = %v, %v", ok, err)
+func blobStores() []blobStore {
+	return []blobStore{
+		{"fs", func(t *testing.T) (deploys.BlobStore, func() []string) {
+			dir := filepath.Join(t.TempDir(), "blobs")
+			return deploys.NewFSBlobStore(dir), func() []string { return files(t, dir) }
+		}},
+		{"s3", func(t *testing.T) (deploys.BlobStore, func() []string) {
+			srv := s3test.New(t, "wardlock-test", "AKIATEST")
+			// A key outside the prefix is never touched or listed.
+			srv.PutObject("other/sha256/ab/cd", []byte("not ours"), time.Now())
+			return srv.Store(t, "wl/"), func() []string {
+				var out []string
+				for _, k := range srv.Keys() {
+					if rel, ok := strings.CutPrefix(k, "wl/"); ok {
+						out = append(out, rel)
+					}
+				}
+				return out
+			}
+		}},
 	}
-	if _, err := bs.Open(ctx, h); !errors.Is(err, deploys.ErrBlobNotFound) {
-		t.Fatalf("Open(new) error = %v, want ErrBlobNotFound", err)
+}
+
+// eachBlobStore runs fn as a subtest against every implementation.
+func eachBlobStore(t *testing.T, fn func(t *testing.T, bs deploys.BlobStore, stored func() []string)) {
+	for _, impl := range blobStores() {
+		t.Run(impl.name, func(t *testing.T) {
+			bs, stored := impl.open(t)
+			fn(t, bs, stored)
+		})
 	}
-	if err := bs.Put(ctx, h, int64(len(content)), strings.NewReader(content)); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := files(t, dir), []string{"sha256/" + h[:2] + "/" + h[2:]}; len(got) != 1 || got[0] != want[0] {
-		t.Fatalf("files = %v, want %v", got, want)
-	}
-	if ok, err := bs.Has(ctx, h); err != nil || !ok {
-		t.Fatalf("Has(stored) = %v, %v", ok, err)
-	}
-	rc, err := bs.Open(ctx, h)
+}
+
+func TestBlobStore(t *testing.T) {
+	eachBlobStore(t, func(t *testing.T, bs deploys.BlobStore, stored func() []string) {
+		ctx := t.Context()
+		content := "hello, blob"
+		h := hashOf(content)
+
+		if ok, err := bs.Has(ctx, h); err != nil || ok {
+			t.Fatalf("Has(new) = %v, %v", ok, err)
+		}
+		if _, err := bs.Open(ctx, h); !errors.Is(err, deploys.ErrBlobNotFound) {
+			t.Fatalf("Open(new) error = %v, want ErrBlobNotFound", err)
+		}
+		if err := bs.Put(ctx, h, int64(len(content)), strings.NewReader(content)); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := stored(), []string{"sha256/" + h[:2] + "/" + h[2:]}; !slices.Equal(got, want) {
+			t.Fatalf("stored = %v, want %v", got, want)
+		}
+		if ok, err := bs.Has(ctx, h); err != nil || !ok {
+			t.Fatalf("Has(stored) = %v, %v", ok, err)
+		}
+		rc, err := bs.Open(ctx, h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := rc.Seek(7, io.SeekStart); err != nil {
+			t.Fatal(err)
+		}
+		rest, _ := io.ReadAll(rc)
+		_ = rc.Close()
+		if string(rest) != "blob" {
+			t.Fatalf("read after Seek = %q", rest)
+		}
+
+		// Putting an existing blob verifies it and keeps the blob.
+		if err := bs.Put(ctx, h, int64(len(content)), strings.NewReader(content)); err != nil {
+			t.Fatal(err)
+		}
+		if err := bs.Put(ctx, h, int64(len(content)), strings.NewReader("hello, blub")); !errors.Is(err, deploys.ErrHashMismatch) {
+			t.Fatalf("Put(existing, wrong body) error = %v, want ErrHashMismatch", err)
+		}
+		if got := read(t, bs, h); got != content {
+			t.Fatalf("after puts, blob = %q", got)
+		}
+		if got := stored(); len(got) != 1 {
+			t.Fatalf("stored = %v, want only the blob", got)
+		}
+
+		if err := bs.Delete(ctx, h); err != nil {
+			t.Fatal(err)
+		}
+		if ok, _ := bs.Has(ctx, h); ok {
+			t.Fatal("Has after Delete = true")
+		}
+		if _, err := bs.Open(ctx, h); !errors.Is(err, deploys.ErrBlobNotFound) {
+			t.Fatalf("Open(deleted) error = %v, want ErrBlobNotFound", err)
+		}
+		if err := bs.Delete(ctx, h); err != nil {
+			t.Fatalf("Delete(missing) = %v, want nil", err)
+		}
+	})
+}
+
+func read(t *testing.T, bs deploys.BlobStore, h string) string {
+	t.Helper()
+	rc, err := bs.Open(t.Context(), h)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rc.Seek(7, io.SeekStart); err != nil {
+	defer func() { _ = rc.Close() }()
+	b, err := io.ReadAll(rc)
+	if err != nil {
 		t.Fatal(err)
 	}
-	rest, _ := io.ReadAll(rc)
-	_ = rc.Close()
-	if string(rest) != "blob" {
-		t.Fatalf("read after Seek = %q", rest)
+	return string(b)
+}
+
+func TestBlobStoreEmpty(t *testing.T) {
+	eachBlobStore(t, func(t *testing.T, bs deploys.BlobStore, _ func() []string) {
+		h := hashOf("")
+		if err := bs.Put(t.Context(), h, 0, strings.NewReader("")); err != nil {
+			t.Fatal(err)
+		}
+		if got := read(t, bs, h); got != "" {
+			t.Fatalf("empty blob = %q", got)
+		}
+	})
+}
+
+// TestBlobStoreSeek covers the reads http.ServeContent makes for ranges:
+// the size from SeekEnd, then a seek to each range's start.
+func TestBlobStoreSeek(t *testing.T) {
+	eachBlobStore(t, func(t *testing.T, bs deploys.BlobStore, _ func() []string) {
+		content := "0123456789abcdefghijklmnopqrstuvwxyz"
+		h := hashOf(content)
+		if err := bs.Put(t.Context(), h, int64(len(content)), strings.NewReader(content)); err != nil {
+			t.Fatal(err)
+		}
+		rc, err := bs.Open(t.Context(), h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = rc.Close() }()
+		readN := func(n int) string {
+			t.Helper()
+			buf := make([]byte, n)
+			got, err := io.ReadFull(rc, buf)
+			if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+				t.Fatal(err)
+			}
+			return string(buf[:got])
+		}
+		seek := func(off int64, whence int, want int64) {
+			t.Helper()
+			if got, err := rc.Seek(off, whence); err != nil || got != want {
+				t.Fatalf("Seek(%d, %d) = %d, %v; want %d", off, whence, got, err, want)
+			}
+		}
+		seek(0, io.SeekEnd, int64(len(content)))
+		seek(0, io.SeekStart, 0)
+		if got := readN(4); got != "0123" {
+			t.Fatalf("first read = %q", got)
+		}
+		if got := readN(4); got != "4567" {
+			t.Fatalf("sequential read = %q", got)
+		}
+		seek(2, io.SeekCurrent, 10)
+		if got := readN(3); got != "abc" {
+			t.Fatalf("read after SeekCurrent = %q", got)
+		}
+		seek(-3, io.SeekEnd, int64(len(content))-3)
+		if got := readN(10); got != "xyz" {
+			t.Fatalf("read of the tail = %q", got)
+		}
+		if n, err := rc.Read(make([]byte, 1)); n != 0 || !errors.Is(err, io.EOF) {
+			t.Fatalf("read at end = %d, %v; want EOF", n, err)
+		}
+		seek(1, io.SeekStart, 1)
+		if got := readN(2); got != "12" {
+			t.Fatalf("read after seeking back = %q", got)
+		}
+		seek(100, io.SeekStart, 100)
+		if n, err := rc.Read(make([]byte, 1)); n != 0 || !errors.Is(err, io.EOF) {
+			t.Fatalf("read past the end = %d, %v; want EOF", n, err)
+		}
+		if _, err := rc.Seek(-1, io.SeekStart); err == nil {
+			t.Fatal("Seek to a negative position succeeded")
+		}
+	})
+}
+
+// TestBlobStoreServeContent serves a blob through http.ServeContent, as the
+// edge does, with and without Range.
+func TestBlobStoreServeContent(t *testing.T) {
+	eachBlobStore(t, func(t *testing.T, bs deploys.BlobStore, _ func() []string) {
+		content := strings.Repeat("range me ", 100)
+		h := hashOf(content)
+		if err := bs.Put(t.Context(), h, int64(len(content)), strings.NewReader(content)); err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			rng, want string
+			status    int
+		}{
+			{"", content, http.StatusOK},
+			{"bytes=9-16", "range me", http.StatusPartialContent},
+			{"bytes=-3", "me ", http.StatusPartialContent},
+			{"bytes=891-", "range me ", http.StatusPartialContent},
+		} {
+			blob, err := bs.Open(t.Context(), h)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/f.txt", nil)
+			if tc.rng != "" {
+				req.Header.Set("Range", tc.rng)
+			}
+			rec := httptest.NewRecorder()
+			rec.Header().Set("Content-Type", "text/plain")
+			http.ServeContent(rec, req, "", time.Time{}, blob)
+			_ = blob.Close()
+			if rec.Code != tc.status || rec.Body.String() != tc.want {
+				t.Errorf("Range %q: %d %q, want %d %q", tc.rng, rec.Code, rec.Body.String(), tc.status, tc.want)
+			}
+		}
+	})
+}
+
+func TestBlobStoreRejectsMismatch(t *testing.T) {
+	eachBlobStore(t, func(t *testing.T, bs deploys.BlobStore, stored func() []string) {
+		content := "exact content"
+		h := hashOf(content)
+		for name, tc := range map[string]struct {
+			size int64
+			body string
+		}{
+			"other content":  {int64(len(content)), "exact contenT"},
+			"short body":     {int64(len(content)), content[:5]},
+			"long body":      {int64(len(content)), content + "x"},
+			"declared short": {int64(len(content)) - 1, content},
+			"declared long":  {int64(len(content)) + 1, content},
+			"negative size":  {-1, content},
+			"empty":          {0, ""},
+		} {
+			t.Run(name, func(t *testing.T) {
+				err := bs.Put(t.Context(), h, tc.size, strings.NewReader(tc.body))
+				if !errors.Is(err, deploys.ErrHashMismatch) {
+					t.Fatalf("Put error = %v, want ErrHashMismatch", err)
+				}
+			})
+		}
+		if got := stored(); len(got) != 0 {
+			t.Fatalf("mismatched puts left %v", got)
+		}
+		if ok, err := bs.Has(t.Context(), h); err != nil || ok {
+			t.Fatalf("Has after mismatches = %v, %v", ok, err)
+		}
+	})
+}
+
+func TestBlobStoreRejectsInvalidHash(t *testing.T) {
+	eachBlobStore(t, func(t *testing.T, bs deploys.BlobStore, stored func() []string) {
+		for _, h := range []string{"", "../../etc/passwd", strings.Repeat("A", 64), strings.Repeat("a", 63), strings.Repeat("g", 64), "ab/" + strings.Repeat("a", 61)} {
+			if _, err := bs.Has(t.Context(), h); !errors.Is(err, deploys.ErrInvalidHash) {
+				t.Errorf("Has(%q) error = %v", h, err)
+			}
+			if err := bs.Put(t.Context(), h, 1, strings.NewReader("x")); !errors.Is(err, deploys.ErrInvalidHash) {
+				t.Errorf("Put(%q) error = %v", h, err)
+			}
+			if _, err := bs.Open(t.Context(), h); !errors.Is(err, deploys.ErrInvalidHash) {
+				t.Errorf("Open(%q) error = %v", h, err)
+			}
+			if err := bs.Delete(t.Context(), h); !errors.Is(err, deploys.ErrInvalidHash) {
+				t.Errorf("Delete(%q) error = %v", h, err)
+			}
+		}
+		if got := stored(); len(got) != 0 {
+			t.Fatalf("invalid hashes created %v", got)
+		}
+	})
+}
+
+func TestBlobStoreConcurrentPut(t *testing.T) {
+	eachBlobStore(t, func(t *testing.T, bs deploys.BlobStore, stored func() []string) {
+		content := strings.Repeat("concurrent ", 1000)
+		h := hashOf(content)
+		var wg sync.WaitGroup
+		errs := make([]error, 8)
+		for i := range errs {
+			wg.Go(func() { errs[i] = bs.Put(t.Context(), h, int64(len(content)), strings.NewReader(content)) })
+		}
+		wg.Wait()
+		for _, err := range errs {
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := stored(); len(got) != 1 {
+			t.Fatalf("stored = %v, want the one blob and no temporary uploads", got)
+		}
+		if got := read(t, bs, h); got != content {
+			t.Fatal("concurrent puts stored the wrong content")
+		}
+	})
+}
+
+// TestFSBlobStoreFiles: blobs are private files, and putting an existing
+// blob keeps the file rather than replacing it.
+func TestFSBlobStoreFiles(t *testing.T) {
+	dir := t.TempDir()
+	bs := deploys.NewFSBlobStore(dir)
+	content := "hello, blob"
+	h := hashOf(content)
+	if err := bs.Put(t.Context(), h, int64(len(content)), strings.NewReader(content)); err != nil {
+		t.Fatal(err)
 	}
 	info, err := os.Stat(filepath.Join(dir, "sha256", h[:2], h[2:]))
 	if err != nil {
@@ -85,98 +372,12 @@ func TestFSBlobStore(t *testing.T) {
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {
 		t.Errorf("blob mode %v is readable by others", perm)
 	}
-
-	// Putting an existing blob verifies it and keeps the file.
-	if err := bs.Put(ctx, h, int64(len(content)), strings.NewReader(content)); err != nil {
+	if err := bs.Put(t.Context(), h, int64(len(content)), strings.NewReader(content)); err != nil {
 		t.Fatal(err)
-	}
-	if err := bs.Put(ctx, h, int64(len(content)), strings.NewReader("hello, blub")); !errors.Is(err, deploys.ErrHashMismatch) {
-		t.Fatalf("Put(existing, wrong body) error = %v, want ErrHashMismatch", err)
 	}
 	again, err := os.Stat(filepath.Join(dir, "sha256", h[:2], h[2:]))
 	if err != nil || !os.SameFile(info, again) {
 		t.Fatalf("existing blob was replaced (%v)", err)
-	}
-
-	if err := bs.Delete(ctx, h); err != nil {
-		t.Fatal(err)
-	}
-	if ok, _ := bs.Has(ctx, h); ok {
-		t.Fatal("Has after Delete = true")
-	}
-	if err := bs.Delete(ctx, h); err != nil {
-		t.Fatalf("Delete(missing) = %v, want nil", err)
-	}
-}
-
-func TestFSBlobStoreRejectsMismatch(t *testing.T) {
-	dir := t.TempDir()
-	bs := deploys.NewFSBlobStore(dir)
-	content := "exact content"
-	h := hashOf(content)
-	for name, tc := range map[string]struct {
-		size int64
-		body string
-	}{
-		"other content":  {int64(len(content)), "exact contenT"},
-		"short body":     {int64(len(content)), content[:5]},
-		"long body":      {int64(len(content)), content + "x"},
-		"declared short": {int64(len(content)) - 1, content},
-		"negative size":  {-1, content},
-		"empty":          {0, ""},
-	} {
-		t.Run(name, func(t *testing.T) {
-			err := bs.Put(t.Context(), h, tc.size, strings.NewReader(tc.body))
-			if !errors.Is(err, deploys.ErrHashMismatch) {
-				t.Fatalf("Put error = %v, want ErrHashMismatch", err)
-			}
-		})
-	}
-	if got := files(t, dir); len(got) != 0 {
-		t.Fatalf("mismatched puts left %v", got)
-	}
-}
-
-func TestFSBlobStoreRejectsInvalidHash(t *testing.T) {
-	dir := t.TempDir()
-	bs := deploys.NewFSBlobStore(dir)
-	for _, h := range []string{"", "../../etc/passwd", strings.Repeat("A", 64), strings.Repeat("a", 63), strings.Repeat("g", 64), "ab/" + strings.Repeat("a", 61)} {
-		if _, err := bs.Has(t.Context(), h); !errors.Is(err, deploys.ErrInvalidHash) {
-			t.Errorf("Has(%q) error = %v", h, err)
-		}
-		if err := bs.Put(t.Context(), h, 1, strings.NewReader("x")); !errors.Is(err, deploys.ErrInvalidHash) {
-			t.Errorf("Put(%q) error = %v", h, err)
-		}
-		if _, err := bs.Open(t.Context(), h); !errors.Is(err, deploys.ErrInvalidHash) {
-			t.Errorf("Open(%q) error = %v", h, err)
-		}
-		if err := bs.Delete(t.Context(), h); !errors.Is(err, deploys.ErrInvalidHash) {
-			t.Errorf("Delete(%q) error = %v", h, err)
-		}
-	}
-	if got := files(t, dir); len(got) != 0 {
-		t.Fatalf("invalid hashes created %v", got)
-	}
-}
-
-func TestFSBlobStoreConcurrentPut(t *testing.T) {
-	dir := t.TempDir()
-	bs := deploys.NewFSBlobStore(dir)
-	content := strings.Repeat("concurrent ", 1000)
-	h := hashOf(content)
-	var wg sync.WaitGroup
-	errs := make([]error, 8)
-	for i := range errs {
-		wg.Go(func() { errs[i] = bs.Put(t.Context(), h, int64(len(content)), strings.NewReader(content)) })
-	}
-	wg.Wait()
-	for _, err := range errs {
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	if got := files(t, dir); len(got) != 1 {
-		t.Fatalf("files = %v, want the one blob and no temp files", got)
 	}
 }
 

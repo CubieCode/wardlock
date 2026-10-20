@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -46,6 +47,51 @@ func TestLoadConfig(t *testing.T) {
 		}, false, func(c platform.Config) bool {
 			return c.BlobDir == "/mnt/blobs" && c.MaxFileSize == 1<<20 && c.MaxDeployFiles == 100 && c.MaxDeploySize == 10<<20
 		}},
+		{"filesystem blobs by default", nil, false, func(c platform.Config) bool {
+			return c.BlobBackend == platform.BlobFS && c.S3 == (platform.S3Config{})
+		}},
+		{"s3 blobs", s3Env(map[string]string{
+			"WARDLOCK_S3_PREFIX": "/wardlock/prod/", "WARDLOCK_S3_PATH_STYLE": "true",
+			"AWS_ACCESS_KEY_ID": "AKIAEXAMPLE", "AWS_SECRET_ACCESS_KEY": "example-secret", "AWS_SESSION_TOKEN": "example-session",
+			"AWS_PROFILE": "wardlock", "AWS_SHARED_CREDENTIALS_FILE": "/etc/wardlock/aws",
+		}), false, func(c platform.Config) bool {
+			s := c.S3
+			return c.BlobBackend == platform.BlobS3 && c.BlobDir == "" && s.Endpoint.String() == "https://s3.eu-west-1.amazonaws.com" &&
+				s.Bucket == "wardlock-blobs" && s.Region == "eu-west-1" && s.Prefix == "wardlock/prod/" &&
+				s.Addressing == platform.S3AddressPath && s.AccessKeyID == "AKIAEXAMPLE" && s.SecretAccessKey == "example-secret" &&
+				s.SessionToken == "example-session" && s.Profile == "wardlock" && s.CredentialsFile == "/etc/wardlock/aws"
+		}},
+		{"s3 defaults", s3Env(map[string]string{"WARDLOCK_BLOB_BACKEND": "S3", "WARDLOCK_S3_ENDPOINT": "http://127.0.0.1:9000/"}), false,
+			func(c platform.Config) bool {
+				s := c.S3
+				return s.Endpoint.String() == "http://127.0.0.1:9000" && s.Prefix == "" && s.Addressing == platform.S3AddressAuto && s.AccessKeyID == ""
+			}},
+		{"s3 virtual-hosted", s3Env(map[string]string{"WARDLOCK_S3_PATH_STYLE": "false"}), false, func(c platform.Config) bool {
+			return c.S3.Addressing == platform.S3AddressVirtual
+		}},
+		{"s3 file size at the limit", s3Env(map[string]string{"WARDLOCK_MAX_FILE_SIZE": "5368709120"}), false, func(c platform.Config) bool {
+			return c.MaxFileSize == 5<<30
+		}},
+		{"unknown blob backend", map[string]string{"WARDLOCK_BLOB_BACKEND": "gcs"}, true, nil},
+		{"s3 setting with filesystem blobs", map[string]string{"WARDLOCK_S3_BUCKET": "wardlock-blobs"}, true, nil},
+		{"blob directory with s3", s3Env(map[string]string{"WARDLOCK_BLOB_DIR": "/mnt/blobs"}), true, nil},
+		{"s3 without endpoint", s3Env(map[string]string{"WARDLOCK_S3_ENDPOINT": ""}), true, nil},
+		{"s3 endpoint without scheme", s3Env(map[string]string{"WARDLOCK_S3_ENDPOINT": "s3.example.test"}), true, nil},
+		{"s3 endpoint with a path", s3Env(map[string]string{"WARDLOCK_S3_ENDPOINT": "https://s3.example.test/wardlock-blobs"}), true, nil},
+		{"s3 endpoint with credentials", s3Env(map[string]string{"WARDLOCK_S3_ENDPOINT": "https://key:secret@s3.example.test"}), true, nil},
+		{"s3 endpoint with a query", s3Env(map[string]string{"WARDLOCK_S3_ENDPOINT": "https://s3.example.test/?x=1"}), true, nil},
+		{"s3 without bucket", s3Env(map[string]string{"WARDLOCK_S3_BUCKET": ""}), true, nil},
+		{"s3 bucket with capitals", s3Env(map[string]string{"WARDLOCK_S3_BUCKET": "Wardlock"}), true, nil},
+		{"s3 bucket too short", s3Env(map[string]string{"WARDLOCK_S3_BUCKET": "wl"}), true, nil},
+		{"s3 bucket ending in a hyphen", s3Env(map[string]string{"WARDLOCK_S3_BUCKET": "wardlock-"}), true, nil},
+		{"s3 without region", s3Env(map[string]string{"WARDLOCK_S3_REGION": ""}), true, nil},
+		{"s3 prefix with dot-dot", s3Env(map[string]string{"WARDLOCK_S3_PREFIX": "a/../b"}), true, nil},
+		{"s3 prefix with an empty segment", s3Env(map[string]string{"WARDLOCK_S3_PREFIX": "a//b"}), true, nil},
+		{"s3 path style not boolean", s3Env(map[string]string{"WARDLOCK_S3_PATH_STYLE": "sometimes"}), true, nil},
+		{"s3 file size over the limit", s3Env(map[string]string{"WARDLOCK_MAX_FILE_SIZE": "5368709121"}), true, nil},
+		{"access key without secret", s3Env(map[string]string{"AWS_ACCESS_KEY_ID": "AKIAEXAMPLE"}), true, nil},
+		{"secret without access key", s3Env(map[string]string{"AWS_SECRET_ACCESS_KEY": "example-secret"}), true, nil},
+		{"session token alone", s3Env(map[string]string{"AWS_SESSION_TOKEN": "example-session"}), true, nil},
 		{"no operator listener by default", nil, false, func(c platform.Config) bool { return c.OperatorAddr == "" }},
 		{"operator listener", map[string]string{"WARDLOCK_OPERATOR_ADDR": "127.0.0.1:9740"}, false, func(c platform.Config) bool {
 			return c.OperatorAddr == "127.0.0.1:9740"
@@ -151,6 +197,41 @@ func TestLoadConfig(t *testing.T) {
 				t.Fatalf("unexpected config %+v", cfg)
 			}
 		})
+	}
+}
+
+// s3Env is a valid S3 blob configuration with overrides; an empty
+// override removes the variable.
+func s3Env(over map[string]string) map[string]string {
+	env := map[string]string{
+		"WARDLOCK_BLOB_BACKEND": "s3",
+		"WARDLOCK_S3_ENDPOINT":  "https://s3.eu-west-1.amazonaws.com",
+		"WARDLOCK_S3_BUCKET":    "wardlock-blobs",
+		"WARDLOCK_S3_REGION":    "eu-west-1",
+	}
+	maps.Copy(env, over)
+	return env
+}
+
+// TestS3ConfigErrorsNeverContainSecrets: a rejected endpoint is not echoed,
+// since it may carry a key, and credentials are redacted in logs.
+func TestS3ConfigErrorsNeverContainSecrets(t *testing.T) {
+	_, err := platform.LoadConfig(func(k string) string {
+		return s3Env(map[string]string{"WARDLOCK_S3_ENDPOINT": "https://AKIAEXAMPLE:leaked-secret@s3.example.test"})[k]
+	})
+	if err == nil || strings.Contains(err.Error(), "leaked-secret") || strings.Contains(err.Error(), "AKIAEXAMPLE") {
+		t.Fatalf("error = %v", err)
+	}
+	cfg, err := platform.LoadConfig(func(k string) string {
+		return s3Env(map[string]string{"AWS_ACCESS_KEY_ID": "AKIAEXAMPLE", "AWS_SECRET_ACCESS_KEY": "leaked-secret", "AWS_SESSION_TOKEN": "leaked-session"})[k]
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	slog.New(slog.NewJSONHandler(&buf, nil)).Info("config", slog.Any("s3", cfg.S3))
+	if strings.Contains(buf.String(), "leaked-") {
+		t.Fatalf("log leaked a credential: %s", buf.String())
 	}
 }
 

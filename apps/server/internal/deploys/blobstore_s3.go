@@ -1,0 +1,386 @@
+// SPDX-FileCopyrightText: 2026 CubieCode
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package deploys
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"hash"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+)
+
+// MaxS3BlobSize is the largest blob S3BlobStore stores: the limit of one
+// PutObject and one CopyObject.
+const MaxS3BlobSize = 5 << 30
+
+// S3 key layout under the prefix: blobs at sha256/ab/cdef…, as on disk,
+// and temporary uploads at uploads/<random>.
+const (
+	s3BlobDir   = "sha256/"
+	s3UploadDir = "uploads/"
+)
+
+// S3Config configures an S3BlobStore.
+type S3Config struct {
+	// Endpoint is the service's base URL, such as https://s3.eu-west-1.amazonaws.com.
+	Endpoint *url.URL
+	Bucket   string
+	Region   string
+	// Prefix is prepended to every key; "" or ending in "/".
+	Prefix string
+	// PathStyle and VirtualHosted force the addressing style; with
+	// neither, the client picks (virtual-hosted for AWS, path otherwise).
+	PathStyle     bool
+	VirtualHosted bool
+	Creds         *credentials.Credentials
+	// Transport, if set, carries every request (tests).
+	Transport http.RoundTripper
+	// AppName and AppVersion name the application in the User-Agent.
+	AppName, AppVersion string
+}
+
+// S3BlobStore keeps blobs in an S3-compatible bucket. A blob is either
+// complete at its key or absent: Put uploads to a temporary key, verifies
+// it and only then copies it into place.
+type S3BlobStore struct {
+	c      *minio.Core
+	bucket string
+	prefix string
+}
+
+var (
+	_ BlobStore = (*S3BlobStore)(nil)
+	_ BlobFiles = (*S3BlobStore)(nil)
+)
+
+// NewS3BlobStore returns a BlobStore over c. It makes no request; Check
+// reaches the bucket.
+func NewS3BlobStore(c S3Config) (*S3BlobStore, error) {
+	if c.Endpoint == nil {
+		return nil, errors.New("s3 blob store: no endpoint")
+	}
+	lookup := minio.BucketLookupAuto
+	switch {
+	case c.PathStyle:
+		lookup = minio.BucketLookupPath
+	case c.VirtualHosted:
+		lookup = minio.BucketLookupDNS
+	}
+	core, err := minio.NewCore(c.Endpoint.Host, &minio.Options{
+		Creds:        c.Creds,
+		Secure:       c.Endpoint.Scheme == "https",
+		Region:       c.Region,
+		BucketLookup: lookup,
+		Transport:    c.Transport,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("s3 blob store: %w", err)
+	}
+	if c.AppName != "" {
+		core.SetAppInfo(c.AppName, c.AppVersion)
+	}
+	return &S3BlobStore{c: core, bucket: c.Bucket, prefix: c.Prefix}, nil
+}
+
+func (s *S3BlobStore) key(h string) (string, error) {
+	if !ValidHash(h) {
+		return "", ErrInvalidHash
+	}
+	return s.prefix + s3BlobDir + h[:2] + "/" + h[2:], nil
+}
+
+// notFound reports whether err is S3's answer for a missing object.
+func notFound(err error) bool {
+	r := minio.ToErrorResponse(err)
+	return r.StatusCode == http.StatusNotFound || r.Code == minio.NoSuchKey
+}
+
+// Check reports whether the bucket is reachable with the configured
+// credentials, for readiness.
+func (s *S3BlobStore) Check(ctx context.Context) error {
+	ok, err := s.c.BucketExists(ctx, s.bucket)
+	if err != nil {
+		return fmt.Errorf("blob bucket: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("blob bucket %q does not exist", s.bucket)
+	}
+	return nil
+}
+
+// Has reports whether the blob exists, by HeadObject.
+func (s *S3BlobStore) Has(ctx context.Context, h string) (bool, error) {
+	k, err := s.key(h)
+	if err != nil {
+		return false, err
+	}
+	_, err = s.c.StatObject(ctx, s.bucket, k, minio.StatObjectOptions{})
+	switch {
+	case err == nil:
+		return true, nil
+	case notFound(err):
+		return false, nil
+	default:
+		return false, fmt.Errorf("stat blob: %w", err)
+	}
+}
+
+// Put stores r as blob h. It uploads r to a temporary key while hashing
+// it, signing the upload with h so the service also rejects other content,
+// then copies the temporary object to the blob's key and deletes it.
+//
+// As with FSBlobStore, an existing blob takes the same requests as a new
+// one (the copy rewrites identical bytes), so timing does not reveal that
+// another owner stored the content.
+func (s *S3BlobStore) Put(ctx context.Context, h string, size int64, r io.Reader) error {
+	k, err := s.key(h)
+	if err != nil {
+		return err
+	}
+	if size < 0 {
+		return ErrHashMismatch
+	}
+	if size > MaxS3BlobSize {
+		return fmt.Errorf("blob of %d bytes exceeds the S3 limit of %d", size, int64(MaxS3BlobSize))
+	}
+	tmp, err := s.uploadKey()
+	if err != nil {
+		return err
+	}
+	// The temporary key goes whatever happens: copied, rejected, or
+	// partly stored by a failed upload.
+	defer s.removeTemp(ctx, tmp)
+	hr := &hashingReader{r: io.LimitReader(r, size), sum: sha256.New()}
+	_, err = s.c.PutObject(ctx, s.bucket, tmp, hr, size, "", h, minio.PutObjectOptions{
+		DisableContentSha256: true, // sign with h rather than stream-sign
+		ContentType:          "application/octet-stream",
+	})
+	switch {
+	case hr.n < size && hr.eof:
+		return ErrHashMismatch
+	case hr.n == size && hex.EncodeToString(hr.sum.Sum(nil)) != h:
+		return ErrHashMismatch
+	case err != nil:
+		return fmt.Errorf("upload blob: %w", err)
+	}
+	// r must end where size says.
+	if n, err := r.Read(make([]byte, 1)); n > 0 {
+		return ErrHashMismatch
+	} else if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("read blob: %w", err)
+	}
+	if _, err := s.c.CopyObject(ctx, s.bucket, tmp, s.bucket, k, nil,
+		minio.CopySrcOptions{}, minio.PutObjectOptions{}); err != nil {
+		return fmt.Errorf("copy blob: %w", err)
+	}
+	return nil
+}
+
+// uploadKey returns a fresh temporary upload key.
+func (s *S3BlobStore) uploadKey() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("temporary upload key: %w", err)
+	}
+	return s.prefix + s3UploadDir + hex.EncodeToString(b[:]), nil
+}
+
+// removeTemp deletes a temporary upload, even when ctx has ended; one left
+// behind is collected by GC after the grace period.
+func (s *S3BlobStore) removeTemp(ctx context.Context, key string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	_ = s.c.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
+}
+
+// hashingReader hashes and counts what is read through it.
+type hashingReader struct {
+	r   io.Reader
+	sum hash.Hash
+	n   int64
+	eof bool
+}
+
+func (h *hashingReader) Read(p []byte) (int, error) {
+	n, err := h.r.Read(p)
+	h.n += int64(n)
+	h.sum.Write(p[:n])
+	if errors.Is(err, io.EOF) {
+		h.eof = true
+	}
+	return n, err
+}
+
+// Open returns blob h as a reader that fetches what is read with ranged
+// GETs, starting one only on the first Read after a Seek, so serving a
+// Range or a HEAD never downloads the whole object.
+func (s *S3BlobStore) Open(ctx context.Context, h string) (io.ReadSeekCloser, error) {
+	k, err := s.key(h)
+	if err != nil {
+		return nil, err
+	}
+	info, err := s.c.StatObject(ctx, s.bucket, k, minio.StatObjectOptions{})
+	if notFound(err) {
+		return nil, ErrBlobNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open blob: %w", err)
+	}
+	return &s3Reader{ctx: ctx, s: s, key: k, size: info.Size}, nil
+}
+
+// s3Reader reads one object. body, when open, is a GET response positioned
+// at off.
+type s3Reader struct {
+	ctx  context.Context
+	s    *S3BlobStore
+	key  string
+	size int64
+	off  int64
+	body io.ReadCloser
+}
+
+func (r *s3Reader) Read(p []byte) (int, error) {
+	if r.off >= r.size {
+		return 0, io.EOF
+	}
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if r.body == nil {
+		var opts minio.GetObjectOptions
+		if r.off > 0 {
+			if err := opts.SetRange(r.off, 0); err != nil {
+				return 0, fmt.Errorf("read blob: %w", err)
+			}
+		}
+		body, _, _, err := r.s.c.GetObject(r.ctx, r.s.bucket, r.key, opts)
+		if err != nil {
+			if notFound(err) {
+				return 0, fmt.Errorf("read blob: %w", ErrBlobNotFound)
+			}
+			return 0, fmt.Errorf("read blob: %w", err)
+		}
+		r.body = body
+	}
+	n, err := r.body.Read(p)
+	r.off += int64(n)
+	if errors.Is(err, io.EOF) && r.off < r.size {
+		err = io.ErrUnexpectedEOF
+	}
+	if err != nil && !errors.Is(err, io.EOF) {
+		return n, fmt.Errorf("read blob: %w", err)
+	}
+	return n, err
+}
+
+func (r *s3Reader) Seek(offset int64, whence int) (int64, error) {
+	var abs int64
+	switch whence {
+	case io.SeekStart:
+		abs = offset
+	case io.SeekCurrent:
+		abs = r.off + offset
+	case io.SeekEnd:
+		abs = r.size + offset
+	default:
+		return 0, errors.New("seek blob: invalid whence")
+	}
+	if abs < 0 {
+		return 0, errors.New("seek blob: negative position")
+	}
+	if abs != r.off {
+		r.closeBody()
+		r.off = abs
+	}
+	return abs, nil
+}
+
+func (r *s3Reader) closeBody() {
+	if r.body != nil {
+		_ = r.body.Close()
+		r.body = nil
+	}
+}
+
+func (r *s3Reader) Close() error {
+	r.closeBody()
+	return nil
+}
+
+// Delete removes blob h; deleting a missing blob succeeds.
+func (s *S3BlobStore) Delete(ctx context.Context, h string) error {
+	k, err := s.key(h)
+	if err != nil {
+		return err
+	}
+	if err := s.c.RemoveObject(ctx, s.bucket, k, minio.RemoveObjectOptions{}); err != nil && !notFound(err) {
+		return fmt.Errorf("delete blob: %w", err)
+	}
+	return nil
+}
+
+// WalkFiles reports every blob object and temporary upload under the
+// prefix last modified before cutoff. Other keys are left alone.
+func (s *S3BlobStore) WalkFiles(ctx context.Context, cutoff time.Time, fn func(BlobFile) error) error {
+	for _, dir := range []string{s3BlobDir, s3UploadDir} {
+		if err := s.walk(ctx, s.prefix+dir, cutoff, fn); err != nil {
+			return fmt.Errorf("walk blob objects: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *S3BlobStore) walk(ctx context.Context, prefix string, cutoff time.Time, fn func(BlobFile) error) error {
+	// Cancelling stops the listing goroutine when fn fails.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for obj := range s.c.Client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		if obj.Err != nil {
+			return obj.Err
+		}
+		if !obj.LastModified.Before(cutoff) {
+			continue
+		}
+		rel := strings.TrimPrefix(obj.Key, s.prefix)
+		f := BlobFile{Size: obj.Size, path: obj.Key}
+		switch {
+		case strings.HasPrefix(rel, s3UploadDir) && !strings.Contains(rel[len(s3UploadDir):], "/"):
+		case len(rel) == len(s3BlobDir)+65 && rel[len(s3BlobDir)+2] == '/':
+			h := rel[len(s3BlobDir):len(s3BlobDir)+2] + rel[len(s3BlobDir)+3:]
+			if !ValidHash(h) {
+				continue
+			}
+			f.SHA256 = h
+		default:
+			continue
+		}
+		if err := fn(f); err != nil {
+			return err
+		}
+	}
+	return ctx.Err()
+}
+
+// RemoveFile removes an object WalkFiles reported.
+func (s *S3BlobStore) RemoveFile(ctx context.Context, f BlobFile) error {
+	if f.SHA256 != "" {
+		return s.Delete(ctx, f.SHA256)
+	}
+	if err := s.c.RemoveObject(ctx, s.bucket, f.path, minio.RemoveObjectOptions{}); err != nil && !notFound(err) {
+		return fmt.Errorf("remove temporary upload: %w", err)
+	}
+	return nil
+}
