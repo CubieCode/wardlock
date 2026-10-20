@@ -18,7 +18,7 @@ The build also writes `index.html`, `404.html` and `style.css`. `docs/ARCHITECTU
 pnpm docs:build
 ```
 
-This writes `docs-site/dist` and then checks every link in it without network access: each relative link must name a built file and each `#fragment` an ID in its target page. While rendering, every relative link in `docs/` must point to a published page or to a file that exists in the repository. Heading IDs follow GitHub's rules, so anchors written for the repository work on the site. `pnpm build` and `pnpm check` include this build, and the `Docs site` workflow runs it on every pull request and keeps the result as an artifact.
+This writes `docs-site/dist` and then checks every link in it without network access: each relative link must name a built file and each `#fragment` an ID in its target page. While rendering, every relative link in `docs/` must point to a published page or to a file that exists in the repository. Heading IDs follow GitHub's rules, so anchors written for the repository work on the site. `pnpm build` and `pnpm check` include this build, and the `Docs site` workflow runs it on every pull request (nothing is uploaded; the deploy job builds the site itself).
 
 ## Deploy
 
