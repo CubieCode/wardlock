@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 CubieCode
+# SPDX-License-Identifier: MIT
+#
+# Starts wardlock-backup.service every night. Enable with
+# `systemctl enable --now wardlock-backup.timer`.
+[Unit]
+Description=Nightly Wardlock backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,20 @@
+# Build context rules for deploy/Dockerfile (Docker reads <Dockerfile>.dockerignore
+# before a .dockerignore in the context). The source target sends the whole
+# checkout: keep secrets, data and build output out of it. GoReleaser's
+# context holds only <os>/<arch>/wardlockd, which nothing here matches.
+.git
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+**/test-results
+**/playwright-report
+.local
+.env
+.env.*
+!.env.example
+**/*.db
+**/*.db-shm
+**/*.db-wal
+deploy/vps/wardlock.env
+deploy/vps/restic.env

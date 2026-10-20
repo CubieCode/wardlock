@@ -500,7 +500,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.12: VPS deployment with automatic TLS and R2
 
-- Status: `in-progress`
+- Status: `review`
 - Owner: `feat/o4.12-vps-deploy`
 - PR:
 - Depends on: C1.4, C1.9, C1.11, O4.11

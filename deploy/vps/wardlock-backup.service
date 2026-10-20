@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 CubieCode
+# SPDX-License-Identifier: MIT
+#
+# Runs deploy/vps/backup.sh once; wardlock-backup.timer starts it nightly.
+# Install both to /etc/systemd/system/ and adjust the path below if the
+# checkout is not in /opt/wardlock (docs/DEPLOYMENT.md, "Backups and restore
+# on the VPS").
+[Unit]
+Description=Wardlock backup to restic
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wardlock/deploy/vps/backup.sh
