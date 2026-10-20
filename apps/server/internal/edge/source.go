@@ -31,6 +31,12 @@ type ServedSite struct {
 	// Unavailable means the operator has taken the site down or suspended
 	// its owner (A2.13): every host answers the unavailable page.
 	Unavailable bool
+	// Screened means content screening applies to the site (A2.15: on,
+	// and its owner not exempt): a file not screened yet is never cached
+	// for long, a gzip sibling is offered only once screening has checked
+	// it decompresses to exactly its file, and brotli siblings, which the
+	// server cannot check, are never offered.
+	Screened bool
 }
 
 // ServedFile is one entry of the active deploy's manifest.
@@ -41,6 +47,12 @@ type ServedFile struct {
 	// Renditions are an HTML file's AI-readable versions (A2.6) by format
 	// ("md", "txt"); nil for other files and deploys activated before A2.6.
 	Renditions map[string]Rendition
+	// Pending means content screening has not screened it yet (set only on
+	// a Screened site).
+	Pending bool
+	// Decoded is, for a gzip file screening checked, the SHA-256 of what
+	// it decompresses to; "" otherwise.
+	Decoded string
 }
 
 // Rendition is a Markdown or plain-text version of an HTML file, stored as
@@ -73,6 +85,13 @@ type BlobOpener interface {
 // rollback, teardown, domain changes, takedown and suspension). The deploys Notifier satisfies it.
 type Invalidator interface {
 	Subscribe(fn func(siteID string)) (unsubscribe func())
+}
+
+// Withheld reports whether a content hash is quarantined (A2.15). It is
+// consulted on every file served, so it must answer from memory; the
+// moderation Quarantine satisfies it.
+type Withheld interface {
+	Has(sha256 string) bool
 }
 
 // Access decides who may read a site. *access.Service satisfies it.

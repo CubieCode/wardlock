@@ -1,0 +1,33 @@
+Content screening flagged {{if eq (len .) 1}}a file{{else}}{{len .}} files{{end}} on your Wardlock server for your
+review. {{if eq (len .) 1}}It is{{else}}They are{{end}} still served.
+{{range .}}
+File:       sha256 {{.SHA256}}
+{{- if .Categories}}
+Categories: {{range $i, $c := .Categories}}{{if $i}}, {{end}}{{$c}}{{end}}
+{{- end}}
+{{- if .Unscreenable}}
+Reason:     unscreenable: an image in it could not be screened (a format
+            neither the endpoint nor the server reads, or too large)
+{{- end}}
+Checked:    {{.CheckedAt.UTC.Format "2006-01-02 15:04 UTC"}}
+{{- if .Uses}}
+Served by:
+{{- range .Uses}}
+    {{.Site}}  /{{.Path}}  (owner {{.Owner}})
+{{- end}}
+{{- else}}
+No site serves it at the moment.
+{{- end}}
+{{- if .Minors}}
+The endpoint flagged it as sexual content involving minors. Do not open,
+copy or forward it; follow "Preserving and reporting illegal material" in
+docs/DEPLOYMENT.md.
+{{- end}}
+{{end}}
+Review each with wardlockd admin moderation list. To clear one from the
+list, run
+
+    wardlockd admin moderation release SHA256
+
+To withhold one, take down the sites serving it (wardlockd admin
+takedown-site SITE). See "Content screening" in docs/DEPLOYMENT.md.

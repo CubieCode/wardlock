@@ -97,6 +97,8 @@ type Config struct {
 	// AbuseEmail receives visitors' abuse reports (WARDLOCK_ABUSE_EMAIL,
 	// A2.13); "" shows no report link and serves no report form.
 	AbuseEmail string
+	// Moderation is content screening (A2.15); off unless configured.
+	Moderation ModerationConfig
 	// Secret is the decoded WARDLOCK_SECRET: the server key for token,
 	// code and session hashes. Empty when unset; commands that need it
 	// call RequireSecret.
@@ -213,6 +215,9 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	if err := cfg.loadOAuth(get); err != nil {
+		return Config{}, err
+	}
+	if err := cfg.loadModeration(get); err != nil {
 		return Config{}, err
 	}
 	if err := cfg.loadOperator(get); err != nil {

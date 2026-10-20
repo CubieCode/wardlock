@@ -26,6 +26,7 @@ import (
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/edge"
 	"wardlock.nz/server/internal/mail"
+	"wardlock.nz/server/internal/moderation"
 	"wardlock.nz/server/internal/oauth"
 	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/platform"
@@ -158,8 +159,22 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	}
 	stopWatch := startUnavailableWatch(ctx, watch)
 	defer stopWatch()
+	// Content screening (A2.15): the quarantine list is kept whether or not
+	// screening is on, so a file once withheld stays withheld.
+	// The list is loaded before the server listens, so a restart never
+	// serves a quarantined file; the server does not start without it.
+	quarantine := moderation.NewQuarantine()
+	if err := quarantine.Load(ctx, db.Moderation().Quarantined); err != nil {
+		_ = ln.Close()
+		return err
+	}
+	screened := deploys.NewLocalNotifier()
+	modSvc := newModeration(cfg, log, db, blobs, mailer, quarantine, screened)
+	stopModeration := startModeration(ctx, log, db, modSvc, quarantine, notifier)
+	defer stopModeration()
 	metrics := platform.NewMetrics(time.Now())
 	collectServerMetrics(metrics, cfg, recorder.w, expiries)
+	collectModerationMetrics(metrics, modSvc, quarantine)
 	readiness := newReadiness(log, db, blobsReady, expiries)
 
 	sitesCfg := sites.Config{
@@ -235,12 +250,14 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			domains:    db.Domains(),
 			deploys:    db.Deploys(),
 			renditions: db.Renditions(),
+			moderation: screenedSites(modSvc, db),
 		},
 		Blobs:       blobs,
-		Invalidator: notifier,
+		Invalidator: invalidators{notifier, screened},
 		Access:      accessSvc,
 		Recorder:    recorder,
 		TLSAsk:      tlsAsk(cfg, db, log),
+		Withheld:    quarantine,
 		Log:         log,
 	})
 	if err != nil {
@@ -297,6 +314,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		slog.String("blob_cache_dir", cfg.BlobCacheDir),
 		slog.Int64("blob_cache_max_bytes", cfg.BlobCacheMaxBytes),
 		slog.String("tls_mode", cfg.TLS.Mode),
+		slog.String("moderation", moderationAttr(cfg)),
 	)
 	if setupURL != "" {
 		// The one place a credential is logged, as SPEC requires: it is

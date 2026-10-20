@@ -5,7 +5,6 @@ package edge
 
 import (
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"path"
@@ -69,12 +68,14 @@ var encodings = []struct{ token, suffix string }{
 // negotiate picks f or the precompressed sibling with the highest q the
 // client gives it (br on a tie). It returns the file to send and its
 // Content-Encoding ("" for f itself), and whether any sibling exists (so the
-// response varies by Accept-Encoding).
+// response varies by Accept-Encoding). On a screened site only a gzip
+// sibling screening found to decompress to exactly f is a sibling (A2.15):
+// screening saw f's bytes, not the sibling's.
 func negotiate(s *served, f ServedFile, acceptEncoding string) (ServedFile, string, bool) {
 	send, coding, best, vary := f, "", 0.0, false
 	for _, e := range encodings {
 		sibling, ok := s.files[f.Path+e.suffix]
-		if !ok {
+		if !ok || s.site.Screened && (e.token != "gzip" || sibling.Decoded != f.SHA256) {
 			continue
 		}
 		vary = true
@@ -127,6 +128,16 @@ func cacheControl(protected bool) string {
 		return "private, max-age=0, must-revalidate"
 	}
 	return "public, max-age=0, must-revalidate"
+}
+
+// pendingCacheControl is the Cache-Control for a file content screening has
+// not screened yet (A2.15): stored only if revalidated on every use, so a
+// shared cache cannot keep serving it once it is withheld.
+func pendingCacheControl(protected bool) string {
+	if protected {
+		return "private, no-cache"
+	}
+	return "public, no-cache"
 }
 
 // immutableCacheControl is the Cache-Control for a hashed asset of a deploy
@@ -186,10 +197,7 @@ func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f Se
 		e.serveRendition(w, r, s, rd, rtype, status, protected)
 		return
 	}
-	ctype := mime.TypeByExtension(path.Ext(f.Path))
-	if ctype == "" {
-		ctype = "application/octet-stream" // never sniff
-	}
+	ctype := contentType(f.Path)
 	if status == http.StatusOK && strings.HasPrefix(ctype, "text/html") {
 		alternateLinks(w.Header(), r, f)
 	}
@@ -200,9 +208,12 @@ func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f Se
 	send, coding, vary := negotiate(s, f, r.Header.Get("Accept-Encoding"))
 	e.serveBlob(w, r, s, send.SHA256, send.Size, "open blob", func(w http.ResponseWriter, blob io.ReadSeeker) {
 		h := w.Header()
-		if immutable {
+		switch {
+		case f.Pending:
+			h.Set("Cache-Control", pendingCacheControl(protected))
+		case immutable:
 			h.Set("Cache-Control", immutableCacheControl(protected))
-		} else {
+		default:
 			h.Set("Cache-Control", cacheControl(protected))
 		}
 		if vary {

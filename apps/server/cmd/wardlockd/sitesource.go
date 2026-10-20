@@ -21,6 +21,9 @@ type siteSource struct {
 	domains    store.Domains
 	deploys    store.Deploys
 	renditions store.Renditions
+	// moderation is set when content screening is on (A2.15): sites of
+	// owners who are not exempt are Screened, with each file's state.
+	moderation store.Moderation
 }
 
 func (s siteSource) SiteForHost(ctx context.Context, host string) (edge.ServedSite, error) {
@@ -56,6 +59,13 @@ func (s siteSource) SiteForHost(ctx context.Context, host string) (edge.ServedSi
 	}
 	served.SPA = d.SPA
 	served.ImmutableAssets = d.ImmutableAssets
+	if s.moderation != nil {
+		exempt, err := s.moderation.Exempt(ctx, site.OwnerID)
+		if err != nil {
+			return edge.ServedSite{}, fmt.Errorf("get screening exemption: %w", err)
+		}
+		served.Screened = !exempt
+	}
 	return served, nil
 }
 
@@ -88,9 +98,24 @@ func (s siteSource) ActiveFiles(ctx context.Context, site edge.ServedSite) ([]ed
 		}
 		byPath[r.Path][r.Format] = edge.Rendition{SHA256: r.SHA256, Size: r.Size}
 	}
+	screening := map[string]store.ModerationState{}
+	if site.Screened && s.moderation != nil {
+		states, err := s.moderation.DeployScreening(ctx, site.ActiveDeployID)
+		if err != nil {
+			return nil, err
+		}
+		for _, st := range states {
+			screening[st.SHA256] = st
+		}
+	}
 	out := make([]edge.ServedFile, len(files))
 	for i, f := range files {
 		out[i] = edge.ServedFile{Path: f.Path, SHA256: f.SHA256, Size: f.Size, Renditions: byPath[f.Path]}
+		if site.Screened {
+			st, ok := screening[f.SHA256]
+			out[i].Pending = !ok || st.Status == store.ModerationPending
+			out[i].Decoded = st.Decoded
+		}
 	}
 	return out, nil
 }

@@ -19,6 +19,7 @@ import (
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/edge"
 	"wardlock.nz/server/internal/mail"
+	"wardlock.nz/server/internal/moderation"
 	"wardlock.nz/server/internal/platform"
 	"wardlock.nz/server/internal/store"
 	"wardlock.nz/server/internal/store/storetest"
@@ -41,6 +42,8 @@ type policyEdge struct {
 	notifier      *deploys.LocalNotifier
 	blobs         *deploys.FSBlobStore
 	dashboardHits int
+	// quarantine is what content screening withholds (A2.15).
+	quarantine *moderation.Quarantine
 
 	mu      sync.Mutex
 	clock   time.Time
@@ -90,6 +93,7 @@ func newPolicyEdge(t testing.TB, opts ...func(*access.Config)) *policyEdge {
 	notifier := deploys.NewLocalNotifier()
 	log := slog.New(slog.NewTextHandler(p.logs, nil))
 	p.notifier, p.log, p.blobs = notifier, log, blobs
+	p.quarantine = moderation.NewQuarantine()
 	cfg := access.Config{
 		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), EmailCodes: db.EmailCodes(), Notifier: notifier,
 		Mailer: mail.NewDevSink(mail.Config{DevDir: p.mailDir, Logger: slog.New(slog.NewTextHandler(p.mailLogs, nil)), Now: p.now}),
@@ -108,24 +112,7 @@ func newPolicyEdge(t testing.TB, opts ...func(*access.Config)) *policyEdge {
 		Sites: db.Sites(), Deploys: db.Deploys(), Blobs: blobs, Notifier: notifier,
 		Limits: deploys.DefaultLimits(), Now: p.now, Renditions: db.Renditions(),
 	})
-	p.e, err = edge.New(edge.Config{
-		DashboardHost: "wardlock.localhost",
-		AuthHost:      "auth.wardlock.localhost",
-		Dashboard:     http.HandlerFunc(func(http.ResponseWriter, *http.Request) { p.dashboardHits++ }),
-		// The report form (A2.13) lives on the dashboard host.
-		DashboardOrigin: "http://wardlock.localhost",
-		SiteOrigin:      func(host string) string { return "http://" + host },
-		Health:          http.NotFoundHandler(),
-		Sites:           siteSource{baseDomain: "wardlock.localhost", owners: db.Owners(), sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(), renditions: db.Renditions()},
-		Blobs:           blobs,
-		Invalidator:     notifier,
-		Access:          acc,
-		Recorder:        p,
-		Log:             log,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	p.e = p.newEdge(siteSource{baseDomain: "wardlock.localhost", owners: db.Owners(), sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(), renditions: db.Renditions()}, notifier)
 	t.Cleanup(p.e.Close)
 	p.h = platform.LogRequests(log, p.e)
 	p.owner = store.Owner{ID: store.NewID(), Email: "owner@example.test", CreatedAt: p.now()}
@@ -133,6 +120,47 @@ func newPolicyEdge(t testing.TB, opts ...func(*access.Config)) *policyEdge {
 		t.Fatal(err)
 	}
 	return p
+}
+
+// newEdge builds the edge over src, invalidated by inv.
+func (p *policyEdge) newEdge(src siteSource, inv edge.Invalidator) *edge.Edge {
+	p.t.Helper()
+	e, err := edge.New(edge.Config{
+		DashboardHost: "wardlock.localhost",
+		AuthHost:      "auth.wardlock.localhost",
+		Dashboard:     http.HandlerFunc(func(http.ResponseWriter, *http.Request) { p.dashboardHits++ }),
+		// The report form (A2.13) lives on the dashboard host.
+		DashboardOrigin: "http://wardlock.localhost",
+		SiteOrigin:      func(host string) string { return "http://" + host },
+		Health:          http.NotFoundHandler(),
+		Sites:           src,
+		Blobs:           p.blobs,
+		Invalidator:     inv,
+		Access:          p.acc,
+		Recorder:        p,
+		Withheld:        p.quarantine,
+		Log:             p.log,
+	})
+	if err != nil {
+		p.t.Fatal(err)
+	}
+	return e
+}
+
+// screening switches the edge to one with content screening on (A2.15)
+// and returns the notifier the screening worker announces verdicts on.
+func (p *policyEdge) screening() *deploys.LocalNotifier {
+	p.t.Helper()
+	p.e.Close()
+	screened := deploys.NewLocalNotifier()
+	db := p.db
+	p.e = p.newEdge(siteSource{
+		baseDomain: "wardlock.localhost", owners: db.Owners(), sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(),
+		renditions: db.Renditions(), moderation: db.Moderation(),
+	}, invalidators{p.notifier, screened})
+	p.t.Cleanup(p.e.Close)
+	p.h = platform.LogRequests(p.log, p.e)
+	return screened
 }
 
 var policyFiles = map[string]string{

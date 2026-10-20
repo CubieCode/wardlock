@@ -19,6 +19,7 @@ import (
 
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/mail"
+	"wardlock.nz/server/internal/moderation"
 	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/platform"
 	"wardlock.nz/server/internal/sites"
@@ -47,7 +48,15 @@ Sites (by name or any hostname they answer on):
   teardown-site SITE       Delete a taken-down site; garbage collection then
                            removes files nothing else uses
 
-A running server notices suspensions and takedowns within a few seconds.
+Content screening (see wardlockd admin moderation help):
+  moderation list          List flagged and quarantined files with their sites
+  moderation release|confirm|discard|rescan SHA256
+                           Decide on a screened file, or screen it again
+  moderation disable|enable --owner ADDRESS
+                           Exempt an owner from screening, or end the exemption
+
+A running server notices suspensions, takedowns and screening decisions
+within a few seconds.
 `
 
 // admin runs `wardlockd admin <command>` against the configured data
@@ -67,6 +76,8 @@ func admin(ctx context.Context, args []string, getenv func(string) string, stdou
 		return adminCreate(ctx, rest, getenv, stdout, stderr)
 	case "quota":
 		return adminQuota(ctx, rest, getenv, stdout, stderr)
+	case "moderation":
+		return adminModeration(ctx, rest, getenv, stdout, stderr)
 	}
 	run, ok := adminCommands[cmd]
 	if !ok || len(rest) != run.args {
@@ -106,6 +117,9 @@ type adminEnv struct {
 	sites  *sites.Service
 	// quotas are the instance's per-owner quotas from the environment.
 	quotas store.Quotas
+	// moderation takes the operator's screening decisions; it never
+	// screens.
+	moderation *moderation.Service
 }
 
 func (a *adminEnv) close() {
@@ -138,7 +152,8 @@ func openAdmin(ctx context.Context, getenv func(string) string, stderr io.Writer
 		Sites: db.Sites(), Domains: db.Domains(), Notifier: deploys.NewLocalNotifier(),
 		BaseDomain: cfg.BaseDomain, DashboardHost: cfg.DashboardHost, Now: time.Now, Log: log,
 	})
-	return &adminEnv{db: db, owners: svc, sites: sitesSvc, quotas: ownerQuotas(cfg)}, nil
+	mod := moderation.New(moderation.Config{Store: db.Moderation(), Now: time.Now, Log: log})
+	return &adminEnv{db: db, owners: svc, sites: sitesSvc, quotas: ownerQuotas(cfg), moderation: mod}, nil
 }
 
 // adminOwners is the owners service as `wardlockd admin` uses it, with

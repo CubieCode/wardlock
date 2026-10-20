@@ -892,6 +892,12 @@ func (s *Service) SetQuotas(ctx context.Context, email string, over store.QuotaO
 	return o, nil
 }
 
+// Lookup returns the owner with email for an operator command (A2.15). An
+// unknown address is ErrNotFound; a malformed one ErrInvalidEmail.
+func (s *Service) Lookup(ctx context.Context, email string) (store.Owner, error) {
+	return s.operatorOwner(ctx, email)
+}
+
 // operatorPage is how many rows the operator listings read at a time.
 const operatorPage = 500
 

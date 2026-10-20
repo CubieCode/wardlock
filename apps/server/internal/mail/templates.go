@@ -64,6 +64,38 @@ type AbuseReport struct {
 	ReceivedAt             time.Time
 }
 
+// Screening is a content-screening verdict for the operator (A2.15): a
+// file withheld ("quarantined") or flagged for review.
+type Screening struct {
+	SHA256     string
+	Status     string
+	Categories []string
+	// Minors means the endpoint flagged sexual content involving minors:
+	// the message says to preserve and report rather than review.
+	Minors bool
+	// Unscreenable means it is flagged because an image in it could not
+	// be screened.
+	Unscreenable bool
+	Uses         []ScreeningUse
+	CheckedAt    time.Time
+}
+
+// ScreeningUse is a site serving a screened file: the site's name, the
+// file's path and the owner's address.
+type ScreeningUse struct {
+	Site, Path, Owner string
+}
+
+// Withheld tells an owner which of their files content screening withheld
+// (A2.15). It never says why: the categories stay with the operator.
+type Withheld struct {
+	// Site is the site's name; Host the dashboard host.
+	Site, Host string
+	Paths      []string
+	// Contact is the operator's abuse address; "" when there is none.
+	Contact string
+}
+
 // layout is the HTML body shared by every code message.
 type layout struct {
 	Title, Lead, Code, Where, Ignore string
@@ -128,6 +160,40 @@ func AbuseReportMessage(to netmail.Address, d AbuseReport) (Message, error) {
 		return Message{}, fmt.Errorf("render report.txt.tmpl: %w", err)
 	}
 	return Message{To: to, Subject: "Abuse report: " + d.Site, Text: text.String()}, nil
+}
+
+// ScreeningMessage builds the plain-text notice to the operator's abuse
+// address that a file was withheld, sent at once. The subject names
+// neither the file nor the categories.
+func ScreeningMessage(to netmail.Address, d Screening) (Message, error) {
+	var text bytes.Buffer
+	if err := textTemplates.ExecuteTemplate(&text, "screening.txt.tmpl", d); err != nil {
+		return Message{}, fmt.Errorf("render screening.txt.tmpl: %w", err)
+	}
+	return Message{To: to, Subject: "Content screening withheld a file", Text: text.String()}, nil
+}
+
+// FlaggedMessage builds the plain-text digest to the operator's abuse
+// address of files flagged for review: one per screening pass.
+func FlaggedMessage(to netmail.Address, files []Screening) (Message, error) {
+	var text bytes.Buffer
+	if err := textTemplates.ExecuteTemplate(&text, "flagged.txt.tmpl", files); err != nil {
+		return Message{}, fmt.Errorf("render flagged.txt.tmpl: %w", err)
+	}
+	subject := "Content screening flagged a file"
+	if len(files) > 1 {
+		subject = fmt.Sprintf("Content screening flagged %d files", len(files))
+	}
+	return Message{To: to, Subject: subject, Text: text.String()}, nil
+}
+
+// WithheldMessage builds the plain-text notice to an owner.
+func WithheldMessage(to netmail.Address, d Withheld) (Message, error) {
+	var text bytes.Buffer
+	if err := textTemplates.ExecuteTemplate(&text, "withheld.txt.tmpl", d); err != nil {
+		return Message{}, fmt.Errorf("render withheld.txt.tmpl: %w", err)
+	}
+	return Message{To: to, Subject: "A file on " + d.Site + " is withheld", Text: text.String()}, nil
 }
 
 func render(to netmail.Address, subject, textName string, data any, html layout) (Message, error) {

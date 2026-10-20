@@ -58,7 +58,11 @@ type Config struct {
 	// TLSAsk answers /.wardlock/tls-ask on every host in proxy TLS mode
 	// (C1.9); nil, in other modes, answers it 404 everywhere.
 	TLSAsk http.Handler
-	Log    *slog.Logger
+	// Withheld lists the content hashes content screening quarantined
+	// (A2.15): a file with one is answered 451 wherever it would be
+	// served. nil withholds nothing.
+	Withheld Withheld
+	Log      *slog.Logger
 }
 
 // Edge is the edge handler.
@@ -253,7 +257,12 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Long-term caching only for a hashed asset answering its own
 		// path, never a fallback (SPEC "Serving"); a response that sets a
 		// cookie is still not stored (storeGuard).
-		immutable := s.site.ImmutableAssets && res.status == http.StatusOK &&
+		if e.withheld(s, res.file) {
+			e.withheldFile(w, r, res.file, protected)
+			return
+		}
+		// Never long-term while screening may still withhold it.
+		immutable := s.site.ImmutableAssets && res.status == http.StatusOK && !res.file.Pending &&
 			"/"+res.file.Path == clean && hashedAsset(res.file.Path)
 		e.serveFile(w, r, s, res.file, res.status, protected, strip, immutable)
 	}

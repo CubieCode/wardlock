@@ -27,6 +27,8 @@ type Repos struct {
 	PasswordSessions store.PasswordSessions
 	// EmailCodes stores visitor email codes and their sessions (A2.4).
 	EmailCodes store.EmailCodes
+	// Moderation stores content screening's queue and verdicts (A2.15).
+	Moderation store.Moderation
 }
 
 // Opener returns repositories over a fresh, empty, migrated database that
@@ -54,6 +56,7 @@ func ReposOf(db *store.DB) Repos {
 
 		PasswordSessions: db.PasswordSessions(),
 		EmailCodes:       db.EmailCodes(),
+		Moderation:       db.Moderation(),
 	}
 }
 
@@ -81,6 +84,7 @@ func suites() []suite {
 		{"PasswordSessions", passwordSessionsContract},
 		{"EmailCodes", emailCodesContract},
 		{"Quotas", quotasContract},
+		{"Moderation", moderationContract},
 	}
 }
 

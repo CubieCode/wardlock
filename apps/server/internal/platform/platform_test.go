@@ -80,6 +80,23 @@ func TestLoadConfig(t *testing.T) {
 				return c.Invites == "operator" && c.AbuseEmail == "abuse@example.test"
 			}},
 		{"unknown invitation mode", map[string]string{"WARDLOCK_INVITES": "nobody"}, true, nil},
+		{"screening off by default", map[string]string{"WARDLOCK_OPENAI_API_KEY": "sk-unused"}, false, func(c platform.Config) bool {
+			return c.Moderation.Provider == "" && slices.Equal(c.Moderation.Quarantine, []string{"sexual/minors", "sexual"}) && c.Moderation.Flag == nil
+		}},
+		{"screening with openai", map[string]string{
+			"WARDLOCK_MODERATION": "OpenAI", "WARDLOCK_OPENAI_API_KEY": "sk-test",
+			"WARDLOCK_MODERATION_QUARANTINE": " Sexual/Minors , violence/graphic,sexual/minors", "WARDLOCK_MODERATION_FLAG": "hate,sexual",
+		}, false, func(c platform.Config) bool {
+			return c.Moderation.Provider == platform.ModerationOpenAI && c.Moderation.OpenAIKey == "sk-test" &&
+				slices.Equal(c.Moderation.Quarantine, []string{"sexual/minors", "violence/graphic"}) && slices.Equal(c.Moderation.Flag, []string{"hate", "sexual"})
+		}},
+		{"screening quarantining nothing", map[string]string{"WARDLOCK_MODERATION_QUARANTINE": "none", "WARDLOCK_MODERATION_FLAG": "none"}, false, func(c platform.Config) bool {
+			return len(c.Moderation.Quarantine) == 0 && c.Moderation.Flag != nil && len(c.Moderation.Flag) == 0
+		}},
+		{"screening without a key", map[string]string{"WARDLOCK_MODERATION": "openai"}, true, nil},
+		{"unknown screening provider", map[string]string{"WARDLOCK_MODERATION": "perspective", "WARDLOCK_OPENAI_API_KEY": "sk-test"}, true, nil},
+		{"unknown screening category", map[string]string{"WARDLOCK_MODERATION_QUARANTINE": "sexual,nudity"}, true, nil},
+		{"unknown flag category", map[string]string{"WARDLOCK_MODERATION_FLAG": "spam"}, true, nil},
 		{"abuse address with a name", map[string]string{"WARDLOCK_ABUSE_EMAIL": "Abuse <abuse@example.test>"}, true, nil},
 		{"abuse address not an address", map[string]string{"WARDLOCK_ABUSE_EMAIL": "abuse"}, true, nil},
 		{"unknown blob backend", map[string]string{"WARDLOCK_BLOB_BACKEND": "gcs"}, true, nil},
