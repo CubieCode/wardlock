@@ -307,6 +307,7 @@ func quotasContract(t *testing.T, open Opener) {
 		f := newFixture(t, open)
 		o := f.owner()
 		const workers, limit = 8, 3
+		const letters = "abcdefgh" // one per worker
 		s := f.site(o.ID)
 		// Each deploy adds 30 new bytes; only three fit under 100.
 		storage := make([]error, workers)
@@ -317,10 +318,10 @@ func quotasContract(t *testing.T, open Opener) {
 			wg.Go(func() {
 				d := f.validDeploy(s.ID)
 				d.ID = store.NewID()
-				storage[i] = f.r.Deploys.Create(t.Context(), o.ID, d, []store.DeployFile{file("f", byte('a'+i), 30)}, store.Quotas{StorageBytes: 100})
+				storage[i] = f.r.Deploys.Create(t.Context(), o.ID, d, []store.DeployFile{file("f", letters[i], 30)}, store.Quotas{StorageBytes: 100})
 			})
 			wg.Go(func() {
-				sites[i] = f.r.Sites.Create(t.Context(), store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "race-" + string(rune('a'+i)), CreatedAt: now}, store.Quotas{Sites: limit + 1})
+				sites[i] = f.r.Sites.Create(t.Context(), store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "race-" + letters[i:i+1], CreatedAt: now}, store.Quotas{Sites: limit + 1})
 			})
 		}
 		wg.Wait()
