@@ -172,7 +172,13 @@ func (q *Queries) ListAccessLogBySite(ctx context.Context, arg ListAccessLogBySi
 
 const pruneAccessLog = `-- name: PruneAccessLog :execrows
 DELETE FROM access_log WHERE id IN (
-  SELECT old.id FROM access_log AS old WHERE old.occurred_at < ?1 LIMIT ?2
+  SELECT old.id FROM access_log AS old
+  WHERE old.occurred_at < ?1
+    AND NOT EXISTS (
+      SELECT 1 FROM sites JOIN owners ON owners.id = sites.owner_id
+      WHERE sites.id = old.site_id AND (sites.taken_down_at IS NOT NULL OR owners.suspended_at IS NOT NULL)
+    )
+  LIMIT ?2
 )
 `
 
@@ -183,7 +189,9 @@ type PruneAccessLogParams struct {
 
 // Retention: up to row_limit entries of any site, including deleted ones,
 // older than the cutoff. Callers loop, so no one statement holds the write
-// lock for long.
+// lock for long. Entries of a taken-down site or a suspended owner's site
+// are evidence and kept until the operator restores, reinstates or tears
+// down (A2.13).
 func (q *Queries) PruneAccessLog(ctx context.Context, arg PruneAccessLogParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, pruneAccessLog, arg.Before, arg.RowLimit)
 	if err != nil {

@@ -5,6 +5,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"wardlock.nz/server/internal/api"
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/owners"
+	"wardlock.nz/server/internal/store"
 	"wardlock.nz/server/internal/store/storetest"
 )
 
@@ -179,4 +181,53 @@ func TestTakenDownSiteRefusesChanges(t *testing.T) {
 	}
 	hs.do(hs.ownerA, http.MethodPost, "/sites/docs/rollback", nil).want(t, http.StatusOK, "")
 	hs.do(hs.ownerA, http.MethodDelete, "/sites/docs", nil).want(t, http.StatusNoContent, "")
+}
+
+// suspendingSessions suspends the owner just before their session is
+// stored, as an operator's `suspend-owner` racing a sign-in would.
+type suspendingSessions struct {
+	store.Sessions
+	owners store.Owners
+}
+
+func (s suspendingSessions) CreateOwner(ctx context.Context, row store.OwnerSession) error {
+	if err := s.owners.Suspend(ctx, row.OwnerID, row.CreatedAt); err != nil {
+		return err
+	}
+	return s.Sessions.CreateOwner(ctx, row)
+}
+
+// TestSignInRacingSuspension checks a sign-in whose session is stored just
+// after a suspension gets no session, and reinstating brings none back.
+func TestSignInRacingSuspension(t *testing.T) {
+	db := storetest.New(t)
+	h := newOwnerHarnessWith(t, db, owners.Limits{}, nil)
+	link := h.adminCreate("owner@example.test")
+	racy, err := owners.New(owners.Config{
+		Owners: db.Owners(), Sessions: suspendingSessions{db.Sessions(), db.Owners()}, Mailer: captureMailer(h.mail),
+		Logger: slog.New(slog.DiscardHandler), Secret: bytes.Repeat([]byte("k"), 32),
+		DashboardURL: &url.URL{Scheme: "http", Host: dashHost}, Now: h.clock.Now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(racy.Close)
+	h.h = (&api.Server{Version: "test", Owners: racy, Logger: slog.New(slog.DiscardHandler)}).Handler()
+	rec := h.do(req{method: http.MethodPost, path: "/api/v0/auth/sign-in-link", body: map[string]string{"code": link}})
+	wantError(t, rec, http.StatusBadRequest, "invalid_code")
+	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Fatalf("refused sign-in set cookies %q", got)
+	}
+	if _, err := h.svc.Reinstate(t.Context(), "owner@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	o, err := db.Owners().GetByEmail(t.Context(), "owner@example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := db.Sessions().ListOwner(t.Context(), store.OwnerSessionQuery{
+		OwnerID: o.ID, Now: h.clock.Now(), IdleSince: h.clock.Now().Add(-time.Hour), AfterSeen: h.clock.Now().Add(time.Hour), Limit: 10,
+	}); err != nil || len(rows) != 0 {
+		t.Fatalf("sessions after reinstating = %v, %v", rows, err)
+	}
 }

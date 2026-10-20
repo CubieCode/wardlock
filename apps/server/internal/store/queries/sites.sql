@@ -60,8 +60,10 @@ UPDATE sites SET taken_down_at = COALESCE(taken_down_at, sqlc.arg(taken_down_at)
 -- name: RestoreSite :execrows
 UPDATE sites SET taken_down_at = NULL WHERE id = sqlc.arg(id);
 
+-- Only a taken-down site, so a restore that raced the operator's check
+-- leaves the site alone.
 -- name: TearDownSite :execrows
-DELETE FROM sites WHERE id = sqlc.arg(id);
+DELETE FROM sites WHERE id = sqlc.arg(id) AND taken_down_at IS NOT NULL;
 
 -- name: ListAllSites :many
 SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at,

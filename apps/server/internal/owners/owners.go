@@ -488,8 +488,15 @@ func (s *Service) signIn(ctx context.Context, c Client, ownerID, method string, 
 		}
 	}
 	sess, err := s.startSession(ctx, c, ownerID, method)
+	if errors.Is(err, errSuspended) {
+		return store.Owner{}, NewSession{}, refused
+	}
 	return o, sess, err
 }
+
+// errSuspended means the owner was suspended while a session was being
+// started; callers answer with their method's own rejection.
+var errSuspended = errors.New("owner suspended")
 
 func (s *Service) startSession(ctx context.Context, c Client, ownerID, method string) (NewSession, error) {
 	now := s.now()
@@ -504,6 +511,10 @@ func (s *Service) startSession(ctx context.Context, c Client, ownerID, method st
 		UserAgent:  truncateUserAgent(c.UserAgent),
 	}
 	if err := s.sessions.CreateOwner(ctx, row); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			// Suspended since the sign-in was checked (A2.13).
+			return NewSession{}, errSuspended
+		}
 		return NewSession{}, err
 	}
 	s.log.LogAttrs(ctx, slog.LevelInfo, "owner signed in",

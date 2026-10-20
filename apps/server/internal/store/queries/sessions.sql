@@ -1,6 +1,12 @@
--- name: CreateOwnerSession :exec
+-- Inserts nothing for an unknown or suspended owner, in the same statement
+-- that reads the suspension, so a session can never be created by a
+-- sign-in that raced a suspension (A2.13).
+-- name: CreateOwnerSession :execrows
 INSERT INTO owner_sessions (id, owner_id, token_hash, created_at, last_seen_at, expires_at, revoked_at, user_agent)
-VALUES (sqlc.arg(id), sqlc.arg(owner_id), sqlc.arg(token_hash), sqlc.arg(created_at), sqlc.arg(last_seen_at), sqlc.arg(expires_at), sqlc.narg(revoked_at), sqlc.narg(user_agent));
+SELECT CAST(sqlc.arg(id) AS TEXT), owners.id, CAST(sqlc.arg(token_hash) AS TEXT), CAST(sqlc.arg(created_at) AS INTEGER),
+  CAST(sqlc.arg(last_seen_at) AS INTEGER), CAST(sqlc.arg(expires_at) AS INTEGER), CAST(sqlc.narg(revoked_at) AS INTEGER),
+  CAST(sqlc.narg(user_agent) AS TEXT)
+FROM owners WHERE owners.id = sqlc.arg(owner_id) AND owners.suspended_at IS NULL;
 
 -- name: CreateSiteSession :exec
 INSERT INTO site_sessions (id, site_id, token_hash, method, share_link_id, policy_id, policy_version, subject, created_at, expires_at, revoked_at)

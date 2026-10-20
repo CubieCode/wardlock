@@ -94,6 +94,10 @@ func (s *Service) TearDown(ctx context.Context, ref string) (store.Site, error) 
 		return store.Site{}, err
 	}
 	if err := s.c.Sites.TearDown(ctx, site.ID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			// Restored (or torn down) since it was read.
+			return store.Site{}, ErrNotTakenDown
+		}
 		return store.Site{}, storeErr("tear down site", err)
 	}
 	s.c.Notifier.Notify(ctx, site.ID)

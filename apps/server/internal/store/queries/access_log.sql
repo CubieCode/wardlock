@@ -27,10 +27,18 @@ LIMIT sqlc.arg(row_limit);
 
 -- Retention: up to row_limit entries of any site, including deleted ones,
 -- older than the cutoff. Callers loop, so no one statement holds the write
--- lock for long.
+-- lock for long. Entries of a taken-down site or a suspended owner's site
+-- are evidence and kept until the operator restores, reinstates or tears
+-- down (A2.13).
 -- name: PruneAccessLog :execrows
 DELETE FROM access_log WHERE id IN (
-  SELECT old.id FROM access_log AS old WHERE old.occurred_at < sqlc.arg(before) LIMIT sqlc.arg(row_limit)
+  SELECT old.id FROM access_log AS old
+  WHERE old.occurred_at < sqlc.arg(before)
+    AND NOT EXISTS (
+      SELECT 1 FROM sites JOIN owners ON owners.id = sites.owner_id
+      WHERE sites.id = old.site_id AND (sites.taken_down_at IS NOT NULL OR owners.suspended_at IS NOT NULL)
+    )
+  LIMIT sqlc.arg(row_limit)
 );
 
 -- SPDX-FileCopyrightText: 2026 CubieCode

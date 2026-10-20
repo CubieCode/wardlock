@@ -102,6 +102,40 @@ func ownersOperatorContract(t *testing.T, open Opener) {
 		tok := f.validAPIToken(o.ID, now)
 		wantErr(t, f.r.APITokens.RedeemCLILogin(t.Context(), l.ID, tok, now), store.ErrNotFound)
 	})
+	t.Run("SuspendedCannotDecideCLILogin", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		l := f.validCLILogin()
+		f.must(f.r.APITokens.CreateCLILogin(t.Context(), l))
+		// Suspended between the session check and the approval.
+		f.must(f.r.Owners.Suspend(t.Context(), o.ID, now))
+		wantErr(t, f.r.APITokens.DecideCLILogin(t.Context(), store.CLILoginDecision{
+			UserCode: l.UserCode, Status: store.CLILoginApproved, OwnerID: o.ID, ScopeDeploy: true, At: now,
+		}), store.ErrNotFound)
+		got, err := f.r.APITokens.GetCLILoginByDeviceCodeHash(t.Context(), l.DeviceCodeHash)
+		wantErr(t, err, nil)
+		if got.Status != store.CLILoginPending {
+			t.Fatalf("login after a suspended owner's approval: %s", got.Status)
+		}
+		// Reinstated, nothing approved meanwhile survives; a new decision works.
+		f.must(f.r.Owners.Reinstate(t.Context(), o.ID))
+		f.must(f.r.APITokens.DecideCLILogin(t.Context(), store.CLILoginDecision{
+			UserCode: l.UserCode, Status: store.CLILoginApproved, OwnerID: o.ID, ScopeDeploy: true, At: now,
+		}))
+	})
+	t.Run("SuspendedGetsNoSession", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		f.must(f.r.Owners.Suspend(t.Context(), o.ID, now))
+		s := f.validOwnerSession(o.ID, now)
+		wantErr(t, f.r.Sessions.CreateOwner(t.Context(), s), store.ErrNotFound)
+		// Nothing was stored that reinstatement could bring back.
+		f.must(f.r.Owners.Reinstate(t.Context(), o.ID))
+		_, err := f.r.Sessions.GetOwnerByTokenHash(t.Context(), s.TokenHash)
+		wantErr(t, err, store.ErrNotFound)
+	})
 	t.Run("SuspendUnknown", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, open)
@@ -182,6 +216,9 @@ func sitesOperatorContract(t *testing.T, open Opener) {
 		o := f.owner()
 		s := f.site(o.ID)
 		d := f.activated(o.ID, s.ID, now)
+		// A site that is not taken down is never torn down, so a restore
+		// racing the operator's command wins.
+		wantErr(t, f.r.Sites.TearDown(t.Context(), s.ID), store.ErrNotFound)
 		f.must(f.r.Sites.TakeDown(t.Context(), s.ID, now))
 		f.must(f.r.Sites.TearDown(t.Context(), s.ID))
 		_, err := f.r.Sites.GetByID(t.Context(), s.ID)

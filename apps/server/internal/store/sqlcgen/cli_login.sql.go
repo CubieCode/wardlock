@@ -62,6 +62,10 @@ SET status = ?1,
 WHERE user_code = ?7
   AND status = 'pending'
   AND expires_at > ?6
+  -- A suspended owner decides nothing, even racing the suspension (A2.13).
+  AND NOT EXISTS (
+    SELECT 1 FROM owners WHERE owners.id = ?2 AND owners.suspended_at IS NOT NULL
+  )
 `
 
 type DecideCLILoginParams struct {

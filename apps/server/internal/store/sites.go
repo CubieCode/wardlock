@@ -70,7 +70,8 @@ type Sites interface {
 	TakeDown(ctx context.Context, id string, at time.Time) error
 	// Restore clears the takedown. An unknown site is ErrNotFound.
 	Restore(ctx context.Context, id string) error
-	// TearDown deletes the site as Delete does, whatever its state.
+	// TearDown deletes a taken-down site as Delete does. A site that is not
+	// taken down (or was restored meanwhile) is ErrNotFound.
 	TearDown(ctx context.Context, id string) error
 	// ListAll returns up to limit sites on the instance with their
 	// owners, ordered by name, starting after afterName.

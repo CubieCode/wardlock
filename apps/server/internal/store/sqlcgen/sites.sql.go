@@ -445,9 +445,11 @@ func (q *Queries) TakeDownSite(ctx context.Context, arg TakeDownSiteParams) (int
 }
 
 const tearDownSite = `-- name: TearDownSite :execrows
-DELETE FROM sites WHERE id = ?1
+DELETE FROM sites WHERE id = ?1 AND taken_down_at IS NOT NULL
 `
 
+// Only a taken-down site, so a restore that raced the operator's check
+// leaves the site alone.
 func (q *Queries) TearDownSite(ctx context.Context, id string) (int64, error) {
 	result, err := q.db.ExecContext(ctx, tearDownSite, id)
 	if err != nil {

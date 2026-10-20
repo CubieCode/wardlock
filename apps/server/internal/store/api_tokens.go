@@ -105,7 +105,8 @@ type APITokens interface {
 	GetCLILoginByDeviceCodeHash(ctx context.Context, hash string) (CLILoginRequest, error)
 	// DecideCLILogin approves or denies the pending request with the
 	// decision's user code. A missing, decided or expired (at d.At) request
-	// is ErrNotFound.
+	// is ErrNotFound, and so is any decision by a suspended owner, read in
+	// the same statement.
 	DecideCLILogin(ctx context.Context, d CLILoginDecision) error
 	// RedeemCLILogin creates t and marks the approved request loginID
 	// redeemed with it, in one transaction. A request that is not approved,
