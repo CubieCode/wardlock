@@ -154,7 +154,7 @@ func TestDeployJSONSchema(t *testing.T) {
 	}
 	m := assertJSONKeys(t, out.Bytes(), "site", "deploy", "siteCreated", "uploaded", "skipped")
 	assertJSONKeys(t, m["uploaded"], "files", "bytes")
-	assertJSONKeys(t, m["site"], "id", "name", "hostname", "url", "createdAt", "activeDeployId", "activatedAt")
+	assertJSONKeys(t, m["site"], "id", "name", "hostname", "url", "createdAt", "unavailable", "activeDeployId", "activatedAt")
 	assertJSONKeys(t, m["deploy"], "id", "status", "createdAt", "activatedAt", "fileCount", "totalSize", "spa", "immutableAssets")
 	if string(m["skipped"]) != "[]" || string(m["siteCreated"]) != "true" {
 		t.Fatalf("skipped %s siteCreated %s", m["skipped"], m["siteCreated"])
