@@ -48,6 +48,7 @@ function deploy(tail: string, extra: Partial<Deploy> = {}): Deploy {
     fileCount: 3,
     totalSize: 1_532_918,
     spa: false,
+    immutableAssets: false,
     ...extra,
   };
 }
@@ -201,6 +202,7 @@ describe('site detail', () => {
     status: 'active',
     message: 'Fix typo on the install page',
     activatedAt: now - hour,
+    immutableAssets: true,
   });
   const earlier = deploy('00000002', { message: 'First draft' });
   // A pending deploy has never been live, so it has no activation time.
@@ -211,6 +213,7 @@ describe('site detail', () => {
     fileCount: 3,
     totalSize: 1_532_918,
     spa: false,
+    immutableAssets: false,
   };
   const docs = site('docs', {
     activeDeployId: live.id,
@@ -255,6 +258,10 @@ describe('site detail', () => {
     expect(rows[1]!.textContent).toContain('Fix typo on the install page');
     expect(rows[1]!.textContent).toContain('3 files');
     expect(rows[1]!.textContent).toContain('1.5 MB');
+    // The long-term caching option is labelled only on deploys that set it.
+    expect(rows[1]!.textContent).toContain('Immutable assets');
+    expect(rows[0]!.textContent).not.toContain('Immutable assets');
+    expect(rows[2]!.textContent).not.toContain('Immutable assets');
     // Only an earlier, once-live deploy can be rolled back to.
     expect(within(rows[0]!).queryByRole('button')).toBeNull();
     expect(within(rows[1]!).queryByRole('button')).toBeNull();

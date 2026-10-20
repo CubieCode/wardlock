@@ -60,14 +60,15 @@ type CliLoginRequest struct {
 }
 
 type Deploy struct {
-	ID          string
-	SiteID      string
-	Message     sql.NullString
-	FileCount   int64
-	TotalSize   int64
-	CreatedAt   int64
-	ActivatedAt sql.NullInt64
-	Spa         int64
+	ID              string
+	SiteID          string
+	Message         sql.NullString
+	FileCount       int64
+	TotalSize       int64
+	CreatedAt       int64
+	ActivatedAt     sql.NullInt64
+	Spa             int64
+	ImmutableAssets int64
 }
 
 type DeployFile struct {

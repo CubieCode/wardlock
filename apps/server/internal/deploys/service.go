@@ -110,12 +110,13 @@ func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manife
 		return store.Deploy{}, nil, err
 	}
 	d := store.Deploy{
-		ID:        store.NewID(),
-		SiteID:    site.ID,
-		Message:   m.Message,
-		FileCount: len(m.Files),
-		SPA:       m.SPA,
-		CreatedAt: s.now(),
+		ID:              store.NewID(),
+		SiteID:          site.ID,
+		Message:         m.Message,
+		FileCount:       len(m.Files),
+		SPA:             m.SPA,
+		ImmutableAssets: m.ImmutableAssets,
+		CreatedAt:       s.now(),
 	}
 	for _, f := range m.Files {
 		d.TotalSize += f.Size

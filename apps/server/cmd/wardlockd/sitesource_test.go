@@ -66,10 +66,11 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deploy := func(spa bool, files map[string]string) string {
+	// deploy creates a deploy with the SPA fallback and immutableAssets
+	// both set to options.
+	deploy := func(options bool, files map[string]string) string {
 		t.Helper()
-		var m deploys.Manifest
-		m.SPA = spa
+		m := deploys.Manifest{SPA: options, ImmutableAssets: options}
 		for p, body := range files {
 			sum := sha256.Sum256([]byte(body))
 			m.Files = append(m.Files, store.DeployFile{Path: p, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(body))})
@@ -121,7 +122,13 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 	}
 	const host = "docs.wardlock.localhost"
 
-	v1 := deploy(false, map[string]string{"index.html": "<p>First deploy</p>", "guide.html": "<p>Guide</p>"})
+	const asset = "/assets/app-BdK3j2Lp.js"
+	cache := func() string {
+		t.Helper()
+		_, h := getHeaders(host, asset)
+		return h.Get("Cache-Control")
+	}
+	v1 := deploy(false, map[string]string{"index.html": "<p>First deploy</p>", "guide.html": "<p>Guide</p>", asset[1:]: "console.log(1)"})
 	expect(host, "/", 404, "No site") // nothing published: the unknown-host 404
 	activate(v1)
 	expect(host, "/", 200, "First deploy")
@@ -143,18 +150,28 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 	expect("reports.example.test", "/", 200, "First deploy")
 
 	// Re-activation: the notifier drops the cached manifest on every host.
-	v2 := deploy(true, map[string]string{"index.html": "<p>Second deploy</p>"})
+	if got := cache(); got != "public, max-age=0, must-revalidate" {
+		t.Fatalf("hashed asset without immutableAssets: Cache-Control %q", got)
+	}
+	v2 := deploy(true, map[string]string{"index.html": "<p>Second deploy</p>", asset[1:]: "console.log(2)"})
 	activate(v2)
 	expect(host, "/", 200, "Second deploy")
 	expect("reports.example.test", "/", 200, "Second deploy")
-	expect(host, "/app/route", 200, "Second deploy")       // SPA from the deploy
+	expect(host, "/app/route", 200, "Second deploy") // SPA from the deploy
+	if got := cache(); got != "public, max-age=31536000, immutable" {
+		t.Fatalf("hashed asset of an immutableAssets deploy: Cache-Control %q", got)
+	}
 	expect(host, "/guide.html", 404, "404 page not found") // gone with v1
 
-	// Rollback restores the earlier deploy and its SPA setting.
+	// Rollback restores the earlier deploy, its SPA setting and its cache
+	// headers.
 	if _, _, err := svc.Rollback(ctx, owner.ID, site.Name, v1); err != nil {
 		t.Fatal(err)
 	}
 	expect(host, "/", 200, "First deploy")
 	expect(host, "/app/route", 404, "404 page not found")
+	if got := cache(); got != "public, max-age=0, must-revalidate" {
+		t.Fatalf("hashed asset after rollback: Cache-Control %q", got)
+	}
 	expect(host, "/.wardlock/health", 200, `"ok"`)
 }

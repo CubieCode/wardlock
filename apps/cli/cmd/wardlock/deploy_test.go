@@ -103,8 +103,8 @@ func TestFirstDeployCreatesSiteAndUploadsEverything(t *testing.T) {
 	if got, want := manifestPaths(req), []string{"assets/app.js", "copy.html", "empty.txt", "index.html"}; !slices.Equal(got, want) {
 		t.Fatalf("manifest %q, want %q", got, want)
 	}
-	if *req.Message != "First" || *req.Spa {
-		t.Fatalf("message %q spa %v", *req.Message, *req.Spa)
+	if *req.Message != "First" || *req.Spa || *req.ImmutableAssets {
+		t.Fatalf("message %q spa %v immutableAssets %v", *req.Message, *req.Spa, *req.ImmutableAssets)
 	}
 	// Three distinct bodies, each uploaded once (copy.html shares index.html's).
 	if len(srv.uploads) != 3 {
@@ -155,7 +155,7 @@ func TestDeployJSONSchema(t *testing.T) {
 	m := assertJSONKeys(t, out.Bytes(), "site", "deploy", "siteCreated", "uploaded", "skipped")
 	assertJSONKeys(t, m["uploaded"], "files", "bytes")
 	assertJSONKeys(t, m["site"], "id", "name", "hostname", "url", "createdAt", "activeDeployId", "activatedAt")
-	assertJSONKeys(t, m["deploy"], "id", "status", "createdAt", "activatedAt", "fileCount", "totalSize", "spa")
+	assertJSONKeys(t, m["deploy"], "id", "status", "createdAt", "activatedAt", "fileCount", "totalSize", "spa", "immutableAssets")
 	if string(m["skipped"]) != "[]" || string(m["siteCreated"]) != "true" {
 		t.Fatalf("skipped %s siteCreated %s", m["skipped"], m["siteCreated"])
 	}
@@ -345,7 +345,7 @@ func TestDeployConfigFields(t *testing.T) {
 	a.getenv = env(map[string]string{"WARDLOCK_TOKEN": testToken})
 	wd := workDir(t, a)
 	writeFiles(t, wd, map[string]string{
-		"wardlock.json":     fmt.Sprintf(`{"server": %q, "site": "docs", "dir": "build", "spa": true}`, srv.URL+"/"),
+		"wardlock.json":     fmt.Sprintf(`{"server": %q, "site": "docs", "dir": "build", "spa": true, "immutableAssets": true}`, srv.URL+"/"),
 		"build/index.html":  "app",
 		"other/index.html":  "other",
 		"top-level-file.md": "not deployed",
@@ -354,19 +354,19 @@ func TestDeployConfigFields(t *testing.T) {
 		t.Fatalf("deploy: %v\n%s", err, errOut)
 	}
 	req := srv.created[0]
-	if got := manifestPaths(req); !slices.Equal(got, []string{"index.html"}) || !*req.Spa || srv.sites["docs"] == nil {
-		t.Fatalf("deployed %q spa %v to %v", got, *req.Spa, slices.Collect(maps.Keys(srv.sites)))
+	if got := manifestPaths(req); !slices.Equal(got, []string{"index.html"}) || !*req.Spa || !*req.ImmutableAssets || srv.sites["docs"] == nil {
+		t.Fatalf("deployed %q spa %v immutableAssets %v to %v", got, *req.Spa, *req.ImmutableAssets, slices.Collect(maps.Keys(srv.sites)))
 	}
 
 	// Flags and arguments override every field.
 	other := newFakeAPI(t)
 	out.Reset()
-	if err := run(t.Context(), a, []string{"deploy", "other", "blog", "--spa=false", "--server", other.URL}); err != nil {
+	if err := run(t.Context(), a, []string{"deploy", "other", "blog", "--spa=false", "--immutable-assets=false", "--server", other.URL}); err != nil {
 		t.Fatalf("deploy: %v\n%s", err, errOut)
 	}
 	req = other.created[0]
-	if *req.Spa || other.sites["blog"] == nil || len(srv.created) != 1 {
-		t.Fatalf("spa %v sites %v", *req.Spa, slices.Collect(maps.Keys(other.sites)))
+	if *req.Spa || *req.ImmutableAssets || other.sites["blog"] == nil || len(srv.created) != 1 {
+		t.Fatalf("spa %v immutableAssets %v sites %v", *req.Spa, *req.ImmutableAssets, slices.Collect(maps.Keys(other.sites)))
 	}
 	if !strings.Contains(out.String(), "https://blog."+fakeBase+"/") {
 		t.Fatalf("output:\n%s", out)
@@ -379,6 +379,7 @@ func TestConfigRejectsUnknownAndInvalid(t *testing.T) {
 	}{
 		{"unknown field", `{"site": "docs", "sever": "https://x.example"}`, `unknown field "sever"`},
 		{"wrong type", `{"spa": "yes"}`, "spa"},
+		{"wrong type for immutableAssets", `{"immutableAssets": 1}`, "immutableAssets"},
 		{"not JSON", `site: docs`, "invalid character"},
 		{"two values", `{} {}`, "unexpected data"},
 		{"empty", ``, "empty file"},
@@ -424,7 +425,7 @@ func TestDeployUsageErrors(t *testing.T) {
 		}
 	}
 	a, out, errOut := ciApp(t, srv)
-	if err := run(t.Context(), a, []string{"deploy", "--help"}); err != nil || out.Len() != 0 || !strings.Contains(errOut.String(), "-spa") {
+	if err := run(t.Context(), a, []string{"deploy", "--help"}); err != nil || out.Len() != 0 || !strings.Contains(errOut.String(), "-spa") || !strings.Contains(errOut.String(), "-immutable-assets") {
 		t.Fatalf("--help: %v, stderr %q", err, errOut)
 	}
 }
@@ -704,5 +705,23 @@ func TestDeployDirIsASymlink(t *testing.T) {
 	}
 	if got := manifestPaths(srv.created[0]); !slices.Equal(got, []string{"a/b.css", "index.html"}) {
 		t.Fatalf("deployed %q", got)
+	}
+}
+
+// TestDeployImmutableAssetsFlag: --immutable-assets alone turns the option
+// on, and the deploy JSON reports it.
+func TestDeployImmutableAssetsFlag(t *testing.T) {
+	srv := newFakeAPI(t)
+	a, out, errOut := ciApp(t, srv)
+	writeFiles(t, workDir(t, a), map[string]string{"index.html": "x", "assets/index-BdK3j2Lp.js": "y"})
+	if err := run(t.Context(), a, []string{"deploy", ".", "docs", "--immutable-assets", "--json"}); err != nil {
+		t.Fatalf("deploy: %v\n%s", err, errOut)
+	}
+	if req := srv.created[0]; !*req.ImmutableAssets || *req.Spa {
+		t.Fatalf("immutableAssets %v spa %v", *req.ImmutableAssets, *req.Spa)
+	}
+	var res deployResult
+	if err := json.Unmarshal(out.Bytes(), &res); err != nil || !res.Deploy.ImmutableAssets {
+		t.Fatalf("deploy %+v (%v)", res.Deploy, err)
 	}
 }

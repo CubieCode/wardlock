@@ -711,7 +711,7 @@ func TestListDeploys(t *testing.T) {
 	}
 	msg := "pending one"
 	req := manifest(index)
-	req.Message, req.Spa = &msg, new(true)
+	req.Message, req.Spa, req.ImmutableAssets = &msg, new(true), new(true)
 	created = append(created, hs.createDeploy(a, "docs", req).Deploy.Id)
 	slices.Reverse(created)
 
@@ -742,8 +742,13 @@ func TestListDeploys(t *testing.T) {
 	if want := []string{"pending", "active", "inactive", "inactive", "inactive", "inactive"}; !slices.Equal(statuses, want) {
 		t.Fatalf("statuses %v, want %v", statuses, want)
 	}
-	if p := items[0]; p.Message == nil || *p.Message != msg || !p.Spa || p.ActivatedAt != nil {
+	if p := items[0]; p.Message == nil || *p.Message != msg || !p.Spa || !p.ImmutableAssets || p.ActivatedAt != nil {
 		t.Fatalf("pending deploy = %+v", p)
+	}
+	for _, d := range items[1:] {
+		if d.Spa || d.ImmutableAssets {
+			t.Fatalf("deploy created without flags = %+v", d)
+		}
 	}
 	for _, q := range []string{"limit=0", "limit=101", "cursor=%21", "cursor=" + strings.Repeat("A", 8)} {
 		hs.do(a, http.MethodGet, "/sites/docs/deploys?"+q, nil).want(t, http.StatusBadRequest, "invalid_request")
@@ -888,5 +893,36 @@ func TestUnauthenticated(t *testing.T) {
 	}
 	if _, err := hs.db.Sites().GetByName(t.Context(), "blog"); err == nil {
 		t.Fatal("an unauthenticated request created a site")
+	}
+}
+
+// TestImmutableAssetsFollowsTheDeploy: the flag is recorded on each deploy
+// from its create request (absent means off), and a rollback answers with
+// the restored deploy's own flag.
+func TestImmutableAssetsFollowsTheDeploy(t *testing.T) {
+	hs := newHarness(t, deploys.DefaultLimits())
+	a := hs.ownerA
+	hs.createSite(a, "docs")
+	flagged := manifest(index)
+	flagged.ImmutableAssets = new(true)
+	c := hs.createDeploy(a, "docs", flagged)
+	if !c.Deploy.ImmutableAssets {
+		t.Fatalf("created deploy = %+v, want immutableAssets", c.Deploy)
+	}
+	if slices.Contains(c.Missing, index.hash()) {
+		hs.upload(a, "docs", c.Deploy.Id, index).want(t, http.StatusNoContent, "")
+	}
+	if act := hs.activate(a, "docs", c.Deploy.Id); !act.Deploy.ImmutableAssets {
+		t.Fatalf("activated deploy = %+v, want immutableAssets", act.Deploy)
+	}
+	if plain := hs.deploy(a, "docs", file{"index.html", "plain"}); plain.Deploy.ImmutableAssets {
+		t.Fatalf("deploy without the parameter = %+v, want it off", plain.Deploy)
+	}
+	res := hs.do(a, http.MethodPost, "/sites/docs/rollback", nil)
+	res.want(t, http.StatusOK, "")
+	var back api.Activation
+	res.decode(t, &back)
+	if back.Deploy.Id != c.Deploy.Id || !back.Deploy.ImmutableAssets {
+		t.Fatalf("rollback = %+v, want %s with immutableAssets", back.Deploy, c.Deploy.Id)
 	}
 }

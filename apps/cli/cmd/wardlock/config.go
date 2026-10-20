@@ -23,6 +23,9 @@ type projectConfig struct {
 	Site   string `json:"site,omitempty"`
 	Dir    string `json:"dir,omitempty"`
 	Spa    *bool  `json:"spa,omitempty"`
+	// ImmutableAssets is "immutableAssets": long-term caching for hashed
+	// files under /assets/.
+	ImmutableAssets *bool `json:"immutableAssets,omitempty"`
 }
 
 // loadConfig reads wardlock.json from dir. A missing file is an empty

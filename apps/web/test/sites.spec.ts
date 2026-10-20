@@ -85,7 +85,9 @@ for (const scheme of schemes) {
     await test.step('the list shows each site with its policy and deploy', async () => {
       await createSite(page.request, name);
       first = await publish(page.request, name, 'First version');
-      second = await publish(page.request, name, 'Second version');
+      second = await publish(page.request, name, 'Second version', {
+        immutableAssets: true,
+      });
       await createSite(page.request, locked);
       await protect(page.request, locked);
       await page.reload();
@@ -119,6 +121,13 @@ for (const scheme of schemes) {
       await expect(history.getByRole('listitem').nth(0)).toContainText('Live');
       await expect(history.getByRole('listitem').nth(0)).toContainText(
         'Second version',
+      );
+      // Only the deploy made with the long-term caching option says so.
+      await expect(history.getByRole('listitem').nth(0)).toContainText(
+        'Immutable assets',
+      );
+      await expect(history.getByRole('listitem').nth(1)).not.toContainText(
+        'Immutable assets',
       );
       await shot('detail');
       expect((await served(page, name)).text).toContain('Second version');

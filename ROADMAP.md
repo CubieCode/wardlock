@@ -153,9 +153,9 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### C1.10: Long-term caching for hashed assets
 
-- Status: `todo`
-- Owner:
-- PR:
+- Status: `review`
+- Owner: `feat/c1.10-immutable-assets`
+- PR: https://github.com/CubieCode/wardlock/pull/90
 - Depends on: C1.3, C1.5, A2.12
 - Scope: The per-deploy opt-in SPEC "Serving" lists as not in v1. A deploy may set `immutableAssets` (like `spa`, stored on the deploy so a rollback restores matching headers): `wardlock deploy --immutable-assets` and `"immutableAssets": true` in `wardlock.json`, a deploy field and create parameter in `openapi.yaml`, a portable migration adding the deploy column, the sqlc query and `storetest` contract cases. When the active deploy sets it, files under `/assets/` whose name carries a content hash (define the rule in SPEC, for example a dot- or dash-separated segment of 8 or more hex or base64url characters before the extension) are served with `Cache-Control: public, max-age=31536000, immutable`, or `private, max-age=31536000, immutable` on protected sites; everything else keeps the current headers. Show the flag on deploys in the dashboard (no `packages/ui` change). Update SPEC, ARCHITECTURE (schema diagram, migration list), DEPLOYMENT if relevant, and the CLI help.
 - Acceptance: Edge tests for the header rule (hashed and unhashed names, outside `/assets/`, protected and public, renditions, flag off); migration and contract tests; CLI tests for the flag and `wardlock.json`; API tests; dashboard test; `pnpm codegen` output committed; `pnpm check` and `pnpm browser:test` pass; the dashboard change checked at 1440px and 390px in light and dark.

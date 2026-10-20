@@ -408,6 +408,7 @@ function DeployRow({
           {fileCount(deploy.fileCount)}
           {' · '}
           {formatBytes(deploy.totalSize)}
+          {deploy.immutableAssets && ' · Immutable assets'}
         </p>
       </div>
       {deploy.status === 'inactive' && onRollback ? (

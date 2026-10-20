@@ -36,6 +36,9 @@ type Manifest struct {
 	Files   []store.DeployFile
 	Message string
 	SPA     bool
+	// ImmutableAssets opts hashed files under /assets/ into long-term
+	// caching while the deploy is active.
+	ImmutableAssets bool
 }
 
 // NormalisePath turns backslashes into forward slashes and checks the

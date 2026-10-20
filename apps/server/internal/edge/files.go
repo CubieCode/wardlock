@@ -130,11 +130,59 @@ func cacheControl(protected bool) string {
 	return "public, max-age=0, must-revalidate"
 }
 
+// immutableCacheControl is the Cache-Control for a hashed asset of a deploy
+// that opts in (SPEC "Serving"): a year, never revalidated.
+func immutableCacheControl(protected bool) string {
+	if protected {
+		return "private, max-age=31536000, immutable"
+	}
+	return "public, max-age=31536000, immutable"
+}
+
+// minHashLen is the shortest name segment hashedAsset takes for a content
+// hash: webpack and Parcel's 8 hex digits, Vite's 8 base64url characters.
+const minHashLen = 8
+
+// hashedAsset reports whether name, a deploy path, is a file under assets/
+// whose name carries a content hash: the part before its extension ends in
+// a "-" or "." followed by at least minHashLen of [A-Za-z0-9_], with
+// something before the separator (index-BdK3j2Lp.js, main.3f2a9c1b.js,
+// assets/fonts/inter.5d1c2e8f.woff2). It is deliberately simple: a long
+// word such as my-component.js matches too, which is why owners opt in per
+// deploy.
+func hashedAsset(name string) bool {
+	if !strings.HasPrefix(name, "assets/") {
+		return false
+	}
+	base := path.Base(name)
+	ext := path.Ext(base)
+	if len(ext) < 2 || len(ext) == len(base) {
+		return false
+	}
+	stem := base[:len(base)-len(ext)]
+	i := strings.LastIndexAny(stem, "-.")
+	if i < 1 || len(stem)-i-1 < minHashLen {
+		return false
+	}
+	for _, c := range []byte(stem[i+1:]) {
+		if !hashChar(c) {
+			return false
+		}
+	}
+	return true
+}
+
+// hashChar reports whether c is in [A-Za-z0-9_].
+func hashChar(c byte) bool {
+	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '_'
+}
+
 // serveFile writes f (or a precompressed sibling, or the rendition
 // ?format= asks for) with status. With strip, an HTML file gets the
 // share-link strip script (serveStripped); other types, renditions
-// included, are never altered.
-func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f ServedFile, status int, protected, strip bool) {
+// included, are never altered. With immutable, f itself and its siblings
+// are cached for a year; renditions and stripped pages keep their headers.
+func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f ServedFile, status int, protected, strip, immutable bool) {
 	if rd, rtype, ok := rendition(r, f); ok {
 		e.serveRendition(w, r, s, rd, rtype, status, protected)
 		return
@@ -161,7 +209,11 @@ func (e *Edge) serveFile(w http.ResponseWriter, r *http.Request, s *served, f Se
 	defer func() { _ = blob.Close() }()
 
 	h := w.Header()
-	h.Set("Cache-Control", cacheControl(protected))
+	if immutable {
+		h.Set("Cache-Control", immutableCacheControl(protected))
+	} else {
+		h.Set("Cache-Control", cacheControl(protected))
+	}
 	if vary {
 		h.Add("Vary", "Accept-Encoding")
 	}
