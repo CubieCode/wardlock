@@ -31,6 +31,13 @@ test('the setup URL creates the first owner', async ({
   ).toBeVisible();
   // The one-time code leaves the address bar straight away.
   expect(new URL(page.url()).search).toBe('');
+  // The first owner sees the policy before their account exists.
+  await expect(
+    page.getByText('By continuing you agree to the acceptable use policy.'),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'acceptable use policy' }),
+  ).toHaveAttribute('href', '/acceptable-use');
 
   for (const [width, height] of [
     [1440, 900],

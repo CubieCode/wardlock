@@ -6,6 +6,7 @@ import { Button, Notice, PanelLayout, TextField } from '@wardlock/ui';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Redirect, useTitle } from '../shell/page.js';
 import { navigate, useLocation, safeReturnPath } from '../shell/router.js';
+import { PolicyAgreement } from '../policy/acceptable-use.js';
 import { failure, unreachable } from './messages.js';
 import { PasskeySignIn } from './passkey-sign-in.js';
 import { useSession, type Me } from './session.js';
@@ -74,14 +75,23 @@ function SignInLink({
   onDismiss: () => void;
 }) {
   const { api, signedIn } = useSession();
+  // Sign-in links come only from invitations and `wardlockd admin create`,
+  // so whoever opens one is a new owner: the link is redeemed only once they
+  // continue past the acceptable use policy. Link scanners that open URLs
+  // in mail never press the button, so they cannot use up the link.
+  const [continued, setContinued] = useState(false);
   const [result, setResult] = useState<LinkResult | null>(null);
-  useTitle(result ? 'Sign-in link' : 'Signing in');
+  useTitle(result ? 'Sign-in link' : continued ? 'Signing in' : 'Welcome');
+
+  // Take the code out of the address bar and history before anything else,
+  // keeping where to go afterwards.
+  useEffect(() => {
+    navigate(signInPath(next), { replace: true });
+  }, [next]);
 
   useEffect(() => {
+    if (!continued) return;
     let live = true;
-    // Take the code out of the address bar and history before using it,
-    // keeping where to go afterwards.
-    navigate(signInPath(next), { replace: true });
     void redeem(api, code).then((outcome) => {
       if (!live) return;
       if (outcome.kind === 'ok') {
@@ -92,8 +102,28 @@ function SignInLink({
     return () => {
       live = false;
     };
-  }, [api, code, next, signedIn]);
+  }, [api, code, continued, next, signedIn]);
 
+  if (!continued)
+    return (
+      <PanelLayout productName="Wardlock">
+        <div className="auth-heading">
+          <h1 className="auth-title">Welcome to Wardlock</h1>
+          <p>
+            You have been given an account on this Wardlock server. Continue to
+            sign in for the first time.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="primary"
+          onClick={() => setContinued(true)}
+        >
+          Continue
+        </Button>
+        <PolicyAgreement />
+      </PanelLayout>
+    );
   if (!result || result.kind === 'ok')
     return (
       <PanelLayout productName="Wardlock">

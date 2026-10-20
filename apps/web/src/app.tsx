@@ -6,6 +6,10 @@ import { SessionProvider, useSession } from './auth/session.js';
 import { SetupPage } from './auth/setup.js';
 import { SignInPage, signInPath } from './auth/sign-in.js';
 import { CliLoginPage, cliLoginPath } from './cli-login/cli-login.js';
+import {
+  AcceptableUsePage,
+  acceptableUsePath,
+} from './policy/acceptable-use.js';
 import { Redirect } from './shell/page.js';
 import { matchPath, useLinkInterception, useLocation } from './shell/router.js';
 import { shellRoutes } from './shell/routes.js';
@@ -23,6 +27,10 @@ function Routes() {
   useLinkInterception();
   const { session, api, refresh } = useSession();
   const { pathname, params } = useLocation();
+
+  // Public, and needs nothing from the server: the setup and sign-in pages
+  // link to it before an account exists.
+  if (pathname === acceptableUsePath) return <AcceptableUsePage />;
 
   if (session.status === 'loading')
     return (

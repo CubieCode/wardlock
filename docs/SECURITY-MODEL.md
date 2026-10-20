@@ -242,7 +242,7 @@ Pinned tool versions (`tools/go.mod`, lockfiles), `govulncheck` in every check r
 
 ## Public instances and abuse
 
-Wardlock defaults to **invite-only**: there is no open sign-up in v1, the first owner is created by the operator, and further owners are invited by existing owners (or, with `WARDLOCK_INVITES=operator`, only created by the operator). Operators who let others deploy should use a dedicated sites domain, set `WARDLOCK_ABUSE_EMAIL` so visitors can report abuse, and use the operator commands (A2.13) to suspend owners and take sites down while keeping the evidence: [DEPLOYMENT "Operator controls"](DEPLOYMENT.md#operator-controls).
+Wardlock defaults to **invite-only**: there is no open sign-up in v1, the first owner is created by the operator, and further owners are invited by existing owners (or, with `WARDLOCK_INVITES=operator`, only created by the operator). Operators who let others deploy should use a dedicated sites domain, set `WARDLOCK_ABUSE_EMAIL` so visitors can report abuse, and use the operator commands (A2.13) to suspend owners and take sites down while keeping the evidence: [DEPLOYMENT "Operator controls"](DEPLOYMENT.md#operator-controls). The [acceptable use policy](ACCEPTABLE-USE.md) (O4.13) says what owners may not publish; a new owner sees it before their account is created or first used.
 
 <details>
 <summary>Abuse risks and what operators should do</summary>
@@ -257,7 +257,9 @@ The unavailable page sends `Clear-Site-Data: "cache", "storage"`, so a service w
 
 While a site is taken down or its owner suspended, its owner cannot change its custom domains or delete policies (deleting one deletes the sessions it issued, which record who had access), garbage collection keeps its files and access-log retention keeps its entries. Sign-ins and CLI-login approvals check suspension in the same SQL statement that stores them, so nothing created during a race with a suspension survives reinstatement, and `teardown-site` deletes only while the site is still taken down.
 
-Still planned: owner quotas (A2.14), content screening (A2.15) and an acceptable use policy with a full abuse procedure (O4.13). Until O4.13, DEPLOYMENT has a [preserve-and-report procedure](DEPLOYMENT.md#preserving-and-reporting-illegal-material) for illegal material.
+Built (O4.13): the [acceptable use policy](ACCEPTABLE-USE.md), a draft awaiting legal review, and the operator's [abuse procedure](DEPLOYMENT.md#handling-abuse-reports) in DEPLOYMENT, with its [preserve-and-report steps](DEPLOYMENT.md#preserving-and-reporting-illegal-material) for illegal material. The dashboard's setup and sign-in-link pages say that continuing means agreeing to the policy and link to it. A sign-in link (from an invitation or `admin create`) is redeemed only when its owner presses Continue on that page, so a mail scanner or link-preview bot that opens the URL cannot use it up; such a fetcher runs no scripts, and even one that did would not press the button.
+
+Still planned: owner quotas (A2.14) and content screening (A2.15).
 
 </details>
 

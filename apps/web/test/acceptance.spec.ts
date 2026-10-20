@@ -52,8 +52,37 @@ for (const scheme of schemes) {
     const inbox = mailbox(email);
     const shot = (step: string) => check(page, info, `${step}-${scheme}`);
 
-    await test.step('the invitation link signs the owner in', async () => {
+    await test.step('the invitation link shows the policy first', async () => {
       await page.goto(await inbox.signInLink());
+      await expect(
+        page.getByRole('heading', { level: 1, name: 'Welcome to Wardlock' }),
+      ).toBeVisible();
+      // The code leaves the address bar before anything is redeemed.
+      expect(page.url()).toBe(`${origin}/sign-in`);
+      await expect(
+        page.getByText('By continuing you agree to the acceptable use policy.'),
+      ).toBeVisible();
+      await shot('invitation');
+      // The policy opens in a new tab, leaving the one-time link in place.
+      const [policy] = await Promise.all([
+        page.context().waitForEvent('page'),
+        page.getByRole('link', { name: 'acceptable use policy' }).click(),
+      ]);
+      await policy.emulateMedia({ colorScheme: scheme });
+      await expect(
+        policy.getByRole('heading', {
+          level: 1,
+          name: 'Acceptable use policy',
+        }),
+      ).toBeVisible();
+      expect(policy.url()).toBe(`${origin}/acceptable-use`);
+      await policy.getByText('What each rule covers').click();
+      await check(policy, info, `acceptable-use-${scheme}`);
+      await policy.close();
+    });
+
+    await test.step('continuing signs the owner in', async () => {
+      await page.getByRole('button', { name: 'Continue' }).click();
       await expect(
         page.getByRole('heading', { level: 1, name: 'Overview' }),
       ).toBeVisible();

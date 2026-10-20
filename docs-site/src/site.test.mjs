@@ -107,6 +107,7 @@ describe('collapsed sections', () => {
           ],
           ['deployment.html', ''],
           ['security-model.html', ''],
+          ['acceptable-use.html', ''],
           ['style.css', ''],
           ['site.js', ''],
         ]),

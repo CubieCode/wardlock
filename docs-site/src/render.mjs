@@ -37,6 +37,13 @@ export const pages = [
     output: 'security-model.html',
     summary: 'What Wardlock defends against, how, and which risks it accepts.',
   },
+  {
+    source: 'docs/ACCEPTABLE-USE.md',
+    nav: 'Acceptable use',
+    output: 'acceptable-use.html',
+    summary:
+      'What owners may not publish, how operators screen and enforce it, and how to report abuse.',
+  },
 ];
 
 /** @param {string} text */
