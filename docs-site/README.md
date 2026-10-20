@@ -10,7 +10,7 @@ A static site generated from the user-facing pages of [`docs/`](../docs), meant 
 | `docs/DEPLOYMENT.md`     | `deployment.html`     |
 | `docs/SECURITY-MODEL.md` | `security-model.html` |
 
-The build also writes `index.html`, `404.html` and `style.css`. `docs/ARCHITECTURE.md`, `docs/MODULES.md` and `docs/DESIGN-SYSTEM.md` are contributor documentation and stay in the repository; links to them, and to any other file in the repository, become links to GitHub. To publish another page, add it to `pages` in `src/render.mjs`.
+The build also writes `index.html`, `404.html`, `style.css` and `site.js`, a few lines that open any collapsed `<details>` block around the target of a `#fragment` link so links into folded sections land on visible text (the pages work without it). `docs/ARCHITECTURE.md`, `docs/MODULES.md` and `docs/DESIGN-SYSTEM.md` are contributor documentation and stay in the repository; links to them, and to any other file in the repository, become links to GitHub. To publish another page, add it to `pages` in `src/render.mjs`.
 
 ## Build and link check
 
@@ -18,7 +18,7 @@ The build also writes `index.html`, `404.html` and `style.css`. `docs/ARCHITECTU
 pnpm docs:build
 ```
 
-This writes `docs-site/dist` and then checks every link in it without network access: each relative link must name a built file and each `#fragment` an ID in its target page. While rendering, every relative link in `docs/` must point to a published page or to a file that exists in the repository. Heading IDs follow GitHub's rules, so anchors written for the repository work on the site. `pnpm build` and `pnpm check` include this build, and the `Docs site` workflow runs it on every pull request (nothing is uploaded; the deploy job builds the site itself).
+This writes `docs-site/dist` and then checks every link in it without network access: each relative link must name a built file and each `#fragment` an ID in its target page. While rendering, every relative link in `docs/` must point to a published page or to a file that exists in the repository. Heading IDs follow GitHub's rules, so anchors written for the repository work on the site; headings inside `<details>` blocks get IDs too, and the table of contents lists only `##` headings, which the docs keep outside those blocks. `pnpm build` and `pnpm check` include this build, and the `Docs site` workflow runs it on every pull request (nothing is uploaded; the deploy job builds the site itself).
 
 ## Deploy
 

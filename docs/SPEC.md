@@ -14,22 +14,59 @@ This is Wardlock's v1 behaviour. Every v1 roadmap item is built; each section na
 
 ## Tokens
 
+Share links and API tokens use one format, `wl_<public id>_<secret>`. The server keeps only a keyed hash, so a raw token is shown exactly once, at creation or rotation.
+
+<details>
+<summary>Format and storage</summary>
+
 Share links and API tokens use one format: `wl_<public id>_<secret>`. The public ID is 10 lowercase base32 characters and names the token in logs, the dashboard and the access log. The secret is 256 random bits, base64url-encoded. The server stores only an HMAC-SHA-256 of the whole token keyed by `WARDLOCK_SECRET`, so a raw token is visible exactly once, at creation or rotation. Details: [wardlock-access](../.agents/skills/wardlock-access/SKILL.md) and [SECURITY-MODEL](SECURITY-MODEL.md).
+
+</details>
 
 ## Owners and sign-in (C1.1, C1.6, C1.7)
 
 - An instance has one or more owners. There is no open sign-up, ever, in v1: owners are invited by an existing owner or created by the operator.
+- **Bootstrap.** The first owner comes from a one-time setup URL printed in the log, or from `wardlockd admin create`; later owners are invited by email.
+- **Dashboard sign-in** is by one-time email code or passkey (C1.6). There are no owner passwords.
+- **Owner sessions** are `__Host-` cookies on the dashboard host, `HttpOnly`, `Secure`, `SameSite=Lax`, idle timeout 14 days, absolute 90 days, revocable from the dashboard.
+- **API tokens** (C1.7) are scoped (`deploy`, `manage`), named, revocable, optionally expiring, and shown once. They use the same format and hashing as share-link tokens (see Tokens).
+- **CLI login** (C1.7): `wardlock login` shows a short code, the signed-in owner approves it in the browser, and the CLI keeps the token in the OS keychain or a private file.
+
+<details>
+<summary>Bootstrap, invitations, sign-in codes and passkeys in detail</summary>
+
 - **Bootstrap.** When no owner exists, `wardlockd serve` prints a one-time setup URL to the log (`https://<dashboard host>/setup?code=…`, single use, valid 60 minutes, reprinted on each start until used). Alternatively the operator runs `wardlockd admin create --email you@example.com`, which creates the owner offline and prints a one-time sign-in URL.
 - **One-time URL paths** on the dashboard host, which the dashboard serves (D3.1): `/setup?code=<code>` (the setup URL; the page asks for the owner's email and calls `completeSetup`) and `/sign-in?code=<code>` (admin-create and invitation links; the page calls `redeemSignInLink`). Both use `https://<dashboard host>` without a port, except a `localhost`/`*.localhost` dashboard host, which uses `http://` and the listen port.
 - **Invitations.** An owner invites another by email address; the invitee gets a one-time sign-in link valid for 7 days and can afterwards sign in by email code. The response is the same whether or not the address already belongs to an owner (who then gets nothing). The admin-create sign-in URL is valid for 60 minutes.
 - **Dashboard sign-in** uses a one-time email code (6 digits, valid 10 minutes, 5 attempts, rate-limited) or a passkey (C1.6). There are no owner passwords. Sending a new code retires the previous one. Default limits: 5 sends per address and 20 per IP per hour, 30 verifications per IP per 15 minutes, 10 setup or sign-in-link redemptions per IP per 15 minutes, 20 invitations per owner per hour; over a limit the API answers `429` with `Retry-After`. When a limiter's table of IPs or addresses is full (100,000 keys), keys it does not hold are counted in a fixed-size overflow sketch under the same limits rather than refused (A2.9; SECURITY-MODEL "Limiter tables under flooding").
 - **Passkeys** (C1.6). A signed-in owner can add WebAuthn passkeys from the dashboard's Passkeys page and sign in with one instead of an email code. The relying party is the dashboard host and only the dashboard origin is accepted, so changing `WARDLOCK_DASHBOARD_HOST` makes existing passkeys unusable (owners sign in by email code and add new ones). Passkeys are discoverable credentials, so sign-in asks for no email address; user verification is preferred, not required, and no attestation is requested. Each challenge is valid for 5 minutes and is used once, whatever the outcome; a response for another origin or relying party, a bad signature, an unknown or removed passkey and a signature counter that did not increase are all refused with the same `invalid_passkey` error. An owner has at most 20 passkeys, each with a name (by default the browser and system that created it, such as "Chrome on macOS"), its creation time and its last sign-in. Removing a passkey stops it signing in at once and does not end sessions it started. Passkeys are managed only from a dashboard session, never with an API token. Passkey sign-in starts are limited per IP at the same rate as email-code verifications (30 per 15 minutes), counted separately, with at most 5 sign-ins open at once per IPv4 address or IPv6 /48. Adding a passkey is limited to 10 starts per owner per 15 minutes, with at most 3 open at once; registrations and sign-ins are held in separate tables, so adding passkeys never delays signing in. If two sign-ins with the same passkey race, only the first is accepted.
-- **Owner sessions** are `__Host-` cookies on the dashboard host, `HttpOnly`, `Secure`, `SameSite=Lax`, idle timeout 14 days, absolute 90 days, revocable from the dashboard.
-- **API tokens** (C1.7) are scoped (`deploy`, `manage`), named, revocable, optionally expiring, and shown once. They use the same format and hashing as share-link tokens (see Tokens).
+
+</details>
+
+<details>
+<summary>API token rules and the CLI login flow</summary>
+
 - **API token rules** (C1.7): the `deploy` scope covers creating sites and deploys, uploads, activation and rollback; `manage` covers deleting sites, custom domains and access policies; either reads. Tokens never manage owners, sessions or other tokens (those operations answer `403` to a token). A request with `Authorization: Bearer` is authenticated by the token alone, even if it also carries the dashboard cookie. A missing, malformed, unknown, wrong, expired or revoked token gets the same `401`; after 30 rejected tokens from one IP (IPv6 by /64) in 15 minutes, every token from that IP is refused (`429`) until the window ends; when the limiter's table is full, a rejected token from an IP it does not hold is counted in the limiter's overflow sketch under the same limit (A2.9). Revocation and expiry take effect on the next request. Owners list only usable tokens (not revoked, not expired), newest first; another owner's token ID gets the same `404` as a missing one. Names are 1–100 characters; an expiry must be in the future.
 - **CLI login** (C1.7): `wardlock login --server URL` starts a device-code style flow. The CLI shows a short user code and opens the browser at `https://<dashboard host>/cli-login?code=<user code>` (only when stdout is a terminal and without `--json`); the signed-in owner checks the code matches, chooses scopes (Deploy is ticked by default and Manage is not, for least privilege) and approves or denies. A signed-out owner signs in first and returns to the page. The user code is 8 letters without vowels or look-alikes (`BDFH-KMPR`), accepted in any case with or without the hyphen; the device code is a 256-bit secret stored only as an HMAC. A login lasts 15 minutes; the CLI polls every 5 seconds, a poll less than 4 seconds after the previous one answers `429 slow_down` (the CLI then waits 5 seconds longer each time), and each IP may poll 60 times a minute and start 20 logins an hour; each owner may approve or deny 30 times in 15 minutes. The first poll after approval mints the token (never expiring, named after the CLI, `wardlock <version> on <host>`, unless the owner named it) and delivers it once; later polls, denied, expired and unknown logins answer `410 login_expired`. An unknown, expired or already decided code, including one another owner decided, answers `400 invalid_code`. Finished requests are deleted a day after they expire. The token is stored in the OS keychain where available (macOS Keychain, Windows Credential Manager, Secret Service on Linux), otherwise in `~/.config/wardlock/credentials.json` (`$XDG_CONFIG_HOME/wardlock/` when set) with mode 0600 in a 0700 directory; the file also records the server, which later commands use by default. `wardlock logout` revokes the token on the server and deletes it locally; if the server cannot be reached it still deletes it and says to revoke it in the dashboard. `WARDLOCK_TOKEN` is never stored or revoked by these commands. Over plain `http` to anything but a loopback address or `*.localhost`, `login` and `logout` warn on stderr that the token travels unencrypted.
 
+</details>
+
 ## Dashboard (D3.1)
+
+Signed-in owners manage everything from the dashboard on the dashboard host. Only built screens appear.
+
+| Page                       | What it is for                                                                                                        |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `/sign-in`, `/setup`       | Sign in by email code or passkey; set up the first owner                                                              |
+| `/sites`                   | The owner's sites, each with its policy and when it last went live                                                    |
+| `/sites/<name>`            | The site's address, deploy history and rollback, access policies, share links, custom domains, Open site and teardown |
+| `/sites/<name>/links/<id>` | One share link and its access log (D3.3)                                                                              |
+| `/sites/<name>/access-log` | The whole site's access log (A2.12)                                                                                   |
+| `/passkeys`                | Add and remove passkeys (C1.6)                                                                                        |
+| `/cli-login`               | Approve or deny a `wardlock login` (C1.7)                                                                             |
+
+<details>
+<summary>Screen by screen</summary>
 
 - Signed-out visitors to any dashboard page are sent to `/sign-in?next=<path>` and returned to that path (same origin only) after signing in.
 - `/sign-in` offers "Sign in with a passkey" under the email form when the browser supports passkeys (C1.6). It asks for an email address, sends a code and then asks for it; a wrong, expired or exhausted code says so beside the field and offers a new code. The page says a code was sent "if the address belongs to an owner", matching the API's non-revealing answer.
@@ -39,64 +76,129 @@ Share links and API tokens use one format: `wl_<public id>_<secret>`. The public
 - `/sites/<name>` (D3.2) shows the site's address with a Copy button, its default policy and any path policies, and its deploy history newest first: each deploy's status (Live, Not live or Not activated), short ID (the last eight characters of its ID), message, time, file count and size. Any other deploy that was once live can be rolled back to after a confirmation showing the live deploy (and when it went live) beside the one that replaces it; if the refresh after a rollback fails, the page keeps the result and offers to refresh again. **Teardown** asks the owner to type the site's name, then deletes it and returns to `/sites`. A missing site, another owner's site and an invalid name all show the same "Site not found" page.
 - **Access policies** (D3.4), on `/sites/<name>` above its share links, lists the site default and each path policy with its access (Public or Protected), its ways in and its allowlist, and says that the longest matching path decides each request and that policies do not combine; a **Check a path** field names the policy that decides a typed path, decoded and cleaned as the edge cleans a request (dot segments resolved, repeated slashes collapsed, a trailing slash kept), and says that `/.wardlock/` is never covered. The owner edits the default or a path policy, adds a path policy for a folder (one that already has a policy is refused) and deletes a path policy after a confirmation naming what its paths fall back to. The editor chooses Public or Protected and, for Protected, any of share links, password, email code and sign-in with GitHub, Google or single sign-on (at least one). The visitor password is write-only: its field always starts empty, a blank field keeps the current password, and once saved it is never shown or put back in a field. The allowlist (addresses and domains, one per line) appears with email code or sign-in, and GitHub organisations with sign-in; the server's reason for refusing a change is shown beside the field it names. Saving a change says when visitors who got in under the old settings must get in again.
 - **Custom domains** (D3.5), on `/sites/<name>` below its share links: a Hostname field adds a domain (`domain_taken` and `invalid_hostname` are shown on the field). Each domain shows its status as a word (Pending, Active or Lapsed), what that means for visitors, when DNS was last checked and is next checked, a pending claim's removal date, and the last failure in plain words (no record, CNAME points elsewhere, TXT value differs, DNS lookup failed) with the server's detail and the next step. The CNAME record's name and target are shown with Copy buttons, exactly as the API gives them; the TXT record is behind a disclosure explaining it is for apex domains and CDN-proxied records. An active domain keeps its records behind a disclosure. **Check now** runs one check and shows the result, or how long to wait when it is refused as too soon. **Remove** asks first and reminds the owner to delete the DNS records.
+- **Share links** (D3.3), on `/sites/<name>`: create a link (label, expiry or never, use limit, path scope) and copy its URL, which is shown once; list, revoke and rotate links (a rotated link's new URL is also shown once). Each link's page, `/sites/<name>/links/<id>`, shows its details and its access log; a revoked link's past visits stay readable.
+- **Access log** (A2.12): `/sites/<name>/access-log`, reached from the site page, lists the site's visits newest first with time, path, status, how the visitor got in (with the share link's label when it came through one) and the truncated IP, paged like the link access log.
 - `/passkeys` (C1.6) lists the owner's passkeys with when each was added and last used, adds one with the browser's passkey prompt, and removes one after a confirmation naming it.
 - The signed-in shell has a sidebar (a top bar with a Menu button below 48rem) listing only built screens, the signed-in owner's address and Sign out.
 
+</details>
+
 ## Sites (C1.2)
 
-- Site names are DNS labels: 1–63 characters of `a-z`, `0-9` and `-`, not starting or ending with `-`. Reserved names: `auth`, `www`, `api`, `admin`, `app`, `dashboard`, `mail`, `wardlock`, anything starting with `xn--`, and, when the dashboard host sits under the base domain, the label directly under the base domain on the way to the dashboard host (`dash` for `dash.<base domain>` or `a.dash.<base domain>`).
+- Site names are DNS labels (1–63 characters of `a-z`, `0-9` and `-`); a few names are reserved.
 - A site is created by its first deploy (the CLI creates it before uploading) or from the dashboard. Names are unique per instance; a name held by another owner's site is reported as taken (site names are public through DNS).
 - **Custom domains** (C1.9): a site can also be served at domains its owner controls; see Custom domains.
 - **Teardown** deletes the site, its deploys, links, policies and custom domains, and frees the name. Blobs no longer referenced are removed by garbage collection (C1.8).
 
+<details>
+<summary>Name rules and reserved names</summary>
+
+- Site names are DNS labels: 1–63 characters of `a-z`, `0-9` and `-`, not starting or ending with `-`. Reserved names: `auth`, `www`, `api`, `admin`, `app`, `dashboard`, `mail`, `wardlock`, anything starting with `xn--`, and, when the dashboard host sits under the base domain, the label directly under the base domain on the way to the dashboard host (`dash` for `dash.<base domain>` or `a.dash.<base domain>`).
+
+</details>
+
 ## Custom domains (C1.9, D3.5)
 
 The goal is that adding one DNS record is all an owner has to do. The record names the site itself, so it works wherever Wardlock is hosted and proves which site the domain belongs to.
+
+- **Adding.** An owner adds a hostname to a site from the dashboard (D3.5) or `wardlock domain add` (C1.9) and creates the CNAME record Wardlock shows (or a TXT record for apex domains and CDN-proxied records).
+- **Statuses.** `pending` until DNS checks pass, then `active`: served exactly like `<name>.<base domain>` and given a certificate. An active hostname whose checks keep failing becomes `lapsed` and stops being served.
+- **Removing** stops serving the hostname at once; delete its DNS record too.
+- Not in v1: redirecting between a site's hostnames (a "primary" domain), wildcard custom domains, and HTTPS for custom domains in local mode.
+
+<details>
+<summary>Adding, records and verification in detail</summary>
 
 - **Adding.** An owner adds a hostname to one of their sites from the dashboard (D3.5) or `wardlock domain add` (C1.9). Hostnames are stored lowercase, as A-labels (punycode), with no trailing dot or port, at most 253 characters. Rejected: IP addresses, wildcards, the base domain and anything under it, the dashboard host, and the auth origin. A hostname belongs to at most one site on the instance; adding one already attached to any site fails with `domain_taken`, without saying which site or owner holds it.
 - **Records shown.** Wardlock answers with the records to create:
   - **Routing:** `CNAME <hostname> → <name>.<base domain>`. That target already points at the server through the sites wildcard, so it needs no knowledge of the server's address.
   - **Verification fallback:** `TXT _wardlock.<hostname> → wardlock-verify=<token>`, a random token unique to this claim (a new claim after removal gets a new token). It is needed only when the CNAME cannot be seen: apex domains, which cannot have a CNAME and instead use A/AAAA records (or the provider's ALIAS/ANAME/flattening) pointing at the server; and CDN-proxied records such as Cloudflare's orange cloud, which hide the CNAME.
 - **Verification.** A hostname is verified when resolving it follows a CNAME chain that reaches `<name>.<base domain>` (the chain must end there, as it does when the sites wildcard has A/AAAA records), or when `_wardlock.<hostname>` has the claim's TXT token. Lookups go to the resolvers in `WARDLOCK_DNS_RESOLVERS` (default: the system resolver) with caching disabled where the resolver allows it. A new hostname is checked straight away, then with backoff (1 minute doubling to 1 hour) for 48 hours; after that it stays `pending` until the owner asks to verify again. An owner's request runs one check at once (refused with `429`, error code `checked_recently` and `Retry-After` within 10 seconds of the previous check) and does not restart the backoff. `checked_recently` is the only cooldown answer: any other `429` on a check, such as `rate_limited` for a refused API token, is reported as the API's error, and `wardlock domain add --wait` stops on it rather than waiting. A claim still `pending` 7 days after it was added is deleted, exactly as if its owner had removed it: the hostname is free to claim again, and a new claim gets a new token. The CLI and dashboard show the last check time and a plain reason when it fails (no record, CNAME points elsewhere, TXT token mismatch, DNS error).
+
+</details>
+
+<details>
+<summary>Statuses, serving, certificates and removal in detail</summary>
+
 - **Statuses.** `pending` (added, not yet verified), `active` (verified: served and eligible for a certificate), `lapsed` (was active, has failed re-checks for 72 hours in a row: no longer served and no certificate issued or renewed). Active and lapsed hostnames are re-checked every 24 hours; a lapsed hostname that passes again becomes active without owner action.
 - **Serving** (C1.3). An active hostname serves its site exactly as `<name>.<base domain>` does, with the same policies. Site sessions are host-only, so a visitor signs in separately on each of a site's hostnames. Share links work on any of the site's active hostnames. Pending and lapsed hostnames get the same response as an unknown host.
 - **Certificates** (C1.4). In automatic TLS mode, on-demand TLS issues and renews only for active hostnames. Behind a proxy, the proxy issues certificates and asks Wardlock first through `/.wardlock/tls-ask?domain=<hostname>` (see Reserved path), which answers 200 for an active hostname and 404 otherwise.
 - **Removing.** Removing a hostname stops serving it immediately and deletes its certificate from Wardlock's storage (as does a lapse, or tearing the site down). The owner should also delete the DNS record: a CNAME left pointing at `<name>.<base domain>` can be claimed by whoever later holds that site name (see SECURITY-MODEL).
-- Not in v1: redirecting between a site's hostnames (a "primary" domain), wildcard custom domains, and HTTPS for custom domains in local mode.
+
+</details>
 
 ## Deploys and rollback (C1.2)
 
-- A deploy uploads a directory. The client sends a manifest of `{path, sha256, size}`; the server replies with the hashes it does not yet hold for that owner (each owner uploads a file once, even if another owner already published the same content); the client uploads only those; then the client activates the deploy. Unchanged files are never re-uploaded. The protocol is in ARCHITECTURE "Deploy upload protocol" and the operations in `packages/api-spec/openapi.yaml`.
+- A deploy uploads a directory: the client sends a manifest, uploads only the files the server does not hold, then activates the deploy.
 - Activation is atomic: a visitor sees either the previous deploy or the new one, never a mix.
 - Every deploy stays in history with its time, file count, total size and an optional message. **Rollback** reactivates any earlier deploy instantly, with no upload.
 - Default limits (configurable): 25 MiB per file, 20,000 files and 1 GiB per deploy, 50 deploys of history per site (older ones are pruned, never the active one).
+- **Garbage collection** (C1.8) removes old deploys beyond the history limit and file bodies no deploy lists, hourly and with `wardlockd gc`.
+- Paths must be clean, valid UTF-8 and outside `.wardlock/`; a deploy with a bad path is rejected, naming it.
+
+<details>
+<summary>Upload protocol, garbage collection and path rules</summary>
+
+- A deploy uploads a directory. The client sends a manifest of `{path, sha256, size}`; the server replies with the hashes it does not yet hold for that owner (each owner uploads a file once, even if another owner already published the same content); the client uploads only those; then the client activates the deploy. Unchanged files are never re-uploaded. The protocol is in ARCHITECTURE "Deploy upload protocol" and the operations in `packages/api-spec/openapi.yaml`.
 - **Garbage collection** (C1.8) runs hourly inside the server and on demand with `wardlockd gc`. It first prunes each site's deploys beyond the history limit, oldest first: never the active deploy, and never a deploy not yet activated that was created within the grace period (24 hours by default), since its upload may still be in progress. It then deletes file bodies that no remaining deploy lists, unless they were stored, or uploaded again by any owner, within the grace period. Deleting a body removes every owner's record of having uploaded it, so the next deploy that needs it asks for it again. Content another owner's deploy still lists is kept, and so is each owner's record of having uploaded it. Each run logs the deploys pruned, the bodies deleted and the bytes freed.
 - Paths are normalised to forward slashes, must be valid UTF-8, must not contain `..`, empty segments, control characters or invisible format characters (Unicode Cf, such as zero-width spaces and bidi overrides), and must not start with `.wardlock/`. Such deploys are rejected with the offending path named. The server keeps paths byte for byte without Unicode normalisation; the CLI (C1.5) sends them in NFC.
 
+</details>
+
 ## Serving (C1.3)
+
+- `/` and `/dir/` serve `index.html`, and `/page` serves `page.html` (clean URLs). Only `GET` and `HEAD` are served.
+- A missing path serves the deploy's `404.html`, or `/index.html` with the SPA fallback (`--spa`).
+- Responses support `ETag`, conditional and `Range` requests, and precompressed `.br` and `.gz` siblings.
+- Cache headers: `Cache-Control: public, max-age=0, must-revalidate` for every deployed file; `private` replaces `public` on protected sites.
+- **Long-term caching for hashed assets** (C1.10): a deploy may opt in with `--immutable-assets`, so files such as `assets/index-BdK3j2Lp.js` are cached for a year.
+- `/.wardlock/` is reserved on every site (see Reserved path).
+
+<details>
+<summary>Request rules in full</summary>
 
 - `/` and `/dir/` serve `index.html`; `/page` serves `page.html` when `page` does not exist (clean URLs); `/page.html` is served as is. `/dir` without its slash redirects (301, to the absolute path, query kept) to `/dir/` when `dir/index.html` exists and neither `dir` nor `dir.html` does. Only `GET` and `HEAD` are served (405 otherwise).
 - A missing path serves the deploy's `404.html` with status 404 if present, otherwise a plain 404. With the **SPA fallback** option (recorded on each deploy from `--spa` or `wardlock.json`, so rollback restores it), missing paths without a file extension serve `/index.html` with status 200.
 - Responses carry `ETag` (content hash) and `Last-Modified` (activation time), honour conditional requests and byte `Range` requests, and serve precompressed `.br` or `.gz` siblings when the client accepts them: the sibling with the highest `Accept-Encoding` q wins, `br` on a tie; `q=0`, or a q that does not parse or lies outside 0–1, refuses a coding. A file with a sibling answers with `Vary: Accept-Encoding`, and a sibling has its own `ETag`. A precompressed sibling honours a single byte range; a multi-range request for one is answered 200 with the whole sibling. `404.html` is sent whole, without conditional or range handling. A file whose extension has no known type is sent as `application/octet-stream`, never sniffed.
-- Cache headers: `Cache-Control: public, max-age=0, must-revalidate` for every deployed file; `private` replaces `public` on protected sites.
+- An unknown host, a nested subdomain, a pending or lapsed custom domain and a site with no active deploy all get the same plain 404, for every method and path, `/.wardlock/` included. Deploy files under `.wardlock/` (in any letter case) are never served, even as `404.html`.
+
+</details>
+
+<details>
+<summary>Long-term caching for hashed assets: the rule and the trade-off</summary>
+
 - **Long-term caching for hashed assets** (C1.10). A deploy may opt in with `immutableAssets` (recorded on each deploy from `--immutable-assets` or `wardlock.json`, like the SPA fallback, so rollback restores matching headers; off by default). While such a deploy is active, a **hashed asset** answering its own path with status 200 is sent with `Cache-Control: public, max-age=31536000, immutable`, or `private, max-age=31536000, immutable` on protected sites; its precompressed siblings, `304`s and range answers carry the same header. Everything else keeps the headers above: other files, the request of a hashed asset by another path (a clean URL), `?format=md|txt` renditions, the SPA fallback, `404.html` and plain 404s, redirects, and every response that is `no-store` (one that sets or clears a cookie, the HTML a share-link token in the URL strips, server errors, and the login, interstitial, callback and other `/.wardlock/` pages).
   - The rule: a deploy path is a hashed asset when it starts with `assets/` (case-sensitive, at any depth below it, such as `assets/fonts/inter.5d1c2e8f.woff2`) and its file name, without its last extension, ends in `-` or `.` followed by 8 or more characters from `[A-Za-z0-9_]`, with at least one character before that separator. The extension must be non-empty. So Vite's and Rollup's `index-BdK3j2Lp.js` and webpack's and Parcel's `main.3f2a9c1b.js` match; `app.js`, `index-BdK3j2L.js` (7 characters), `main.3f2a9c1b.chunk.js` (the hash is not last), `vendor-BdK3j2Lp.js` outside `/assets/` and a sibling requested by its own name (`index-BdK3j2Lp.js.br`) do not.
   - The trade-off: the rule looks only at names, not at whether a segment really is a hash, so it is deliberately narrow to `/assets/`, and it still has false positives and negatives. A descriptive name with a long final word (`assets/my-component.js`, `assets/logo.original.png`) matches and is cached for a year, so a later deploy that changes such a file under the same name reaches returning visitors only when their cache expires or is cleared. A hash containing `-` (Rollup's base64url can produce one) may leave too short a segment and simply keeps revalidating, which is safe. That is why the option is per deploy and the owner's call: turn it on only when every file under `/assets/` is renamed whenever its content changes, which Vite, webpack and Parcel production builds do by default. On a protected site the browser keeps the private copy for its lifetime, so revoking access does not remove assets a visitor already fetched; pages are still checked on every request.
-- An unknown host, a nested subdomain, a pending or lapsed custom domain and a site with no active deploy all get the same plain 404, for every method and path, `/.wardlock/` included. Deploy files under `.wardlock/` (in any letter case) are never served, even as `404.html`.
-- `/.wardlock/` is reserved on every site (see Reserved path).
+
+</details>
 
 ## Policies (A2.1)
 
 - Each site has a **default policy** (path `/`), which cannot be deleted. Owners may add **path policies** for directory prefixes (`/docs/`, `/internal/`): they start and end with `/`, have no empty, `.` or `..` segments, and can never cover `/.wardlock/`.
-- The policy for a request is the one with the **longest matching prefix**, falling back to the site default. Policies do not stack: a public `/assets/` under a protected site is public. A prefix also governs its directory's path without the slash (`/docs/` governs `/docs`), and matching is case-sensitive on the decoded, dot-resolved request path. This errs on the strict side: with a protected default and a public `/docs/`, the clean URL `/docs` (which may answer with `docs.html`) is allowed by `/docs/` but its file is checked against the default, so a visitor without a session gets a plain 404 there, while `/docs/` itself is public. Conversely, with a protected `/docs/` under a public default, `/docs` asks for sign-in even when it would answer with the public `docs.html`, which stays reachable at `/docs.html`. A file that answers a request from another path (`404.html`, the SPA `index.html`, a clean URL's `page.html`) must also be allowed by its own path's policy, or the request gets a plain 404 instead of its content. So must a directory's `index.html` when a policy of its own (on `/dir/index.html/`, the way to protect that one file) governs it (A2.7): if that policy refuses the visitor, `/dir/` answers a plain 404 with the protected-site headers rather than a sign-in challenge, and the visitor gets the sign-in prompt by requesting `/dir/index.html` itself.
+- The policy for a request is the one with the **longest matching prefix**, falling back to the site default. Policies do not stack: a public `/assets/` under a protected site is public.
 - A policy is either **Public** or **Protected**. A protected policy enables one or more **methods**: share links, password, email code, OAuth. A visitor is allowed if they satisfy **any** enabled method (methods are alternatives, not layers).
 - Share links are enabled on every protected policy by default and can be switched off per policy.
+- A new site is **Public** until its owner protects it (decision A2.1). A change to a policy takes effect on the next request and ends the sessions it had issued.
+
+<details>
+<summary>Matching rules and edge cases</summary>
+
+- The policy for a request is the one with the **longest matching prefix**, falling back to the site default. Policies do not stack: a public `/assets/` under a protected site is public. A prefix also governs its directory's path without the slash (`/docs/` governs `/docs`), and matching is case-sensitive on the decoded, dot-resolved request path. This errs on the strict side: with a protected default and a public `/docs/`, the clean URL `/docs` (which may answer with `docs.html`) is allowed by `/docs/` but its file is checked against the default, so a visitor without a session gets a plain 404 there, while `/docs/` itself is public. Conversely, with a protected `/docs/` under a public default, `/docs` asks for sign-in even when it would answer with the public `docs.html`, which stays reachable at `/docs.html`. A file that answers a request from another path (`404.html`, the SPA `index.html`, a clean URL's `page.html`) must also be allowed by its own path's policy, or the request gets a plain 404 instead of its content. So must a directory's `index.html` when a policy of its own (on `/dir/index.html/`, the way to protect that one file) governs it (A2.7): if that policy refuses the visitor, `/dir/` answers a plain 404 with the protected-site headers rather than a sign-in challenge, and the visitor gets the sign-in prompt by requesting `/dir/index.html` itself.
+
+</details>
+
+<details>
+<summary>Decisions, versions, refusals and the Open site button</summary>
+
 - **Decision (A2.1):** a new site's default policy is **Public** with no methods, and so is the default of a site created before A2.1 (it is stored on first use). Owners opt into protection per site or per path. The reason: deploys keep working as before, and protecting a site is only useful once a way in exists (share links from A2.2, then password, email code and OAuth), so protection is opt-in rather than something every new site starts behind.
 - Each policy has a **version**, starting at 1 and increased by every change to it (setting identical settings changes nothing). Changing a policy takes effect on the next request; a site session is bound to the policy and version it was created under, so a change ends every session of that policy, and deleting a path policy ends its sessions.
 - A request a protected policy does not allow gets `401`: browsers (requests that accept `text/html`) see the login page at the same URL, other clients a short plain-text body with `WWW-Authenticate: Bearer`. Neither says whether the path exists.
 - Owners read and set policies through the API (`listPolicies`, `setPolicy`, `deletePolicy`); `wardlock policy set` (added with A2.3) sets them from the CLI.
 - A protected policy that enables share links accepts a valid link token for a path in the link's scope (A2.2; see Share links), checked on every request that carries one.
 - Owners signed in to the dashboard are not automatically signed in to sites (they are on another domain). The site page's **Open site** button (D3.6) opens the site in a new tab: a public site (its `/` policy is public) at its address; any other site through a new share link created with `createShareLink`, labelled "Opened from dashboard", expiring in 10 minutes, with no use limit and scoped to the whole site. The link appears in the link list and access log like any other and can be revoked. The tab is opened from the click itself, so pop-up blockers allow it, and without a reference back to the dashboard; if the link cannot be created the tab is closed and the page shows an error. There is no separate owner session on sites.
+
+</details>
 
 ## Share links (A2.2)
 
@@ -113,7 +215,8 @@ A share link is `https://<site host><path>?t=<token>`.
 - **Listing:** owners see each link's label, public ID, scope, expiry, uses and last access, never the token after creation.
 - **Access log:** every access records the link's public ID, time, IP (truncatable by config) and User-Agent (A2.8).
 
-Details (A2.2):
+<details>
+<summary>Details (A2.2)</summary>
 
 - **Operations.** `listShareLinks`, `createShareLink`, `revokeShareLink` and `rotateShareLink` under `/api/v0/sites/{site}/links` (see `packages/api-spec/openapi.yaml`); links are addressed by public ID. Reading needs either API token scope, the rest `manage`. A link can be created whatever the site's policies are, and works wherever a protected policy that enables share links governs a path in its scope. The response to creation or rotation is the only time the token and its URL are shown, and it carries `Cache-Control: no-store`; the URL is `https://<site host><path>?t=<token>` (the path percent-encoded).
 - **Validation.** Labels are at most 200 characters with no control or invisible characters; an expiry must be in the future; a use limit is 1 to 1,000,000; the path follows the policy path rules. Anything else answers `400 invalid_share_link`.
@@ -126,48 +229,90 @@ Details (A2.2):
 - **Last access** is updated at most once a minute per link, by token or session requests.
 - **Guessing.** Malformed tokens, unknown public IDs, wrong secrets and other sites' tokens count against the client IP (30 per 15 minutes) and the site (300 per 15 minutes); over either, every token request from that IP, or for that site, answers `429` with `Retry-After` until the window ends. Once a site has had 150 refusals in the window, each network (IPv4 /24, IPv6 /48) is held to 30 of them, and over its share every token request from that network answers `429` the same way (A2.9). Existing sessions are unaffected. Expired, revoked and used-up tokens are refused without counting. Every refusal looks the same (the login page or the bare `401`), and the log names only the public ID.
 
+</details>
+
 ## Password (A2.3)
 
 - A policy may enable one password per policy (not per visitor). Visitors see a minimal login page at `/.wardlock/login`, then get a site session.
 - Passwords are stored with Argon2id. Attempts are rate-limited per IP and per site. Changing the password ends existing password sessions.
+
+<details>
+<summary>Setting, signing in, limits and load</summary>
+
 - **Setting (A2.3):** owners set the password through the API or `wardlock policy set --password` (read from a prompt or stdin, never a flag). It is write-only: the API never returns it or its hash. A password has 8 to 1,024 bytes of valid UTF-8, counting at least 8 characters. Setting the password method again without a new password keeps the current one; a new password (even the same text) or switching the method off is a change, so it increases the policy's version and also revokes the policy's password sessions. Turning the method back on needs a new password. A sign-in whose check races a password change gets no session: the session is stored only while the policy still has the password and version that were checked.
 - **Signing in:** a browser on a protected page sees the password form on the login page at the same URL (401); `/.wardlock/login?next=/path/` shows the form for that path's policy. The form posts to `/.wardlock/login` from the same host (other origins get 403) and checks the password of the policy governing `next`, so a path policy's password grants only that policy. Success answers `303` to `next` with the session cookie; `next` is only ever a path on the site (anything with a scheme, host, backslash, query, fragment or under `/.wardlock/` returns to `/`). A wrong password, or a policy without one, shows the page again with the same message and status 401. Login pages are `Cache-Control: no-store`.
 - **Limits:** 10 attempts per client (IPv4 address or IPv6 /64) across all sites and 100 per site, per 15 minutes; every attempt counts, right or wrong, before the password is checked, so parallel guesses cannot slip under the limit. Over a limit the form answers `429` with `Retry-After`, even for the right password. Once a site has had 50 attempts in the window, each network (IPv4 /24, IPv6 /48) may make at most 10 of the site's 100, counting its earlier ones; attempts over that share answer `429` and do not count against the site (A2.9). A flood of guesses from six or more networks (one spending up to the 50-attempt mark, then five at 10 each) can still hold off password sign-in on that site for as long as it keeps going, and it reopens within one window once fewer than six keep going. Other methods, and sessions already issued, are unaffected; an owner under such an attack can add share links meanwhile.
 - **Load:** each check runs Argon2id at 19 MiB, so the server runs at most max(2, GOMAXPROCS/2) checks at once across all sites, after the limits. An attempt that waits more than a second for a slot answers `429` with `Retry-After: 1` and is not checked, so a burst of attempts costs bounded memory (slots × 19 MiB) rather than one derivation per request.
 
+</details>
+
 ## Email code (A2.4)
 
-- **Allowlist.** Each policy has one allowlist, shared by the email-code and OAuth methods. Its entries are exact email addresses and email domains: `example.com` matches addresses at that domain only, and `*.example.com` matches addresses at any of its subdomains but not at `example.com` itself (list both for both). It may also list GitHub organisations (A2.5): their logins (letters, digits and single hyphens, at most 39 characters, compared without case), which let in members signing in with GitHub through OAuth and nothing else. Entries are stored normalised (lower case, international domains in their `xn--` form, sorted, without duplicates), at most 1,000 per policy. A protected policy keeps its allowlist when a method is switched off; making a policy public clears it. Any change to the allowlist is a change to the policy: it increases the version and also revokes the policy's email-code and OAuth sessions outright.
+- **Allowlist.** One per policy, shared by the email-code and OAuth methods: exact addresses, domains (`example.com`, `*.example.com`) and, for OAuth, GitHub organisations.
+- The visitor enters their address on the login page, receives a 6-digit code valid for 10 minutes if the address is allowed, and enters it to get a site session. The page answers the same whether or not the address is allowed.
 - A policy may enable email codes once its allowlist has at least one address or domain. Owners set the method and the allowlist through the API (`setPolicy` with the `email` method and `allowlist`; omitting `allowlist` keeps the current one) or `wardlock policy set --email --allow LIST`.
+
+<details>
+<summary>Allowlist rules, codes, forms and limits</summary>
+
+- **Allowlist.** Each policy has one allowlist, shared by the email-code and OAuth methods. Its entries are exact email addresses and email domains: `example.com` matches addresses at that domain only, and `*.example.com` matches addresses at any of its subdomains but not at `example.com` itself (list both for both). It may also list GitHub organisations (A2.5): their logins (letters, digits and single hyphens, at most 39 characters, compared without case), which let in members signing in with GitHub through OAuth and nothing else. Entries are stored normalised (lower case, international domains in their `xn--` form, sorted, without duplicates), at most 1,000 per policy. A protected policy keeps its allowlist when a method is switched off; making a policy public clears it. Any change to the allowlist is a change to the policy: it increases the version and also revokes the policy's email-code and OAuth sessions outright.
 - The visitor enters their address at `/.wardlock/login` (a protected page shows the same form at its own URL); if the policy governing the page lets the address in, Wardlock sends a 6-digit code valid for 10 minutes (5 attempts). The response is the same whether or not the address is allowed (status, page and the work done before answering: the allowlist check, the stored code and the mail all happen after the response), so the allowlist cannot be probed. Sending a new code replaces the previous one; a code opens only the policy it was sent for, works once, and stops working if the policy changes before it is used.
 - The visitor then enters the code; success answers `303` to the page with a site session whose subject is the verified address, bound to that policy and its version. A wrong, expired, replaced or used-up code shows the code form again with one message and status 401. The forms follow the password form's rules: same-origin posts only (403 otherwise), `next` only ever a path on the site, `Cache-Control: no-store`. Codes and addresses are never stored (only HMACs keyed by the server key) and never logged outside the `dev://` sink, which logs the recipient and subject (never the code) and writes the message to `.local/mail/`.
 - **Limits:** sends are limited to 20 per client (IPv4 address or IPv6 /64), 5 per address (across all sites, so no inbox is flooded) and 200 per site, per hour; code entries to 30 per client, 10 per address and 300 per site, per 15 minutes, on top of each code's 5 attempts. Every well-formed request counts, allowed address or not, before the allowlist or the code is checked (a value that is not an address is refused first, uncounted). Over a limit the form answers `429` with `Retry-After`, even for the right code. Once a site has had half its sends (100) or entries (150) in the window, each network (IPv4 /24, IPv6 /48) is held to a tenth of the site's limit (20 sends, 30 entries), counting its earlier ones, and requests over that share do not count against the site (A2.9). A flood from six or more networks (one spending up to the mark, then five at their shares) can still hold off email-code sign-in on a site for as long as it keeps going, and it reopens within one window once fewer than six keep going; sessions already issued and other methods are unaffected. Mail goes through SMTP, or the `dev://` sink in development (F0.4).
 
+</details>
+
 ## OAuth and OIDC (A2.5)
 
-- Providers: GitHub, Google and generic OIDC (issuer URL plus client ID and secret), configured by the operator (DEPLOYMENT "OAuth and OIDC"), not through the API. A policy enabling OAuth uses the policy's shared allowlist: verified email addresses and email domains as for email codes, and GitHub organisations, which count only for accounts signed in with GitHub. Enabling OAuth needs at least one allowlist entry and at least one configured provider (`400 invalid_policy` otherwise). Owners set it through the API (`setPolicy` with the `oauth` method and `allowlist.githubOrgs`; an `allowlist` without `githubOrgs` keeps the current organisations) or `wardlock policy set --oauth [--github-org LIST]`.
+- Providers: GitHub, Google and generic OIDC, configured by the operator. A policy enabling OAuth uses the policy's shared allowlist.
 - All provider redirects go to the central auth origin `auth.<base domain>`, because providers cannot register wildcard redirect URIs. After sign-in it hands a single-use, short-lived, site-bound code to `https://<site>/.wardlock/callback`, which the edge exchanges for a host-only site cookie. PKCE and `state` are used on every flow.
+
+<details>
+<summary>Enabling, the sign-in flow, limits, matched address and several tabs</summary>
+
+- Providers: GitHub, Google and generic OIDC (issuer URL plus client ID and secret), configured by the operator (DEPLOYMENT "OAuth and OIDC"), not through the API. A policy enabling OAuth uses the policy's shared allowlist: verified email addresses and email domains as for email codes, and GitHub organisations, which count only for accounts signed in with GitHub. Enabling OAuth needs at least one allowlist entry and at least one configured provider (`400 invalid_policy` otherwise). Owners set it through the API (`setPolicy` with the `oauth` method and `allowlist.githubOrgs`; an `allowlist` without `githubOrgs` keeps the current organisations) or `wardlock policy set --oauth [--github-org LIST]`.
 - **Signing in (A2.5):** when the governing policy enables OAuth, the login page lists a "Continue with …" button per configured provider. Each posts (from the same host, as the password form does) `method=oauth`, the provider and `next` to `/.wardlock/login`, which answers `303` to the provider and sets the flow's binding cookie `__Host-wardlock_oauth` on the site host (host-only, `Secure`, `HttpOnly`, `SameSite=Lax`, 10 minutes). The provider returns to `https://auth.<base domain>/callback/<provider>`; the auth origin checks `state` (single use, 10 minutes), redeems the provider's code with the PKCE verifier, verifies an OIDC ID token's signature, issuer, audience, expiry and `nonce`, reads the account's verified emails (and, for GitHub with organisations listed, its active memberships of those organisations), checks the allowlist, and answers `303` to `https://<site host>/.wardlock/callback?code=…`. The code is single use (any attempt spends it), valid for 60 seconds, and bound to the site, the host, the policy and its version, and the binding cookie. The callback clears the binding cookie and, with a good code, sets the session (method `oauth`, subject the matched verified email, or the account's primary verified email when it matched by organisation) and answers `303` to `next`; otherwise it shows the login page again with "That sign-in has expired or was already used" (400). The auth origin never sets a cookie; its error pages (expired flow, cancelled sign-in, no verified email, account not allowed, provider failure) are `no-store` and link back to the site's login page when the flow is known. Starting is limited to 30 per client per 15 minutes, and at most 1,000 sign-ins may be in progress per site (50,000 in all; `429` beyond either), so a flood aimed at one site leaves the others working. Once a site has 500 in progress, each network (IPv4 /24, IPv6 /48) may start at most 100 per 10 minutes there (A2.9), so filling a site's 1,000 takes six networks (one starting 500 before the mark, five starting 100 each); OAuth sign-in reopens within one window once fewer than six keep going. Sign-ins in progress live in memory, so a restart drops them.
 - **Which address (A2.5):** every verified address the provider reports may match the allowlist (for GitHub, every verified address on the account, primary or not); the session's subject is the first one that matches, or the primary verified address when the account matched only by organisation.
 - **Several tabs (A2.5):** each start sets the binding cookie afresh, so starting a second OAuth sign-in on the same site, in another tab, replaces the first tab's cookie: finishing the first tab's sign-in then shows "That sign-in has expired or was already used", and it must start again.
 
+</details>
+
 ## Site sessions
 
 - Set by any successful method. Host-only `__Host-` cookie, `Secure`, `HttpOnly`, `SameSite=Lax`, signed and bound to the site, the method, the policy version and (for links) the link.
+- Default lifetime 7 days, capped by the link's expiry. A `POST` to `/.wardlock/logout` from a page on the same host ends it.
+
+<details>
+<summary>Lifetime, logout, the OAuth cookie and the cookie format</summary>
+
 - Default lifetime 7 days, capped by the link's expiry. A `POST` to `/.wardlock/logout` ends it and clears the cookie; it must come from a page on the same host (`Sec-Fetch-Site: same-origin` when the browser sends it, and an `Origin` naming the host when it sends one other than `null`; Wardlock's pages send `Referrer-Policy: no-referrer`, so browsers post them with `Origin: null` and fetch metadata decides; a request with neither is refused; the same rule covers the login form and the `/.wardlock/view` button), so another site, a sibling site included, cannot sign visitors out (`403` otherwise).
 - OAuth sign-in (A2.5) briefly adds a second host-only cookie, `__Host-wardlock_oauth`, binding a flow to the browser that started it; `/.wardlock/callback` clears it (SPEC "OAuth and OIDC").
 - The cookie is `__Host-wardlock_site`, a value signed with an HMAC of the server key that names the site, the policy, its version and the expiry, plus a 256-bit session token whose HMAC is the only copy stored. A session satisfies only the policy it was created under, and only while that policy enables the session's method. A tampered, forged, expired, revoked or stale cookie, or one from another site, is ignored and cleared. One cookie per site host: signing in under another policy replaces it.
 
+</details>
+
 ## AI-readable renditions (A2.6)
+
+- Every HTML page of a deploy is also available as Markdown (`?format=md`) and plain text (`?format=txt`), generated when the deploy is activated, so AI tools and scripts can read it.
+- Renditions go through the same access check as the page, so `?t=…&format=md` works without cookies, and they never contain a share-link token.
+- HTML pages with renditions advertise them in a `Link` header.
+
+<details>
+<summary>Generation, serving and headers in detail</summary>
 
 - When a deploy is activated, Wardlock converts every HTML file in it (`.html` or `.htm`, in any letter case) to Markdown and to plain text and stores both as blobs referenced from the deploy's manifest, so rollback restores them with the deploy. Activation fails rather than publish a deploy whose renditions could not be generated. HTML files over 5 MiB get no renditions (they are served as HTML even with `?format=`) and never fail activation; the server converts at most two pages at a time, so rendering memory stays bounded however many deploys activate at once. Deploys activated before A2.6 have no renditions; requests for them serve the HTML until the site is deployed again.
 - `?format=md` serves the Markdown (`text/markdown; charset=utf-8`), `?format=txt` the text (`text/plain; charset=utf-8`), wherever the HTML file would answer: its own path, a clean URL, a directory's `index.html`, the SPA fallback and `404.html` (with status 404). Renditions have their own `ETag` (their content hash), honour conditional and range requests like other files and are never precompressed. Only the first `format` parameter counts; any other value, a non-HTML file and an HTML file without renditions serve the file itself.
 - Renditions go through the same policy check, for the same path, as the HTML, so `?t=…&format=md` (or `Authorization: Bearer` with `?format=md`) works without cookies and a protected rendition is never sent without access; responses carry the same cache and protected-site headers. As for the page, only a browser navigation with `?t=` gets a session cookie, and a rotated or revoked token gets nothing. The share-link script that removes `t` from the address bar is only ever added to HTML, never to a rendition.
 - HTML responses with status 200 that have renditions include `Link: </path?format=md>; rel="alternate"; type="text/markdown", </path?format=txt>; rel="alternate"; type="text/plain"`. The link is the request path alone, without the request's query, so it never carries a share-link token.
 
+</details>
+
 ### Conversion contract
 
 Both renditions hold the same content, read from the page's `<body>`; the Markdown keeps its structure as CommonMark with GitHub tables and strikethrough, and the text as plain lines. Each ends in one newline, or is empty when the page has no content. Input is read as UTF-8; each run of invalid bytes becomes U+FFFD, since renditions are served as `charset=utf-8`. Golden files for every page in `fixtures/sites/` are in `apps/server/internal/deploys/testdata/renditions/`.
+
+<details>
+<summary>Element by element, links, token redaction and deep nesting</summary>
 
 | HTML                                                                                                                                                                                                                                               | Markdown                                                                                                                                                                                                                                                        | Plain text                                            |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
@@ -191,21 +336,51 @@ Both renditions hold the same content, read from the page's `<body>`; the Markdo
 - **No tokens:** a token is `wl_` (in any letter case), a 10-character lowercase base32 public ID, `_` and a 43-character base64url secret, not run on from or into other letters, digits, `_` or `-` (so `WL_CONNECTION_TIMEOUT` is not one). The `t` parameter is removed from every link to the site itself, and every query parameter (by name or value) or fragment that holds a token, also after percent-decoding (as when nested in `?next=/a?t=…`), is removed from every link. Any other token anywhere in a rendition (body text, link text, alt text, code, titles, URL paths) has its secret replaced with `redacted`, keeping the prefix and public ID that name it. Text is read as a reader sees it, so a token split by formatting (`wl_abcdefghij_<b>…</b>`) or a comment is redacted too, and so is a token-shaped string the rendition only forms by joining pieces. The token a visitor used to fetch a page never reaches a rendition, since renditions are generated at deploy time.
 - Pages nested more than 512 elements deep, which the HTML parser refuses, are kept as their text in one paragraph; structure nested more than 128 elements deep is kept as text.
 
+</details>
+
 ## Access log (A2.8)
+
+Every request for a published site's content records one entry: time, path, status, how the visitor got in (or `none` when refused), the share link's public ID and label when it came through one, the client IP truncated to a prefix, and the User-Agent. Tokens are never stored. Owners read a whole site's entries or one share link's in the dashboard and the API; entries are kept 90 days by default. Configuration: [DEPLOYMENT](DEPLOYMENT.md#access-log).
+
+<details>
+<summary>What is logged, reading it and retention</summary>
 
 Every request for a published site's content (after the access decision, allowed or refused) records one entry: time, site, host, path without query string, status, how it got in (`public`, `link`, `password`, `email`, `oauth`, or `none` when refused), the share link's public ID when it came through a link, the client IP truncated to a configurable prefix (IPv4 /24 and IPv6 /48 by default, or not at all) and the User-Agent. Tokens are never stored: a token in the path or User-Agent is reduced to its public ID. `/.wardlock/` pages, health checks and the dashboard are not logged. Entries are kept for a configurable number of days (90 by default, or forever) and outlive the site they name. Owners read a whole site's entries or one share link's, newest first, paged like other lists and readable with either API token scope: `listSiteAccessLog` (`GET /api/v0/sites/{site}/access-log`, A2.12) on the site's "Access log" page in the dashboard, and `listShareLinkAccessLog` (`GET /api/v0/sites/{site}/links/{linkId}/access-log`, D3.3) on the link's page. An entry that came through a link carries the link's label when it has one; a revoked link's entries and label stay readable. A missing site or link and another owner's answer the same `404`. Only a site that exists is read, so a torn-down site's entries can no longer be listed, even after its name is reused; they wait for retention. There is no CLI command for either. Logging never slows serving: under database pressure entries are dropped and counted. Configuration: [DEPLOYMENT](DEPLOYMENT.md#access-log).
 
+</details>
+
 ## Reserved path
+
+`/.wardlock/` on every published site is served by Wardlock and can never be overridden by a deploy; policies never apply under it. It holds the sign-in pages (`login`, `callback`, `logout`, `view`), `health` and the proxy's `tls-ask`.
+
+<details>
+<summary>Each path and when it answers</summary>
 
 `/.wardlock/` (matched in any letter case, as deploy validation rejects it in any case) on every published site is served by Wardlock and can never be overridden by a deploy: `login`, `callback`, `logout`, `view` (POST, the use-limited interstitial's button; A2.2), `health` and `tls-ask` (C1.9: answered only in behind-a-proxy mode and only to requests from a trusted-proxy address that carry no forwarding headers, so never to a visitor the proxy forwards, on any `Host`; 404 otherwise). F0.1 implements `health`; since C1.3 it answers only on sites with an active deploy (a host with nothing published is an unknown host). A2.1 adds `login` (GET, the login page for the site default; it lists sign-in methods as A2.3 to A2.5 add them) and `logout` (POST). Policies never apply under `/.wardlock/`.
 
+</details>
+
 ## Protected-site response headers
+
+Every response a protected policy governs is kept out of search engines and shared caches (`X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: private` or `no-store`, `Vary: Cookie`). The login page also sends a restrictive `Content-Security-Policy` and `X-Frame-Options: DENY`. Wardlock never blocks AI fetchers in `robots.txt`; access is the policy's job.
+
+<details>
+<summary>Every header and when it is sent</summary>
 
 `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-origin` (A2.7), `Cache-Control: private` and `Vary: Cookie` on every response a protected policy governs, including its 404s and redirects; any such response that sets or clears a cookie, and any server error, sends `Cache-Control: no-store` instead; the login page and 401 send `no-store` and also `Vary: Accept`, since browsers get the page and other clients the bare 401. The share-link interstitial and the `429` for token guessing also send `no-store`, and the interstitial has the login page's `Content-Security-Policy` and `X-Frame-Options: DENY`. Every `/.wardlock/` page sends the robots, referrer and resource-policy headers with `Cache-Control: no-store` whatever the policy (the proxy's `/.wardlock/tls-ask` question, answered before any site is looked up, sends only `no-store`), and the login page also sends a restrictive `Content-Security-Policy` and `X-Frame-Options: DENY`. That policy is `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`. When the governing policy enables OAuth (A2.5), `form-action` also names exactly the origins the provider buttons' redirect chain passes through, since browsers apply `form-action` to a form's redirects: each configured provider's authorisation endpoint (`https://github.com`, `https://accounts.google.com`, a generic OIDC issuer's origin and, once discovery has run, its `authorization_endpoint`'s) and the auth origin. Never a whole scheme such as `https:`, so the password and email forms still post only to the site itself. The auth origin's error page sends the same policy with `form-action 'self'`. Wardlock never blocks AI fetchers in `robots.txt`; access is the policy's job.
 
+</details>
+
 ## CLI (C1.5, C1.7, C1.9)
 
+Global flags: `--server URL`, `--json` (machine-readable output, no prompts, for CI) and `--help`. Exit codes: 0 success, 1 failure, 2 usage error. `WARDLOCK_TOKEN` overrides stored credentials for CI.
+
+<details>
+<summary>Global flags, choosing the server and errors</summary>
+
 Global flags: `--server URL` (default from `wardlock.json`, then `WARDLOCK_SERVER`, then the server saved at login; `login` skips `wardlock.json`, and `version` uses only `WARDLOCK_SERVER`), `--json` (machine-readable output, no prompts, for CI), `--help`. Flags may come before or after arguments, and `--json` and `--server` also before the command (`wardlock --json list`); `--` ends them. Exit codes: 0 success, 1 failure, 2 usage error (unknown flag or command, missing or malformed argument, invalid `wardlock.json`, or a confirmation that cannot be asked for). Without a TTY or with `--json`, the CLI never prompts. `WARDLOCK_TOKEN` overrides stored credentials for CI; it needs a server from `--server`, `wardlock.json`, `WARDLOCK_SERVER` or the last login. With a stored login, a different server from any of those is refused rather than sent the token. Errors go to stderr as `wardlock: <message>`, naming the server for network failures (`could not reach <server>: connection refused`) and suggesting the fix for `401` (log in again) and `403` (a token without the scope).
+
+</details>
 
 | Command                                                                                                                                         | Behaviour                                                                                                                                                                                                                                                                                                                                     |
 | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -228,15 +403,23 @@ Global flags: `--server URL` (default from `wardlock.json`, then `WARDLOCK_SERVE
 
 Only built commands appear in `--help`.
 
+<details>
+<summary>DOMAIN, deploy, list, rollback, teardown and logout in detail</summary>
+
 DOMAIN (C1.5) is a site name or a hostname, in any letter case and with or without a trailing dot. A hostname is looked up among the owner's sites (`<name>.<base domain>` or a custom domain). When none answers to it, `deploy` creates the site if the hostname is `<name>.<base domain>` with `<name>` a valid site name. The API does not report the base domain, so the CLI infers it from the owner's existing sites (each hostname minus `<name>.`; they must all agree). With no sites to infer from, or a hostname that is not one label under the base domain, `deploy` stops with an error suggesting the bare name, which always works. Another owner's site is reported exactly like a missing one.
 
 `deploy` (C1.5) walks DIR in lexical order and sends each path relative to it with forward slashes, in NFC, so a name the file system stores decomposed (macOS) is published as browsers request it. File names that are not valid UTF-8, or that contain `\` on Linux or macOS, are refused before anything is sent. Symbolic links (including ones to directories) and other non-regular files are skipped with a note on stderr, and nothing outside DIR is read; DIR itself may be a symbolic link. `--message` is at most 500 characters (Unicode code points, as the API counts them, not bytes). Files are hashed in parallel, then the missing ones upload eight at a time. An upload that fails with a network error or `500`, `502`, `503` or `504` is retried twice (after 1 and 2 seconds); `429` is retried after its `Retry-After` seconds, capped at 30. Other failures, `501` included, stop the deploy before activation, so the live deploy never changes. A file that changes between hashing and upload stops the deploy with a request to run it again. A deploy whose files the server already holds uploads nothing, but still records a new deploy in history. Progress (files hashed, files and bytes uploaded) goes to stderr: one line redrawn with a carriage return on a terminal (no escape sequences, so older Windows consoles show it correctly), otherwise one line per phase. The result, ending with the site's URL, goes to stdout.
 
 `list` (C1.5) shows the site's default policy as `public` or `protected` (a site with no `/` policy is public) and times in local time. `rollback` takes a full deploy ID or the short ID `list` shows (the last eight to twelve characters, in any case); an ambiguous short ID is refused. `teardown` asks, on a terminal, for the site's name to be typed; anything else cancels with exit status 1 and nothing deleted. Given `--server` (for example as a global flag), `logout` refuses, changing nothing, when the stored login is for another server.
 
+</details>
+
 ### `--json` output (C1.5)
 
 With `--json`, stdout carries exactly one JSON object and nothing else; on failure stdout is empty and the exit status and stderr say why. `Site`, `Deploy`, `Activation` and `Domain` are the API schemas in `packages/api-spec/openapi.yaml`, so optional fields (`activeDeployId`, `activatedAt`, `message`) are absent when unset. New fields may be added; existing ones keep their meaning.
+
+<details>
+<summary>Output per command</summary>
 
 | Command         | Output                                                                                                                                                                                                                   |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -252,6 +435,8 @@ With `--json`, stdout carries exactly one JSON object and nothing else; on failu
 | `domain list`   | `{site: Site, domains: [Domain]}`, by hostname.                                                                                                                                                                          |
 | `domain verify` | `{site: Site, domain: Domain}` after the check. It exits 0 whenever the check ran, whatever it found; `429 checked_recently` (checked moments ago) is a failure.                                                         |
 | `domain remove` | `{removed: true, site: Site, hostname}`; the reminder to delete the DNS record goes to stderr.                                                                                                                           |
+
+</details>
 
 ## `wardlock.json` and `.wardlockignore` (C1.5)
 
@@ -269,8 +454,15 @@ With `--json`, stdout carries exactly one JSON object and nothing else; on failu
 
 All fields are optional; flags and arguments override them (`--spa=false` overrides `"spa": true`, `--immutable-assets=false` overrides `"immutableAssets": true`). `server` applies to every command except `login`, `logout` and `version`; `site` and `dir` (relative to this directory) only to `deploy`, since `rollback` and `teardown` always name their site. Unknown fields, wrong types and anything but one JSON object are usage errors naming the file, so typos are caught.
 
+`.wardlockignore` uses `.gitignore` syntax, relative to the deployed directory. `.git/`, `node_modules/`, `.env*`, `.DS_Store` and the config files are never deployed; other dotfiles are left out unless re-included with `!`, except `.well-known/`, which is included.
+
+<details>
+<summary><code>.wardlockignore</code> in detail</summary>
+
 `.wardlockignore` uses `.gitignore` syntax, relative to the deployed directory: `#` comments, `!` to re-include, a trailing `/` for directories only, a leading or inner `/` to anchor to the directory, `*`, `?`, `**` and bracket expressions (`[abc]`, `[a-z]`, `[!abc]` or `[^abc]`, and POSIX classes such as `[[:alpha:]]`), which never match `/`; an unclosed `[` is a literal, as in Git. Patterns are normalised to NFC like paths. Only the file at the top of the deployed directory is read. As in Git, a file inside an ignored directory cannot be re-included. Always ignored, at any depth and even if re-included: `.git/`, `node_modules/`, `.DS_Store`, `wardlock.json`, `.wardlockignore`, `.env*`. Other dotfiles and dot-directories are ignored unless listed with `!` (for example `!.htaccess`), except `.well-known/`, which is included.
+
+</details>
 
 ## Not in v1
 
-Teams and shared ownership, an MCP server, hosted service features (billing, abuse handling), Postgres or S3 backends, multiple server instances. See ROADMAP "Not planned yet".
+Teams and shared ownership, an MCP server, hosted service features (billing, abuse handling), Postgres or other database backends, multiple server instances. See ROADMAP "Not planned yet". File bodies can be stored in an S3-compatible bucket (C1.11; DEPLOYMENT "S3-compatible blob storage").

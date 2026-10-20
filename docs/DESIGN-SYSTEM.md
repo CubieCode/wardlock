@@ -31,11 +31,18 @@ Use semantic tokens in all CSS. Every colour role is written once as `light-dark
 
 `:root` sets `color-scheme: light dark`, so the dashboard follows the system preference with no script. `data-theme="light"` or `"dark"` on `<html>` forces a theme (a future per-device setting would set it). Components never branch on theme.
 
+Colour literals belong only in `tokens.css`, and every drawn pair meets WCAG 2.2 AA in both themes.
+
+<details>
+<summary>Rules enforced by <code>tokens.test.ts</code></summary>
+
 Rules, enforced by `packages/ui/src/tokens.test.ts`:
 
 - Every `--color-*` role uses `light-dark()` with two hex values.
 - The pairs components draw meet WCAG 2.2 AA in both themes: 4.5:1 for text, 3:1 for borders, focus and the accent. Add a new pair to the test when you draw a new combination.
 - Colour literals (hex, `rgb()`, `hsl()`, `oklch()`, named colours) appear only in `tokens.css`; the test scans `packages/ui` and `apps/web/src`.
+
+</details>
 
 ## Components
 

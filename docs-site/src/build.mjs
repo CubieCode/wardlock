@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: MIT
 //
 // Builds the documentation site into docs-site/dist: one HTML page per
-// published document, an index, a 404 page and the stylesheet. The output is
-// plain static files for `wardlock deploy` (see docs-site/README.md).
+// published document, an index, a 404 page, the stylesheet and a small script
+// that opens collapsed sections when a link targets something inside them.
+// The output is plain static files for `wardlock deploy` (see
+// docs-site/README.md).
 import {
   copyFileSync,
   mkdirSync,
@@ -68,4 +70,5 @@ writeFileSync(
   }),
 );
 copyFileSync(new URL('style.css', import.meta.url), out + 'style.css');
+copyFileSync(new URL('site.js', import.meta.url), out + 'site.js');
 console.log(`docs-site: wrote ${pages.length + 2} pages to docs-site/dist`);

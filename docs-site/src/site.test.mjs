@@ -3,7 +3,7 @@
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { checkLinks } from './links.mjs';
-import { renderMarkdown, rewriteHref, slugify } from './render.mjs';
+import { layout, renderMarkdown, rewriteHref, slugify } from './render.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -65,6 +65,53 @@ describe('renderMarkdown', () => {
     expect(headings.map((h) => h.id)).toEqual(['title', 'usage', 'usage-1']);
     expect(html).toContain('<a href="spec.html">x</a>');
     expect(html).toContain('<div class="table-wrap"><table>');
+  });
+});
+
+describe('collapsed sections', () => {
+  const markdown =
+    '# Title\n\n## Usage\n\nLead.\n\n<details>\n<summary>Implementation detail</summary>\n\n### Inner rule\n\n- `a` and [spec](SPEC.md#usage)\n\n| a |\n| - |\n| b |\n\n</details>\n\n## After\n';
+
+  it('renders Markdown inside <details> and gives its headings IDs', () => {
+    const { html, headings } = renderMarkdown(markdown, 'docs/TEST.md', root);
+    expect(html).toContain(
+      '<details>\n<summary>Implementation detail</summary>',
+    );
+    expect(html).toContain('<h3 id="inner-rule">Inner rule</h3>');
+    expect(html).toContain(
+      '<li><code>a</code> and <a href="spec.html#usage">spec</a></li>',
+    );
+    expect(html).toContain('<div class="table-wrap"><table>');
+    expect(html.indexOf('</details>')).toBeGreaterThan(
+      html.indexOf('</table>'),
+    );
+    expect(headings.map((h) => h.id)).toEqual([
+      'title',
+      'usage',
+      'inner-rule',
+      'after',
+    ]);
+  });
+
+  it('lets links reach anchors inside a collapsed block', () => {
+    const { html } = renderMarkdown(markdown, 'docs/TEST.md', root);
+    const page = layout({ title: 'T', body: html, current: 'spec.html' });
+    expect(page).toContain('<script src="site.js" defer></script>');
+    expect(
+      checkLinks(
+        new Map([
+          ['spec.html', page],
+          [
+            'index.html',
+            '<a href="spec.html#inner-rule">i</a><script src="site.js"></script>',
+          ],
+          ['deployment.html', ''],
+          ['security-model.html', ''],
+          ['style.css', ''],
+          ['site.js', ''],
+        ]),
+      ),
+    ).toEqual([]);
   });
 });
 

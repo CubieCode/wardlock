@@ -13,7 +13,7 @@ const dist = fileURLToPath(new URL('../dist/', import.meta.url));
 /** @type {Map<string, string>} */
 const files = new Map();
 for (const name of readdirSync(dist, { recursive: true, encoding: 'utf8' })) {
-  if (name.endsWith('.html') || name.endsWith('.css'))
+  if (/\.(html|css|js)$/.test(name))
     files.set(name.replaceAll('\\', '/'), readFileSync(dist + name, 'utf8'));
 }
 const problems = checkLinks(files);
