@@ -261,7 +261,33 @@ Built (O4.13): the [acceptable use policy](ACCEPTABLE-USE.md), a draft awaiting 
 
 Built (A2.14): per-owner quotas on bytes stored, sites and deploys per 24 hours, checked in the same transaction as the write so concurrent deploys cannot pass them together, with per-owner overrides by `wardlockd admin quota`; a separate, lower per-file limit for video files (10 MiB by default, or none accepted); and an optional blocklist of file extensions such as installers and executables. Quotas and the blocklist are off by default; DEPLOYMENT ["Deploy storage and limits"](DEPLOYMENT.md#deploy-storage-and-limits) suggests values for an instance others deploy to.
 
-Still planned: content screening (A2.15).
+Built (A2.15): optional automated [content screening](#content-screening) with OpenAI's moderation endpoint, which withholds sexual content on every site and emails the operator about anything else it flags.
+
+</details>
+
+### Content screening
+
+Screening is off unless the operator sets `WARDLOCK_MODERATION=openai` and an API key. When it is on, each unique image and the text of each HTML page leaves the server **once**, after the first activation of a deploy that lists it, for **OpenAI's moderation endpoint**, which returns the categories it flags; nothing else is sent, and OpenAI's handling of what it receives is governed by OpenAI's terms. An owner the operator exempts (`wardlockd admin moderation disable --owner`) never has content sent. A withheld file answers `451` on every host and path that would serve it, and because files are stored by content hash, **withholding applies to those bytes wherever they appear**, on every owner's sites.
+
+<details>
+<summary>What leaves the server, to whom, and when</summary>
+
+- **What:** images (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif` that are PNG, JPEG, WEBP or still GIF by their bytes, at most 20 MB) as base64 data URLs, and each `.html`/`.htm` page's extracted plain text (its AI-readable rendition text: no markup, scripts, styles or hidden elements, with share-link tokens already redacted), at most 100,000 characters per page. Never videos, scripts, stylesheets, other files, file names, paths, site names, owner details, visitor data or access logs. The request carries only the model name, the content and the operator's API key.
+- **To whom:** OpenAI, at `https://api.openai.com/v1/moderations`, over HTTPS, model `omni-moderation-latest`. No other provider or third party.
+- **When:** in the background after activation (and when a site that was taken down or whose owner was suspended serves again), once per SHA-256 ever: the same bytes under another path, deploy, site or owner are not sent again. An operator's `rescan` sends a file again. Pending deploys and unpublished files are never sent. Content on protected sites is sent like any other: the policy decides who may view a site, not whether the operator screens it.
+- **Exemptions:** an exempt owner's files are not queued, and a queued file is dropped unsent if every owner serving it is exempt when its turn comes. An exemption does not cover bytes a non-exempt owner also serves: those are sent as that owner's. New owners follow the instance default (screened while screening is on).
+- **The key** is a `platform.Secret`: it never appears in logs, errors or start-up output, which names only the provider. Errors from the endpoint are reduced to their status code, so neither the key nor content can reach a log line through them.
+- **Logs and notices** carry hashes, categories, site names and paths, never content. Owners' notices name the file and site, never the categories.
+
+</details>
+
+<details>
+<summary>The shared-hash effect, limits of the classifier, and accepted risks</summary>
+
+- **Shared hashes.** Blobs are content-addressed and shared across owners, so the verdict belongs to the bytes, not to a site: if owner A's image is quarantined, owner B's site serving byte-identical bytes answers `451` for it too, and B is told which of their files is withheld. `release` restores it for everyone. This is deliberate: the same bytes are the same content, and per-owner verdicts would let anyone re-publish withheld bytes by uploading them again. It also means one owner's upload can reveal, through the `451`, that another site serves the same bytes; the policy is checked first, so on a protected site only visitors with access ever see it.
+- **What the classifier can see.** According to OpenAI's documentation, `sexual/minors` is a text-only category: images score `0` there, so a sexual image of a child is caught only under `sexual` (withheld by default). OpenAI's documentation also asks that known or suspected child sexual abuse material not be sent to the endpoint; screening sends every new image without knowing what it is, so an operator who suspects such material on their instance should follow the [preserve-and-report procedure](DEPLOYMENT.md#preserving-and-reporting-illegal-material) rather than rescan it. Automated classifiers make mistakes both ways; screening supplements abuse reports and the operator's own checks, it does not replace them.
+- **Evidence.** A quarantined file's stored copy is kept from garbage collection until the operator discards or releases it, so an owner deleting the deploy or site cannot destroy it before review.
+- **Accepted risks.** A file is served until its verdict arrives (seconds after activation, longer while the endpoint rate-limits), and for up to 5 seconds after an operator's decision in another process. Browsers and shared caches may keep a copy fetched before the verdict, for a year for hashed assets of a deploy that opts into long-term caching. Bytes that differ (a re-encoded image) are new content and screened anew. Text past 100,000 characters per page, text in images, videos and other file types are not screened.
 
 </details>
 

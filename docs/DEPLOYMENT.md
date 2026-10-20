@@ -725,6 +725,7 @@ For an instance others deploy to, also set `WARDLOCK_ABUSE_EMAIL` so visitors ca
 | `admin restore-site SITE`       | Serves the same active deploy again                                                                                                                                  |
 | `admin teardown-site SITE`      | Deletes a taken-down site, as an owner's teardown does                                                                                                               |
 | `admin quota ADDRESS [flags]`   | Shows the owner's [quotas](#owner-quotas) and usage; `--storage SIZE`, `--sites N` and `--deploys-per-day N` override them (`0` unlimited, `default` the instance's) |
+| `admin moderation …`            | Reviews and decides on screened files, and exempts owners from screening: [Content screening](#content-screening)                                                    |
 
 `SITE` is a site name or any hostname the site answers on (its `<name>.<base domain>` host or an active custom domain), so you can paste the host from a report.
 
@@ -792,7 +793,7 @@ If a site hosts material that may be illegal, take it offline and keep the evide
 
 1. **Triage** the report. Do not open suspected child sexual abuse material more than you must to confirm what it is, and never download, copy or forward it except as the authorities direct.
 2. **Take the site down** with `wardlockd admin takedown-site SITE`, and suspend the owner with `suspend-owner` if warranted. Both keep every deploy and file.
-3. **Preserve evidence.** Do not tear down the site, delete deploys or delete blobs or bucket objects. The site's access log is kept whatever the retention setting while it stays taken down. Take a database backup (`wardlockd backup PATH`, see [Backups](#backups)) and note the site ID, owner ID, times and the report.
+3. **Preserve evidence.** Do not tear down the site, delete deploys or delete blobs or bucket objects. For a file [content screening](#content-screening) withheld, run `wardlockd admin moderation confirm SHA256` so its stored copy is kept even if its deploys go. The site's access log is kept whatever the retention setting while it stays taken down. Take a database backup (`wardlockd backup PATH`, see [Backups](#backups)) and note the site ID, owner ID, times and the report.
 4. **Report** it. In New Zealand, report child sexual abuse material and other objectionable material to the Department of Internal Affairs ([dia.govt.nz](https://www.dia.govt.nz), Digital Child Exploitation team), and other illegal material or threats to the NZ Police ([police.govt.nz](https://www.police.govt.nz); 111 if urgent). Outside New Zealand, report to the relevant authority.
 5. **Tear down** (`wardlockd admin teardown-site SITE`) only once the authorities say you may, or no longer need the material.
 6. **Contact the owner**, unless the authorities ask you not to.
@@ -804,6 +805,48 @@ Garbage collection already skips every deploy of a taken-down site or a suspende
 
 </details>
 
+### Content screening
+
+Optional automated screening (A2.15) sends each unique image and the text of each HTML page to OpenAI's moderation endpoint once, in the background after a deploy is activated, and acts on what it flags: sexual content (and sexual content involving minors) is **withheld** on every site by default, anything else flagged is left up for you to **review**. It is off until you set both variables below, and it never blocks a deploy or slows serving.
+
+| Variable                         | Default                 | Meaning                                                                                                           |
+| -------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `WARDLOCK_MODERATION`            | `off`                   | `openai` turns screening on                                                                                       |
+| `WARDLOCK_OPENAI_API_KEY`        | empty                   | an OpenAI API key (secret; required with `openai`, never logged); the moderation endpoint is free to use          |
+| `WARDLOCK_MODERATION_QUARANTINE` | `sexual/minors,sexual`  | comma-separated OpenAI categories that withhold a file, or `none`                                                 |
+| `WARDLOCK_MODERATION_FLAG`       | every other flagged one | comma-separated categories that mark a file for your review (still served), or `none`; others flagged are ignored |
+
+Category names are OpenAI's: `harassment`, `harassment/threatening`, `hate`, `hate/threatening`, `illicit`, `illicit/violent`, `self-harm`, `self-harm/instructions`, `self-harm/intent`, `sexual`, `sexual/minors`, `violence`, `violence/graphic`. Set `WARDLOCK_ABUSE_EMAIL` too, or screening notices only reach the log. Before turning it on, read what leaves the server in [SECURITY-MODEL "Content screening"](SECURITY-MODEL.md#content-screening), and keep the [acceptable use policy](ACCEPTABLE-USE.md)'s screening section accurate for your instance.
+
+**When a file is withheld** you get an email (subject "Content screening withheld a file") with its SHA-256, the categories, and every site and path serving it; each owner whose site served it gets one saying which file on which site, never why. Review it, then decide:
+
+| Command                                    | What it does                                                                                                   |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `admin moderation list`                    | Lists flagged and quarantined files: `SHA256 STATUS CATEGORIES CHECKED SITES`                                  |
+| `admin moderation release SHA256`          | A mistake: the file is served again everywhere                                                                 |
+| `admin moderation confirm SHA256`          | Keeps it withheld, and its stored copy kept indefinitely even once no deploy lists it                          |
+| `admin moderation discard SHA256`          | Keeps it withheld; garbage collection removes the stored copy once no deploy lists it                          |
+| `admin moderation rescan SHA256`           | Screens it again (after you change the categories, say); the current verdict holds until the new one           |
+| `admin moderation disable --owner ADDRESS` | Never sends this owner's content again (a trusted owner, or one whose content must not leave the server)       |
+| `admin moderation enable --owner ADDRESS`  | Ends the exemption; their files not yet screened are screened from then on. New owners are screened by default |
+
+**For sexual content involving minors** the email says so and does not offer `release`: follow [Preserving and reporting illegal material](#preserving-and-reporting-illegal-material), run `admin moderation confirm` so the file is kept as evidence, and do not open it more than you must. The owner's email is the same neutral notice as for any withheld file. A flagged file (not withheld) emails you only; act on it as on an [abuse report](#handling-abuse-reports), then `release` it to take it off the list.
+
+<details>
+<summary>What is checked, when, and how failures are handled</summary>
+
+- **What is sent.** Images ending `.png`, `.jpg`, `.jpeg`, `.webp` or `.gif` (any letter case) that are PNG, JPEG, WEBP or still (not animated) GIF by their bytes and at most 20 MB, sent as a base64 data URL; and each `.html` or `.htm` page's plain text (its [AI-readable rendition](SPEC.md#ai-readable-renditions-a26) text, or the same conversion of its first 5 MiB for a page without one), in pieces of at most 10,000 characters split at whitespace, at most 10 pieces (100,000 characters) per page; text beyond that is not screened. Videos, scripts, stylesheets, precompressed `.br`/`.gz` siblings and every other type are never sent. A file is recorded as `skipped` (never retried unless rescanned) when it is too large, not one of those image formats, an animated GIF, or refused by the endpoint as input; a page with no text is `allowed` without being sent.
+- **Once per content hash, ever.** Files are queued by SHA-256: the first activation of any deploy listing a new image or page queues it, and no other path, deploy, site or owner listing the same bytes sends it again. Only active deploys on serving sites are screened: not pending deploys, taken-down sites or suspended owners' sites (they are screened once they serve again). An exempt owner's files are not queued; a file both an exempt and a non-exempt owner serve is screened as the non-exempt owner's.
+- **When.** The worker wakes on every activation, rollback or other change to what a site serves, and every 30 seconds otherwise; it screens two files at a time. The queue is in the database (`moderation_results`), so a restart resumes where it stopped. `wardlock_moderation_backlog` on [`/metrics`](#health-readiness-and-metrics) counts files waiting, retries included.
+- **Failures.** A rate limit (`429`), a server error, a network failure or a refused key is retried after 30 seconds, doubling each time up to 6 hours, with jitter, and never sooner than a `Retry-After` the endpoint sends; a `Retry-After` also pauses every other file. Retries continue until they succeed, so a wrong key shows as a growing backlog and `screening provider refused the API key` errors in the log. Serving and deploys never wait on any of this.
+- **Outcomes.** A file is `quarantined` if any flagged category is in `WARDLOCK_MODERATION_QUARANTINE`, else `flagged` if any is in `WARDLOCK_MODERATION_FLAG` (or any at all when that is unset), else `allowed`. Wardlock uses the endpoint's own `flagged` decision per category; it does not apply score thresholds. Changing the categories applies to files screened afterwards; `rescan` applies them to one already screened.
+- **What a withheld file answers.** Every request that would serve it, on every host of every site listing the same bytes, answers `451`: HTML pages show a neutral "This page is unavailable" page linking to the site's home page, other files a line of text. That covers clean URLs, `404.html` and the SPA fallback, `?format=md|txt`, precompressed siblings, `HEAD`, `Range` and conditional requests, and share links; the policy is checked first, so a visitor without access still sees the login page. The answer is `no-store`, so `release` takes effect on the next request. A running server reloads the list every 5 seconds, so `release`, `confirm` and `discard` from `wardlockd admin` reach it within that.
+- **Evidence.** Garbage collection keeps every quarantined file's stored copy until you `discard` or `release` it, even if its owner deletes the deploy or the site, so evidence survives until you decide. `list` shows such a file as `quarantined (held)` once no site serves it.
+- **Notices and logs.** Notices go out once per verdict through the normal mailer. The log records `screened file` with `sha256`, `kind`, `status` and any `categories`, and operator decisions with the hash or owner ID; never file content, page text or the API key.
+- **Turning it off** stops sending; verdicts and the withheld list stay, so withheld files stay withheld until you release them.
+
+</details>
+
 ## Health, readiness and metrics
 
 `/healthz` answers `{"status":"ok"}` on every host of the main listener (and the plain-HTTP listener in automatic TLS mode) for as long as the process runs: use it for liveness. Readiness and metrics are served only on a separate operator listener, which is off until `WARDLOCK_OPERATOR_ADDR` names an address:
@@ -812,7 +855,7 @@ Garbage collection already skips every deploy of a taken-down site or a suspende
 | ------------------------ | ------------------ | --------------------------------------------------------------------------------- |
 | `WARDLOCK_OPERATOR_ADDR` | none (no listener) | listen address for `/healthz`, `/readyz` and `/metrics`, such as `127.0.0.1:9740` |
 
-The operator listener is plain HTTP without authentication, so bind it to loopback or a private network that only the monitoring system reaches, and never proxy it to the internet. `GET /readyz` answers `200` when the database, blob storage and (in automatic TLS mode) certificates pass, and `503` otherwise; `GET /metrics` is Prometheus text. Alert on `wardlock_ready == 0`, a rising `wardlock_access_log_dropped_total`, and certificates within 14 days of expiry.
+The operator listener is plain HTTP without authentication, so bind it to loopback or a private network that only the monitoring system reaches, and never proxy it to the internet. `GET /readyz` answers `200` when the database, blob storage and (in automatic TLS mode) certificates pass, and `503` otherwise; `GET /metrics` is Prometheus text. Alert on `wardlock_ready == 0`, a rising `wardlock_access_log_dropped_total`, a `wardlock_moderation_backlog` that keeps growing, and certificates within 14 days of expiry.
 
 <details>
 <summary>The operator listener's rules</summary>
@@ -844,6 +887,8 @@ It must differ from `WARDLOCK_HTTP_ADDR` and `WARDLOCK_HTTPS_ADDR`. It answers o
 | `wardlock_access_log_dropped_total`                                                            | counter        | access-log entries dropped since start ([Access log](#access-log))             |
 | `wardlock_database_size_bytes`                                                                 | gauge          | `wardlock.db` plus its write-ahead log                                         |
 | `wardlock_certificate_expiry_timestamp_seconds{name}`                                          | gauge          | automatic TLS only: expiry of each managed certificate, Unix seconds           |
+| `wardlock_moderation_backlog`                                                                  | gauge          | files waiting for [content screening](#content-screening), retries included    |
+| `wardlock_moderation_quarantined`                                                              | gauge          | files content screening withholds                                              |
 | `go_goroutines`, `go_memstats_heap_alloc_bytes`, `go_memstats_sys_bytes`, `go_gc_cycles_total` | gauge, counter | Go runtime                                                                     |
 
 </details>

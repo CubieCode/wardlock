@@ -40,51 +40,52 @@ Every v1 item in the foundation, core, access, dashboard and operations areas is
 <details>
 <summary>What each built item added</summary>
 
-| Item  | Adds                                                                                                                                      | Section                                                                     |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| F0.1  | The pnpm, Turborepo and Go workspaces, pinned tools, `pnpm check`, CI, and the edge's health endpoint, host routing and dashboard serving | Processes and binaries, Request flow through the edge, Go workspace, Checks |
-| F0.2  | `packages/api-spec/openapi.yaml`, the generated server, Go and TypeScript clients, the `Unimplemented` stub and the codegen drift check   | Owner API and code generation                                               |
-| F0.3  | The migration runner, the core schema, sqlc queries, the repository interfaces and their contract tests                                   | Database, Data model                                                        |
-| F0.4  | `internal/mail` with its `Mailer` interface, `WARDLOCK_SMTP_URL` and the `dev://` sink                                                    | DEPLOYMENT "SMTP"                                                           |
-| C1.1  | Owner bootstrap, email-code sign-in, dashboard sessions, invites and `owner_login_codes`                                                  | Data model                                                                  |
-| C1.2  | The deploy API, the filesystem `BlobStore`, per-owner blob claims (`owner_blobs`), activation, rollback and the `Notifier`                | Deploy upload protocol, Storage layout                                      |
-| C1.3  | Edge static serving: the site and manifest cache, file resolution and blob serving                                                        | Request flow through the edge                                               |
-| C1.4  | `internal/tls`: the three TLS modes, certmagic and the trusted-proxy middleware                                                           | TLS modes                                                                   |
-| C1.5  | The CLI's deploy, list, rollback and teardown commands, sending paths in NFC                                                              | Deploy upload protocol                                                      |
-| C1.6  | Owner passkeys (`owner_passkeys`)                                                                                                         | Data model                                                                  |
-| C1.7  | API tokens and CLI browser login (`cli_login_requests`)                                                                                   | Data model                                                                  |
-| C1.8  | Blob garbage collection (`deploys.GC`, `store.GC`, `wardlockd gc`)                                                                        | Storage layout                                                              |
-| C1.9  | Custom domains in `internal/sites`, the verification checker, on-demand certificates and `/.wardlock/tls-ask`                             | Custom domains, TLS modes                                                   |
-| C1.10 | Long-term caching for hashed assets (`deploys.immutable_assets`, `immutableCacheControl`)                                                 | Request flow through the edge, Data model                                   |
-| C1.11 | `deploys.S3BlobStore`, chosen with `WARDLOCK_BLOB_BACKEND=s3`                                                                             | Storage layout                                                              |
-| C1.12 | Lazy blob opens, bodyless responses that never open a blob, the S3 upload probe and `deploys.CachingBlobStore`                            | Request flow through the edge, Storage layout                               |
-| A2.1  | Policy evaluation in `access.Service`, site session cookie primitives and the edge's access step                                          | Policy evaluation, Request flow through the edge                            |
-| A2.2  | Share links, the use-limited interstitial and the shared fixed-window limiter                                                             | Policy evaluation                                                           |
-| A2.3  | Password policies and the Argon2id semaphore                                                                                              | Storage seam                                                                |
-| A2.4  | Email-code policies (`policy_allowlist`, `visitor_email_codes`)                                                                           | Data model                                                                  |
-| A2.5  | OAuth and OIDC through the auth origin and `internal/oauth`                                                                               | Auth origin                                                                 |
-| A2.6  | AI-readable renditions (`deploys.Render`, `deploy_renditions`, `?format=`)                                                                | Deploy upload protocol, Request flow through the edge                       |
-| A2.7  | The access security review and its fixes                                                                                                  | SECURITY-MODEL                                                              |
-| A2.8  | The access log pipeline (`internal/access/accesslog`)                                                                                     | Storage seam                                                                |
-| A2.9  | Bounded limiter tables, the count-min overflow sketch and per-network limits                                                              | Policy evaluation                                                           |
-| A2.10 | Redaction in the certmagic log adapter and the `dev://` mail warning                                                                      | SECURITY-MODEL "Third-party log output"                                     |
-| A2.11 | A distinct error code for the domain-check cooldown                                                                                       | SPEC "Custom domains"                                                       |
-| A2.12 | The per-site access log (`listSiteAccessLog`, `access.Service.SiteAccessLog`)                                                             | Storage seam                                                                |
-| D3.1  | The dashboard shell, router and owner sign-in screens                                                                                     | Owner API and code generation, SPEC "Dashboard"                             |
-| D3.2  | Site list and detail, deploy history, rollback and teardown screens                                                                       | SPEC "Dashboard"                                                            |
-| D3.3  | Share link screens and the per-link access log                                                                                            | SPEC "Dashboard"                                                            |
-| D3.4  | The policies editor                                                                                                                       | SPEC "Dashboard"                                                            |
-| D3.5  | The custom domains section of the site page                                                                                               | SPEC "Dashboard"                                                            |
-| D3.6  | "Open site", which opens a protected site through a short-lived share link                                                                | SPEC "Dashboard"                                                            |
-| O4.1  | GoReleaser, the install script, the systemd unit, the compose example and the module tag scheme                                           | Go workspace, DEPLOYMENT                                                    |
-| O4.2  | The operator listener (`/healthz`, `/readyz`, `/metrics`) and `wardlockd backup`                                                          | Processes and binaries                                                      |
-| O4.3  | The documentation site (`docs-site/`), built by `pnpm build`                                                                              | `docs-site/README.md`                                                       |
-| O4.5  | Test fixes at their root causes                                                                                                           | (tests only)                                                                |
-| O4.8  | depguard rules for every boundary in MODULES                                                                                              | Checks                                                                      |
-| O4.9  | CI no longer uploads unused snapshot and docs-site artifacts                                                                              | (CI only)                                                                   |
-| O4.11 | The release workflow's publish job, run only on an authorised `v*` tag                                                                    | DEPLOYMENT "Releases and module tags"                                       |
-| O4.12 | `deploy/vps/`: one VPS with automatic TLS and R2 blob storage                                                                             | DEPLOYMENT "VPS with automatic TLS and R2 (O4.12)"                          |
-| O4.13 | `/acceptable-use`, bundled from `docs/ACCEPTABLE-USE.md`, and the policy line and Continue step on the setup and sign-in-link pages       | SPEC "Dashboard"                                                            |
+| Item  | Adds                                                                                                                                           | Section                                                                     |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| F0.1  | The pnpm, Turborepo and Go workspaces, pinned tools, `pnpm check`, CI, and the edge's health endpoint, host routing and dashboard serving      | Processes and binaries, Request flow through the edge, Go workspace, Checks |
+| F0.2  | `packages/api-spec/openapi.yaml`, the generated server, Go and TypeScript clients, the `Unimplemented` stub and the codegen drift check        | Owner API and code generation                                               |
+| F0.3  | The migration runner, the core schema, sqlc queries, the repository interfaces and their contract tests                                        | Database, Data model                                                        |
+| F0.4  | `internal/mail` with its `Mailer` interface, `WARDLOCK_SMTP_URL` and the `dev://` sink                                                         | DEPLOYMENT "SMTP"                                                           |
+| C1.1  | Owner bootstrap, email-code sign-in, dashboard sessions, invites and `owner_login_codes`                                                       | Data model                                                                  |
+| C1.2  | The deploy API, the filesystem `BlobStore`, per-owner blob claims (`owner_blobs`), activation, rollback and the `Notifier`                     | Deploy upload protocol, Storage layout                                      |
+| C1.3  | Edge static serving: the site and manifest cache, file resolution and blob serving                                                             | Request flow through the edge                                               |
+| C1.4  | `internal/tls`: the three TLS modes, certmagic and the trusted-proxy middleware                                                                | TLS modes                                                                   |
+| C1.5  | The CLI's deploy, list, rollback and teardown commands, sending paths in NFC                                                                   | Deploy upload protocol                                                      |
+| C1.6  | Owner passkeys (`owner_passkeys`)                                                                                                              | Data model                                                                  |
+| C1.7  | API tokens and CLI browser login (`cli_login_requests`)                                                                                        | Data model                                                                  |
+| C1.8  | Blob garbage collection (`deploys.GC`, `store.GC`, `wardlockd gc`)                                                                             | Storage layout                                                              |
+| C1.9  | Custom domains in `internal/sites`, the verification checker, on-demand certificates and `/.wardlock/tls-ask`                                  | Custom domains, TLS modes                                                   |
+| C1.10 | Long-term caching for hashed assets (`deploys.immutable_assets`, `immutableCacheControl`)                                                      | Request flow through the edge, Data model                                   |
+| C1.11 | `deploys.S3BlobStore`, chosen with `WARDLOCK_BLOB_BACKEND=s3`                                                                                  | Storage layout                                                              |
+| C1.12 | Lazy blob opens, bodyless responses that never open a blob, the S3 upload probe and `deploys.CachingBlobStore`                                 | Request flow through the edge, Storage layout                               |
+| A2.1  | Policy evaluation in `access.Service`, site session cookie primitives and the edge's access step                                               | Policy evaluation, Request flow through the edge                            |
+| A2.2  | Share links, the use-limited interstitial and the shared fixed-window limiter                                                                  | Policy evaluation                                                           |
+| A2.3  | Password policies and the Argon2id semaphore                                                                                                   | Storage seam                                                                |
+| A2.4  | Email-code policies (`policy_allowlist`, `visitor_email_codes`)                                                                                | Data model                                                                  |
+| A2.5  | OAuth and OIDC through the auth origin and `internal/oauth`                                                                                    | Auth origin                                                                 |
+| A2.6  | AI-readable renditions (`deploys.Render`, `deploy_renditions`, `?format=`)                                                                     | Deploy upload protocol, Request flow through the edge                       |
+| A2.15 | Content screening: `internal/moderation` (`Moderator`, the OpenAI client, the worker, `Quarantine`), `moderation_results` and the edge's `451` | Content screening, Request flow through the edge, Data model                |
+| A2.7  | The access security review and its fixes                                                                                                       | SECURITY-MODEL                                                              |
+| A2.8  | The access log pipeline (`internal/access/accesslog`)                                                                                          | Storage seam                                                                |
+| A2.9  | Bounded limiter tables, the count-min overflow sketch and per-network limits                                                                   | Policy evaluation                                                           |
+| A2.10 | Redaction in the certmagic log adapter and the `dev://` mail warning                                                                           | SECURITY-MODEL "Third-party log output"                                     |
+| A2.11 | A distinct error code for the domain-check cooldown                                                                                            | SPEC "Custom domains"                                                       |
+| A2.12 | The per-site access log (`listSiteAccessLog`, `access.Service.SiteAccessLog`)                                                                  | Storage seam                                                                |
+| D3.1  | The dashboard shell, router and owner sign-in screens                                                                                          | Owner API and code generation, SPEC "Dashboard"                             |
+| D3.2  | Site list and detail, deploy history, rollback and teardown screens                                                                            | SPEC "Dashboard"                                                            |
+| D3.3  | Share link screens and the per-link access log                                                                                                 | SPEC "Dashboard"                                                            |
+| D3.4  | The policies editor                                                                                                                            | SPEC "Dashboard"                                                            |
+| D3.5  | The custom domains section of the site page                                                                                                    | SPEC "Dashboard"                                                            |
+| D3.6  | "Open site", which opens a protected site through a short-lived share link                                                                     | SPEC "Dashboard"                                                            |
+| O4.1  | GoReleaser, the install script, the systemd unit, the compose example and the module tag scheme                                                | Go workspace, DEPLOYMENT                                                    |
+| O4.2  | The operator listener (`/healthz`, `/readyz`, `/metrics`) and `wardlockd backup`                                                               | Processes and binaries                                                      |
+| O4.3  | The documentation site (`docs-site/`), built by `pnpm build`                                                                                   | `docs-site/README.md`                                                       |
+| O4.5  | Test fixes at their root causes                                                                                                                | (tests only)                                                                |
+| O4.8  | depguard rules for every boundary in MODULES                                                                                                   | Checks                                                                      |
+| O4.9  | CI no longer uploads unused snapshot and docs-site artifacts                                                                                   | (CI only)                                                                   |
+| O4.11 | The release workflow's publish job, run only on an authorised `v*` tag                                                                         | DEPLOYMENT "Releases and module tags"                                       |
+| O4.12 | `deploy/vps/`: one VPS with automatic TLS and R2 blob storage                                                                                  | DEPLOYMENT "VPS with automatic TLS and R2 (O4.12)"                          |
+| O4.13 | `/acceptable-use`, bundled from `docs/ACCEPTABLE-USE.md`, and the policy line and Continue step on the setup and sign-in-link pages            | SPEC "Dashboard"                                                            |
 
 O4.4, O4.6 and O4.7 changed documents only (the launch checklist, the alpha documentation refresh and the CLA text).
 
@@ -99,7 +100,7 @@ O4.4, O4.6 and O4.7 changed documents only (the launch checklist, the alpha docu
 <details>
 <summary>Implementation detail</summary>
 
-- `wardlockd admin create`, the operator commands (`admin list-owners`, `list-sites`, `suspend-owner`, `reinstate-owner`, `takedown-site`, `restore-site`, `teardown-site`; A2.13), `wardlockd gc` and `wardlockd backup PATH` (an online SQLite backup) run one task against the same data directory, and `wardlockd version` prints the build. With `WARDLOCK_OPERATOR_ADDR` set, `serve` also opens an operator listener for `/healthz`, `/readyz` and `/metrics` (DEPLOYMENT "Health, readiness and metrics").
+- `wardlockd admin create`, the operator commands (`admin list-owners`, `list-sites`, `suspend-owner`, `reinstate-owner`, `takedown-site`, `restore-site`, `teardown-site`; A2.13; `admin moderation …`, A2.15), `wardlockd gc` and `wardlockd backup PATH` (an online SQLite backup) run one task against the same data directory, and `wardlockd version` prints the build. With `WARDLOCK_OPERATOR_ADDR` set, `serve` also opens an operator listener for `/healthz`, `/readyz` and `/metrics` (DEPLOYMENT "Health, readiness and metrics").
 - **Unavailable-site watch (A2.13).** An operator command runs in another process, so it cannot call the running server's `Notifier`. `serve` polls the set of unavailable sites (taken down, or owned by a suspended owner) every 2 seconds (`cmd/wardlockd/unavailable.go`) and notifies each site that joined or left it, so the edge drops its cached copy. It remembers the custom domains of each unavailable site, so when one is torn down by `admin teardown-site` it removes their certificates in automatic TLS mode (a site taken down and torn down within one interval, or while the server was stopped, is never seen, and its certificates expire unrenewed). Sessions and API tokens need no watch: they are checked against the database on every request.
 - `serve.go` mounts the API under `/api/` on the dashboard host and hands the edge the resulting `http.Handler`, so the edge never imports the API.
 
@@ -125,7 +126,9 @@ flowchart TD
   P --> CHK{public, or token / session / Bearer valid?}
   CHK -->|no| LG[login page or 401/404]
   CHK -->|yes| F[resolve file: index, clean URL, 404.html, SPA fallback, ?format]
-  F --> OUT[serve blob with ETag, Range, precompression, headers]
+  F --> W{hash quarantined?}
+  W -->|yes| WH[451 withheld]
+  W -->|no| OUT[serve blob with ETag, Range, precompression, headers]
   CHK -.-> LOG[access log buffer, batched writes]
 ```
 
@@ -144,6 +147,7 @@ F0.1 implements health, host routing, the dashboard and `/.wardlock/health`; C1.
 - **Fallback files.** When the file that answers comes from another path (`404.html`, the SPA index, a clean URL's `page.html`), the edge asks again for that file's path and answers a plain 404 if it is not allowed, so a public path never leaks a protected fallback. `/.wardlock/*` is answered before any decision.
 - **Renditions (A2.6).** Renditions are chosen after the decision and file resolution: the edge's `SiteSource` returns each HTML file's renditions with the manifest, and when `?format=md` or `txt` names one the file has, the edge serves that blob in place of the file (`internal/edge/format.go`), with the same status and the ordinary cache headers; HTML responses advertise them with `Link: rel="alternate"` built from the request path alone. The format never changes the path the access decision is made for.
 - **Opening blobs (C1.12).** `serveBlob` (`internal/edge/blob.go`) hands `http.ServeContent` a `lazyBlob` that knows the file's size and ETag from the manifest and calls `BlobOpener.Open(ctx, sha256, size)` only on its first `Read`. `ServeContent` evaluates `If-Match`, `If-Unmodified-Since`, `If-None-Match` and `If-Modified-Since` (against the site's `ActivatedAt`) before reading, and a `HEAD` or an unsatisfiable `Range` never reads. So a `304`, `412`, `416` or `HEAD` never opens the blob, while its headers are still exactly what `ServeContent` always sent. The response goes through a `holdWriter` that keeps the status back until the blob's first byte has been read. A multipart boundary written before that is held too. If the open or that first read fails, as it does for an object missing from a bucket, the edge restores the headers it had before, logs `open blob` (`open rendition` for renditions) and answers the same `500` as a failed open, never a partial `200`. A failure later in the body can only cut the response short, as with any store. A file blob is handed back to the server's `ReadFrom` after the first chunk, so it is still sent with `sendfile`. `serveStripped` reads the whole page before writing, so any failure there is the same logged `500`.
+- **Withheld files (A2.15).** After resolution and every access decision, and before renditions, precompression or any blob is opened, `internal/edge/withheld.go` asks `Config.Withheld` (the `moderation.Quarantine`, an in-memory set) whether the resolved file's hash, or for a `.br`/`.gz` sibling the hash of the file it compresses, is quarantined, and answers `451` (`no-store`, no `ETag`) with the neutral page for HTML or a line of text otherwise. One check covers every path that serves a file, including `404.html`, the SPA fallback and renditions, and it never touches the database.
 - **Long-term caching (C1.10).** Chosen last, in `internal/edge/files.go`: `ServedSite.ImmutableAssets` carries the active deploy's flag (so the `Notifier` call on rollback restores the old headers), and `serveFile` sends `immutableCacheControl` instead of `cacheControl` only for a 200 whose file answers its own path and passes `hashedAsset` (SPEC "Serving"); renditions and stripped pages never take it, and `storeGuard` still turns any response that sets a cookie into `no-store`.
 - **Access log.** Each site request that gets an access decision is reported to the access log once its response is written (see Storage seam).
 
@@ -572,6 +576,39 @@ Access-log writes go into an in-memory buffer flushed in batches (every second o
 - **Writing.** One writer goroutine appends batches in a transaction through `store.AccessLog`, with a 10-second bound per write; a failed batch is logged and counted as dropped, not retried, so it cannot back up the buffer. Drops are logged from whichever goroutine sees them, at most every 10 seconds, because the writer goroutine may be the one stuck. `Close`, called after the HTTP server has shut down and before the database closes, stops accepting entries, drains the channel and writes the rest within `platform.ShutdownTimeout`. `Close` relies on the store honouring context cancellation to return at its deadline.
 - **Pruning.** A second goroutine prunes entries older than the retention period, except those of a taken-down site or a suspended owner's site, at start and hourly, in chunks of 1,000 rows (`DELETE … WHERE id IN (SELECT … LIMIT …)`), each within the 10-second bound, until none are left or the writer closes, so a large backlog never holds the write lock for long or delays batches. Pruning has no index on `occurred_at` alone, so each chunk scans; adding one needs a migration (follow-up).
 - **Reading.** `store.AccessLog` lists a site's entries, or one link's on a site, newest first with an `(occurred_at, id)` cursor and a limit clamped to 1 to 1,000, joined to `sites` on the owner, so a foreign or deleted site lists nothing. `access.Service` serves them to the API as `LinkAccessLog` (D3.3) and `SiteAccessLog` (A2.12).
+
+</details>
+
+## Content screening (A2.15)
+
+`internal/moderation` screens uploaded content when the operator configures a provider. A background worker queues each new image and HTML page by content hash, sends it through the `Moderator` interface, and records a verdict; the edge consults an in-memory `Quarantine` of withheld hashes on every file it serves. Nothing on the deploy or request path waits for screening.
+
+```mermaid
+flowchart LR
+  ACT[activation / rollback] -->|Notifier| WAKE[worker wakes]
+  TICK[every 30 s] --> WAKE
+  WAKE --> ENQ[EnqueueUnscreened: new image and page hashes of serving, non-exempt sites]
+  ENQ --> Q[(moderation_results: queue + verdicts)]
+  Q --> DUE[Due: next_attempt_at reached]
+  DUE --> SRC[Source: a serving, non-exempt file, as image bytes or page text]
+  SRC --> MOD[Moderator: OpenAI omni-moderation-latest]
+  MOD -->|429/5xx/network| RETRY[Retry: back-off, Retry-After pause]
+  RETRY --> Q
+  MOD -->|categories| POL[Policy: quarantine / flag / allow]
+  POL --> Q
+  POL -->|quarantined| QS[Quarantine set] --> EDGE[edge: 451]
+  POL -->|flagged or quarantined| MAIL[operator and owner notices]
+  Q -->|every 5 s| QS
+```
+
+<details>
+<summary>The Moderator interface, the queue and the wiring</summary>
+
+- **`Moderator`** is one method, `Moderate(ctx, Input) (Verdict, error)`: an `Input` is text pieces or one image (bytes and media type), a `Verdict` the categories flagged. `moderation.OpenAI` implements it with a plain `net/http` client over `POST /v1/moderations` (text as an array of strings, an image as a base64 data URL in an `image_url` part), the key in the `Authorization` header only. Errors are `ErrRejected` (`400`/`413`: the hash is recorded `skipped`) or a `*RetryError` wrapping `ErrUnavailable` with the status and any `Retry-After`; neither carries the key or content. `moderation/moderationtest.Fake` answers from a marker table for tests.
+- **The queue** is `moderation_results`, one row per hash ever queued (`store.Moderation`). `EnqueueUnscreened` is one `INSERT … SELECT … ON CONFLICT DO NOTHING` over the active deploys of serving sites whose owners are not exempt, so it is idempotent and needs no hook in `deploys`. A row is queued while `next_attempt_at` is set; `Due` reads those due now, `Record` stores a verdict and clears it, `Retry` moves it on. A rescan sets it again without touching the verdict, so a quarantined hash stays withheld meanwhile. A restart simply reads the table again.
+- **The worker** (`moderation.Service.Run`) runs a pass on every `Notifier` event and every 30 seconds: queue, then screen due hashes at most two at a time. Before sending it asks `Source` for a file it may send (re-checking exemption and serving state), reads the blob through the `BlobOpener` (images up to 20 MB, sniffed by bytes; a page's `txt` rendition, or `deploys.Render` of its first 5 MiB when it has none, chunked by `chunkText`). Failures back off from 30 seconds doubling to 6 hours with jitter; a `Retry-After` both sets the floor and pauses the whole worker.
+- **Verdicts** follow `Policy.Decide` over the endpoint's per-category booleans. A quarantine adds the hash to the in-process `Quarantine` at once and emails the operator (`mail.ScreeningMessage`) and each affected owner per site (`mail.WithheldMessage`); a flag emails the operator only. `Quarantine.Watch` reloads the full list from the database every 5 seconds, which is how `wardlockd admin moderation` decisions from another process reach a running server.
+- **Wiring.** `cmd/wardlockd/moderation.go` builds the service (with the OpenAI `Moderator` only when `WARDLOCK_MODERATION=openai`), always runs the quarantine watch so a file once withheld stays withheld with screening off, passes the `Quarantine` to the edge as `Config.Withheld`, and adds `wardlock_moderation_backlog` and `wardlock_moderation_quarantined` to `/metrics`. Garbage collection skips blobs whose row is `quarantined` without `discarded_at`.
 
 </details>
 

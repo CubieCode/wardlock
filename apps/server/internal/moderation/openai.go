@@ -118,9 +118,9 @@ func (o *OpenAI) Moderate(ctx context.Context, in Input) (Verdict, error) {
 		return Verdict{}, &RetryError{}
 	}
 	defer func() { _ = res.Body.Close() }()
-	switch {
-	case res.StatusCode == http.StatusOK:
-	case res.StatusCode == http.StatusBadRequest || res.StatusCode == http.StatusRequestEntityTooLarge:
+	switch res.StatusCode {
+	case http.StatusOK:
+	case http.StatusBadRequest, http.StatusRequestEntityTooLarge:
 		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, maxOpenAIResponse))
 		return Verdict{}, fmt.Errorf("%w: provider answered %d", ErrRejected, res.StatusCode)
 	default:
