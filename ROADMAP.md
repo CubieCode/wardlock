@@ -355,8 +355,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### D3.6: Open site from the dashboard
 
-- Status: `todo`
-- Owner:
+- Status: `review`
+- Owner: `feat/d3.6-open-site`
 - PR:
 - Depends on: D3.3
 - Scope: Restore SPEC's "Open site" action. On the site page, an "Open site" button opens the site in a new tab. For a public site (its `/` policy is public) it opens the site's address directly. Otherwise it first creates a share link through the existing `createShareLink` operation, labelled "Opened from dashboard", expiring in 10 minutes, no use limit, scoped to the whole site, and opens its URL; the link appears in the link list and access log like any other and can be revoked. Open the new tab synchronously from the click (then set its location) so pop-up blockers allow it, with `noopener`; show an error if creation fails. Update SPEC "Owners and sign-in" to describe exactly this. No API, `packages/ui` or server changes.

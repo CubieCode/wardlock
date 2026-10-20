@@ -28,6 +28,7 @@ import {
   type Policy,
   type Site,
 } from './format.js';
+import { SiteHeading } from './open-site.js';
 import { RollbackDialog } from './rollback.js';
 import { TeardownDialog } from './teardown.js';
 import './sites.css';
@@ -76,6 +77,8 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
   const [rollbackTo, setRollbackTo] = useState<Deploy | null>(null);
   const [tearingDown, setTearingDown] = useState(false);
   const [rolledBack, setRolledBack] = useState<Deploy | null>(null);
+  // Bumped when Open site creates a share link, so the list reloads with it.
+  const [linksVersion, setLinksVersion] = useState(0);
   const [more, setMore] = useState<'idle' | 'loading' | 'error'>('idle');
   // What a failed in-place refresh was for: the deploy history after a
   // rollback, or the site's access after a policy change.
@@ -205,13 +208,16 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
       <p className="site-back">
         <a href="/sites">All sites</a>
       </p>
-      <PageHeader
-        title={site.name}
+      <SiteHeading
+        api={api}
+        site={site}
+        policy={policy}
         description={
           <>
             Created <Time at={site.createdAt} />
           </>
         }
+        onLinkCreated={() => setLinksVersion((n) => n + 1)}
       />
 
       <Card title="Address and access">
@@ -247,7 +253,7 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
       </Card>
 
       <PoliciesCard api={api} site={site} onChange={() => refresh('access')} />
-      <ShareLinksCard api={api} site={site} />
+      <ShareLinksCard key={linksVersion} api={api} site={site} />
       <DomainsCard api={api} site={site} />
 
       <Card title="Deploys">
