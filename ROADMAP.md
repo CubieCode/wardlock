@@ -357,7 +357,7 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 - Status: `review`
 - Owner: `feat/d3.6-open-site`
-- PR:
+- PR: https://github.com/CubieCode/wardlock/pull/87
 - Depends on: D3.3
 - Scope: Restore SPEC's "Open site" action. On the site page, an "Open site" button opens the site in a new tab. For a public site (its `/` policy is public) it opens the site's address directly. Otherwise it first creates a share link through the existing `createShareLink` operation, labelled "Opened from dashboard", expiring in 10 minutes, no use limit, scoped to the whole site, and opens its URL; the link appears in the link list and access log like any other and can be revoked. Open the new tab synchronously from the click (then set its location) so pop-up blockers allow it, with `noopener`; show an error if creation fails. Update SPEC "Owners and sign-in" to describe exactly this. No API, `packages/ui` or server changes.
 - Acceptance: Component tests (public site opens directly; protected site creates a 10-minute labelled link and opens it; failure shows an error); a Playwright spec opening a protected fixture site; Mobbin references cited; checked at 1440px and 390px in light and dark; `pnpm check` and `pnpm browser:test` pass.
