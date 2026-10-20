@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"wardlock.nz/server/internal/deploys"
+	"wardlock.nz/server/internal/deploys/s3test"
 	"wardlock.nz/server/internal/store"
 	"wardlock.nz/server/internal/store/storetest"
 )
@@ -33,7 +34,7 @@ type gcWorld struct {
 	t     *testing.T
 	db    *store.DB
 	dir   string
-	blobs *deploys.FSBlobStore
+	blobs gcStore
 	svc   *deploys.Service
 	log   bytes.Buffer
 	logMu sync.Mutex
@@ -42,10 +43,24 @@ type gcWorld struct {
 
 var gcEpoch = time.UnixMilli(1_800_000_000_000).UTC()
 
+// gcStore is a blob store GC can also sweep.
+type gcStore interface {
+	deploys.BlobStore
+	deploys.BlobFiles
+}
+
 func newGCWorld(t *testing.T) *gcWorld {
 	t.Helper()
-	w := &gcWorld{t: t, db: storetest.New(t), dir: t.TempDir()}
-	w.blobs = deploys.NewFSBlobStore(w.dir)
+	dir := t.TempDir()
+	w := newGCWorldOver(t, deploys.NewFSBlobStore(dir))
+	w.dir = dir
+	return w
+}
+
+// newGCWorldOver is a gcWorld storing blobs in blobs.
+func newGCWorldOver(t *testing.T, blobs gcStore) *gcWorld {
+	t.Helper()
+	w := &gcWorld{t: t, db: storetest.New(t), blobs: blobs}
 	w.now.Store(gcEpoch.UnixMilli())
 	w.svc = deploys.NewService(deploys.Config{
 		Sites:    w.db.Sites(),
@@ -402,6 +417,53 @@ func TestGCRemovesUnrecordedFiles(t *testing.T) {
 	}
 }
 
+// TestGCS3 runs GC over an S3 blob store: pruned deploys' blobs leave the
+// bucket, and the sweep removes unrecorded blob objects and stale
+// temporary uploads, leaving young ones and unrelated keys.
+func TestGCS3(t *testing.T) {
+	srv := s3test.New(t, "wardlock-gc", "AKIATEST")
+	srv.PageSize = 2 // list in several pages
+	w := newGCWorldOver(t, srv.Store(t, "wl/"))
+	// Objects are stamped by the service clock; GC runs two days later.
+	srv.SetNow(w.clock)
+	o := w.owner()
+	w.site(o, "docs")
+	w.mustDeploy(o, "docs", "pruned")
+	w.mustDeploy(o, "docs", "recorded")
+	for _, c := range []string{"crashed", "fresh"} {
+		if err := w.blobs.Put(t.Context(), hashOf(c), int64(len(c)), strings.NewReader(c)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	young := gcEpoch.Add(47 * time.Hour)
+	h := hashOf("fresh")
+	srv.SetModTime("wl/sha256/"+h[:2]+"/"+h[2:], young)
+	srv.PutObject("wl/uploads/stale", []byte("partial"), gcEpoch)
+	srv.PutObject("wl/uploads/young", []byte("in progress"), young)
+	srv.PutObject("wl/sha256/ab/not-a-blob", []byte("x"), gcEpoch)
+	srv.PutObject("other/uploads/stale", []byte("not ours"), gcEpoch)
+
+	res := w.run(gcEpoch.Add(48*time.Hour), 1)
+	if res.DeploysPruned != 1 || res.BlobsDeleted != 1 || res.FilesDeleted != 2 ||
+		res.BytesFreed != int64(len("pruned")+len("crashed")+len("partial")) {
+		t.Fatalf("result = %+v", res)
+	}
+	if w.stored("pruned") || w.stored("crashed") || !w.stored("fresh") || !w.stored("recorded") {
+		t.Fatal("wrong blobs removed")
+	}
+	for key, want := range map[string]bool{
+		"wl/uploads/stale": false, "wl/uploads/young": true,
+		"wl/sha256/ab/not-a-blob": true, "other/uploads/stale": true,
+	} {
+		if _, ok := srv.Object(key); ok != want {
+			t.Errorf("%s exists = %v, want %v", key, ok, want)
+		}
+	}
+	if err := w.serves(t.Context(), o, "docs"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func blobPath(dir, h string) string { return filepath.Join(dir, "sha256", h[:2], h[2:]) }
 
 // TestGCConcurrentWithUploads runs GC continuously while two owners deploy
@@ -492,13 +554,13 @@ func (h listHook) UnreferencedBlobs(ctx context.Context, before time.Time, after
 
 // deleteHook runs before each blob file is deleted.
 type deleteHook struct {
-	*deploys.FSBlobStore
+	deploys.BlobStore
 	before func(sha256 string)
 }
 
 func (h deleteHook) Delete(ctx context.Context, sha256 string) error {
 	h.before(sha256)
-	return h.FSBlobStore.Delete(ctx, sha256)
+	return h.BlobStore.Delete(ctx, sha256)
 }
 
 // TestGCInterleavings forces the orderings TestGCConcurrentWithUploads can
@@ -550,7 +612,7 @@ func TestGCInterleavings(t *testing.T) {
 	t.Run("deploy while the file is removed", func(t *testing.T) {
 		w, o := setup(t)
 		var deployed chan error
-		g := newGC(w, w.db.GC(), deleteHook{FSBlobStore: w.blobs, before: func(h string) {
+		g := newGC(w, w.db.GC(), deleteHook{BlobStore: w.blobs, before: func(h string) {
 			if h != hashOf("reused") || deployed != nil {
 				return
 			}

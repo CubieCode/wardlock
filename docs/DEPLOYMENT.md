@@ -10,7 +10,7 @@ Wardlock needs one machine, one binary and a data directory. SQLite is embedded;
 - A DNS zone you control, with a wildcard record for sites.
 - Ports 80 and 443 reachable from the internet for automatic TLS, or a reverse proxy in front.
 - An SMTP server for email codes (A2.4) and owner sign-in codes (C1.1).
-- Persistent storage for `WARDLOCK_DATA_DIR`, on a local filesystem (not NFS, because of SQLite locking).
+- Persistent storage for `WARDLOCK_DATA_DIR`, on a local filesystem (not NFS, because of SQLite locking). Deploy file bodies live there too unless you put them in an [S3-compatible bucket](#s3-compatible-blob-storage).
 - A server key in `WARDLOCK_SECRET`: at least 32 random bytes, base64url (`openssl rand -base64 32 | tr '+/' '-_'`). `wardlockd serve` and `wardlockd admin` refuse to start without it. See [Backups](#backups).
 
 ## Domains and DNS
@@ -187,6 +187,54 @@ Deploy file bodies are stored once per content hash under `WARDLOCK_BLOB_DIR` (d
 
 Values are whole numbers of at least 1, without units. A deploy over a limit is rejected when it is created (`413 limit_exceeded`, naming the file where one is at fault), and an upload body longer than the per-file limit is rejected too. Raising the per-file limit means raising a reverse proxy's request body limit to match.
 
+### S3-compatible blob storage
+
+With `WARDLOCK_BLOB_BACKEND=s3` the file bodies go to a bucket on any S3-compatible service (AWS S3, Cloudflare R2, MinIO, Backblaze B2, Wasabi, Garage) instead of `WARDLOCK_BLOB_DIR`, which must then be unset. Everything else stays on the machine: the database, rate limits and certificates are still local, so this is still one server, not a cluster. The settings are checked at start, and a missing or malformed one stops the server with an error naming it.
+
+| Variable                 | Default    | Meaning                                                                                                                              |
+| ------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `WARDLOCK_BLOB_BACKEND`  | `fs`       | `fs` (the blob directory) or `s3`                                                                                                    |
+| `WARDLOCK_S3_ENDPOINT`   | (required) | the service's base URL, scheme and host only: `https://s3.eu-west-1.amazonaws.com`, `https://<account>.r2.cloudflarestorage.com`     |
+| `WARDLOCK_S3_BUCKET`     | (required) | bucket name; create the bucket first, Wardlock never does                                                                            |
+| `WARDLOCK_S3_REGION`     | (required) | the bucket's region: `eu-west-1` on AWS, `auto` on R2, `us-east-1` on MinIO unless configured otherwise, `garage` on Garage          |
+| `WARDLOCK_S3_PREFIX`     | none       | key prefix such as `wardlock/production`, so one bucket can hold other data                                                          |
+| `WARDLOCK_S3_PATH_STYLE` | automatic  | `true` puts the bucket in the path (`https://endpoint/bucket/key`, usual for MinIO and Garage), `false` in the host (virtual-hosted) |
+
+Without `WARDLOCK_S3_PATH_STYLE` the client uses virtual-hosted addressing for AWS endpoints and path style for everything else. Credentials come from the standard AWS sources, in this order: `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (with `AWS_SESSION_TOKEN` for temporary keys) in the environment; the shared credentials and config files (`AWS_SHARED_CREDENTIALS_FILE`, `AWS_CONFIG_FILE`, `AWS_PROFILE`; by default `~/.aws/credentials` of the service user); then a container, web-identity or EC2 instance role. Put keys in the service's environment file (mode 0600) like `WARDLOCK_SECRET`. They are never logged: the startup line `wardlockd started` names the endpoint, bucket, region, prefix and which credential source is used, and nothing else. Use plain `http://` only for a service on the same host or private network.
+
+Give the credentials only what Wardlock needs, scoped to the prefix where the service allows it: `s3:ListBucket` on the bucket (readiness and garbage collection), and `s3:GetObject`, `s3:PutObject` and `s3:DeleteObject` on `<bucket>/<prefix>*`. For AWS:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::wardlock-blobs"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::wardlock-blobs/wardlock/production/*"
+    }
+  ]
+}
+```
+
+Keep the bucket private (no public access, no website hosting): every file is served through Wardlock's access control, and anyone who can read the bucket can read every protected site. Wardlock never creates presigned URLs.
+
+Blobs are stored at `<prefix>sha256/ab/cdef…`, the same layout as on disk. An upload streams to a temporary key `<prefix>uploads/<random>` while Wardlock hashes it, signed with the expected SHA-256 so the service rejects other bytes too; only a verified upload is copied to its final key, and the temporary key is then deleted, so a blob is either complete or absent. Abandoned temporary keys older than `WARDLOCK_GC_GRACE_HOURS` are removed by garbage collection, as are blob objects with no database record. Each file is at most 5 GiB, the limit of one upload or copy, so `WARDLOCK_MAX_FILE_SIZE` may not exceed `5368709120`. Serving reads files with ranged `GET`s from the position the response needs, so a `Range` request never downloads the whole object.
+
+Request costs, so you can estimate a provider's bill:
+
+- **Deploys:** one `HEAD` per manifest file the owner has uploaded before, when the deploy is created and again when it is activated, and for each uploaded file one `PUT`, one `COPY` and one `DELETE` (the copy and delete happen even when the content is already stored, so upload timing does not reveal what other owners have stored). Activation also reads each HTML file once and stores its Markdown and text renditions the same way.
+- **Serving:** one `HEAD` for each response that opens a file, plus one `GET` for each response that sends its body (a `304 Not Modified` or `HEAD` request sends none); every byte served is egress from the bucket, so run Wardlock close to it, or pick a service without egress fees.
+- **Garbage collection:** one `LIST` per 1,000 stored objects each run (every `WARDLOCK_GC_INTERVAL_MINUTES`, hourly by default), plus one `DELETE` per removed blob.
+- **Readiness:** one `HEAD` of the bucket per `/readyz` or `/metrics` scrape.
+
+Each served file waits for at least one round trip to the bucket, so expect slower first bytes than from a local disk.
+
 ### Garbage collection
 
 The server prunes deploy history and removes file bodies no deploy references at start and then every `WARDLOCK_GC_INTERVAL_MINUTES`. Each site keeps its newest `WARDLOCK_DEPLOY_HISTORY` deploys plus its active deploy, which is never pruned, so rollback works within that history. Deploys not yet activated and bodies uploaded within `WARDLOCK_GC_GRACE_HOURS` are kept, so a slow upload is never cut short; keep the grace period longer than your longest deploy. `wardlockd gc` runs one collection with the same settings and prints what it removed. It is safe to run while the server is running, for example from cron with `WARDLOCK_GC_INTERVAL_MINUTES=0`.
@@ -224,7 +272,7 @@ Entries are written in batches off the request path: serving never waits on the 
 
 The operator listener is plain HTTP without authentication, so bind it to loopback or a private network that only the monitoring system reaches, and never proxy it to the internet. It must differ from `WARDLOCK_HTTP_ADDR` and `WARDLOCK_HTTPS_ADDR`. It answers on any `Host` and serves nothing else (`404`); site, dashboard and unknown hosts on the main listeners never reach it, so `/metrics` and `/readyz` there are ordinary site paths or the dashboard. Its requests are neither logged nor counted in the request metrics.
 
-- **`GET /readyz`** runs the checks concurrently and answers `200` with `{"status":"ready","checks":{"database":"ok","blobs":"ok"}}` when all pass, or `503` with `"status":"unready"` and the failing check's reason in place of `ok`. The checks: `database` reads from the database; `blobs` creates and removes a probe file (`.ready-*`) in `WARDLOCK_BLOB_DIR`, so a missing, read-only or full blob directory fails it; `certificates` (automatic TLS mode only) needs an unexpired certificate for every managed name (the sites wildcard and the dashboard host), so it fails until the first certificates arrive and if renewal falls behind until expiry. A check that has not finished within 5 seconds reports `timeout`, so `/readyz` and `/metrics` answer promptly even when, say, the blob directory sits on a hung network mount; it keeps running in the background, and later probes wait on that same run rather than starting another. Once graceful shutdown begins (`SIGTERM` or `SIGINT`), `/readyz` answers `503` with `"status":"shutting_down"` without running the checks; the operator listener is the last to stop, so a load balancer sees the drain while in-flight requests finish (up to 10 seconds). A check that starts failing is logged once as `readiness check failing` with `check` and `error`, and `readiness check recovered` when it passes again.
+- **`GET /readyz`** runs the checks concurrently and answers `200` with `{"status":"ready","checks":{"database":"ok","blobs":"ok"}}` when all pass, or `503` with `"status":"unready"` and the failing check's reason in place of `ok`. The checks: `database` reads from the database; `blobs` creates and removes a probe file (`.ready-*`) in `WARDLOCK_BLOB_DIR`, so a missing, read-only or full blob directory fails it, or with the S3 backend sends `HEAD` to the bucket, so an unreachable service, a missing bucket or rejected credentials fail it; `certificates` (automatic TLS mode only) needs an unexpired certificate for every managed name (the sites wildcard and the dashboard host), so it fails until the first certificates arrive and if renewal falls behind until expiry. A check that has not finished within 5 seconds reports `timeout`, so `/readyz` and `/metrics` answer promptly even when, say, the blob directory sits on a hung network mount; it keeps running in the background, and later probes wait on that same run rather than starting another. Once graceful shutdown begins (`SIGTERM` or `SIGINT`), `/readyz` answers `503` with `"status":"shutting_down"` without running the checks; the operator listener is the last to stop, so a load balancer sees the drain while in-flight requests finish (up to 10 seconds). A check that starts failing is logged once as `readiness check failing` with `check` and `error`, and `readiness check recovered` when it passes again.
 - **`GET /metrics`** is the Prometheus text format (0.0.4). Labels never name hosts, paths, sites or owners:
 
 | Metric                                                                                         | Type           | Meaning                                                                        |
@@ -248,10 +296,11 @@ Logs are structured (`WARDLOCK_LOG_FORMAT=json` by default, or `text`) on standa
 
 ## Backups
 
-Everything lives in `WARDLOCK_DATA_DIR`: `wardlock.db` and `blobs/` (or `WARDLOCK_BLOB_DIR` if set; and `certs/`, which can be re-issued).
+Everything lives in `WARDLOCK_DATA_DIR`: `wardlock.db` and `blobs/` (or `WARDLOCK_BLOB_DIR` if set, or the bucket with the S3 backend; and `certs/`, which can be re-issued).
 
 - **Database:** never copy `wardlock.db` (or its `-wal` and `-shm` files) while the server runs. Use `wardlockd backup /path/to/backup.db` with the same environment as the server (it reads `WARDLOCK_DATA_DIR`). It uses SQLite's online backup API to copy the whole database inside one read transaction, so the copy is the database as of one moment while the server keeps reading and writing (WAL mode does not block writers meanwhile). The copy is written to a temporary file beside the destination, checked with `PRAGMA quick_check`, made a single self-contained file (no `-wal` beside it), synced and moved into place with mode 0600. The destination must not exist yet: the command never overwrites a file. Moving into place is a hard link (which fails rather than replace a file that appeared meanwhile), so the destination's filesystem must support hard links: local filesystems do, but some network shares (SMB/CIFS), FAT/exFAT and some FUSE mounts do not, and the command then fails with `move backup into place`. In that case write the backup to a local directory and copy it to the share afterwards. A failed backup removes its temporary file and any `-journal`, `-wal` or `-shm` beside it. It needs no `WARDLOCK_SECRET`. As an option, [Litestream](https://litestream.io) can replicate the database continuously to object storage.
 - **Blobs:** content-addressed and write-once, so a plain `rsync` (after the database backup) is consistent: every blob the backed-up database references already exists, provided garbage collection does not run in between. Schedule backups away from collections, or set `WARDLOCK_GC_INTERVAL_MINUTES=0` and run `wardlockd gc` after each backup.
+- **Blobs in a bucket:** `wardlockd backup` copies only the database, never the bucket. Protect the bucket with the service's own tools: turn on versioning, with a lifecycle rule that expires noncurrent versions no sooner than your oldest database backup, so a blob that garbage collection deleted after a backup can be brought back; or replicate the bucket to another bucket or region. A copy with `rclone sync` or `aws s3 sync` taken after each database backup works too, under the same rule about garbage collection as `rsync`.
 
 ```sh
 # systemd: as the service user, with the service's environment, into a
@@ -268,7 +317,7 @@ docker compose -f deploy/compose.yaml cp wardlockd:/data/backup.db .
 ### Restore
 
 1. Stop the server.
-2. Put the backup in an empty data directory as `wardlock.db`, and the blobs under it as `blobs/` (or at `WARDLOCK_BLOB_DIR`). Leave out any `wardlock.db-wal` or `wardlock.db-shm` from elsewhere: they belong to another database. Make both owned by the service user (`chown -R wardlock:wardlock`, mode 0700 for the directory).
+2. Put the backup in an empty data directory as `wardlock.db`, and the blobs under it as `blobs/` (or at `WARDLOCK_BLOB_DIR`, or in the bucket: restore the previous versions of any blob objects deleted since the backup, or point `WARDLOCK_S3_BUCKET` at the replica). Leave out any `wardlock.db-wal` or `wardlock.db-shm` from elsewhere: they belong to another database. Make both owned by the service user (`chown -R wardlock:wardlock`, mode 0700 for the directory).
 3. Start the server with the same `WARDLOCK_SECRET` and hosts. Migrations run automatically, so a backup from an older release is upgraded; a server older than the backup refuses to start (`database is newer than this server`).
 4. Check `/readyz` on the operator listener and open a site. Owners, sites, policies, share links, API tokens and sessions written before the backup are back; anything written after it is lost.
 

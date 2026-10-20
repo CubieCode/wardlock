@@ -14,7 +14,6 @@ import (
 	"net/mail"
 	"net/netip"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -43,8 +42,14 @@ type Config struct {
 	LogFormat       string
 	// SMTP is outgoing mail: WARDLOCK_SMTP_URL and WARDLOCK_SMTP_FROM.
 	SMTP SMTPConfig
-	// BlobDir holds deploy file bodies; <DataDir>/blobs by default.
+	// BlobBackend is where deploy file bodies live: BlobFS (the default)
+	// or BlobS3.
+	BlobBackend string
+	// BlobDir holds them for BlobFS; <DataDir>/blobs by default, and ""
+	// for BlobS3.
 	BlobDir string
+	// S3 is the bucket for BlobS3.
+	S3 S3Config
 	// Deploy limits: bytes per file, files per deploy, bytes per deploy.
 	MaxFileSize    int64
 	MaxDeployFiles int
@@ -153,7 +158,6 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	cfg.SMTP = smtp
-	cfg.BlobDir = get("WARDLOCK_BLOB_DIR", filepath.Join(cfg.DataDir, "blobs"))
 	for _, l := range []struct {
 		key      string
 		fallback int64
@@ -168,6 +172,9 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 			return Config{}, fmt.Errorf("%w: %s must be a positive whole number: %w", ErrInvalidConfig, l.key, err)
 		}
 		l.dst(v)
+	}
+	if err := cfg.loadBlobs(get); err != nil {
+		return Config{}, err
 	}
 	if err := cfg.loadAccessLog(get); err != nil {
 		return Config{}, err

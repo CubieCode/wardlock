@@ -21,7 +21,8 @@ const gcUsage = `Usage:
 
 Prunes deploy history beyond WARDLOCK_DEPLOY_HISTORY per site (never the
 active deploy) and removes blobs no deploy references, older than
-WARDLOCK_GC_GRACE_HOURS. Safe to run while the server is running.
+WARDLOCK_GC_GRACE_HOURS, from the blob directory or bucket, along with
+abandoned temporary uploads. Safe to run while the server is running.
 `
 
 // gcCommand runs `wardlockd gc`: one collection against the configured data
@@ -45,7 +46,11 @@ func gcCommand(ctx context.Context, args []string, getenv func(string) string, s
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	res, err := newGC(cfg, log, db).Run(ctx)
+	blobs, _, err := openBlobs(cfg)
+	if err != nil {
+		return err
+	}
+	res, err := newGC(cfg, log, db, blobs).Run(ctx)
 	if err != nil {
 		return err
 	}
@@ -54,8 +59,7 @@ func gcCommand(ctx context.Context, args []string, getenv func(string) string, s
 	return nil
 }
 
-func newGC(cfg platform.Config, log *slog.Logger, db *store.DB) *deploys.GC {
-	blobs := deploys.NewFSBlobStore(cfg.BlobDir)
+func newGC(cfg platform.Config, log *slog.Logger, db *store.DB, blobs blobStore) *deploys.GC {
 	return deploys.NewGC(deploys.GCConfig{
 		Repo:    db.GC(),
 		Blobs:   blobs,
@@ -70,13 +74,13 @@ func newGC(cfg platform.Config, log *slog.Logger, db *store.DB) *deploys.GC {
 // startGC runs garbage collection every cfg.GCInterval (none when zero).
 // The returned stop cancels a run in progress and waits for it; call it
 // before the database closes.
-func startGC(ctx context.Context, cfg platform.Config, log *slog.Logger, db *store.DB) func() {
+func startGC(ctx context.Context, cfg platform.Config, log *slog.Logger, db *store.DB, blobs blobStore) func() {
 	if cfg.GCInterval <= 0 {
 		return func() {}
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
-	gc := newGC(cfg, log, db)
+	gc := newGC(cfg, log, db, blobs)
 	wg.Go(func() { gc.RunEvery(ctx, cfg.GCInterval) })
 	return func() {
 		cancel()

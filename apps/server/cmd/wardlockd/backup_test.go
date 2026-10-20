@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -34,23 +35,32 @@ type testServer struct {
 	logs    *syncBuffer
 	stop    func()
 	session *http.Cookie
+	extra   map[string]string // more environment, over the defaults
 }
 
 func (s *testServer) env() map[string]string {
-	return map[string]string{
+	env := map[string]string{
 		"WARDLOCK_HTTP_ADDR":     s.addr,
 		"WARDLOCK_OPERATOR_ADDR": s.opAddr,
 		"WARDLOCK_DATA_DIR":      s.dataDir,
 		"WARDLOCK_BASE_DOMAIN":   "wardlock.localhost",
 		"WARDLOCK_SECRET":        testSecret,
 	}
+	maps.Copy(env, s.extra)
+	return env
 }
 
 func (s *testServer) getenv(k string) string { return s.env()[k] }
 
 func startServer(t *testing.T, dataDir string) *testServer {
 	t.Helper()
-	s := &testServer{t: t, addr: freeAddr(t), opAddr: freeAddr(t), dataDir: dataDir, logs: &syncBuffer{}}
+	return startServerEnv(t, dataDir, nil)
+}
+
+// startServerEnv is startServer with extra environment.
+func startServerEnv(t *testing.T, dataDir string, extra map[string]string) *testServer {
+	t.Helper()
+	s := &testServer{t: t, addr: freeAddr(t), opAddr: freeAddr(t), dataDir: dataDir, logs: &syncBuffer{}, extra: extra}
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() { done <- run(ctx, []string{"serve"}, s.getenv, io.Discard, s.logs) }()

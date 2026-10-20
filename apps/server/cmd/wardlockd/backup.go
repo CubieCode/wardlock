@@ -21,7 +21,9 @@ const backupUsage = `Usage:
 
 Writes a consistent copy of the database in WARDLOCK_DATA_DIR to PATH, a
 new file, using SQLite's online backup API. Safe to run while the server is
-running. Back up the blob directory afterwards; see docs/DEPLOYMENT.md.
+running. Back up the blob directory afterwards, or with
+WARDLOCK_BLOB_BACKEND=s3 rely on bucket versioning or replication; see
+docs/DEPLOYMENT.md.
 `
 
 // backupCommand runs `wardlockd backup PATH`.

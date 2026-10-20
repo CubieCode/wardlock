@@ -57,14 +57,13 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	// Readiness checks the blob directory, so it exists from the start
-	// rather than from the first upload.
-	if err := os.MkdirAll(cfg.BlobDir, 0o700); err != nil {
-		return fmt.Errorf("create blob directory: %w", err)
+	blobs, blobsReady, err := openBlobs(cfg)
+	if err != nil {
+		return err
 	}
 	recorder, stopAccessLog := startAccessLog(ctx, cfg, log, db)
 	defer stopAccessLog()
-	stopGC := startGC(ctx, cfg, log, db)
+	stopGC := startGC(ctx, cfg, log, db, blobs)
 	defer stopGC()
 
 	ln, err := net.Listen("tcp", cfg.HTTPAddr)
@@ -110,7 +109,6 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		return err
 	}
 
-	blobs := deploys.NewFSBlobStore(cfg.BlobDir)
 	notifier := deploys.NewLocalNotifier()
 	accessSvc, err := access.New(access.Config{
 		Sites:    db.Sites(),
@@ -157,7 +155,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	}
 	metrics := platform.NewMetrics(time.Now())
 	collectServerMetrics(metrics, cfg, recorder.w, expiries)
-	readiness := newReadiness(cfg, log, db, expiries)
+	readiness := newReadiness(log, db, blobsReady, expiries)
 
 	sitesCfg := sites.Config{
 		Sites:         db.Sites(),
@@ -283,7 +281,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		slog.String("version", platform.Version),
 		slog.String("dashboard", dashURL.String()),
 		slog.String("data_dir", cfg.DataDir),
-		slog.String("blob_dir", cfg.BlobDir),
+		blobsAttr(cfg),
 		slog.String("tls_mode", cfg.TLS.Mode),
 	)
 	if setupURL != "" {
@@ -294,6 +292,14 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			slog.String("setup_url", setupURL))
 	}
 	return platform.Serve(ctx, log, readiness, servers...)
+}
+
+// blobsAttr logs where blobs are kept, without credentials.
+func blobsAttr(cfg platform.Config) slog.Attr {
+	if cfg.BlobBackend == platform.BlobS3 {
+		return slog.Any("blob_bucket", cfg.S3)
+	}
+	return slog.String("blob_dir", cfg.BlobDir)
 }
 
 // tlsAsk answers /.wardlock/tls-ask for the TLS-terminating proxy in proxy
