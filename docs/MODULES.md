@@ -1,6 +1,6 @@
 # Modules and boundaries
 
-Wardlock is a modular monolith: one server process, one dashboard, one CLI, with boundaries enforced by folder, Go module, licence and lint rules rather than by separate services. This file says what each module owns and what it may import. `pnpm check` enforces the licence boundaries and the TypeScript import rules (`scripts/check-boundaries.mjs`, `eslint.config.js`), and depguard (`.golangci.yml`) enforces the "Must not import" rules for `edge`, `access`, `oauth`, `mail` and `tls`, the MIT modules, and the storage rule for every domain package. The other rows are conventions that review checks.
+Wardlock is a modular monolith: one server process, one dashboard, one CLI, with boundaries enforced by folder, Go module, licence and lint rules rather than by separate services. This file says what each module owns and what it may import. `pnpm check` enforces the licence boundaries and the TypeScript import rules (`scripts/check-boundaries.mjs`, `eslint.config.js`), and depguard (`.golangci.yml`) enforces every "Must not import" rule below, the MIT modules and the storage rule for every domain package. "Domain packages" means `edge`, `access`, `oauth`, `deploys`, `sites`, `owners`, `mail`, `tls` and `api`. Change a rule here and in `.golangci.yml` together.
 
 ## Go modules
 
@@ -17,7 +17,7 @@ MIT modules never import AGPL code: depguard denies `wardlock.nz/server` in `app
 | Package     | Owns                                                                                                                                                                  | Must not import                                                     |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `platform`  | Config, logging and redaction, request logging, health and readiness, metrics exposition, graceful shutdown, version                                                  | any other internal package                                          |
-| `store`     | SQLite connection, migration runner, sqlc queries, repository interfaces and their SQLite implementations, `storetest`                                                | domain packages                                                     |
+| `store`     | SQLite connection, migration runner, sqlc queries, repository interfaces and their SQLite implementations, `storetest`                                                | domain packages, `dashboard`                                        |
 | `edge`      | Host routing, static serving, policy enforcement at request time, `/.wardlock/*`, response headers, renditions selection                                              | `api`, `store`, `deploys`, `database/sql`, `sqlcgen`, SQLite driver |
 | `access`    | Policies and their evaluation, share links and tokens, site sessions and cookie primitives, password, email code, OAuth, the access-log pipeline (`access/accesslog`) | `net/http`, `api`, `edge`, `database/sql`, `sqlcgen`                |
 | `oauth`     | OAuth and OIDC provider clients (GitHub, Google, generic OIDC): authorisation URLs, code exchange, ID-token checks; `oauthtest` fake                                  | `api`, `edge`, `store`, `database/sql`, `sqlcgen`                   |
@@ -27,7 +27,7 @@ MIT modules never import AGPL code: depguard denies `wardlock.nz/server` in `app
 | `mail`      | `Mailer` interface, SMTP delivery (STARTTLS or implicit TLS), the `dev://` sink, sign-in and email-code templates                                                     | `api`, `edge`, `database/sql`, `sqlcgen`                            |
 | `tls`       | certmagic configuration and modes, the on-demand decision, HTTP to HTTPS redirect, trusted-proxy `X-Forwarded-*` handling                                             | `api`, `edge`, `database/sql`, `sqlcgen`                            |
 | `api`       | Generated OpenAPI interface, handlers that translate HTTP to domain calls, error-to-status mapping                                                                    | `edge`                                                              |
-| `dashboard` | Embedded dashboard files, SPA fallback, dev proxy                                                                                                                     | domain packages                                                     |
+| `dashboard` | Embedded dashboard files, SPA fallback, dev proxy                                                                                                                     | domain packages, `store`                                            |
 
 Rules of thumb:
 
