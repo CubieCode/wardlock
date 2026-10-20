@@ -476,7 +476,9 @@ func TestAbuseReports(t *testing.T) {
 	p.do(http.MethodGet, dashHost, "/report?site=docs.wardlock.localhost&page=/guide", "", nil).expect(t, http.StatusOK, "Report this site", "")
 	p.reportPost(host, "198.51.100.2", url.Values{"reason": {"illegal"}}, nil).expect(t, http.StatusOK, "Thanks for your report", "")
 
-	// Logs name sites by ID, never reporters, tokens or what they wrote.
+	// Logs name sites by ID, never reporters, tokens or what they wrote,
+	// once every background send has logged.
+	p.acc.Close()
 	logs := p.logs.String()
 	for _, secret := range []string{token, "reporter@example.test", "bank logins", "192.0.2.10"} {
 		if strings.Contains(logs, secret) {
