@@ -17,6 +17,7 @@ It is pronounced "ward-lock", not "warlock". A warded lock has internal obstruct
 - [ARCHITECTURE](docs/ARCHITECTURE.md): components, request flow, data model, upload protocol and what each built item added.
 - [MODULES](docs/MODULES.md): package boundaries and how they are enforced.
 - [DESIGN](DESIGN.md) and [DESIGN-SYSTEM](docs/DESIGN-SYSTEM.md): the dashboard's character, tokens and components.
+- [Release notes for v0.1.0](docs/releases/v0.1.0.md): the first public alpha: what it does, how to install it, and its known limitations.
 - [ROADMAP](ROADMAP.md): every item with its status, and the [launch checklist](docs/LAUNCH-CHECKLIST.md) for the public alpha.
 - [AGENTS](AGENTS.md) and [CONTRIBUTING](CONTRIBUTING.md): conventions for anyone changing the repository, human or agent.
 
