@@ -1,6 +1,13 @@
 # Modules and boundaries
 
-Wardlock is a modular monolith: one server process, one dashboard, one CLI, with boundaries enforced by folder, Go module, licence and lint rules rather than by separate services. This file says what each module owns and what it may import. `pnpm check` enforces the licence boundaries and the TypeScript import rules (`scripts/check-boundaries.mjs`, `eslint.config.js`), and depguard (`.golangci.yml`) enforces every "Must not import" rule below, the MIT modules and the storage rule for every domain package. "Domain packages" means `edge`, `access`, `oauth`, `deploys`, `sites`, `owners`, `mail`, `tls` and `api`. Change a rule here and in `.golangci.yml` together.
+Wardlock is a modular monolith: one server process, one dashboard, one CLI, with boundaries enforced by folder, Go module, licence and lint rules rather than by separate services. This file says what each module owns and what it may import. "Domain packages" means `edge`, `access`, `oauth`, `deploys`, `sites`, `owners`, `mail`, `tls` and `api`. Change a rule here and in `.golangci.yml` together.
+
+<details>
+<summary>How the rules are enforced</summary>
+
+`pnpm check` enforces the licence boundaries and the TypeScript import rules (`scripts/check-boundaries.mjs`, `eslint.config.js`), and depguard (`.golangci.yml`) enforces every "Must not import" rule below, the MIT modules and the storage rule for every domain package.
+
+</details>
 
 ## Go modules
 
@@ -50,6 +57,11 @@ The dashboard calls the server only through `@wardlock/apiclient-ts`: ESLint for
 
 ## Generated code
 
+Generated files are committed, start with a "Code generated … DO NOT EDIT" or equivalent notice, and are never edited by hand. Change the source and run `pnpm codegen`.
+
+<details>
+<summary>Generated files, generators and sources</summary>
+
 | File                                                                      | Generator                                   | Source                                               |
 | ------------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------- |
 | `apps/server/internal/api/api.gen.go`                                     | oapi-codegen (strict server, models)        | `packages/api-spec/openapi.yaml`                     |
@@ -58,7 +70,7 @@ The dashboard calls the server only through `@wardlock/apiclient-ts`: ESLint for
 | `packages/apiclient-ts/src/schema.gen.ts`                                 | openapi-typescript                          | `packages/api-spec/openapi.yaml`                     |
 | `apps/server/internal/store/sqlcgen/*.go`                                 | sqlc                                        | `apps/server/migrations/`, `internal/store/queries/` |
 
-Generated files are committed, start with a "Code generated … DO NOT EDIT" or equivalent notice, and are never edited by hand. Change the source and run `pnpm codegen`.
+</details>
 
 ## Serialization gates
 

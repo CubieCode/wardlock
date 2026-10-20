@@ -1,6 +1,6 @@
 # Security model
 
-Wardlock protects static content with secrets that travel in URLs. That is a deliberate trade-off: a share link must open instantly for people, `curl`, AI fetch tools and link-preview bots that keep no cookies. This document lists what we defend against, how, and what we accept. Implementation rules live in [wardlock-access](../.agents/skills/wardlock-access/SKILL.md); A2.7 checked the implementation against this document.
+Wardlock protects static content with secrets that travel in URLs. That is a deliberate trade-off: a share link must open instantly for people, `curl`, AI fetch tools and link-preview bots that keep no cookies. This document lists what we defend against, how, and what we accept: each threat leads with its defence, and the reasoning, exact limits and accepted risks are collapsed beneath it. Implementation rules live in [wardlock-access](../.agents/skills/wardlock-access/SKILL.md); A2.7 checked the implementation against this document.
 
 ## Assets and actors
 
@@ -10,6 +10,11 @@ Wardlock protects static content with secrets that travel in URLs. That is a del
 ## Threats and mitigations
 
 ### Token leakage
+
+Raw tokens are shown once, stored only as HMACs, never logged by Wardlock and stripped from the address bar and `Referer`; rotation and revocation take effect on the next request. Sharing a link with a tool is sharing the content, so use expiring or use-limited links for anything you may want back.
+
+<details>
+<summary>Each leak path, its mitigation and residual risk</summary>
 
 | Path                                                      | Mitigation                                                                                                                                                                                                       | Residual risk                                                                                                       |
 | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -24,9 +29,14 @@ Rotation and revocation take effect on the next request, including for sessions 
 
 **Exception: clean-URL redirects keep the token.** wardlock-access forbids putting a raw token in a URL the server builds. The one exception is the clean-URL redirect (`/dir` to `/dir/`, SPEC "Serving"), whose `Location` keeps the request's query, `t` included, so AI fetchers and other cookie-less clients that follow it still get the page. The token is the one the client just sent, the redirect points to the same host, and protected responses send `Referrer-Policy: no-referrer` and `Cache-Control: private`; the residual risk is a proxy or client that logs `Location` headers but not request URLs.
 
+</details>
+
 ### Third-party log output
 
-Wardlock's own log lines follow the rules above; libraries that log through it are held to them as follows (A2.10). Each adapter may log only what is listed here.
+Wardlock's own log lines follow the rules above; libraries that log through it are held to them as follows (A2.10). Each adapter may log only what is listed here: ACME and TLS output passes a field allowlist with free text cut and scrubbed, DNS providers and the SMTP client log no secrets or message text, the `dev://` mail sink logs recipients but never bodies or codes, and Go's HTTP server logs connection errors without request contents.
+
+<details>
+<summary>What each library may and may not log</summary>
 
 - **certmagic and acmez (automatic TLS).** Their zap and slog output passes an allowlist of field names in `internal/tls/log.go`; any other field is dropped and only its name is kept, in `dropped`. They may log hostnames and the DNS zone, the CA's directory, order, authorisation, challenge and certificate URLs, challenge types and states, the method and status of each ACME request, certificate hashes, counts, times and durations, and free text in `error` and ACME problem fields. Free text is cut to 512 bytes, with email addresses, `Bearer` and `Token` credentials and PEM private keys replaced, because a DNS provider's error can carry its whole response body and certmagic's errors name storage paths that contain the ACME contact address. They never log the ACME account key or a certificate key, key authorisations, HTTP-01 challenge tokens or paths, DNS-01 record values, ACME request or response headers (`Authorization`, nonces), the ACME contact address, storage keys, client addresses, or external account binding values (Wardlock configures none; such fields would be dropped). An allowlist rather than a denylist, because these libraries log at debug level, add fields between releases, and a field nobody has reviewed should stay out until someone has; the cost is that a useful new field is missing until it is added. A test captures the debug output of a real issuance against an in-process ACME CA and checks it for every key, key authorisation, record value, header and the contact address.
 - **DNS providers (libdns Cloudflare and deSEC).** They have no logger; their errors reach the log only through certmagic's `error` field, treated as above. The API token is configuration, printed only as `[redacted]`.
@@ -34,37 +44,129 @@ Wardlock's own log lines follow the rules above; libraries that log through it a
 - **The `dev://` mail sink.** Each message's recipient, subject and file name, never the body or code. It is the default mail mode, so the server warns at startup when it runs outside local mode: such an instance delivers nothing and logs visitor addresses.
 - **Go's HTTP server.** Connection-level errors, such as failed TLS handshakes, at warning level with the client's address and port, never request contents.
 
+</details>
+
 ### The server key
 
-`WARDLOCK_SECRET` keys every stored token, code and session hash and signs site session cookies. There is no key rotation yet: changing it ends every owner (dashboard) session and every site session at once, and, from A2.2 and C1.7, invalidates every share link and API token. Treat it as a long-lived secret and change it only to recover from a leak.
+`WARDLOCK_SECRET` keys every stored token, code and session hash and signs site session cookies. Treat it as a long-lived secret and change it only to recover from a leak.
+
+<details>
+<summary>What changing it ends</summary>
+
+There is no key rotation yet: changing it ends every owner (dashboard) session and every site session at once, and, from A2.2 and C1.7, invalidates every share link and API token.
+
+</details>
 
 ### Cookie tossing and cross-site session abuse
 
+Site cookies use the `__Host-` prefix and are signed and bound to one site and policy version, protected responses refuse to be embedded by other origins, and production instances should serve sites from a different registrable domain from the dashboard.
+
+<details>
+<summary>Why and how: cookies, logout and caching</summary>
+
 All sites share one parent domain, so a page on `evil.<base>` could set a cookie with `Domain=<base>` that the browser then sends to `docs.<base>`. Wardlock's site cookies use the `__Host-` prefix, which browsers only accept when the cookie is host-only, `Secure` and `Path=/`, so a sibling cannot forge or overwrite them, and Wardlock ignores any session cookie without the prefix. Cookies are signed and bound to one site, so a cookie copied from one site fails on another (and is cleared there). `/.wardlock/logout` only ends a session for a same-origin request, so a sibling site cannot sign a visitor out of another site. Protected responses send `Vary: Cookie` so no shared cache hands one visitor's page to another, and any response that sets or clears a cookie sends `Cache-Control: no-store`, whatever it carries (a file, a redirect, a 404). The signature also binds the cookie to one policy and its version, so a policy change or deletion ends its sessions on the next request; the cookie's token is stored only as an HMAC, so revocation (logout, and link revocation from A2.2) is checked against the database on every protected request. The site cookie (`__Host-wardlock_site`) and the dashboard cookie (`__Host-wardlock_session`) have different names, formats and stored hashes (the site cookie is signed under its own MAC purpose; the dashboard cookie is a random token stored only as an HMAC under another purpose), so neither ever authenticates the other.
 
-**Embedding by sibling sites (A2.7 decision).** Sibling sites are same-site to each other, so a site cookie (`SameSite=Lax`) rides along when `evil.<base>` loads a protected page of `docs.<base>` as a script, image or stylesheet: without more, a malicious owner could run another site's protected JavaScript in their own page, or probe whether a visitor has access or a path exists from load and error events. Every response a protected policy governs, and every `/.wardlock/` page, therefore sends `Cross-Origin-Resource-Policy: same-origin`, so browsers refuse to hand it to any other origin. Navigations, form posts and cookie-less fetchers (`curl`, AI tools) are unaffected, and public sites do not send it. The price: a protected site cannot be embedded from another origin, which includes one of its own custom domains loading assets from its `<name>.<base>` host (or the reverse); such a site must load its assets from the host it is served on.
+</details>
+
+<details>
+<summary>Embedding by sibling sites (A2.7 decision)</summary>
+
+Sibling sites are same-site to each other, so a site cookie (`SameSite=Lax`) rides along when `evil.<base>` loads a protected page of `docs.<base>` as a script, image or stylesheet: without more, a malicious owner could run another site's protected JavaScript in their own page, or probe whether a visitor has access or a path exists from load and error events. Every response a protected policy governs, and every `/.wardlock/` page, therefore sends `Cross-Origin-Resource-Policy: same-origin`, so browsers refuse to hand it to any other origin. Navigations, form posts and cookie-less fetchers (`curl`, AI tools) are unaffected, and public sites do not send it. The price: a protected site cannot be embedded from another origin, which includes one of its own custom domains loading assets from its `<name>.<base>` host (or the reverse); such a site must load its assets from the host it is served on.
+
+</details>
+
+<details>
+<summary>Why a separate sites domain</summary>
 
 Production deployments should serve sites from a **different registrable domain** from the dashboard (for example sites on `example-sites.net`, dashboard on `wardlock.example.com`). Hosted sites run arbitrary JavaScript; keeping them off the dashboard's registrable domain means they are cross-site to it, so `SameSite` protections apply and no site can toss cookies at the dashboard. The single-domain layout is fine for local development and trusted single-owner instances. The [Public Suffix List](https://publicsuffix.org) is an additional option for large public instances.
 
+</details>
+
 ### XSS from hosted sites
 
-Wardlock serves owner-supplied HTML and JavaScript as is; it does not sanitise sites. Containment comes from isolation, not filtering: every site is its own origin; site cookies are `HttpOnly` and host-only; the dashboard and API live on a different host (ideally a different registrable domain) with a strict Content Security Policy and `X-Frame-Options: DENY`; `/.wardlock/` pages are rendered by Wardlock, not by the site, and send `Cache-Control: no-store`; the login page also sends a `Content-Security-Policy` that allows no scripts and `X-Frame-Options: DENY`. A deploy can never place files under `/.wardlock/`.
+Wardlock serves owner-supplied HTML and JavaScript as is; it does not sanitise sites. Containment comes from isolation, not filtering: every site is its own origin, and the dashboard and API live on another host.
+
+<details>
+<summary>How sites are isolated</summary>
+
+In full: every site is its own origin; site cookies are `HttpOnly` and host-only; the dashboard and API live on a different host (ideally a different registrable domain) with a strict Content Security Policy and `X-Frame-Options: DENY`; `/.wardlock/` pages are rendered by Wardlock, not by the site, and send `Cache-Control: no-store`; the login page also sends a `Content-Security-Policy` that allows no scripts and `X-Frame-Options: DENY`. A deploy can never place files under `/.wardlock/`.
+
+</details>
 
 ### Preview bots and email scanners
 
-Chat apps, email security scanners and link unfurlers fetch URLs automatically. For ordinary links that is intended (AI-readability is a feature). For use-limited links it would spend uses, so those links show an interstitial on GET and count a use only on POST. Bots do not press buttons. The interstitial's form carries a short-lived ticket signed with the server key and bound to the link's current token, not the token itself, so the page never echoes the token and rotating or revoking the link voids any ticket already shown. The button only works from a page on the same host (the logout rule), so a page elsewhere cannot post a ticket for a link of its own and replace a visitor's session with one it chose.
+Chat apps, email security scanners and link unfurlers fetch URLs automatically. For ordinary links that is intended (AI-readability is a feature). For use-limited links it would spend uses, so those links show an interstitial on GET and count a use only on POST. Bots do not press buttons.
+
+<details>
+<summary>How the interstitial is protected</summary>
+
+The interstitial's form carries a short-lived ticket signed with the server key and bound to the link's current token, not the token itself, so the page never echoes the token and rotating or revoking the link voids any ticket already shown. The button only works from a page on the same host (the logout rule), so a page elsewhere cannot post a ticket for a link of its own and replace a visitor's session with one it chose.
+
+</details>
 
 ### Path policies and fallbacks
 
-Sites are public until their owner protects them (SPEC "Policies"), so protection is a deliberate choice per site or path rather than a default an owner might assume. A path policy covers URL paths, not just files: `/docs/` also governs `/docs`, so its clean-URL and redirect answers sit behind it. Files that answer for another path (`404.html`, the SPA `index.html`, a clean URL's `page.html`) are checked against their own path's policy too, so a public path under a protected site never serves protected content as a fallback. A request a protected policy refuses gets the same 401 whether or not the path exists, so policies do not reveal a protected site's file names. Matching is case-sensitive, like file paths; `/Docs/` is not covered by a `/docs/` policy, and the owner must protect the paths their deploy actually uses.
+Sites are public until their owner protects them (SPEC "Policies"), so protection is a deliberate choice per site or path rather than a default an owner might assume. Fallback files and refusals never reveal or serve protected content under another path's policy.
 
-**Decision (C1.10): long-term caching of protected hashed assets.** A deploy that opts into `immutableAssets` (SPEC "Serving") has its hashed files under `/assets/` sent with `Cache-Control: private, max-age=31536000, immutable` on protected sites. They stay `private` with `Vary: Cookie` and the other protected-site headers, so no shared cache stores them, but a visitor's browser keeps what it already fetched for up to a year without asking again: revoking a link, ending a session or changing the policy stops new requests, not copies already held. The owner accepts this by opting in per deploy; pages, renditions, fallbacks and every response that sets or clears a cookie keep their usual headers (`no-store` for the last), and login, interstitial and callback pages are never cached.
+<details>
+<summary>Why and how: coverage, fallbacks and matching</summary>
+
+A path policy covers URL paths, not just files: `/docs/` also governs `/docs`, so its clean-URL and redirect answers sit behind it. Files that answer for another path (`404.html`, the SPA `index.html`, a clean URL's `page.html`) are checked against their own path's policy too, so a public path under a protected site never serves protected content as a fallback. A request a protected policy refuses gets the same 401 whether or not the path exists, so policies do not reveal a protected site's file names. Matching is case-sensitive, like file paths; `/Docs/` is not covered by a `/docs/` policy, and the owner must protect the paths their deploy actually uses.
+
+</details>
+
+<details>
+<summary>Decision (C1.10): long-term caching of protected hashed assets</summary>
+
+A deploy that opts into `immutableAssets` (SPEC "Serving") has its hashed files under `/assets/` sent with `Cache-Control: private, max-age=31536000, immutable` on protected sites. They stay `private` with `Vary: Cookie` and the other protected-site headers, so no shared cache stores them, but a visitor's browser keeps what it already fetched for up to a year without asking again: revoking a link, ending a session or changing the policy stops new requests, not copies already held. The owner accepts this by opting in per deploy; pages, renditions, fallbacks and every response that sets or clears a cookie keep their usual headers (`no-store` for the last), and login, interstitial and callback pages are never cached.
+
+</details>
 
 ### Brute force and enumeration
 
-Tokens carry 256 bits of secret, so guessing is infeasible; even so, failed token checks are rate-limited per IP and per site, as are password attempts and email-code sends and verifications. Policy passwords (A2.3) are hashed with Argon2id (19 MiB, 2 passes, 1 lane, 16-byte salt, PHC string); every check derives one key, with a stand-in when the policy has no password, and compares in constant time. Password attempts are limited to 10 per client and 100 per site per 15 minutes (with network shares under pressure, below), counted before the check, and the sign-in form accepts only same-origin posts, so another site cannot sign a visitor into a session of its choosing. Responses do not distinguish "no such link" from "wrong token", and the email-code form answers the same for allowed and disallowed addresses: after the address is read and the limits counted (20 sends per client, 5 per address and 200 per site per hour), the allowlist check, code storage and mail run after the response, and code entries look up the stored code whatever the address. Visitor email codes (A2.4) are 6 digits with 5 attempts and a 10-minute lifetime, bound to one policy and its version; only HMACs of the code and the address are stored, attempts are counted in the database before the comparison, and a session is stored only while the policy still enables email codes at the checked version, so an allowlist change that races a sign-in leaves no session. Per-address counts live in a bounded table of their own (100,000 addresses), separate from the per-IP table that password, share-link and email-code IP limits use, because addresses cost nothing to invent: filling it never affects password or share-link sign-in, and addresses it does not hold are counted in its overflow sketch (below), not refused. Two residual risks are accepted: anyone who knows an allowed address can spend its send and verify limits (5 sends an hour, 10 entries per 15 minutes), holding off that visitor's email sign-in for up to one window, and five wrong guesses at a visitor's live code use it up, so the visitor must ask for a new one. Neither lets the attacker in. Mail errors are logged by SMTP stage and reply code only, never with the server's text, which often repeats the recipient. The `dev://` sink, meant for local development, logs each message's recipient and subject (never the code), so a development instance's log shows which addresses were sent codes. Owner sign-in codes are 6 digits with 5 attempts and a 10-minute lifetime. Owner passkeys (C1.6) are phishing-resistant: the browser binds each assertion to the dashboard origin and relying party, and the server also checks both, the single-use challenge and the signature counter, refusing every failure with one error. A hosted site cannot use an owner's passkey, since its origin is not the dashboard's; with the dashboard on a sibling of the sites (the single-domain setup), the relying party is still the dashboard host itself, never the shared parent domain. Passkey challenges are held in memory, single use, and lost on restart. Sign-in and registration challenges live in separate bounded tables, with per-network (sign-in) and per-owner (registration) caps on open challenges, so a single client or owner cannot fill either; filling the sign-in table still takes about 2,000 IPv4 addresses or IPv6 /48s, which would delay passkey sign-in (never email-code sign-in) until the flood stops. Recording a sign-in compares and sets the stored signature counter, so two concurrent uses of one assertion counter cannot both succeed; authenticators that always report a counter of 0 rely on the single-use challenge alone. Share-link tokens (A2.2) are looked up by public ID and compared by HMAC in constant time; malformed, unknown, wrong and other sites' tokens count against the client IP (30 per 15 minutes) and the site (300 per 15 minutes), and over either limit every token from that IP, or for that site, is refused with `429` until the window ends. IP counts live in a table bounded to 100,000 addresses (IPv6 by /64); once it is full, a failed guess from an address it does not hold is counted in the table's overflow sketch under the same limit (below), so flooding the table neither lifts the limit nor locks out other visitors. Site counts live in a separate table that grows only with the number of sites, so a full IP table never lifts a site's limit. The per-site limit, with the network shares below, means someone guessing from six or more networks can stop new visitors opening links to that one site for as long as they keep going; visitors with a session are unaffected, and the guesses themselves cannot succeed. API tokens (C1.7) are looked up by public ID and compared by HMAC in constant time; after 30 rejected tokens in 15 minutes an IP is refused every token, valid or not, until the window ends, so guessing cannot continue behind the limit. As for share links, when the owner limiter's table is full a rejected token from an address it does not hold is counted in the table's overflow sketch under the same limit. Owner email-code sends count per address in a table of their own, apart from the per-IP table, so invented addresses cannot crowd out owners signing in from new addresses, and that table overflows into a sketch as the visitor tables do.
+Tokens carry 256 bits of secret, so guessing is infeasible; even so, failed token checks are rate-limited per IP and per site, as are password attempts and email-code sends and verifications. Responses never reveal whether a link, address or path exists, and no flood of guesses or of invented addresses lets anyone in, though a determined attacker with six or more networks can hold one site's sign-in method shut (accepted, below).
 
-**Limiter tables under flooding (A2.9).** Every limiter keyed by something a client chooses (visitor IPs, visitor addresses, per-site networks, owner IPs and addresses, API-token failures) keeps an exact table of 100,000 keys and, once that is full, counts each key it does not hold in an overflow sketch instead of refusing it: a count-min sketch of 2 rows of 2^17 saturating counters for each method (512 KiB each, allocated only on that method's first overflow, so a flood of one method never raises another's counters), indexed by a hash seeded at random per process so a client cannot aim at another's counters, with conservative updates. A key's estimate is never below its true count, so no per-IP, per-address or per-site limit is lifted, and a key that moves from the sketch into the table keeps its count. An unseen client is refused only once both of its counters reach its limit, which takes the flood about N x 2^17 counted attempts of that method in one window from keys the table does not hold: 1.3 million password attempts per 15 minutes, 2.6 million email sends an hour, 3.9 million code entries, OAuth starts or share-link guesses per 15 minutes. Since each client counts only up to its own limit, each of these needs about 131,000 distinct IPv4 addresses or IPv6 /64s in the window: two IPv6 /48s. For owner email codes it is 655,000 sends an hour to invented addresses, which at 20 sends per IP needs about 33,000 IPv4 addresses or /64s each hour, and that fits inside one /48. Below that, filling a table refuses no one it does not hold. The owner limiters' tables (sign-in, and API tokens with CLI login) also hold keys the server owns: invitations and passkey registrations per owner, CLI approvals and denials per owner, and CLI login polls per login. So during a flood those overflow to sketches too, where a collision can only refuse early: an extra `slow_down` for a CLI login poll, or an owner action refused with `429` before the owner reached their own limit. The sketches add at most about 12 MiB over the tables, all in memory and single-instance like the tables themselves. Per-site limits are kept, and a site is shielded from a flood from few networks by network shares: once a site's counter for password attempts, email-code sends, code entries or share-link guesses reaches half its limit in the current window (50 of 100 password attempts, 100 of 200 sends, 150 of 300 entries or guesses), or the site holds half its 1,000 pending OAuth flows, each network (IPv4 /24, IPv6 /48) may spend at most a tenth of the site's limit in that window (10, 20, 30, 30 and 100), counting what it spent before the pressure began; beyond that its attempts answer `429` and spend nothing of the site's limit. Below half, only the per-IP and per-site limits apply, so many visitors behind one office /24 or carrier /48 are not held to a share. Network counts are kept in a bounded table of their own with the same overflow sketch. **Accepted risk:** a per-site limit is a fixed cap, so an attacker with six or more networks (IPv4 /24s or IPv6 /48s) can still keep a sign-in method shut for one site. One network spends the site's limit alone up to the pressure mark, which is not yet limited per network. Five more then spend their tenth each, filling the rest: for example, 50 password attempts from one /24 and 10 from each of five /48s, every 15 minutes. The same goes for 200 sends an hour, 300 entries or guesses per 15 minutes, and 1,000 OAuth flows per 10 minutes, where one network starts 500 and five start 100 each. The method reopens within one window once fewer than six networks keep going. In general the bound is 1 + (1 - 1/sitePressureDivisor) x networkShareDivisor networks; with the pressure mark at half and the share at a tenth, that is 1 + 5 = 6. Ten networks spending only their shares fill a site too. Before A2.9, ten IPv4 addresses or ten IPv6 /64s (part of one /48) were enough. The pressure check and the counts are not one atomic step, so attempts in flight as a site crosses the mark may get slightly more than a network's share (one or two in tests); this is accepted, since the per-site limit itself is never exceeded. Neither flood lets anyone in, and visitors with a session are unaffected.
+<details>
+<summary>Passwords (A2.3)</summary>
+
+Policy passwords (A2.3) are hashed with Argon2id (19 MiB, 2 passes, 1 lane, 16-byte salt, PHC string); every check derives one key, with a stand-in when the policy has no password, and compares in constant time. Password attempts are limited to 10 per client and 100 per site per 15 minutes (with network shares under pressure, below), counted before the check, and the sign-in form accepts only same-origin posts, so another site cannot sign a visitor into a session of its choosing.
+
+</details>
+
+<details>
+<summary>Enumeration, visitor email codes and mail logs (A2.4)</summary>
+
+Responses do not distinguish "no such link" from "wrong token", and the email-code form answers the same for allowed and disallowed addresses: after the address is read and the limits counted (20 sends per client, 5 per address and 200 per site per hour), the allowlist check, code storage and mail run after the response, and code entries look up the stored code whatever the address. Visitor email codes (A2.4) are 6 digits with 5 attempts and a 10-minute lifetime, bound to one policy and its version; only HMACs of the code and the address are stored, attempts are counted in the database before the comparison, and a session is stored only while the policy still enables email codes at the checked version, so an allowlist change that races a sign-in leaves no session. Per-address counts live in a bounded table of their own (100,000 addresses), separate from the per-IP table that password, share-link and email-code IP limits use, because addresses cost nothing to invent: filling it never affects password or share-link sign-in, and addresses it does not hold are counted in its overflow sketch (below), not refused. Two residual risks are accepted: anyone who knows an allowed address can spend its send and verify limits (5 sends an hour, 10 entries per 15 minutes), holding off that visitor's email sign-in for up to one window, and five wrong guesses at a visitor's live code use it up, so the visitor must ask for a new one. Neither lets the attacker in. Mail errors are logged by SMTP stage and reply code only, never with the server's text, which often repeats the recipient. The `dev://` sink, meant for local development, logs each message's recipient and subject (never the code), so a development instance's log shows which addresses were sent codes.
+
+</details>
+
+<details>
+<summary>Owner sign-in codes and passkeys (C1.6)</summary>
+
+Owner sign-in codes are 6 digits with 5 attempts and a 10-minute lifetime. Owner passkeys (C1.6) are phishing-resistant: the browser binds each assertion to the dashboard origin and relying party, and the server also checks both, the single-use challenge and the signature counter, refusing every failure with one error. A hosted site cannot use an owner's passkey, since its origin is not the dashboard's; with the dashboard on a sibling of the sites (the single-domain setup), the relying party is still the dashboard host itself, never the shared parent domain. Passkey challenges are held in memory, single use, and lost on restart. Sign-in and registration challenges live in separate bounded tables, with per-network (sign-in) and per-owner (registration) caps on open challenges, so a single client or owner cannot fill either; filling the sign-in table still takes about 2,000 IPv4 addresses or IPv6 /48s, which would delay passkey sign-in (never email-code sign-in) until the flood stops. Recording a sign-in compares and sets the stored signature counter, so two concurrent uses of one assertion counter cannot both succeed; authenticators that always report a counter of 0 rely on the single-use challenge alone.
+
+</details>
+
+<details>
+<summary>Share-link tokens (A2.2)</summary>
+
+Share-link tokens (A2.2) are looked up by public ID and compared by HMAC in constant time; malformed, unknown, wrong and other sites' tokens count against the client IP (30 per 15 minutes) and the site (300 per 15 minutes), and over either limit every token from that IP, or for that site, is refused with `429` until the window ends. IP counts live in a table bounded to 100,000 addresses (IPv6 by /64); once it is full, a failed guess from an address it does not hold is counted in the table's overflow sketch under the same limit (below), so flooding the table neither lifts the limit nor locks out other visitors. Site counts live in a separate table that grows only with the number of sites, so a full IP table never lifts a site's limit. The per-site limit, with the network shares below, means someone guessing from six or more networks can stop new visitors opening links to that one site for as long as they keep going; visitors with a session are unaffected, and the guesses themselves cannot succeed.
+
+</details>
+
+<details>
+<summary>API tokens and owner email codes (C1.7)</summary>
+
+API tokens (C1.7) are looked up by public ID and compared by HMAC in constant time; after 30 rejected tokens in 15 minutes an IP is refused every token, valid or not, until the window ends, so guessing cannot continue behind the limit. As for share links, when the owner limiter's table is full a rejected token from an address it does not hold is counted in the table's overflow sketch under the same limit. Owner email-code sends count per address in a table of their own, apart from the per-IP table, so invented addresses cannot crowd out owners signing in from new addresses, and that table overflows into a sketch as the visitor tables do.
+
+</details>
+
+<details>
+<summary>Limiter tables under flooding (A2.9)</summary>
+
+Every limiter keyed by something a client chooses (visitor IPs, visitor addresses, per-site networks, owner IPs and addresses, API-token failures) keeps an exact table of 100,000 keys and, once that is full, counts each key it does not hold in an overflow sketch instead of refusing it: a count-min sketch of 2 rows of 2^17 saturating counters for each method (512 KiB each, allocated only on that method's first overflow, so a flood of one method never raises another's counters), indexed by a hash seeded at random per process so a client cannot aim at another's counters, with conservative updates. A key's estimate is never below its true count, so no per-IP, per-address or per-site limit is lifted, and a key that moves from the sketch into the table keeps its count. An unseen client is refused only once both of its counters reach its limit, which takes the flood about N x 2^17 counted attempts of that method in one window from keys the table does not hold: 1.3 million password attempts per 15 minutes, 2.6 million email sends an hour, 3.9 million code entries, OAuth starts or share-link guesses per 15 minutes. Since each client counts only up to its own limit, each of these needs about 131,000 distinct IPv4 addresses or IPv6 /64s in the window: two IPv6 /48s. For owner email codes it is 655,000 sends an hour to invented addresses, which at 20 sends per IP needs about 33,000 IPv4 addresses or /64s each hour, and that fits inside one /48. Below that, filling a table refuses no one it does not hold. The owner limiters' tables (sign-in, and API tokens with CLI login) also hold keys the server owns: invitations and passkey registrations per owner, CLI approvals and denials per owner, and CLI login polls per login. So during a flood those overflow to sketches too, where a collision can only refuse early: an extra `slow_down` for a CLI login poll, or an owner action refused with `429` before the owner reached their own limit. The sketches add at most about 12 MiB over the tables, all in memory and single-instance like the tables themselves. Per-site limits are kept, and a site is shielded from a flood from few networks by network shares: once a site's counter for password attempts, email-code sends, code entries or share-link guesses reaches half its limit in the current window (50 of 100 password attempts, 100 of 200 sends, 150 of 300 entries or guesses), or the site holds half its 1,000 pending OAuth flows, each network (IPv4 /24, IPv6 /48) may spend at most a tenth of the site's limit in that window (10, 20, 30, 30 and 100), counting what it spent before the pressure began; beyond that its attempts answer `429` and spend nothing of the site's limit. Below half, only the per-IP and per-site limits apply, so many visitors behind one office /24 or carrier /48 are not held to a share. Network counts are kept in a bounded table of their own with the same overflow sketch. **Accepted risk:** a per-site limit is a fixed cap, so an attacker with six or more networks (IPv4 /24s or IPv6 /48s) can still keep a sign-in method shut for one site. One network spends the site's limit alone up to the pressure mark, which is not yet limited per network. Five more then spend their tenth each, filling the rest: for example, 50 password attempts from one /24 and 10 from each of five /48s, every 15 minutes. The same goes for 200 sends an hour, 300 entries or guesses per 15 minutes, and 1,000 OAuth flows per 10 minutes, where one network starts 500 and five start 100 each. The method reopens within one window once fewer than six networks keep going. In general the bound is 1 + (1 - 1/sitePressureDivisor) x networkShareDivisor networks; with the pressure mark at half and the share at a tenth, that is 1 + 5 = 6. Ten networks spending only their shares fill a site too. Before A2.9, ten IPv4 addresses or ten IPv6 /64s (part of one /48) were enough. The pressure check and the counts are not one atomic step, so attempts in flight as a site crosses the mark may get slightly more than a network's share (one or two in tests); this is accepted, since the per-site limit itself is never exceeded. Neither flood lets anyone in, and visitors with a session are unaffected.
+
+</details>
 
 ### CLI login phishing
 
@@ -72,23 +174,67 @@ The CLI device login (C1.7) lets anyone start a login and send its approval link
 
 ### OAuth-specific risks
 
+Every flow is bound to the browser that started it and to one site, host and policy version, and only verified emails match an allowlist; the auth origin sets no cookie at all.
+
+<details>
+<summary>Flow checks: PKCE, nonce, ID tokens and site codes</summary>
+
 PKCE (S256) and `state` on every flow; OIDC `nonce` checked against the flow's, and ID tokens verified for signature, issuer, audience and expiry; allowlists match only verified emails (GitHub organisations count only for GitHub accounts, and still need a verified email as the session's subject); the auth origin hands sites a single-use, 60-second code bound to the site, the host and the policy version rather than a cookie, so a code stolen for one site is useless on another or after use. The auth origin sets no cookie at all.
 
-**Login CSRF and session planting (A2.5 decision).** Without more, an attacker could finish a flow in their own browser, stop before the site callback, and send the victim the `/.wardlock/callback?code=…` link, signing the victim in as the attacker. Starting a flow therefore sets a second host-only cookie on the site, `__Host-wardlock_oauth` (random 256 bits; only its HMAC is kept with the flow; `Secure`, `HttpOnly`, `Path=/`, `SameSite=Lax` so it rides the top-level redirect back from the auth origin, `Max-Age` 600), and a code is redeemed only with the cookie of the browser that started its flow. The callback clears it whether or not it succeeds, and any attempt spends the code. Flows and codes live in memory: a restart drops sign-ins in flight. The number held is bounded in all (50,000) and per site (1,000), with starts limited to 30 per client per 15 minutes, so a flood of starts from many addresses fills only the attacked site's share; expired entries leave in expiry order, so the bound costs no scan. A second sign-in started on the same site in another tab replaces the binding cookie, so the first tab must start again: the price of binding codes to one browser.
+</details>
 
-**Which emails count.** Every address the provider reports as verified may match the allowlist (for GitHub, every verified address on the account, not only the primary one), as SPEC "OAuth and OIDC" says. An owner who lists `example.com` therefore admits any GitHub account that has verified an `@example.com` address. That is what "verified email" means here, and it is the same trust the email-code method places in a mailbox.
+<details>
+<summary>Login CSRF and session planting (A2.5 decision)</summary>
 
-**Login page form-action.** The login page's CSP keeps `form-action 'self'` unless its policy enables OAuth; then it adds only the origins the buttons' redirect chain passes through (each provider's authorisation endpoint and the auth origin), never a whole scheme, so a password or email form can still post nowhere but the site.
+Without more, an attacker could finish a flow in their own browser, stop before the site callback, and send the victim the `/.wardlock/callback?code=…` link, signing the victim in as the attacker. Starting a flow therefore sets a second host-only cookie on the site, `__Host-wardlock_oauth` (random 256 bits; only its HMAC is kept with the flow; `Secure`, `HttpOnly`, `Path=/`, `SameSite=Lax` so it rides the top-level redirect back from the auth origin, `Max-Age` 600), and a code is redeemed only with the cookie of the browser that started its flow. The callback clears it whether or not it succeeds, and any attempt spends the code. Flows and codes live in memory: a restart drops sign-ins in flight. The number held is bounded in all (50,000) and per site (1,000), with starts limited to 30 per client per 15 minutes, so a flood of starts from many addresses fills only the attacked site's share; expired entries leave in expiry order, so the bound costs no scan. A second sign-in started on the same site in another tab replaces the binding cookie, so the first tab must start again: the price of binding codes to one browser.
 
-**Provider errors in logs.** A failed sign-in is logged with what failed: the provider's error code for a refused code exchange, and only the HTTP status for a failed discovery or userinfo request, never the provider's response body, which is unbounded and may repeat what the visitor sent.
+</details>
 
-**Slow providers.** A provider's code exchange and lookups at the auth origin share one 15-second deadline; GitHub organisation checks run four at a time and stop at the first membership. OIDC discovery runs once, outside any lock, with waiting callers bounded by their own deadlines, and a failed discovery is reused for 10 seconds rather than retried by every visitor.
+<details>
+<summary>Which emails count</summary>
 
-**Return paths.** The provider only ever returns to the auth origin's fixed `/callback/<provider>`, which only ever sends visitors to the site and host the flow started from; the path to return to is checked like the password form's `next` (only a plain path on the site, otherwise `/`).
+Every address the provider reports as verified may match the allowlist (for GitHub, every verified address on the account, not only the primary one), as SPEC "OAuth and OIDC" says. An owner who lists `example.com` therefore admits any GitHub account that has verified an `@example.com` address. That is what "verified email" means here, and it is the same trust the email-code method places in a mailbox.
+
+</details>
+
+<details>
+<summary>Login page form-action</summary>
+
+The login page's CSP keeps `form-action 'self'` unless its policy enables OAuth; then it adds only the origins the buttons' redirect chain passes through (each provider's authorisation endpoint and the auth origin), never a whole scheme, so a password or email form can still post nowhere but the site.
+
+</details>
+
+<details>
+<summary>Provider errors in logs</summary>
+
+A failed sign-in is logged with what failed: the provider's error code for a refused code exchange, and only the HTTP status for a failed discovery or userinfo request, never the provider's response body, which is unbounded and may repeat what the visitor sent.
+
+</details>
+
+<details>
+<summary>Slow providers</summary>
+
+A provider's code exchange and lookups at the auth origin share one 15-second deadline; GitHub organisation checks run four at a time and stop at the first membership. OIDC discovery runs once, outside any lock, with waiting callers bounded by their own deadlines, and a failed discovery is reused for 10 seconds rather than retried by every visitor.
+
+</details>
+
+<details>
+<summary>Return paths</summary>
+
+The provider only ever returns to the auth origin's fixed `/callback/<provider>`, which only ever sends visitors to the site and host the flow started from; the path to return to is checked like the password form's `next` (only a plain path on the site, otherwise `/`).
+
+</details>
 
 ### Custom domain takeover
 
-A hostname is only served once DNS proves it: a CNAME to the claiming site's own `<name>.<base domain>`, or a TXT record holding a token unique to that claim. A hostname belongs to one site per instance, and the claim conflict error does not reveal who holds it. Re-checks every 24 hours stop serving a hostname whose record has been gone for 72 hours (so between 72 and 96 hours after the record goes), and on-demand TLS only issues for hostnames verified at that moment, so a stray record cannot be used to mint certificates. The remaining risk is a dangling record: if an owner removes a hostname or tears down a site but leaves the CNAME in place, whoever later holds that site name on the instance can claim the hostname. The CLI and dashboard tell owners to delete the record when they remove a domain.
+A hostname is only served once DNS proves it: a CNAME to the claiming site's own `<name>.<base domain>`, or a TXT record holding a token unique to that claim. Owners who remove a domain must also delete its DNS record.
+
+<details>
+<summary>Re-checks, certificates and dangling records</summary>
+
+A hostname belongs to one site per instance, and the claim conflict error does not reveal who holds it. Re-checks every 24 hours stop serving a hostname whose record has been gone for 72 hours (so between 72 and 96 hours after the record goes), and on-demand TLS only issues for hostnames verified at that moment, so a stray record cannot be used to mint certificates. The remaining risk is a dangling record: if an owner removes a hostname or tears down a site but leaves the CNAME in place, whoever later holds that site name on the instance can claim the hostname. The CLI and dashboard tell owners to delete the record when they remove a domain.
+
+</details>
 
 ### Supply chain and the server itself
 
@@ -96,7 +242,14 @@ Pinned tool versions (`tools/go.mod`, lockfiles), `govulncheck` in every check r
 
 ## Public instances and abuse
 
-Wardlock defaults to **invite-only**: there is no open sign-up in v1, the first owner is created by the operator, and further owners are invited by existing owners. Anyone who runs an instance others can deploy to inherits the usual hosting abuse problems: phishing pages, malware and illegal content served from their domain, and the domain being blocklisted as a result. Operators of such instances should use a dedicated sites domain, monitor new sites, keep contact details for every owner, and be ready to tear sites down. Abuse tooling (reporting, automated scanning, quotas per owner) is out of scope for v1 and listed under "Not planned yet" in the roadmap.
+Wardlock defaults to **invite-only**: there is no open sign-up in v1, the first owner is created by the operator, and further owners are invited by existing owners. Operators who let others deploy should use a dedicated sites domain and be ready to tear sites down.
+
+<details>
+<summary>Abuse risks and what operators should do</summary>
+
+Anyone who runs an instance others can deploy to inherits the usual hosting abuse problems: phishing pages, malware and illegal content served from their domain, and the domain being blocklisted as a result. Operators of such instances should use a dedicated sites domain, monitor new sites, keep contact details for every owner, and be ready to tear sites down. Abuse tooling (reporting, automated scanning, quotas per owner) is not part of v1; the roadmap plans it for wave 13: operator controls and abuse reports (A2.13), owner quotas (A2.14), content screening (A2.15) and an acceptable use policy (O4.13).
+
+</details>
 
 ## Out of scope for v1
 

@@ -26,9 +26,10 @@ Boundaries (docs/MODULES.md), enforced by `.golangci.yml` (depguard), `eslint.co
 
 Commands:
 
-- `pnpm install --frozen-lockfile`, then `pnpm check`: the definition-of-done gate. It runs ESLint and Prettier, typecheck, Vitest, the TS and Go builds, the licence/boundary check, the codegen drift check, and for every Go module gofmt, `go vet`, golangci-lint, `go test -race` and govulncheck (`scripts/check-go.sh`). The first run builds the pinned Go tools into `.local/bin`.
+- `pnpm install --frozen-lockfile`, then `pnpm check`: the definition-of-done gate. It runs ESLint and Prettier, the ROADMAP board check, typecheck, Vitest, the TS and Go builds, the licence/boundary check, the codegen drift check, and for every Go module gofmt, `go vet`, golangci-lint, `go test -race` and govulncheck (`scripts/check-go.sh`). The first run builds the pinned Go tools into `.local/bin`.
 - `pnpm dev`: wardlockd plus the dashboard's Vite dev server, proxied through wardlockd, on this lane's `.env` ports with data in `.local/data`.
 - `pnpm codegen` after editing `openapi.yaml`, a migration or a query. `pnpm format` before final checks. `pnpm build` builds the dashboard and the binaries into `.local/bin`. `pnpm browser:test` runs Playwright acceptance against a real server (install the browser once: `pnpm --filter @wardlock/web exec playwright install chromium`).
+- `pnpm roadmap:board` after changing any Status or PR line in ROADMAP.md: it regenerates the status board and folds finished items. `pnpm check` runs it with `--check` and fails while the board is stale.
 - Go tests sit next to code as `*_test.go`; TS tests as `*.test.ts(x)`; browser specs under `apps/web/test/`.
 
 ## Coding and data
@@ -39,9 +40,13 @@ Anything touching `internal/edge`, `internal/access`, tokens, cookies or session
 
 Every owner-scoped query takes the owner from the verified session or API token, never from the request; missing and foreign resources return the same 404. Never log raw tokens, cookies, passwords, email codes or Authorization headers. `.env`, `.local/` and data directories are gitignored; never copy them, real tokens, real email addresses or customer content into fixtures, tests, logs, screenshots, PRs or public artefacts. Fixture sites are synthetic.
 
+## Docs style
+
+Hand-written Markdown leads each section with what most readers need: a few sentences, a short list or a table. Implementation detail, edge cases, exact limits and their rationale, internals and threat-by-threat reasoning go in a collapsed `<details>` block under that lead, with `<summary>` on its own line, a blank line after `</summary>` and before `</details>`, and headings kept outside it. Never delete something still true to shorten a page; move it into a block. Keep every heading that other docs, the API contract, code or skills link to, or update every link.
+
 ## Roadmap and Git
 
-One item, one branch `feat/<id-lower>-<slug>`, one PR titled `<ID>: <title>`. Start only when dependencies are `done` on main. Update only your item's Status, Owner and PR fields. Statuses: `todo`, `in-progress`, `review`, `done`, `blocked` (with reason). `done` means merged and accepted; the coordinator sets it after merge. Report blocking product decisions instead of silently picking contradictory rules.
+One item, one branch `feat/<id-lower>-<slug>`, one PR titled `<ID>: <title>`. Start only when dependencies are `done` on main. Update only your item's Status, Owner and PR fields, then run `pnpm roadmap:board`. Statuses: `todo`, `in-progress`, `review`, `done`, `blocked` (with reason). `done` means merged and accepted; the coordinator sets it after merge. Report blocking product decisions instead of silently picking contradictory rules.
 
 Use [wardlock-item](.agents/skills/wardlock-item/SKILL.md) for one item; use [wardlock-orchestrate](.agents/skills/wardlock-orchestrate/SKILL.md) only when asked to coordinate lanes. Resolve the Orca executable and read its live CLI guide before running commands; never bare `orca` on unmanaged Linux. One worktree, `.env`, port set and SQLite data directory per lane. Serialization gates, one lane at a time each: migrations and the sqlc schema; `packages/api-spec`; `packages/ui`; `internal/access` cookie and session primitives; lockfiles (`pnpm-lock.yaml`, each `go.sum`). A ready item is not automatically safe to run beside another that edits the same files.
 

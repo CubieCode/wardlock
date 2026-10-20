@@ -6,4 +6,9 @@ Synthetic sample sites for tests. Everything here is invented: no real people, o
 - `sites/spa/`: a single-page app with no `404.html`, served both with and without the SPA fallback.
 - `sites/renditions/`: pages exercising the rendition conversion contract (SPEC "AI-readable renditions"): headings, nested and numbered lists, tables, code blocks, links with share-link tokens to strip, images with and without alt text, escaping, and scripts, styles, forms and hidden content to drop. Its tokens are fake. Golden renditions of every fixture page are in `apps/server/internal/deploys/testdata/renditions/`; regenerate them with `go test ./internal/deploys -run TestRenditionGoldens -update` from `apps/server` and review the diff.
 
-`assets/app.js.gz` is `gzip -9 -n` of `app.js`; `assets/app.js.br` is a valid Brotli stream holding `app.js` in one uncompressed meta-block (no Brotli encoder is needed to regenerate it). Keep the siblings in step with `app.js`.
+<details>
+<summary>Precompressed siblings of <code>app.js</code></summary>
+
+In `sites/basic/`, `assets/app.js.gz` is `gzip -9 -n` of `app.js`; `assets/app.js.br` is a valid Brotli stream holding `app.js` in one uncompressed meta-block (no Brotli encoder is needed to regenerate it). Keep the siblings in step with `app.js`.
+
+</details>
