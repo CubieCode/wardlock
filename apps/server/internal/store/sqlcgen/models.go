@@ -100,6 +100,20 @@ type Domain struct {
 	FailureDetail     sql.NullString
 }
 
+type ModerationResult struct {
+	Sha256        string
+	Kind          string
+	Status        string
+	Categories    string
+	Attempts      int64
+	QueuedAt      int64
+	NextAttemptAt sql.NullInt64
+	CheckedAt     sql.NullInt64
+	ConfirmedAt   sql.NullInt64
+	DiscardedAt   sql.NullInt64
+	ReleasedAt    sql.NullInt64
+}
+
 type Owner struct {
 	ID               string
 	Email            string
@@ -111,6 +125,7 @@ type Owner struct {
 	MaxSites         sql.NullInt64
 	MaxDeploysPerDay sql.NullInt64
 	StoredBytes      int64
+	ModerationExempt int64
 }
 
 type OwnerBlob struct {

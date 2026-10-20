@@ -142,6 +142,11 @@ WHERE blobs.sha256 > ?1
   AND NOT EXISTS (SELECT 1 FROM deploy_files WHERE deploy_files.sha256 = blobs.sha256)
   AND NOT EXISTS (SELECT 1 FROM deploy_renditions WHERE deploy_renditions.sha256 = blobs.sha256)
   AND NOT EXISTS (
+    SELECT 1 FROM moderation_results
+    WHERE moderation_results.sha256 = blobs.sha256 AND moderation_results.status = 'quarantined'
+      AND moderation_results.discarded_at IS NULL
+  )
+  AND NOT EXISTS (
     SELECT 1 FROM owner_blobs
     WHERE owner_blobs.sha256 = blobs.sha256 AND owner_blobs.created_at >= ?2
   )
@@ -156,7 +161,8 @@ type ListUnreferencedBlobsParams struct {
 }
 
 // Blobs no deploy lists (as a file or a rendition), first stored and last claimed by any owner before
-// created_before, in hash order after the cursor.
+// created_before, in hash order after the cursor. A quarantined blob the
+// operator has not discarded is held as evidence (A2.15).
 func (q *Queries) ListUnreferencedBlobs(ctx context.Context, arg ListUnreferencedBlobsParams) ([]Blob, error) {
 	rows, err := q.db.QueryContext(ctx, listUnreferencedBlobs, arg.AfterSha256, arg.CreatedBefore, arg.RowLimit)
 	if err != nil {
@@ -186,6 +192,11 @@ WHERE blobs.sha256 = ?1
   AND blobs.created_at < ?2
   AND NOT EXISTS (SELECT 1 FROM deploy_files WHERE deploy_files.sha256 = blobs.sha256)
   AND NOT EXISTS (SELECT 1 FROM deploy_renditions WHERE deploy_renditions.sha256 = blobs.sha256)
+  AND NOT EXISTS (
+    SELECT 1 FROM moderation_results
+    WHERE moderation_results.sha256 = blobs.sha256 AND moderation_results.status = 'quarantined'
+      AND moderation_results.discarded_at IS NULL
+  )
   AND NOT EXISTS (
     SELECT 1 FROM owner_blobs
     WHERE owner_blobs.sha256 = blobs.sha256 AND owner_blobs.created_at >= ?2

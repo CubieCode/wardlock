@@ -75,6 +75,13 @@ type Invalidator interface {
 	Subscribe(fn func(siteID string)) (unsubscribe func())
 }
 
+// Withheld reports whether a content hash is quarantined (A2.15). It is
+// consulted on every file served, so it must answer from memory; the
+// moderation Quarantine satisfies it.
+type Withheld interface {
+	Has(sha256 string) bool
+}
+
 // Access decides who may read a site. *access.Service satisfies it.
 type Access interface {
 	// Decide applies the policy governing r.Path on r.SiteID.

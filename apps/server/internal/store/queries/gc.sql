@@ -35,13 +35,19 @@ WHERE deploys.id = sqlc.arg(id)
   );
 
 -- Blobs no deploy lists (as a file or a rendition), first stored and last claimed by any owner before
--- created_before, in hash order after the cursor.
+-- created_before, in hash order after the cursor. A quarantined blob the
+-- operator has not discarded is held as evidence (A2.15).
 -- name: ListUnreferencedBlobs :many
 SELECT blobs.sha256, blobs.size, blobs.created_at FROM blobs
 WHERE blobs.sha256 > sqlc.arg(after_sha256)
   AND blobs.created_at < sqlc.arg(created_before)
   AND NOT EXISTS (SELECT 1 FROM deploy_files WHERE deploy_files.sha256 = blobs.sha256)
   AND NOT EXISTS (SELECT 1 FROM deploy_renditions WHERE deploy_renditions.sha256 = blobs.sha256)
+  AND NOT EXISTS (
+    SELECT 1 FROM moderation_results
+    WHERE moderation_results.sha256 = blobs.sha256 AND moderation_results.status = 'quarantined'
+      AND moderation_results.discarded_at IS NULL
+  )
   AND NOT EXISTS (
     SELECT 1 FROM owner_blobs
     WHERE owner_blobs.sha256 = blobs.sha256 AND owner_blobs.created_at >= sqlc.arg(created_before)
@@ -57,6 +63,11 @@ WHERE blobs.sha256 = sqlc.arg(sha256)
   AND blobs.created_at < sqlc.arg(created_before)
   AND NOT EXISTS (SELECT 1 FROM deploy_files WHERE deploy_files.sha256 = blobs.sha256)
   AND NOT EXISTS (SELECT 1 FROM deploy_renditions WHERE deploy_renditions.sha256 = blobs.sha256)
+  AND NOT EXISTS (
+    SELECT 1 FROM moderation_results
+    WHERE moderation_results.sha256 = blobs.sha256 AND moderation_results.status = 'quarantined'
+      AND moderation_results.discarded_at IS NULL
+  )
   AND NOT EXISTS (
     SELECT 1 FROM owner_blobs
     WHERE owner_blobs.sha256 = blobs.sha256 AND owner_blobs.created_at >= sqlc.arg(created_before)

@@ -210,3 +210,73 @@ func readMessage(t *testing.T, raw []byte) (text, html string) {
 	}
 	return text, html
 }
+
+// TestScreeningMessages checks the content-screening notices (A2.15): the
+// operator's names the file, categories and sites and, for sexual content
+// involving minors, says to preserve and report instead of review; the
+// owner's names the site and paths and never why.
+func TestScreeningMessages(t *testing.T) {
+	sha := strings.Repeat("ab", 32)
+	abuse := netmail.Address{Address: "abuse@example.test"}
+	base := mail.Screening{
+		SHA256: sha, Status: "quarantined", Categories: []string{"sexual"}, CheckedAt: fixedNow(),
+		Uses: []mail.ScreeningUse{{Site: "docs", Path: "img/a.png", Owner: "owner@example.test"}},
+	}
+	q, err := mail.ScreeningMessage(abuse, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.Subject != "Content screening withheld a file" || strings.Contains(q.Subject, sha) {
+		t.Errorf("subject %q", q.Subject)
+	}
+	for _, want := range []string{sha, "Categories: sexual", "docs  /img/a.png  (owner owner@example.test)", "moderation release " + sha, "moderation discard " + sha} {
+		if !strings.Contains(q.Text, want) {
+			t.Errorf("quarantine notice lacks %q:\n%s", want, q.Text)
+		}
+	}
+	minors := base
+	minors.Categories, minors.Minors, minors.Uses = []string{"sexual", "sexual/minors"}, true, nil
+	m, err := mail.ScreeningMessage(abuse, minors)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Preserving and reporting", "illegal material", "moderation confirm " + sha, "No site serves it"} {
+		if !strings.Contains(m.Text, want) {
+			t.Errorf("minors notice lacks %q:\n%s", want, m.Text)
+		}
+	}
+	if strings.Contains(m.Text, "moderation release") {
+		t.Errorf("minors notice offers release:\n%s", m.Text)
+	}
+	flagged := base
+	flagged.Status, flagged.Categories = "flagged", []string{"violence", "hate"}
+	f, err := mail.ScreeningMessage(abuse, flagged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Subject != "Content screening flagged a file" || !strings.Contains(f.Text, "still served") || !strings.Contains(f.Text, "violence, hate") {
+		t.Errorf("flag notice %q:\n%s", f.Subject, f.Text)
+	}
+
+	o, err := mail.WithheldMessage(recipient, mail.Withheld{Site: "docs", Host: "admin.example.test", Paths: []string{"img/a.png", "b.png"}, Contact: "abuse@example.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"/img/a.png", "/b.png", "docs", "admin.example.test", "abuse@example.test"} {
+		if !strings.Contains(o.Text, want) {
+			t.Errorf("owner notice lacks %q:\n%s", want, o.Text)
+		}
+	}
+	for _, never := range []string{"sexual", "categor", "minor", sha} {
+		if strings.Contains(o.Text, never) || strings.Contains(o.Subject, never) {
+			t.Errorf("owner notice mentions %q:\n%s", never, o.Text)
+		}
+	}
+	if o.Subject != "A file on docs is withheld" {
+		t.Errorf("owner subject %q", o.Subject)
+	}
+	noContact, err := mail.WithheldMessage(recipient, mail.Withheld{Site: "docs", Host: "admin.example.test", Paths: []string{"a.png"}})
+	if err != nil || !strings.Contains(noContact.Text, "contact the operator of the server") {
+		t.Errorf("owner notice without contact: %v\n%s", err, noContact.Text)
+	}
+}

@@ -1,0 +1,37 @@
+{{if eq .Status "quarantined" -}}
+Content screening withheld a file on your Wardlock server. It is no longer
+served on any site or address; the rest of each site keeps working.
+{{- else -}}
+Content screening flagged a file on your Wardlock server for your review.
+It is still served.
+{{- end}}
+
+File:       sha256 {{.SHA256}}
+Categories: {{range $i, $c := .Categories}}{{if $i}}, {{end}}{{$c}}{{end}}
+Checked:    {{.CheckedAt.UTC.Format "2006-01-02 15:04 UTC"}}
+{{if .Uses}}
+Served by:
+{{- range .Uses}}
+    {{.Site}}  /{{.Path}}  (owner {{.Owner}})
+{{- end}}
+{{else}}
+No site serves it at the moment.
+{{end}}
+{{- if .Minors}}
+The endpoint flagged it as sexual content involving minors. Do not open,
+copy or forward it. Preserve it and report it as "Preserving and reporting
+illegal material" in docs/DEPLOYMENT.md describes: take down the sites,
+suspend their owners, keep the file held with
+
+    wardlockd admin moderation confirm {{.SHA256}}
+
+and report it to the authorities.
+{{else}}
+Review it, then run one of:
+
+    wardlockd admin moderation release {{.SHA256}}   (serve it again)
+    wardlockd admin moderation confirm {{.SHA256}}   (keep it withheld and held)
+    wardlockd admin moderation discard {{.SHA256}}   (keep it withheld; let garbage collection remove it)
+
+See "Content screening" in docs/DEPLOYMENT.md.
+{{end -}}

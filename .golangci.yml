@@ -91,6 +91,8 @@ linters:
               desc: platform is the base layer; it imports no other internal package
             - pkg: wardlock.nz/server/internal/mail
               desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/moderation
+              desc: platform is the base layer; it imports no other internal package
             - pkg: wardlock.nz/server/internal/tls
               desc: platform is the base layer; it imports no other internal package
             - pkg: wardlock.nz/server/internal/api
@@ -116,6 +118,8 @@ linters:
               desc: store serves domain packages through repository interfaces; it never imports them
             - pkg: wardlock.nz/server/internal/mail
               desc: store serves domain packages through repository interfaces; it never imports them
+            - pkg: wardlock.nz/server/internal/moderation
+              desc: store serves domain packages through repository interfaces; it never imports them
             - pkg: wardlock.nz/server/internal/tls
               desc: store serves domain packages through repository interfaces; it never imports them
             - pkg: wardlock.nz/server/internal/api
@@ -139,6 +143,8 @@ linters:
               desc: the dashboard only serves embedded files; it reaches the server through the API
             - pkg: wardlock.nz/server/internal/mail
               desc: the dashboard only serves embedded files; it reaches the server through the API
+            - pkg: wardlock.nz/server/internal/moderation
+              desc: the dashboard only serves embedded files; it reaches the server through the API
             - pkg: wardlock.nz/server/internal/tls
               desc: the dashboard only serves embedded files; it reaches the server through the API
             - pkg: wardlock.nz/server/internal/api
@@ -159,6 +165,13 @@ linters:
               desc: sites is a domain package; the API and edge call it, never the reverse
             - pkg: wardlock.nz/server/internal/edge
               desc: sites is a domain package; the API and edge call it, never the reverse
+        moderation:
+          files: ['**/apps/server/internal/moderation/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/api
+              desc: moderation is a domain package; cmd/wardlockd wires it, the API never calls it
+            - pkg: wardlock.nz/server/internal/edge
+              desc: moderation tells the edge what to withhold through a value cmd/wardlockd passes it
         owners:
           files: ['**/apps/server/internal/owners/**']
           deny:
@@ -179,6 +192,7 @@ linters:
             - '**/apps/server/internal/sites/**'
             - '**/apps/server/internal/owners/**'
             - '**/apps/server/internal/edge/**'
+            - '**/apps/server/internal/moderation/**'
           deny:
             - pkg: database/sql
               desc: domain code depends on store's repository interfaces

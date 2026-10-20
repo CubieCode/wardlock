@@ -1,0 +1,13 @@
+A file on your site {{.Site}} is being withheld by the operator of the
+Wardlock server at {{.Host}}:
+{{range .Paths}}
+    /{{.}}
+{{- end}}
+
+It is not served on any address of the site; visitors who ask for it get
+a notice that it is unavailable. The rest of the site works as before.
+{{if .Contact}}
+If you think this is a mistake, contact the operator at {{.Contact}}.
+{{else}}
+If you think this is a mistake, contact the operator of the server.
+{{end -}}

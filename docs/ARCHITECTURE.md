@@ -274,7 +274,7 @@ Every table is in the diagram below, and `internal/store/schema_test.go` checks 
 <details>
 <summary>Migrations and conventions</summary>
 
-Migration `0002_core_schema.sql` creates every table below; `0003_deploy_spa_and_owner_blobs.sql` (C1.2) moves the SPA fallback flag from sites to deploys, adds `owner_blobs` and the optional columns the API contract exposes (`owner_sessions.user_agent`, `domains.verified_at` and `failure_detail`, `cli_login_requests.client_name`); `0004_owner_passkeys.sql` (C1.6) adds `owner_passkeys`; `0005_deploy_renditions.sql` (A2.6) adds `deploy_renditions`; `0006_policy_allowlist_and_email_codes.sql` (A2.4) adds `policy_allowlist` and `visitor_email_codes`; `0007_deploy_immutable_assets.sql` (C1.10) adds `deploys.immutable_assets`, the long-term caching opt-in. `0008_operator_controls.sql` (A2.13) adds the nullable `owners.suspended_at` and `sites.taken_down_at` (UTC Unix milliseconds) that operator commands set. `0009_owner_quotas.sql` (A2.14) adds the per-owner quota overrides (`owners.max_storage_bytes`, `max_sites`, `max_deploys_per_day`; NULL follows the instance default, 0 is unlimited), the running total `owners.stored_bytes`, `owner_blob_refs` (each distinct blob the owner's deploys list, with how many deploys list it) and `owner_deploy_log` (when each deploy was created, kept 24 hours for the daily quota), and fills all three from the existing deploys. Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
+Migration `0002_core_schema.sql` creates every table below; `0003_deploy_spa_and_owner_blobs.sql` (C1.2) moves the SPA fallback flag from sites to deploys, adds `owner_blobs` and the optional columns the API contract exposes (`owner_sessions.user_agent`, `domains.verified_at` and `failure_detail`, `cli_login_requests.client_name`); `0004_owner_passkeys.sql` (C1.6) adds `owner_passkeys`; `0005_deploy_renditions.sql` (A2.6) adds `deploy_renditions`; `0006_policy_allowlist_and_email_codes.sql` (A2.4) adds `policy_allowlist` and `visitor_email_codes`; `0007_deploy_immutable_assets.sql` (C1.10) adds `deploys.immutable_assets`, the long-term caching opt-in. `0008_operator_controls.sql` (A2.13) adds the nullable `owners.suspended_at` and `sites.taken_down_at` (UTC Unix milliseconds) that operator commands set. `0009_owner_quotas.sql` (A2.14) adds the per-owner quota overrides (`owners.max_storage_bytes`, `max_sites`, `max_deploys_per_day`; NULL follows the instance default, 0 is unlimited), the running total `owners.stored_bytes`, `owner_blob_refs` (each distinct blob the owner's deploys list, with how many deploys list it) and `owner_deploy_log` (when each deploy was created, kept 24 hours for the daily quota), and fills all three from the existing deploys. `0010_content_screening.sql` (A2.15) adds `owners.moderation_exempt` and `moderation_results`, one row per content hash ever queued for screening: the persistent queue while `next_attempt_at` is set, and the verdict and the operator's decisions on it (see [Content screening](#content-screening)). Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
 
 Columns follow the portable-SQL rules: text IDs (UUIDv7, `store.NewID`) generated in Go, timestamps as UTC Unix milliseconds in `INTEGER` (Postgres `BIGINT`), booleans as `INTEGER` with `CHECK (x IN (0, 1))`, upserts with `ON CONFLICT … DO UPDATE` (or `DO NOTHING`). Token, session and code columns hold only HMAC hashes (a visitor email code's address too), and the policy password only an Argon2id hash; the domain verification token is stored as is because it is published in DNS. `access_log` has no foreign keys, so it can later move to a separate store and outlive the sites it mentions. A site session's link and policy are composite foreign keys `(site_id, share_link_id)` and `(site_id, policy_id)` onto `UNIQUE (site_id, id)` in `share_links` and `policies`, so a session can never name another site's link or policy. A policy's allowlist entries and visitor email codes (A2.4) use the same `(site_id, policy_id)` key and go with the policy. Deleting a site cascades to its domains, deploys and their manifests, policies (with their allowlists and email codes), share links and site sessions; the active deploy cannot be deleted on its own.
 
@@ -308,6 +308,7 @@ erDiagram
   blobs |o..o{ deploy_files : "sha256, no FK"
   blobs |o..o{ owner_blobs : "sha256, no FK"
   blobs |o..o{ deploy_renditions : "sha256, no FK"
+  blobs |o..o| moderation_results : "sha256, no FK"
   sites ||--o{ policies : "site_id"
   sites ||--o{ share_links : "site_id"
   sites ||--o{ site_sessions : "site_id"
@@ -327,6 +328,7 @@ erDiagram
     INTEGER max_sites "quota override"
     INTEGER max_deploys_per_day "quota override"
     INTEGER stored_bytes "running total"
+    INTEGER moderation_exempt "screening exemption"
   }
   owner_login_codes {
     TEXT id PK
@@ -437,6 +439,19 @@ erDiagram
     TEXT owner_id PK, FK
     TEXT deploy_id PK "no FK"
     INTEGER created_at
+  }
+  moderation_results {
+    TEXT sha256 PK "no FK"
+    TEXT kind "image or text"
+    TEXT status "pending, allowed, flagged, quarantined, skipped"
+    TEXT categories "flagged OpenAI categories"
+    INTEGER attempts
+    INTEGER queued_at
+    INTEGER next_attempt_at "NULL when not queued"
+    INTEGER checked_at
+    INTEGER confirmed_at
+    INTEGER discarded_at
+    INTEGER released_at
   }
   deploy_files {
     TEXT deploy_id PK, FK

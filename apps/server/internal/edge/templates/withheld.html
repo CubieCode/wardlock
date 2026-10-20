@@ -1,0 +1,159 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 CubieCode -->
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!--
+  The withheld page (A2.15): an HTML file content screening quarantined,
+  answered with 451 on every host and path that would serve it. Neutral on
+  purpose: it never says why, by whom or what was found, so it reads the
+  same for every category. No scripts: the same strict
+  Content-Security-Policy and styles as the unavailable page (colours
+  mirror packages/ui/styles/tokens.css).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Page unavailable · {{.Site}}</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --canvas: light-dark(#f6f6f3, #12171d);
+        --surface: light-dark(#ffffff, #1a2028);
+        --surface-muted: light-dark(#eeeeea, #222a33);
+        --text: light-dark(#1b2430, #e8ebee);
+        --muted: light-dark(#4f5a66, #a7b0ba);
+        --border: light-dark(#d9dad4, #2e3742);
+        --border-strong: light-dark(#7d858e, #6b7682);
+        --primary: light-dark(#1f4f5c, #7fc1cf);
+        --primary-hover: light-dark(#183f4a, #9fd2dc);
+        --primary-text: light-dark(#ffffff, #0f1a1f);
+        --focus: light-dark(#2f6fb0, #8fbfff);
+        --danger: light-dark(#a3302a, #f0a39c);
+        --accent: light-dark(#a8741f, #d7a756);
+        --warning: light-dark(#7d5200, #e8c06d);
+        --warning-surface: light-dark(#fbf1dc, #2a2213);
+        --warning-border: light-dark(#e2c27c, #5e4a1d);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5rem;
+        padding: 1.5rem 1rem;
+        background: var(--canvas);
+        color: var(--text);
+        font:
+          1rem/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      main {
+        width: 100%;
+        max-width: 26rem;
+        padding: 2rem;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+      .site {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin: 0 0 1.5rem;
+        font-size: 0.875rem;
+        color: var(--muted);
+      }
+      .host {
+        overflow-wrap: anywhere;
+        font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+      }
+      .status {
+        flex: none;
+        padding: 0.125rem 0.5rem;
+        border: 1px solid var(--border-strong);
+        border-radius: 999px;
+        background: var(--surface-muted);
+        color: var(--text);
+        font-weight: 500;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.5rem;
+        line-height: 1.25;
+        font-weight: 650;
+      }
+      p {
+        margin: 0;
+      }
+      .lead {
+        color: var(--muted);
+      }
+      .notice {
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.875rem;
+      }
+      footer {
+        font-size: 0.875rem;
+        color: var(--muted);
+      }
+      footer span {
+        color: var(--accent);
+      }
+      .notice a,
+      footer a {
+        color: var(--primary);
+        text-underline-offset: 2px;
+      }
+      .notice a:hover,
+      footer a:hover {
+        color: var(--primary-hover);
+      }
+      a:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible,
+      button:focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+      @media (max-width: 30rem) {
+        body {
+          justify-content: flex-start;
+          padding-top: 3rem;
+        }
+        main {
+          padding: 1.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="site">
+        <span class="host">{{.Site}}</span>
+        <span class="status">Unavailable</span>
+      </p>
+      <h1>This page is unavailable</h1>
+      <p class="lead">The operator of this server has withheld it.</p>
+      <p class="notice">
+        The rest of the site is still available from its
+        <a href="/">home page</a>.
+      </p>
+    </main>
+    <footer>
+      Served by <span>Wardlock</span>
+    </footer>
+  </body>
+</html>

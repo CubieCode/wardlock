@@ -19,6 +19,7 @@ import (
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/edge"
 	"wardlock.nz/server/internal/mail"
+	"wardlock.nz/server/internal/moderation"
 	"wardlock.nz/server/internal/platform"
 	"wardlock.nz/server/internal/store"
 	"wardlock.nz/server/internal/store/storetest"
@@ -41,6 +42,8 @@ type policyEdge struct {
 	notifier      *deploys.LocalNotifier
 	blobs         *deploys.FSBlobStore
 	dashboardHits int
+	// quarantine is what content screening withholds (A2.15).
+	quarantine *moderation.Quarantine
 
 	mu      sync.Mutex
 	clock   time.Time
@@ -90,6 +93,7 @@ func newPolicyEdge(t testing.TB, opts ...func(*access.Config)) *policyEdge {
 	notifier := deploys.NewLocalNotifier()
 	log := slog.New(slog.NewTextHandler(p.logs, nil))
 	p.notifier, p.log, p.blobs = notifier, log, blobs
+	p.quarantine = moderation.NewQuarantine()
 	cfg := access.Config{
 		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), EmailCodes: db.EmailCodes(), Notifier: notifier,
 		Mailer: mail.NewDevSink(mail.Config{DevDir: p.mailDir, Logger: slog.New(slog.NewTextHandler(p.mailLogs, nil)), Now: p.now}),
@@ -121,6 +125,7 @@ func newPolicyEdge(t testing.TB, opts ...func(*access.Config)) *policyEdge {
 		Invalidator:     notifier,
 		Access:          acc,
 		Recorder:        p,
+		Withheld:        p.quarantine,
 		Log:             log,
 	})
 	if err != nil {
