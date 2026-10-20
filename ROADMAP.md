@@ -318,6 +318,39 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item, wardlock-go-service, wardlock-access, wardlock-web
 - Parallel: Wave 12, first group. Holds the API contract gate (`openapi.yaml` and generated clients) and the `packages/ui` gate if it needs a component. Owns `internal/api` access-log handlers and a new `apps/web/src/sites/` access-log page; adds one link to `site-page.tsx` (merge after D3.6 and rebase).
 
+### A2.13: Operator controls and abuse reports
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: A2.12, C1.12
+- Scope: Give the operator the controls needed to act on abuse, as `wardlockd admin` commands (no owner-facing API or dashboard admin area). Suspend and reinstate an owner: a suspended owner's dashboard sessions, API tokens and CLI logins stop working at once, sign-in is refused with a neutral message, and their sites stop serving. Take down and restore a site: a taken-down site answers a neutral, `no-store` "This site is unavailable" page on every host (including custom domains) without touching its deploys or files, which are kept as evidence until the operator tears the site down. Restrict invitations: `WARDLOCK_INVITES=owners` (today's behaviour, the default) or `operator`, where only `wardlockd admin` can invite. Abuse reports: a "Report this site" link on the `/.wardlock/` pages and the unavailable page leads to a small form (site, reason, optional contact) that emails `WARDLOCK_ABUSE_EMAIL` and is rate-limited like the other visitor forms; reports never include share-link tokens. Every operator action is logged with IDs only. A portable migration adds the suspension and takedown state. Document it all in SPEC, SECURITY-MODEL "Public instances and abuse" and DEPLOYMENT, including the preserve-and-report procedure for illegal material.
+- Acceptance: Tests: suspension ends every credential kind and stops serving; takedown serves the unavailable page on subdomain and custom-domain hosts and keeps files; restore brings both back; invitations refused for owners under `WARDLOCK_INVITES=operator`; the report form's rate limit and no-token rule; migration and contract tests; the wardlock-access matrix rows that apply; `pnpm check` and `pnpm browser:test` pass; the report form and unavailable page checked at 1440px and 390px in light and dark with Mobbin references.
+- Skills: wardlock-item, wardlock-go-service, wardlock-access, wardlock-web
+- Parallel: Wave 13, first. Migration owner.
+
+### A2.14: Owner quotas, video limits and blocked file types
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: A2.13
+- Scope: Instance-wide limits with per-owner overrides set by `wardlockd admin`: total stored bytes per owner (counting each blob once per owner), number of sites per owner, and deploys per owner per day. A separate per-file limit for video files (by extension and declared type: `.mp4`, `.webm`, `.mov`, `.m4v`, `.mkv`, `.avi`, and the like), `WARDLOCK_MAX_VIDEO_SIZE`, defaulting well below the general per-file limit (propose a default in the PR), with `0` refusing video entirely. An optional blocklist of file extensions refused at manifest time, `WARDLOCK_BLOCKED_EXTENSIONS`, with a documented suggested list of executables and installers (off by default). Every refusal is a `413 limit_exceeded` or `422` naming the file and the limit, shown clearly by the CLI and dashboard. A portable migration for the per-owner overrides. Update SPEC, DEPLOYMENT, `deploy/vps/wardlock.env.example` and the API contract's error descriptions.
+- Acceptance: Tests for each limit at, under and over the boundary, per-owner overrides, video detection by extension, the blocklist, error bodies naming the file; CLI and dashboard tests for the messages; migration and contract tests; `pnpm check` and `pnpm browser:test` pass; any dashboard change checked at 1440px and 390px in light and dark.
+- Skills: wardlock-item, wardlock-go-service, wardlock-web
+- Parallel: Wave 13, after A2.13 merges. Migration owner and API contract gate holder after A2.13.
+
+### A2.15: Content screening with OpenAI moderation
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: A2.13, A2.14
+- Scope: Optional automated screening of uploaded content, off unless the operator sets `WARDLOCK_MODERATION=openai` and `WARDLOCK_OPENAI_API_KEY` (a secret, never logged). A `Moderator` interface in its own package with an OpenAI implementation over the moderation endpoint (`omni-moderation-latest`, text and images), and a fake for tests. After a deploy is activated, each image and HTML file not yet screened (by content hash, so each unique file is checked once ever) is queued in the background; HTML is checked as its extracted text, images in the formats the endpoint accepts, within its size limits; other types and videos are not sent (videos are bounded by A2.14). Results are stored per hash: allowed, flagged (operator review) or quarantined (categories the operator configures to quarantine, defaulting to sexual content involving minors, plus sexual content where the operator chooses). A quarantined file is not served from any site (a neutral placeholder or `451`), the deploy keeps working otherwise, the operator is emailed and the owner told which file was withheld. `wardlockd admin` lists flagged and quarantined files with their sites, and releases or confirms them. Per-owner exemption: `wardlockd admin moderation disable --owner <email>` (and `enable`), so the operator can turn screening off for trusted owners; new owners follow the instance default. Failures and rate limits back off and retry; screening never blocks deploys or serving. Content leaves the server only when enabled: document this in SPEC, SECURITY-MODEL and DEPLOYMENT, and in the acceptable use policy. A portable migration for results and the exemption flag.
+- Acceptance: Tests with the fake moderator: queueing once per hash, each outcome, quarantine stops serving on every host, exempt owners are never sent, retries and back-off, no key or content in logs; an OpenAI client test against `httptest`; migration and contract tests; the wardlock-access matrix rows that apply; `pnpm check` passes.
+- Skills: wardlock-item, wardlock-go-service, wardlock-access
+- Parallel: Wave 13, after A2.14 merges. Migration owner after A2.14. No lockfile change expected (plain HTTP client).
+
 ## D3: Dashboard
 
 ### D3.1: Dashboard shell and owner sign-in
@@ -520,6 +553,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item
 - Parallel: Wave 12, beside C1.10. Owns `deploy/vps/`, `deploy/Dockerfile` (adding a target without changing the release image) and the new DEPLOYMENT section; no gates.
 
+### O4.13: Acceptable use policy and abuse procedure
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: A2.13
+- Scope: Draft an acceptable use policy for instances (`docs/ACCEPTABLE-USE.md`): no illegal, obscene or sexual content, nothing involving minors, no malware or phishing, the operator's right to screen (A2.15, when enabled, including that content may be sent to OpenAI's moderation service), remove content and suspend accounts. Link it from the setup and invitation pages, so a new owner sees it before their account exists (no checkbox; continuing means accepting), and from README and SECURITY. Write the operator's abuse procedure in DEPLOYMENT: triage reports, take down, preserve and report illegal material (in New Zealand, to the Department of Internal Affairs or the police) rather than deleting it, and contact the owner. Marked as a draft for the maintainer's legal review.
+- Acceptance: Policy and procedure merged and linked; the setup and invitation pages show the link (tests, and checked at 1440px and 390px in light and dark); docs-site link check passes; `pnpm check` passes.
+- Skills: wardlock-item, wardlock-web
+- Parallel: Wave 13, beside A2.14 or A2.15. Owns the new doc and the link on the two pages; no gates.
+
 ## Waves
 
 Suggested batches, based on the file ownership above. Re-check overlap before launching; merge in the order listed within a wave when items share interfaces.
@@ -535,6 +579,7 @@ Suggested batches, based on the file ownership above. Re-check overlap before la
 9. **Wave 10:** O4.6, then O4.7. Docs only; no gates.
 10. **Wave 11:** O4.8 and O4.9, in either order. Lint and CI configuration only; no gates.
 11. **Wave 12:** first D3.6, A2.12 and O4.11 (A2.12 holds the API contract gate; D3.6 merges first, since both touch the site page); then C1.10 (migration owner, takes the API contract gate) beside C1.11 (lockfile owner for `apps/server/go.sum`) and O4.12; then C1.12 after C1.10; then O4.10 last.
+12. **Wave 13:** A2.13 (migration owner), then A2.14 (migration owner, API contract gate), then A2.15 (migration owner); O4.13 beside A2.14 or A2.15. Starts after wave 12.
 
 ## Not planned yet
 
