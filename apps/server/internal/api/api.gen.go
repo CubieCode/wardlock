@@ -1185,6 +1185,9 @@ type CheckedRecently = Error
 // Conflict The body of every error response.
 type Conflict = Error
 
+// FileTypeBlocked The body of every error response.
+type FileTypeBlocked = Error
+
 // Forbidden The body of every error response.
 type Forbidden = Error
 
@@ -3092,6 +3095,8 @@ type ConflictJSONResponse Error
 
 type ErrorJSONResponse Error
 
+type FileTypeBlockedJSONResponse Error
+
 type ForbiddenJSONResponse Error
 
 type GoneJSONResponse Error
@@ -4774,6 +4779,20 @@ func (response CreateSite409JSONResponse) VisitCreateSiteResponse(w http.Respons
 	return err
 }
 
+type CreateSite413JSONResponse struct{ TooLargeJSONResponse }
+
+func (response CreateSite413JSONResponse) VisitCreateSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateSitedefaultJSONResponse struct {
 	Body       Error
 	StatusCode int
@@ -5256,6 +5275,20 @@ func (response CreateDeploy413JSONResponse) VisitCreateDeployResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDeploy422JSONResponse struct{ FileTypeBlockedJSONResponse }
+
+func (response CreateDeploy422JSONResponse) VisitCreateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }

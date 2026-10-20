@@ -151,7 +151,7 @@ func (h *harness) owner() string {
 func (h *harness) site(ownerID, name string) store.Site {
 	h.t.Helper()
 	s := store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: start}
-	if err := h.db.Sites().Create(h.t.Context(), s); err != nil {
+	if err := h.db.Sites().Create(h.t.Context(), s, store.Quotas{}); err != nil {
 		h.t.Fatal(err)
 	}
 	return s

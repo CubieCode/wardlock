@@ -28,7 +28,26 @@ var (
 	// ErrUnavailable means the operator has taken the site down; only the
 	// operator can restore or tear it down (A2.13).
 	ErrUnavailable = errors.New("site taken down by the operator")
+	// ErrLimitExceeded means the owner already has as many sites as their
+	// quota allows (A2.14); the error is a *LimitError.
+	ErrLimitExceeded = errors.New("site limit reached")
 )
+
+// LimitError is ErrLimitExceeded with the owner's site limit. Message is
+// safe to show the owner.
+type LimitError struct{ Limit int64 }
+
+func (e *LimitError) Error() string { return e.Message() }
+func (e *LimitError) Unwrap() error { return ErrLimitExceeded }
+
+// Message explains the refusal to the owner.
+func (e *LimitError) Message() string {
+	sites := "sites"
+	if e.Limit == 1 {
+		sites = "site"
+	}
+	return fmt.Sprintf("You already have %d %s, the most this server allows you. Delete a site you no longer need or ask the operator for a higher limit.", e.Limit, sites)
+}
 
 // reserved are the names SPEC "Sites" keeps for Wardlock itself.
 var reserved = map[string]bool{
@@ -59,6 +78,9 @@ type Config struct {
 	BaseDomain    string
 	DashboardHost string
 	Now           func() time.Time
+	// Quotas are the instance's per-owner limits (A2.14); Create checks
+	// Sites, with the owner's own override in its place when set.
+	Quotas store.Quotas
 }
 
 // Service manages owners' sites. Every method takes the verified owner ID
@@ -110,7 +132,8 @@ func (s *Service) dashboardLabel() string {
 // Hostname returns the site's host on the base domain.
 func (s *Service) Hostname(name string) string { return name + "." + s.c.BaseDomain }
 
-// Create creates an empty site for ownerID.
+// Create creates an empty site for ownerID, or returns a *LimitError when
+// they already have as many sites as their quota allows.
 func (s *Service) Create(ctx context.Context, ownerID, name string) (store.Site, error) {
 	if err := s.CheckName(name); err != nil {
 		return store.Site{}, err
@@ -121,9 +144,12 @@ func (s *Service) Create(ctx context.Context, ownerID, name string) (store.Site,
 		Name:      name,
 		CreatedAt: s.now(),
 	}
-	err := s.c.Sites.Create(ctx, site)
+	err := s.c.Sites.Create(ctx, site, s.c.Quotas)
 	if errors.Is(err, store.ErrConflict) {
 		return store.Site{}, ErrNameTaken
+	}
+	if qe := (*store.QuotaError)(nil); errors.As(err, &qe) {
+		return store.Site{}, &LimitError{Limit: qe.Limit}
 	}
 	if err != nil {
 		return store.Site{}, fmt.Errorf("create site: %w", err)

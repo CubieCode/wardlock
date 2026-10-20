@@ -67,6 +67,12 @@ func (hs *harness) advance(d time.Duration) {
 
 func newHarness(t *testing.T, limits deploys.Limits) *harness {
 	t.Helper()
+	return newQuotaHarness(t, limits, store.Quotas{})
+}
+
+// newQuotaHarness is newHarness with instance quotas (A2.14).
+func newQuotaHarness(t *testing.T, limits deploys.Limits, quotas store.Quotas) *harness {
+	t.Helper()
 	db := storetest.New(t)
 	hs := &harness{t: t, db: db, blobDir: filepath.Join(t.TempDir(), "blobs"), dns: sitestest.NewResolver()}
 	hs.blobs = deploys.NewFSBlobStore(hs.blobDir)
@@ -99,10 +105,11 @@ func newHarness(t *testing.T, limits deploys.Limits) *harness {
 			Sites: db.Sites(), Notifier: notifier, BaseDomain: baseDomain,
 			DashboardHost: "console." + baseDomain, Now: hs.now,
 			Domains: db.Domains(), Resolver: hs.dns, CheckTimeout: 50 * time.Millisecond,
+			Quotas: quotas,
 		}),
 		Deploys: deploys.NewService(deploys.Config{
 			Sites: db.Sites(), Deploys: db.Deploys(), Blobs: hs.blobs, Notifier: notifier,
-			Limits: limits, Now: time.Now,
+			Limits: limits, Quotas: quotas, Now: time.Now,
 		}),
 		SiteURL: func(host string) string { return "http://" + host + ":8080/" },
 	}

@@ -14,6 +14,7 @@ import (
 	"net/mail"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -58,6 +59,19 @@ type Config struct {
 	MaxFileSize    int64
 	MaxDeployFiles int
 	MaxDeploySize  int64
+	// MaxVideoSize is the per-file limit for video files; 0 refuses them
+	// (A2.14).
+	MaxVideoSize int64
+	// BlockedExtensions are the lowercase extensions, each with its dot,
+	// that no deploy may contain (WARDLOCK_BLOCKED_EXTENSIONS); empty
+	// blocks none.
+	BlockedExtensions []string
+	// Per-owner quotas (A2.14), which `wardlockd admin quota` can override
+	// for one owner: bytes stored, sites, and deploys in any 24 hours. 0 is
+	// unlimited, the default for all three.
+	MaxOwnerStorage       int64
+	MaxOwnerSites         int64
+	MaxOwnerDeploysPerDay int64
 	// Access log: client IPs keep only the first AccessLogIPv4Prefix or
 	// AccessLogIPv6Prefix bits (0 stores none), entries older than
 	// AccessLogRetention are pruned (0 keeps them forever) and at most
@@ -183,6 +197,9 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		}
 		l.dst(v)
 	}
+	if err := cfg.loadQuotas(get); err != nil {
+		return Config{}, err
+	}
 	if err := cfg.loadBlobs(get); err != nil {
 		return Config{}, err
 	}
@@ -209,6 +226,56 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		cfg.Secret = key
 	}
 	return cfg, nil
+}
+
+// loadQuotas reads the video limit, blocked extensions and per-owner quota
+// variables (A2.14).
+func (c *Config) loadQuotas(get func(key, fallback string) string) error {
+	for _, l := range []struct {
+		key      string
+		fallback int64
+		dst      *int64
+	}{
+		{"WARDLOCK_MAX_VIDEO_SIZE", 10 << 20, &c.MaxVideoSize},
+		{"WARDLOCK_MAX_OWNER_STORAGE", 0, &c.MaxOwnerStorage},
+		{"WARDLOCK_MAX_OWNER_SITES", 0, &c.MaxOwnerSites},
+		{"WARDLOCK_MAX_OWNER_DEPLOYS_PER_DAY", 0, &c.MaxOwnerDeploysPerDay},
+	} {
+		raw := get(l.key, "")
+		v, err := strconv.ParseInt(raw, 10, 64)
+		switch {
+		case raw == "":
+			v = l.fallback
+		case err != nil || v < 0:
+			return fmt.Errorf("%w: %s must be a whole number, 0 or more", ErrInvalidConfig, l.key)
+		}
+		*l.dst = v
+	}
+	exts, err := ParseExtensions(get("WARDLOCK_BLOCKED_EXTENSIONS", ""))
+	if err != nil {
+		return fmt.Errorf("%w: WARDLOCK_BLOCKED_EXTENSIONS: %w", ErrInvalidConfig, err)
+	}
+	c.BlockedExtensions = exts
+	return nil
+}
+
+// ParseExtensions reads a comma-separated list of file extensions, with or
+// without their dots and in any letter case (exe, .MSI), and returns them
+// lowercase with a dot, sorted and without duplicates.
+func ParseExtensions(raw string) ([]string, error) {
+	var out []string
+	for item := range strings.SplitSeq(raw, ",") {
+		item = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(item), "."))
+		if item == "" {
+			continue
+		}
+		if strings.ContainsFunc(item, func(r rune) bool { return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' && r != '-' }) {
+			return nil, fmt.Errorf("%q is not a file extension: use letters, digits, - and _, such as exe,msi,dmg", item)
+		}
+		out = append(out, "."+item)
+	}
+	slices.Sort(out)
+	return slices.Compact(out), nil
 }
 
 // loadOperator reads the operator controls' variables (A2.13).

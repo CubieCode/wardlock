@@ -33,7 +33,7 @@ var renditionFiles = map[string]string{
 func (p *policyEdge) publishFiles(name string, files map[string]string) {
 	t, ctx := p.t, p.t.Context()
 	t.Helper()
-	if err := p.db.Sites().Create(ctx, store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: name, CreatedAt: p.now()}); err != nil {
+	if err := p.db.Sites().Create(ctx, store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: name, CreatedAt: p.now()}, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	var m deploys.Manifest

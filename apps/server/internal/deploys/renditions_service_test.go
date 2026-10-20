@@ -84,7 +84,7 @@ func (w *renditionWorld) deploy(site string, files map[string]string) store.Depl
 	t, ctx := w.t, w.t.Context()
 	t.Helper()
 	if _, err := w.db.Sites().GetByOwnerName(ctx, w.owner.ID, site); err != nil {
-		if err := w.db.Sites().Create(ctx, store.Site{ID: store.NewID(), OwnerID: w.owner.ID, Name: site, CreatedAt: gcEpoch}); err != nil {
+		if err := w.db.Sites().Create(ctx, store.Site{ID: store.NewID(), OwnerID: w.owner.ID, Name: site, CreatedAt: gcEpoch}, store.Quotas{}); err != nil {
 			t.Fatal(err)
 		}
 	}

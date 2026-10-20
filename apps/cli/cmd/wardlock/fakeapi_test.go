@@ -59,6 +59,15 @@ type fakeAPI struct {
 	// cooldown 429, and refuseToken with a refused token's 429.
 	verifyPasses, verifyCalls int
 	throttle, refuseToken     bool
+	// refuseDeploy and refuseSite, when set, answer the next deploy or site
+	// creation with that error, as the server's limits and quotas do.
+	refuseDeploy, refuseSite *refusal
+}
+
+// refusal is an error answer: an HTTP status and the API's error body.
+type refusal struct {
+	status int
+	body   apiclient.Error
 }
 
 type fakeSite struct {
@@ -242,6 +251,11 @@ func (f *fakeAPI) createSite(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if r := f.refuseSite; r != nil {
+		f.refuseSite = nil
+		reply(w, r.status, r.body)
+		return
+	}
 	if f.taken[body.Name] || f.sites[body.Name] != nil {
 		reply(w, http.StatusConflict, apiErr("site_name_taken", "That site name is taken."))
 		return
@@ -264,6 +278,11 @@ func (f *fakeAPI) createDeploy(w http.ResponseWriter, r *http.Request, s *fakeSi
 	var body apiclient.CreateDeployRequest
 	if err := dec.Decode(&body); err != nil || len(body.Files) == 0 {
 		reply(w, http.StatusBadRequest, apiErr("invalid_request", "Invalid manifest."))
+		return
+	}
+	if r := f.refuseDeploy; r != nil {
+		f.refuseDeploy = nil
+		reply(w, r.status, r.body)
 		return
 	}
 	f.created = append(f.created, body)

@@ -478,18 +478,57 @@ Sign-ins in progress (up to 10 minutes at the provider) and the 60-second codes 
 
 Deploy file bodies are stored once per content hash under `WARDLOCK_BLOB_DIR` (default `<WARDLOCK_DATA_DIR>/blobs`), or in an [S3-compatible bucket](#s3-compatible-blob-storage). Give the storage room for every deploy you keep; unreferenced blobs are removed by [garbage collection](#garbage-collection).
 
-| Variable                    | Default              | Limit                   |
-| --------------------------- | -------------------- | ----------------------- |
-| `WARDLOCK_MAX_FILE_SIZE`    | `26214400` (25 MiB)  | bytes per file          |
-| `WARDLOCK_MAX_DEPLOY_FILES` | `20000`              | files per deploy        |
-| `WARDLOCK_MAX_DEPLOY_SIZE`  | `1073741824` (1 GiB) | bytes in a whole deploy |
+| Variable                      | Default              | Limit                                            |
+| ----------------------------- | -------------------- | ------------------------------------------------ |
+| `WARDLOCK_MAX_FILE_SIZE`      | `26214400` (25 MiB)  | bytes per file                                   |
+| `WARDLOCK_MAX_DEPLOY_FILES`   | `20000`              | files per deploy                                 |
+| `WARDLOCK_MAX_DEPLOY_SIZE`    | `1073741824` (1 GiB) | bytes in a whole deploy                          |
+| `WARDLOCK_MAX_VIDEO_SIZE`     | `10485760` (10 MiB)  | bytes per video file; `0` refuses video files    |
+| `WARDLOCK_BLOCKED_EXTENSIONS` | empty                | comma-separated extensions no deploy may contain |
+
+The video limit is new in A2.14 and applies to existing installs on upgrade: a deploy with a video file over 10 MiB that went through before is refused from then on. Set `WARDLOCK_MAX_VIDEO_SIZE` to `26214400` (or your `WARDLOCK_MAX_FILE_SIZE`) to keep the old behaviour. For an instance others deploy to, a suggested blocklist of executables and installers is:
+
+```sh
+WARDLOCK_BLOCKED_EXTENSIONS=exe,msi,msix,appx,scr,bat,cmd,ps1,vbs,jar,apk,dmg,pkg,deb,rpm,appimage
+```
 
 <details>
 <summary>On-disk layout and how limits are enforced</summary>
 
 The blob directory is laid out as `sha256/ab/cdef…`. Each upload is written to a temporary file in the same directory, fsynced and renamed into place, so put the blob directory on the same local filesystem as its parent.
 
-Values are whole numbers of at least 1, without units. A deploy over a limit is rejected when it is created (`413 limit_exceeded`, naming the file where one is at fault), and an upload body longer than the per-file limit is rejected too. Raising the per-file limit means raising a reverse proxy's request body limit to match.
+Values are whole numbers of at least 1, without units (`WARDLOCK_MAX_VIDEO_SIZE` may also be `0`). A deploy over a limit is rejected when it is created (`413 limit_exceeded`, naming the file where one is at fault), and an upload body longer than the per-file limit is rejected too. Raising the per-file limit means raising a reverse proxy's request body limit to match.
+
+Video files are recognised by extension only (`.mp4`, `.webm`, `.mov`, `.m4v`, `.mkv`, `.avi` and the rest of the list in SPEC ["Video files and blocked file types"](SPEC.md#deploys-and-rollback-c12)), in any letter case, the same on every host; `.ts` is not on the list. Blocked extensions are written with or without the dot, in any letter case (`exe`, `.MSI`); a deploy listing such a file is rejected with `422 file_type_blocked` naming it, and only a file's last extension counts. The suggested list leaves out `.sh`, `.zip` and other formats that sites often offer for download on purpose; add them if your instance should not host them. Both settings apply to new deploys only: deploys already made keep serving.
+
+</details>
+
+### Owner quotas
+
+Quotas limit what each owner can use (A2.14). They are off by default; set them for an instance others deploy to.
+
+| Variable                             | Default | Limit                                                                     |
+| ------------------------------------ | ------- | ------------------------------------------------------------------------- |
+| `WARDLOCK_MAX_OWNER_STORAGE`         | `0`     | bytes of distinct files across the owner's kept deploys; `0` is unlimited |
+| `WARDLOCK_MAX_OWNER_SITES`           | `0`     | sites per owner; `0` is unlimited                                         |
+| `WARDLOCK_MAX_OWNER_DEPLOYS_PER_DAY` | `0`     | deploys per owner in any 24 hours; `0` is unlimited                       |
+
+Give one owner their own values with [`wardlockd admin quota`](#operator-commands):
+
+```sh
+sudo -u wardlock wardlockd admin quota owner@example.com                       # QUOTA USED LIMIT SET BY
+sudo -u wardlock wardlockd admin quota owner@example.com --storage 20GiB --sites 100
+sudo -u wardlock wardlockd admin quota owner@example.com --deploys-per-day default
+```
+
+<details>
+<summary>What counts, and when it is checked</summary>
+
+- **Storage** counts each file the owner's deploys list once, whatever its path, deploy or site, and counts a deploy as soon as it is created, before its upload. Deleting a site, or garbage collection pruning old deploys beyond `WARDLOCK_DEPLOY_HISTORY`, gives the space back; a lower `WARDLOCK_DEPLOY_HISTORY` keeps usage lower. The figure is the owner's share of what the instance stores, not the blob directory's size: content two owners publish is stored once but counts for both.
+- **Deploys in 24 hours** counts deploys created, refused ones aside, in a rolling 24-hour window; deleting sites does not reset it.
+- **Refusals** are `413 limit_exceeded` when a deploy or site is created, with a message naming the quota and its limit, which the CLI shows as it is. Nothing is written, so a refused deploy does not count.
+- **Overrides.** `--storage` takes bytes or a whole number with `KiB`, `MiB`, `GiB` or `TiB`; `--sites` and `--deploys-per-day` take a whole number. `0` is unlimited for that owner and `default` makes them follow the instance again. Flags you leave out keep their current value. The command prints the owner's usage and limits afterwards, and logs `operator set owner quotas` with the owner ID only. A lower limit deletes nothing: it refuses the owner's next deploy that adds files, or next site, until usage is under it again.
+- **Upgrading** to A2.14 counts every existing deploy at once (migration `0009_owner_quotas`), so the first start after the upgrade takes a little longer on a large instance.
 
 </details>
 
@@ -675,16 +714,17 @@ For an instance others deploy to, also set `WARDLOCK_ABUSE_EMAIL` so visitors ca
 
 ### Operator commands
 
-| Command                         | What it does                                                                                                   |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `admin create --email ADDRESS`  | Creates an owner and prints a one-time sign-in URL                                                             |
-| `admin list-owners`             | Lists `EMAIL STATUS CREATED ID`; status is `active`, `invited` or `suspended DATE`                             |
-| `admin suspend-owner ADDRESS`   | Signs the owner out everywhere, refuses their sign-in and API tokens, makes their sites unavailable            |
-| `admin reinstate-owner ADDRESS` | Undoes a suspension; tokens and sites work again and the owner signs in again                                  |
-| `admin list-sites`              | Lists `NAME OWNER STATUS ID`; status is `serving`, `nothing published`, `taken down DATE` or `owner suspended` |
-| `admin takedown-site SITE`      | Every page of the site answers "This site is unavailable"; deploys, files and access log are kept              |
-| `admin restore-site SITE`       | Serves the same active deploy again                                                                            |
-| `admin teardown-site SITE`      | Deletes a taken-down site, as an owner's teardown does                                                         |
+| Command                         | What it does                                                                                                                                                         |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin create --email ADDRESS`  | Creates an owner and prints a one-time sign-in URL                                                                                                                   |
+| `admin list-owners`             | Lists `EMAIL STATUS CREATED ID`; status is `active`, `invited` or `suspended DATE`                                                                                   |
+| `admin suspend-owner ADDRESS`   | Signs the owner out everywhere, refuses their sign-in and API tokens, makes their sites unavailable                                                                  |
+| `admin reinstate-owner ADDRESS` | Undoes a suspension; tokens and sites work again and the owner signs in again                                                                                        |
+| `admin list-sites`              | Lists `NAME OWNER STATUS ID`; status is `serving`, `nothing published`, `taken down DATE` or `owner suspended`                                                       |
+| `admin takedown-site SITE`      | Every page of the site answers "This site is unavailable"; deploys, files and access log are kept                                                                    |
+| `admin restore-site SITE`       | Serves the same active deploy again                                                                                                                                  |
+| `admin teardown-site SITE`      | Deletes a taken-down site, as an owner's teardown does                                                                                                               |
+| `admin quota ADDRESS [flags]`   | Shows the owner's [quotas](#owner-quotas) and usage; `--storage SIZE`, `--sites N` and `--deploys-per-day N` override them (`0` unlimited, `default` the instance's) |
 
 `SITE` is a site name or any hostname the site answers on (its `<name>.<base domain>` host or an active custom domain), so you can paste the host from a report.
 

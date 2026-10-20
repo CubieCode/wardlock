@@ -171,6 +171,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		DashboardHost: cfg.DashboardHost,
 		Now:           time.Now,
 		Log:           log,
+		Quotas:        ownerQuotas(cfg),
 	}
 	if certs != nil {
 		sitesCfg.Certs = certs
@@ -201,11 +202,14 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			Blobs:    blobs,
 			Notifier: notifier,
 			Limits: deploys.Limits{
-				MaxFileSize:   cfg.MaxFileSize,
-				MaxFiles:      cfg.MaxDeployFiles,
-				MaxDeploySize: cfg.MaxDeploySize,
+				MaxFileSize:       cfg.MaxFileSize,
+				MaxFiles:          cfg.MaxDeployFiles,
+				MaxDeploySize:     cfg.MaxDeploySize,
+				MaxVideoSize:      cfg.MaxVideoSize,
+				BlockedExtensions: blockedExtensions(cfg),
 			},
-			Now: time.Now,
+			Quotas: ownerQuotas(cfg),
+			Now:    time.Now,
 			// Renditions (A2.6) link to the site's base-domain address.
 			Renditions: db.Renditions(),
 			SiteOrigin: func(name string) string { return publicOrigin(name+"."+cfg.BaseDomain, port).String() },
@@ -450,4 +454,21 @@ func oauthProviders(ctx context.Context, c platform.OAuthConfig) []access.Provid
 		ps = append(ps, o)
 	}
 	return ps
+}
+
+// ownerQuotas are the instance's per-owner quotas (A2.14).
+func ownerQuotas(cfg platform.Config) store.Quotas {
+	return store.Quotas{StorageBytes: cfg.MaxOwnerStorage, Sites: cfg.MaxOwnerSites, DeploysPerDay: cfg.MaxOwnerDeploysPerDay}
+}
+
+// blockedExtensions is WARDLOCK_BLOCKED_EXTENSIONS as deploys checks it.
+func blockedExtensions(cfg platform.Config) map[string]bool {
+	if len(cfg.BlockedExtensions) == 0 {
+		return nil
+	}
+	m := make(map[string]bool, len(cfg.BlockedExtensions))
+	for _, ext := range cfg.BlockedExtensions {
+		m[ext] = true
+	}
+	return m
 }

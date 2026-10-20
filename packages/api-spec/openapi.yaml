@@ -71,7 +71,8 @@ info:
     | 404 | `not_found` |
     | 409 | `site_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `default_policy`, `passkey_limit`, `site_unavailable` (the operator has taken the site down) |
     | 410 | `login_expired` |
-    | 413 | `limit_exceeded` |
+    | 413 | `limit_exceeded`: a deploy limit (files, bytes per file or per video file, bytes in total) or one of the owner's quotas (bytes stored, sites, deploys in 24 hours); the `message` names the file and the limit, and `target` is the file's path, or `files`, `deploys` or `name` |
+    | 422 | `file_type_blocked`: the manifest lists a file whose extension the operator has blocked; `target` is its path |
     | 429 | `rate_limited`, `slow_down`, `checked_recently` (a domain check came too soon after the last); `Retry-After` gives the seconds to wait |
     | 500 | `internal` |
     | 501 | `not_implemented`: the operation is in the contract but not built yet |
@@ -953,8 +954,10 @@ paths:
       description: >-
         Site names are unique per instance. A name held by any site, the
         caller's or another owner's, answers `409 site_name_taken`; site
-        names are public through DNS, so this reveals nothing secret. The CLI
-        calls this before the first deploy to a new name.
+        names are public through DNS, so this reveals nothing secret. An
+        owner who already has as many sites as their quota allows gets `413
+        limit_exceeded` with target `name`. The CLI calls this before the
+        first deploy to a new name.
       tags: [sites]
       security:
         - sessionCookie: []
@@ -989,6 +992,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/TooLarge'
         default:
           $ref: '#/components/responses/Error'
 
@@ -1111,9 +1116,19 @@ paths:
         without `..`, empty segments, control characters or a leading
         `.wardlock/`; a rejected path answers `400 invalid_path` with the
         path as `target`. A duplicate path answers `400 invalid_manifest`.
-        Exceeding the file count, file size or total size limits answers
-        `413 limit_exceeded`. A site the operator has taken down answers
-        `409 site_unavailable`.
+        Exceeding the file count, file size or total size limits, or the
+        lower per-file limit for video files (by extension: `.mp4`, `.webm`,
+        `.mov` and the like), answers `413 limit_exceeded` with the file's
+        path as `target`; a server that refuses video answers the same for
+        any video file. A file whose extension the operator has blocked
+        answers `422 file_type_blocked` with its path as `target`. The
+        deploy also counts against the owner's quotas at once, before any
+        upload: bytes stored (each distinct file once, however many of the
+        owner's deploys list it, so unchanged files cost nothing), answered
+        `413 limit_exceeded` with target `files`, and deploys created in any
+        24 hours, answered `413 limit_exceeded` with target `deploys`. A
+        refused deploy counts towards neither. A site the operator has taken
+        down answers `409 site_unavailable`.
       tags: [deploys]
       security:
         - sessionCookie: []
@@ -1166,6 +1181,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '413':
           $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/FileTypeBlocked'
         default:
           $ref: '#/components/responses/Error'
 
@@ -2127,15 +2144,27 @@ components:
             code: login_expired
             message: This login has expired or was denied. Run wardlock login again.
     TooLarge:
-      description: A size or count limit was exceeded.
+      description: >-
+        A size or count limit, or one of the owner's quotas, was exceeded.
+        The message names the file or quota and the limit.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
           example:
             code: limit_exceeded
-            message: assets/video.mp4 is 31457280 bytes; the limit is 26214400.
-            target: assets/video.mp4
+            message: assets/intro.mp4 is a video file of 15 MiB; the limit for video files is 10 MiB.
+            target: assets/intro.mp4
+    FileTypeBlocked:
+      description: The manifest lists a file whose extension the operator has blocked.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: file_type_blocked
+            message: downloads/setup.exe is a .exe file, a type this server does not accept.
+            target: downloads/setup.exe
     RateLimited:
       description: Too many requests.
       headers:

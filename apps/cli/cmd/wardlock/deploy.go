@@ -208,7 +208,7 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 		return c.unreachable(ctx, err)
 	}
 	if cres.JSON201 == nil {
-		return c.failed(cres.HTTPResponse, cres.Body)
+		return refusedFile(c.failed(cres.HTTPResponse, cres.Body), cres.Body, manifest)
 	}
 	deploy := cres.JSON201.Deploy
 
@@ -259,6 +259,24 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 	fmt.Fprintf(a.stdout, "%s %s (%s) in %.1fs. Deploy %s is live:\n%s\n", verb, plural(len(files), "file", "files"), formatBytes(total),
 		a.now().Sub(start).Seconds(), shortID(act.Deploy.Id), act.Site.Url)
 	return nil
+}
+
+// refusedFile adds what to do when the server refuses the deploy because
+// of one of its files: a file over a size limit (limit_exceeded naming the
+// path) or of a blocked type (file_type_blocked). The server's message
+// already names the file and the limit; quotas name no file and need no
+// more.
+func refusedFile(err error, body []byte, manifest []apiclient.ManifestFile) error {
+	var e apiclient.Error
+	if json.Unmarshal(body, &e) != nil || e.Target == nil || (e.Code != "limit_exceeded" && e.Code != "file_type_blocked") {
+		return err
+	}
+	for _, f := range manifest {
+		if f.Path == *e.Target {
+			return fmt.Errorf("%w To deploy without it, list %s in %s", err, f.Path, ignoreFile)
+		}
+	}
+	return err
 }
 
 // site finds the deploy's site, creating it when DOMAIN is a new name or

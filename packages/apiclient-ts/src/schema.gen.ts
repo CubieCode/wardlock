@@ -465,7 +465,7 @@ export interface paths {
     put?: never;
     /**
      * Create an empty site.
-     * @description Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. The CLI calls this before the first deploy to a new name.
+     * @description Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
      */
     post: operations['createSite'];
     delete?: never;
@@ -522,7 +522,7 @@ export interface paths {
     put?: never;
     /**
      * Create a deploy from a manifest.
-     * @description Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits answers `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
+     * @description Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
      */
     post: operations['createDeploy'];
     delete?: never;
@@ -1583,7 +1583,7 @@ export interface components {
         'application/json': components['schemas']['Error'];
       };
     };
-    /** @description A size or count limit was exceeded. */
+    /** @description A size or count limit, or one of the owner's quotas, was exceeded. The message names the file or quota and the limit. */
     TooLarge: {
       headers: {
         [name: string]: unknown;
@@ -1592,8 +1592,24 @@ export interface components {
         /**
          * @example {
          *       "code": "limit_exceeded",
-         *       "message": "assets/video.mp4 is 31457280 bytes; the limit is 26214400.",
-         *       "target": "assets/video.mp4"
+         *       "message": "assets/intro.mp4 is a video file of 15 MiB; the limit for video files is 10 MiB.",
+         *       "target": "assets/intro.mp4"
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
+    /** @description The manifest lists a file whose extension the operator has blocked. */
+    FileTypeBlocked: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "file_type_blocked",
+         *       "message": "downloads/setup.exe is a .exe file, a type this server does not accept.",
+         *       "target": "downloads/setup.exe"
          *     }
          */
         'application/json': components['schemas']['Error'];
@@ -2654,6 +2670,7 @@ export interface operations {
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       409: components['responses']['Conflict'];
+      413: components['responses']['TooLarge'];
       default: components['responses']['Error'];
     };
   };
@@ -2855,6 +2872,7 @@ export interface operations {
       404: components['responses']['NotFound'];
       409: components['responses']['Conflict'];
       413: components['responses']['TooLarge'];
+      422: components['responses']['FileTypeBlocked'];
       default: components['responses']['Error'];
     };
   };

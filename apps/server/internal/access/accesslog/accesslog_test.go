@@ -453,7 +453,7 @@ func TestMalformedEntriesDoNotLoseTheBatch(t *testing.T) {
 	if err := db.Owners().Create(t.Context(), owner); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Sites().Create(t.Context(), site); err != nil {
+	if err := db.Sites().Create(t.Context(), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	w := accesslog.Start(accesslog.Config{Repo: db.AccessLog(), FlushInterval: time.Hour})
@@ -491,7 +491,7 @@ func TestWithSQLite(t *testing.T) {
 	if err := db.Owners().Create(ctx, owner); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Sites().Create(ctx, site); err != nil {
+	if err := db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Millisecond)

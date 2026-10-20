@@ -259,7 +259,9 @@ While a site is taken down or its owner suspended, its owner cannot change its c
 
 Built (O4.13): the [acceptable use policy](ACCEPTABLE-USE.md), a draft awaiting legal review, and the operator's [abuse procedure](DEPLOYMENT.md#handling-abuse-reports) in DEPLOYMENT, with its [preserve-and-report steps](DEPLOYMENT.md#preserving-and-reporting-illegal-material) for illegal material. The dashboard's setup and sign-in-link pages say that continuing means agreeing to the policy and link to it. A sign-in link (from an invitation or `admin create`) is redeemed only when its owner presses Continue on that page, so a mail scanner or link-preview bot that opens the URL cannot use it up; such a fetcher runs no scripts, and even one that did would not press the button.
 
-Still planned: owner quotas (A2.14) and content screening (A2.15).
+Built (A2.14): per-owner quotas on bytes stored, sites and deploys per 24 hours, checked in the same transaction as the write so concurrent deploys cannot pass them together, with per-owner overrides by `wardlockd admin quota`; a separate, lower per-file limit for video files (10 MiB by default, or none accepted); and an optional blocklist of file extensions such as installers and executables. Quotas and the blocklist are off by default; DEPLOYMENT ["Deploy storage and limits"](DEPLOYMENT.md#deploy-storage-and-limits) suggests values for an instance others deploy to.
+
+Still planned: content screening (A2.15).
 
 </details>
 

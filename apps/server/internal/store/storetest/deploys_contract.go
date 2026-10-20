@@ -30,7 +30,9 @@ func deploysContract(t *testing.T, open Opener) {
 					{Path: "assets/app.js", SHA256: sha('b'), Size: 0},
 				}}
 			},
-			func(f *fixture, v input) error { return f.r.Deploys.Create(f.t.Context(), v.ownerID, v.d, v.files) },
+			func(f *fixture, v input) error {
+				return f.r.Deploys.Create(f.t.Context(), v.ownerID, v.d, v.files, store.Quotas{})
+			},
 			[]insertCase[input]{
 				{name: "valid"},
 				{name: "empty manifest with message", mutate: func(_ *fixture, v *input) {
@@ -54,9 +56,9 @@ func deploysContract(t *testing.T, open Opener) {
 		o := f.owner()
 		d := f.validDeploy(f.site(o.ID).ID)
 		bad := []store.DeployFile{{Path: "index.html", SHA256: sha('a')}, {Path: "/bad", SHA256: sha('a')}}
-		wantErr(t, f.r.Deploys.Create(t.Context(), o.ID, d, bad), store.ErrConstraint)
+		wantErr(t, f.r.Deploys.Create(t.Context(), o.ID, d, bad, store.Quotas{}), store.ErrConstraint)
 		// Nothing was kept, so the same ID inserts cleanly.
-		wantErr(t, f.r.Deploys.Create(t.Context(), o.ID, d, bad[:1]), nil)
+		wantErr(t, f.r.Deploys.Create(t.Context(), o.ID, d, bad[:1], store.Quotas{}), nil)
 	})
 	t.Run("Delete", func(t *testing.T) {
 		t.Parallel()
@@ -92,7 +94,7 @@ func deploysContract(t *testing.T, open Opener) {
 		s := f.site(o.ID)
 		want := f.validDeploy(s.ID)
 		want.Message, want.SPA, want.ImmutableAssets = "first", true, true
-		f.must(f.r.Deploys.Create(t.Context(), o.ID, want, []store.DeployFile{{Path: "index.html", SHA256: sha('a'), Size: 5}}))
+		f.must(f.r.Deploys.Create(t.Context(), o.ID, want, []store.DeployFile{{Path: "index.html", SHA256: sha('a'), Size: 5}}, store.Quotas{}))
 		got, err := f.r.Deploys.Get(t.Context(), o.ID, s.ID, want.ID)
 		if err != nil {
 			t.Fatal(err)
@@ -118,7 +120,7 @@ func deploysContract(t *testing.T, open Opener) {
 			d.CreatedAt = now.Add(time.Duration(i%2) * time.Minute) // ties broken by ID
 			d.SPA, d.ImmutableAssets = i%2 == 0, i < 2
 			flags[d.ID+"/spa"], flags[d.ID+"/immutable"] = d.SPA, d.ImmutableAssets
-			f.must(f.r.Deploys.Create(t.Context(), o.ID, d, nil))
+			f.must(f.r.Deploys.Create(t.Context(), o.ID, d, nil, store.Quotas{}))
 		}
 		all, err := f.r.Deploys.List(t.Context(), o.ID, s.ID, store.DeployCursor{}, 10)
 		if err != nil {

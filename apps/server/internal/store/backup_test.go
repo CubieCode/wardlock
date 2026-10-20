@@ -52,7 +52,7 @@ func TestBackupDuringWrites(t *testing.T) {
 		wg.Go(func() {
 			for i := 0; writeCtx.Err() == nil; i++ {
 				s := store.Site{ID: store.NewID(), OwnerID: owner.ID, Name: fmt.Sprintf("w%d-%06d", w, i), CreatedAt: time.Now()}
-				if err := h.Sites().Create(writeCtx, s); err != nil {
+				if err := h.Sites().Create(writeCtx, s, store.Quotas{}); err != nil {
 					if writeCtx.Err() == nil {
 						t.Errorf("writer %d: %v", w, err)
 					}
@@ -134,7 +134,7 @@ func TestBackupDuringWrites(t *testing.T) {
 		}
 	}
 	// The restored database takes writes.
-	if err := rdb.Sites().Create(ctx, store.Site{ID: store.NewID(), OwnerID: owner.ID, Name: "after-restore", CreatedAt: time.Now()}); err != nil {
+	if err := rdb.Sites().Create(ctx, store.Site{ID: store.NewID(), OwnerID: owner.ID, Name: "after-restore", CreatedAt: time.Now()}, store.Quotas{}); err != nil {
 		t.Fatalf("write to restored database: %v", err)
 	}
 }

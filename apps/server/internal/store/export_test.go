@@ -3,7 +3,10 @@
 
 package store
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Test-only access to raw SQL; production code goes through sqlc queries.
 
@@ -27,3 +30,10 @@ func (db *DB) CountForTest(ctx context.Context, query string) (int, error) {
 // SetBackupFaultForTest makes Backup call fault, with the temporary copy's
 // path, while the copy is open for checking, and fail if it does.
 func (db *DB) SetBackupFaultForTest(fault func(tmp string) error) { db.backupFault = fault }
+
+// MigrateToForTest applies migrations up to version upTo only, so a test
+// can write rows a later migration must carry over.
+func (db *DB) MigrateToForTest(ctx context.Context, upTo int64) error {
+	_, err := db.migrate(ctx, time.Now, upTo)
+	return err
+}
