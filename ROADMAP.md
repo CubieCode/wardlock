@@ -421,6 +421,17 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 - Skills: wardlock-item, wardlock-go-service
 - Parallel: Any wave. Owns `.golangci.yml` and docs/MODULES.md; no gates.
 
+### O4.9: Keep release snapshots within the artifact quota
+
+- Status: `todo`
+- Owner:
+- PR:
+- Depends on: O4.1
+- Scope: The `Release` workflow uploads every snapshot (about 65 MB of archives and SBOMs) as an artifact on every PR and main run with 7-day retention, which filled the repository's Actions artifact quota and failed every PR's `build` and `snapshot` jobs at the upload step. Upload the snapshot artifact only for runs on `main`, with 1-day retention; PRs still build the snapshot and run `scripts/release-smoke.sh`. Nothing downloads the artifact, so no other job changes. Update any docs that describe the upload.
+- Acceptance: A PR run builds and smoke-tests the snapshot without uploading it; the upload condition and retention are shown in the PR; `pnpm check` and `git diff --check` pass; nothing published.
+- Skills: wardlock-item
+- Parallel: Any wave. Owns `.github/workflows/release.yml`; no gates.
+
 ## Waves
 
 Suggested batches, based on the file ownership above. Re-check overlap before launching; merge in the order listed within a wave when items share interfaces.
@@ -434,7 +445,7 @@ Suggested batches, based on the file ownership above. Re-check overlap before la
 7. **Then:** A2.7 alone; O4.3 when its dependencies are done; O4.4 last.
 8. **Wave 9:** A2.9, A2.10, A2.11, O4.5. A2.11 holds the API contract gate (`openapi.yaml` and generated clients); no migrations or lockfile changes expected. A2.9 agrees its limiter design with the coordinator before implementing it.
 9. **Wave 10:** O4.6, then O4.7. Docs only; no gates.
-10. **Wave 11:** O4.8. Lint configuration only; no gates.
+10. **Wave 11:** O4.8 and O4.9, in either order. Lint and CI configuration only; no gates.
 
 ## Not planned yet
 
