@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -20,11 +21,28 @@ type blobStore interface {
 	deploys.BlobFiles
 }
 
-// openBlobs returns the configured blob store and its readiness check:
-// the directory is writable, or the bucket is reachable. It creates the
-// blob directory, so readiness passes from the start rather than from the
-// first upload; it makes no request to a bucket.
-func openBlobs(cfg platform.Config) (blobStore, platform.Check, error) {
+// openBlobs returns the configured blob store, behind the blob cache when
+// one is configured, and its readiness check: the directory is writable,
+// or the bucket is reachable. It creates the blob directory, so readiness
+// passes from the start rather than from the first upload; it makes no
+// request to a bucket.
+func openBlobs(cfg platform.Config, log *slog.Logger) (blobStore, platform.Check, error) {
+	bs, check, err := openBlobBackend(cfg, log)
+	if err != nil || cfg.BlobCacheDir == "" {
+		return bs, check, err
+	}
+	cached, err := deploys.NewCachingBlobStore(deploys.BlobCacheConfig{
+		Blobs: bs, Dir: cfg.BlobCacheDir, MaxBytes: cfg.BlobCacheMaxBytes, Log: log,
+	})
+	if err != nil {
+		return nil, platform.Check{}, err
+	}
+	return cached, check, nil
+}
+
+// openBlobBackend returns the blob directory or bucket and its readiness
+// check.
+func openBlobBackend(cfg platform.Config, log *slog.Logger) (blobStore, platform.Check, error) {
 	if cfg.BlobBackend != platform.BlobS3 {
 		if err := os.MkdirAll(cfg.BlobDir, 0o700); err != nil {
 			return nil, platform.Check{}, fmt.Errorf("create blob directory: %w", err)
@@ -42,6 +60,7 @@ func openBlobs(cfg platform.Config) (blobStore, platform.Check, error) {
 		Creds:         s3Credentials(s),
 		AppName:       "wardlock",
 		AppVersion:    platform.Version,
+		Log:           log,
 	})
 	if err != nil {
 		return nil, platform.Check{}, err

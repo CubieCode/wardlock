@@ -4,8 +4,10 @@
 // Package s3test is an in-process fake of the S3 API, enough for
 // deploys.S3BlobStore: path-style HeadBucket, HeadObject, GetObject with
 // Range, PutObject, CopyObject, DeleteObject and ListObjectsV2. It checks
-// that requests are signed with the expected access key and that a signed
-// payload hash matches the body, as S3 does, but not the signature itself.
+// that requests are signed with the expected access key and, unless told
+// to ignore them (as some S3-compatible services do), that a signed payload
+// hash matches the body, as S3 does; it never checks the signature itself.
+// It records every request with its operation, so tests can count them.
 package s3test
 
 import (
@@ -41,6 +43,8 @@ type Server struct {
 	now      func() time.Time
 	objects  map[string]object
 	requests []Request
+	// ignoreHash stores a PutObject whatever its signed payload hash.
+	ignoreHash bool
 }
 
 type object struct {
@@ -48,8 +52,22 @@ type object struct {
 	mod  time.Time
 }
 
+// S3 operations, as Request.Op names them.
+const (
+	HeadBucket    = "HeadBucket"
+	ListObjectsV2 = "ListObjectsV2"
+	HeadObject    = "HeadObject"
+	GetObject     = "GetObject"
+	PutObject     = "PutObject"
+	CopyObject    = "CopyObject"
+	DeleteObject  = "DeleteObject"
+)
+
 // Request is one request the server answered.
 type Request struct {
+	// Op is the S3 operation, such as GetObject; "" for one the fake does
+	// not implement.
+	Op     string
 	Method string
 	Key    string
 	// Range is the Range header of a GET.
@@ -126,21 +144,45 @@ func (s *Server) Requests() []Request {
 	return out
 }
 
+// IgnorePayloadHashes makes PutObject store a body whatever payload hash
+// it was signed with (on) or reject a mismatch as S3 does (off, the
+// default).
+func (s *Server) IgnorePayloadHashes(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ignoreHash = on
+}
+
+// Count tallies requests by operation.
+func Count(reqs []Request) map[string]int {
+	out := map[string]int{}
+	for _, r := range reqs {
+		out[r.Op]++
+	}
+	return out
+}
+
 // SecretKey is the secret every Store signs with. It is not checked; tests
 // look for it in logs.
 const SecretKey = "s3test-secret-access-key-do-not-log"
 
-// Store returns an S3BlobStore over the fake with keys under prefix.
-func (s *Server) Store(t testing.TB, prefix string) *deploys.S3BlobStore {
-	t.Helper()
-	bs, err := deploys.NewS3BlobStore(deploys.S3Config{
+// Config returns the S3Config of a store over the fake with keys under
+// prefix.
+func (s *Server) Config(prefix string) deploys.S3Config {
+	return deploys.S3Config{
 		Endpoint:  s.EndpointURL(),
 		Bucket:    s.Bucket,
 		Region:    "us-east-1",
 		Prefix:    prefix,
 		PathStyle: true,
 		Creds:     credentials.NewStaticV4(s.AccessKey, SecretKey, ""),
-	})
+	}
+}
+
+// Store returns an S3BlobStore over the fake with keys under prefix.
+func (s *Server) Store(t testing.TB, prefix string) *deploys.S3BlobStore {
+	t.Helper()
+	bs, err := deploys.NewS3BlobStore(s.Config(prefix))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +192,7 @@ func (s *Server) Store(t testing.TB, prefix string) *deploys.S3BlobStore {
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	bucket, key, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	s.mu.Lock()
-	s.requests = append(s.requests, Request{Method: r.Method, Key: key, Range: r.Header.Get("Range"), Header: r.Header.Clone()})
+	s.requests = append(s.requests, Request{Op: operation(r, key), Method: r.Method, Key: key, Range: r.Header.Get("Range"), Header: r.Header.Clone()})
 	s.mu.Unlock()
 	if !strings.Contains(r.Header.Get("Authorization"), "Credential="+s.AccessKey+"/") {
 		writeError(w, r, http.StatusForbidden, "InvalidAccessKeyId", key)
@@ -180,6 +222,29 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, r, http.StatusNotImplemented, "NotImplemented", key)
 	}
+}
+
+// operation names the S3 operation r is, matching serve's dispatch.
+func operation(r *http.Request, key string) string {
+	switch {
+	case key == "" && r.Method == http.MethodHead:
+		return HeadBucket
+	case key == "" && r.Method == http.MethodGet && r.URL.Query().Get("list-type") == "2":
+		return ListObjectsV2
+	case key == "":
+		return ""
+	case r.Method == http.MethodHead:
+		return HeadObject
+	case r.Method == http.MethodGet:
+		return GetObject
+	case r.Method == http.MethodPut && r.Header.Get("X-Amz-Copy-Source") != "":
+		return CopyObject
+	case r.Method == http.MethodPut:
+		return PutObject
+	case r.Method == http.MethodDelete:
+		return DeleteObject
+	}
+	return ""
 }
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request, key string) {
@@ -227,12 +292,15 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, key string) {
 		writeError(w, r, http.StatusBadRequest, "IncompleteBody", key)
 		return
 	}
+	s.mu.Lock()
+	ignore := s.ignoreHash
+	s.mu.Unlock()
 	switch claimed := r.Header.Get("X-Amz-Content-Sha256"); {
 	case strings.HasPrefix(claimed, "STREAMING-"):
 		// aws-chunked bodies are not decoded here; the store never sends one.
 		writeError(w, r, http.StatusNotImplemented, "NotImplemented", key)
 		return
-	case claimed != "UNSIGNED-PAYLOAD":
+	case claimed != "UNSIGNED-PAYLOAD" && !ignore:
 		sum := sha256.Sum256(data)
 		if hex.EncodeToString(sum[:]) != claimed {
 			writeError(w, r, http.StatusBadRequest, "XAmzContentSHA256Mismatch", key)

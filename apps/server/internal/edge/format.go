@@ -5,7 +5,6 @@ package edge
 
 import (
 	"io"
-	"log/slog"
 	"net/http"
 	"strconv"
 )
@@ -49,26 +48,19 @@ func alternateLinks(h http.Header, r *http.Request, f ServedFile) {
 // file: the same caching, and conditional and range requests on 200s. It
 // is never precompressed.
 func (e *Edge) serveRendition(w http.ResponseWriter, r *http.Request, s *served, rd Rendition, ctype string, status int, protected bool) {
-	blob, err := e.blobs.Open(r.Context(), rd.SHA256)
-	if err != nil {
-		e.log.ErrorContext(r.Context(), "open rendition",
-			slog.String("site_id", s.site.ID), slog.String("sha256", rd.SHA256), slog.Any("error", err))
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	defer func() { _ = blob.Close() }()
-
-	h := w.Header()
-	h.Set("Cache-Control", cacheControl(protected))
-	h.Set("Content-Type", ctype)
-	h.Set("Content-Length", strconv.FormatInt(rd.Size, 10))
-	if status != http.StatusOK {
-		w.WriteHeader(status)
-		if r.Method != http.MethodHead {
-			_, _ = io.CopyN(w, blob, rd.Size)
+	e.serveBlob(w, r, s, rd.SHA256, rd.Size, "open rendition", func(w http.ResponseWriter, blob io.ReadSeeker) {
+		h := w.Header()
+		h.Set("Cache-Control", cacheControl(protected))
+		h.Set("Content-Type", ctype)
+		h.Set("Content-Length", strconv.FormatInt(rd.Size, 10))
+		if status != http.StatusOK {
+			w.WriteHeader(status)
+			if r.Method != http.MethodHead {
+				_, _ = io.CopyN(w, blob, rd.Size)
+			}
+			return
 		}
-		return
-	}
-	h.Set("ETag", `"`+rd.SHA256+`"`)
-	http.ServeContent(w, r, "", s.site.ActivatedAt, blob)
+		h.Set("ETag", `"`+rd.SHA256+`"`)
+		http.ServeContent(w, r, "", s.site.ActivatedAt, blob)
+	})
 }

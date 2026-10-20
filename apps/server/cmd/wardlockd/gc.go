@@ -46,7 +46,7 @@ func gcCommand(ctx context.Context, args []string, getenv func(string) string, s
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	blobs, _, err := openBlobs(cfg)
+	blobs, _, err := openBlobs(cfg, log)
 	if err != nil {
 		return err
 	}

@@ -57,6 +57,15 @@ type blobStore struct {
 }
 
 func blobStores() []blobStore {
+	s3Keys := func(srv *s3test.Server) []string {
+		var out []string
+		for _, k := range srv.Keys() {
+			if rel, ok := strings.CutPrefix(k, "wl/"); ok {
+				out = append(out, rel)
+			}
+		}
+		return out
+	}
 	return []blobStore{
 		{"fs", func(t *testing.T) (deploys.BlobStore, func() []string) {
 			dir := filepath.Join(t.TempDir(), "blobs")
@@ -66,15 +75,17 @@ func blobStores() []blobStore {
 			srv := s3test.New(t, "wardlock-test", "AKIATEST")
 			// A key outside the prefix is never touched or listed.
 			srv.PutObject("other/sha256/ab/cd", []byte("not ours"), time.Now())
-			return srv.Store(t, "wl/"), func() []string {
-				var out []string
-				for _, k := range srv.Keys() {
-					if rel, ok := strings.CutPrefix(k, "wl/"); ok {
-						out = append(out, rel)
-					}
-				}
-				return out
+			return srv.Store(t, "wl/"), func() []string { return s3Keys(srv) }
+		}},
+		{"cached s3", func(t *testing.T) (deploys.BlobStore, func() []string) {
+			srv := s3test.New(t, "wardlock-test", "AKIATEST")
+			bs, err := deploys.NewCachingBlobStore(deploys.BlobCacheConfig{
+				Blobs: srv.Store(t, "wl/"), Dir: t.TempDir(), MaxBytes: 1 << 20,
+			})
+			if err != nil {
+				t.Fatal(err)
 			}
+			return bs, func() []string { return s3Keys(srv) }
 		}},
 	}
 }
@@ -98,7 +109,7 @@ func TestBlobStore(t *testing.T) {
 		if ok, err := bs.Has(ctx, h); err != nil || ok {
 			t.Fatalf("Has(new) = %v, %v", ok, err)
 		}
-		if _, err := bs.Open(ctx, h); !errors.Is(err, deploys.ErrBlobNotFound) {
+		if err := openErr(t, bs, h, int64(len(content))); !errors.Is(err, deploys.ErrBlobNotFound) {
 			t.Fatalf("Open(new) error = %v, want ErrBlobNotFound", err)
 		}
 		if err := bs.Put(ctx, h, int64(len(content)), strings.NewReader(content)); err != nil {
@@ -110,7 +121,7 @@ func TestBlobStore(t *testing.T) {
 		if ok, err := bs.Has(ctx, h); err != nil || !ok {
 			t.Fatalf("Has(stored) = %v, %v", ok, err)
 		}
-		rc, err := bs.Open(ctx, h)
+		rc, err := bs.Open(ctx, h, int64(len(content)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,7 +141,7 @@ func TestBlobStore(t *testing.T) {
 		if err := bs.Put(ctx, h, int64(len(content)), strings.NewReader("hello, blub")); !errors.Is(err, deploys.ErrHashMismatch) {
 			t.Fatalf("Put(existing, wrong body) error = %v, want ErrHashMismatch", err)
 		}
-		if got := read(t, bs, h); got != content {
+		if got := read(t, bs, h, len(content)); got != content {
 			t.Fatalf("after puts, blob = %q", got)
 		}
 		if got := stored(); len(got) != 1 {
@@ -143,7 +154,7 @@ func TestBlobStore(t *testing.T) {
 		if ok, _ := bs.Has(ctx, h); ok {
 			t.Fatal("Has after Delete = true")
 		}
-		if _, err := bs.Open(ctx, h); !errors.Is(err, deploys.ErrBlobNotFound) {
+		if err := openErr(t, bs, h, int64(len(content))); !errors.Is(err, deploys.ErrBlobNotFound) {
 			t.Fatalf("Open(deleted) error = %v, want ErrBlobNotFound", err)
 		}
 		if err := bs.Delete(ctx, h); err != nil {
@@ -152,9 +163,10 @@ func TestBlobStore(t *testing.T) {
 	})
 }
 
-func read(t *testing.T, bs deploys.BlobStore, h string) string {
+// read reads blob h, of size bytes.
+func read(t *testing.T, bs deploys.BlobStore, h string, size int) string {
 	t.Helper()
-	rc, err := bs.Open(t.Context(), h)
+	rc, err := bs.Open(t.Context(), h, int64(size))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,13 +178,26 @@ func read(t *testing.T, bs deploys.BlobStore, h string) string {
 	return string(b)
 }
 
+// openErr is the error opening blob h and reading its first byte gives:
+// a store may report a missing blob from either.
+func openErr(t *testing.T, bs deploys.BlobStore, h string, size int64) error {
+	t.Helper()
+	rc, err := bs.Open(t.Context(), h, size)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rc.Close() }()
+	_, err = rc.Read(make([]byte, 1))
+	return err
+}
+
 func TestBlobStoreEmpty(t *testing.T) {
 	eachBlobStore(t, func(t *testing.T, bs deploys.BlobStore, _ func() []string) {
 		h := hashOf("")
 		if err := bs.Put(t.Context(), h, 0, strings.NewReader("")); err != nil {
 			t.Fatal(err)
 		}
-		if got := read(t, bs, h); got != "" {
+		if got := read(t, bs, h, 0); got != "" {
 			t.Fatalf("empty blob = %q", got)
 		}
 	})
@@ -187,7 +212,7 @@ func TestBlobStoreSeek(t *testing.T) {
 		if err := bs.Put(t.Context(), h, int64(len(content)), strings.NewReader(content)); err != nil {
 			t.Fatal(err)
 		}
-		rc, err := bs.Open(t.Context(), h)
+		rc, err := bs.Open(t.Context(), h, int64(len(content)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -258,7 +283,7 @@ func TestBlobStoreServeContent(t *testing.T) {
 			{"bytes=-3", "me ", http.StatusPartialContent},
 			{"bytes=891-", "range me ", http.StatusPartialContent},
 		} {
-			blob, err := bs.Open(t.Context(), h)
+			blob, err := bs.Open(t.Context(), h, int64(len(content)))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -318,7 +343,7 @@ func TestBlobStoreRejectsInvalidHash(t *testing.T) {
 			if err := bs.Put(t.Context(), h, 1, strings.NewReader("x")); !errors.Is(err, deploys.ErrInvalidHash) {
 				t.Errorf("Put(%q) error = %v", h, err)
 			}
-			if _, err := bs.Open(t.Context(), h); !errors.Is(err, deploys.ErrInvalidHash) {
+			if _, err := bs.Open(t.Context(), h, 1); !errors.Is(err, deploys.ErrInvalidHash) {
 				t.Errorf("Open(%q) error = %v", h, err)
 			}
 			if err := bs.Delete(t.Context(), h); !errors.Is(err, deploys.ErrInvalidHash) {
@@ -349,7 +374,7 @@ func TestBlobStoreConcurrentPut(t *testing.T) {
 		if got := stored(); len(got) != 1 {
 			t.Fatalf("stored = %v, want the one blob and no temporary uploads", got)
 		}
-		if got := read(t, bs, h); got != content {
+		if got := read(t, bs, h, len(content)); got != content {
 			t.Fatal("concurrent puts stored the wrong content")
 		}
 	})

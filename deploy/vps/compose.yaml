@@ -36,8 +36,8 @@ services:
       # only. Never publish it on a public address.
       - '127.0.0.1:9740:9740'
     networks: [wardlock]
-    # SQLite database (wardlock.db) and certificates (certs/). Deploy files
-    # are in R2, not here.
+    # SQLite database (wardlock.db), certificates (certs/) and the blob
+    # cache (blob-cache/). Deploy files are in R2, not here.
     volumes:
       - wardlock-data:/data
     read_only: true

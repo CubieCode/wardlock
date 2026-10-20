@@ -170,7 +170,9 @@ func TestRecorderKeepsResponses(t *testing.T) {
 // panicBlobs panics on Open, like a handler bug before any byte is sent.
 type panicBlobs struct{}
 
-func (panicBlobs) Open(context.Context, string) (io.ReadSeekCloser, error) { panic("blob store bug") }
+func (panicBlobs) Open(context.Context, string, int64) (io.ReadSeekCloser, error) {
+	panic("blob store bug")
+}
 
 func TestPanicIsRecordedAs500(t *testing.T) {
 	h := newHarness(t, nil)

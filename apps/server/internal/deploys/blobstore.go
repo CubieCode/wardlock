@@ -30,9 +30,11 @@ type BlobStore interface {
 	// renames into place. A mismatch is ErrHashMismatch and stores nothing.
 	// Putting an existing blob succeeds.
 	Put(ctx context.Context, sha256 string, size int64, r io.Reader) error
-	// Open returns the blob for reading with Seek (for Range). A missing
-	// blob is ErrBlobNotFound.
-	Open(ctx context.Context, sha256 string) (io.ReadSeekCloser, error)
+	// Open returns the blob for reading with Seek (for Range), given its
+	// size from the deploy manifest. A store may defer every request until
+	// the first Read, so a missing blob is ErrBlobNotFound from Open or
+	// from that Read.
+	Open(ctx context.Context, sha256 string, size int64) (io.ReadSeekCloser, error)
 	Delete(ctx context.Context, sha256 string) error
 }
 
@@ -174,8 +176,9 @@ func (s *FSBlobStore) syncDir(dir string) error {
 	return nil
 }
 
-// Open opens blob h for reading.
-func (s *FSBlobStore) Open(_ context.Context, h string) (io.ReadSeekCloser, error) {
+// Open opens blob h for reading; a missing blob fails here. The file's own
+// size is used, not size.
+func (s *FSBlobStore) Open(_ context.Context, h string, _ int64) (io.ReadSeekCloser, error) {
 	p, err := s.path(h)
 	if err != nil {
 		return nil, err

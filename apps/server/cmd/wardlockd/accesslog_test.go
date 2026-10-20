@@ -43,7 +43,7 @@ func (oneSite) ActiveFiles(context.Context, edge.ServedSite) ([]edge.ServedFile,
 
 type pageBlobs struct{}
 
-func (pageBlobs) Open(context.Context, string) (io.ReadSeekCloser, error) {
+func (pageBlobs) Open(context.Context, string, int64) (io.ReadSeekCloser, error) {
 	return struct {
 		io.ReadSeeker
 		io.Closer

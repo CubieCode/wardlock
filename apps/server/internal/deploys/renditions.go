@@ -209,7 +209,7 @@ func (s *Service) renderFile(ctx context.Context, origin string, f store.DeployF
 }
 
 func (s *Service) readBlob(ctx context.Context, f store.DeployFile) ([]byte, error) {
-	b, err := s.c.Blobs.Open(ctx, f.SHA256)
+	b, err := s.c.Blobs.Open(ctx, f.SHA256, f.Size)
 	if err != nil {
 		return nil, fmt.Errorf("open page: %w", err)
 	}

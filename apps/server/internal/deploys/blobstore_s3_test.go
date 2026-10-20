@@ -6,6 +6,9 @@ package deploys_test
 import (
 	"errors"
 	"io"
+	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -43,20 +46,28 @@ func TestS3BlobStoreRequests(t *testing.T) {
 	if err := bs.Put(t.Context(), h, int64(len(content)), strings.NewReader(content)); err != nil {
 		t.Fatal(err)
 	}
+	// The first Put probes once with a wrong payload hash, which S3
+	// rejects, then uploads straight to the blob's key, signed with its
+	// hash.
 	reqs := srv.Requests()
-	if got, want := strings.Join(s3Calls(reqs), "; "), "PUT uploads/*; PUT "+key+"; DELETE uploads/*"; got != want {
-		t.Fatalf("Put made %s, want %s", got, want)
+	if got, want := strings.Join(s3Calls(reqs), "; "), "PUT uploads/*; PUT "+key; got != want {
+		t.Fatalf("first Put made %s, want %s", got, want)
 	}
-	// The upload is signed with the blob's hash, so S3 itself rejects
-	// other content; the copy names the temporary key.
-	if got := reqs[0].Header.Get("X-Amz-Content-Sha256"); got != h {
+	if got := reqs[0].Header.Get("X-Amz-Content-Sha256"); got == "" || got == h {
+		t.Errorf("probe X-Amz-Content-Sha256 = %q, want a hash of other bytes", got)
+	}
+	if got := reqs[1].Header.Get("X-Amz-Content-Sha256"); got != h {
 		t.Errorf("upload X-Amz-Content-Sha256 = %q, want the blob hash", got)
 	}
-	if src := reqs[1].Header.Get("X-Amz-Copy-Source"); !strings.Contains(src, "uploads/") || reqs[2].Key != reqs[0].Key {
-		t.Errorf("copy source %q, upload %q, delete %q", src, reqs[0].Key, reqs[2].Key)
+	if err := bs.Put(t.Context(), h, int64(len(content)), strings.NewReader(content)); err != nil {
+		t.Fatal(err)
+	}
+	if got := s3Calls(srv.Requests()); len(got) != 1 || got[0] != "PUT "+key {
+		t.Fatalf("second Put made %v, want one PUT to the blob's key", got)
 	}
 
-	rc, err := bs.Open(t.Context(), h)
+	// Open makes no request: the manifest gives the size.
+	rc, err := bs.Open(t.Context(), h, int64(len(content)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,15 +96,15 @@ func TestS3BlobStoreRequests(t *testing.T) {
 	if _, err := io.ReadAll(rc); err != nil {
 		t.Fatal(err)
 	}
-	// Open is one HEAD; each read after a seek is one GET from there on;
-	// sequential reads share a GET.
-	want := "HEAD " + key + "; GET " + key + " bytes=150-; GET " + key + " bytes=5-; GET " + key
+	// Each read after a seek is one GET from there on; sequential reads
+	// share a GET.
+	want := "GET " + key + " bytes=150-; GET " + key + " bytes=5-; GET " + key
 	if got := strings.Join(s3Calls(srv.Requests()), "; "); got != want {
 		t.Fatalf("reads made %s, want %s", got, want)
 	}
 
-	// A HEAD response only needs the size.
-	rc2, err := bs.Open(t.Context(), h)
+	// A HEAD response only needs the size, which Open was given.
+	rc2, err := bs.Open(t.Context(), h, int64(len(content)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,13 +112,112 @@ func TestS3BlobStoreRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = rc2.Close()
-	if got := s3Calls(srv.Requests()); len(got) != 1 || got[0] != "HEAD "+key {
-		t.Fatalf("open and close made %v, want one HEAD", got)
+	if got := s3Calls(srv.Requests()); len(got) != 0 {
+		t.Fatalf("open and close made %v, want none", got)
 	}
 }
 
-// TestS3BlobStoreVanishedBlob: a blob deleted after Open reads as
-// ErrBlobNotFound.
+// TestS3BlobStoreUploadPaths: the probe picks one PutObject on a service
+// that checks payload hashes and the temporary key, copy and delete on one
+// that does not, logging the choice once; on either, content that does not
+// match its hash never reaches a blob's key.
+func TestS3BlobStoreUploadPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		ignore     bool
+		probe, put map[string]int
+		path       string
+	}{
+		{"service checks hashes", false,
+			map[string]int{s3test.PutObject: 1},
+			map[string]int{s3test.PutObject: 1}, `path=direct`},
+		{"service ignores hashes", true,
+			map[string]int{s3test.PutObject: 1, s3test.DeleteObject: 1},
+			map[string]int{s3test.PutObject: 1, s3test.CopyObject: 1, s3test.DeleteObject: 1}, `path="temporary key"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := s3test.New(t, "wardlock-test", "AKIATEST")
+			srv.IgnorePayloadHashes(tc.ignore)
+			var logs strings.Builder
+			cfg := srv.Config("")
+			cfg.Log = slog.New(slog.NewTextHandler(&logs, nil))
+			bs, err := deploys.NewS3BlobStore(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			put := func(h, body string, size int) error {
+				return bs.Put(t.Context(), h, int64(size), strings.NewReader(body))
+			}
+			content := "the real content"
+			h := hashOf(content)
+			if err := put(h, content, len(content)); err != nil {
+				t.Fatal(err)
+			}
+			first := s3test.Count(srv.Requests())
+			for op, n := range tc.probe {
+				first[op] -= n
+				if first[op] == 0 {
+					delete(first, op)
+				}
+			}
+			if !maps.Equal(first, tc.put) {
+				t.Fatalf("first Put beyond the probe made %v, want %v", first, tc.put)
+			}
+			for range 2 {
+				if err := put(h, content, len(content)); err != nil {
+					t.Fatal(err)
+				}
+				if got := s3test.Count(srv.Requests()); !maps.Equal(got, tc.put) {
+					t.Fatalf("later Put made %v, want %v", got, tc.put)
+				}
+			}
+			if got := strings.Count(logs.String(), "s3 upload path"); got != 1 || !strings.Contains(logs.String(), tc.path) {
+				t.Fatalf("logs:\n%s\nwant one s3 upload path line with %s", logs.String(), tc.path)
+			}
+			if strings.Contains(logs.String(), s3test.SecretKey) {
+				t.Fatal("logs carry the secret key")
+			}
+
+			other := hashOf("some other content")
+			for name, body := range map[string]string{
+				"wrong content": "some other contenT",
+				"too long":      "some other content and more",
+				"too short":     "some other",
+			} {
+				if err := put(other, body, len("some other content")); !errors.Is(err, deploys.ErrHashMismatch) {
+					t.Errorf("%s: Put error = %v, want ErrHashMismatch", name, err)
+				}
+			}
+			if got, want := srv.Keys(), []string{"sha256/" + h[:2] + "/" + h[2:]}; !slices.Equal(got, want) {
+				t.Fatalf("after mismatches, bucket holds %v, want only %v", got, want)
+			}
+		})
+	}
+}
+
+// TestS3BlobStoreProbeRetries: a probe the service refuses for want of
+// access gives no answer, so Put fails and the next Put probes again.
+func TestS3BlobStoreProbeRetries(t *testing.T) {
+	srv := s3test.New(t, "wardlock-test", "AKIATEST")
+	cfg := srv.Config("")
+	cfg.Creds = credentials.NewStaticV4("AKIAOTHER", s3test.SecretKey, "")
+	bs, err := deploys.NewS3BlobStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		err := bs.Put(t.Context(), hashOf("x"), 1, strings.NewReader("x"))
+		if err == nil || errors.Is(err, deploys.ErrHashMismatch) {
+			t.Fatalf("Put error = %v, want a probe error", err)
+		}
+		if got := s3test.Count(srv.Requests()); !maps.Equal(got, map[string]int{s3test.PutObject: 1}) {
+			t.Fatalf("Put made %v, want one probe", got)
+		}
+	}
+}
+
+// TestS3BlobStoreVanishedBlob: a missing blob opens without a request and
+// reads as ErrBlobNotFound.
 func TestS3BlobStoreVanishedBlob(t *testing.T) {
 	srv := s3test.New(t, "wardlock-test", "AKIATEST")
 	bs := srv.Store(t, "")
@@ -115,7 +225,7 @@ func TestS3BlobStoreVanishedBlob(t *testing.T) {
 	if err := bs.Put(t.Context(), h, int64(len("short-lived")), strings.NewReader("short-lived")); err != nil {
 		t.Fatal(err)
 	}
-	rc, err := bs.Open(t.Context(), h)
+	rc, err := bs.Open(t.Context(), h, int64(len("short-lived")))
 	if err != nil {
 		t.Fatal(err)
 	}

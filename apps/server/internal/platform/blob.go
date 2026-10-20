@@ -83,9 +83,58 @@ func (s S3Config) LogValue() slog.Value {
 // s3Only are the variables only the S3 backend reads.
 var s3Only = []string{"WARDLOCK_S3_ENDPOINT", "WARDLOCK_S3_BUCKET", "WARDLOCK_S3_REGION", "WARDLOCK_S3_PREFIX", "WARDLOCK_S3_PATH_STYLE"}
 
-// loadBlobs reads WARDLOCK_BLOB_BACKEND and the blob directory or bucket.
-// It runs after the deploy limits, which the S3 backend caps.
+// loadBlobs reads WARDLOCK_BLOB_BACKEND, the blob directory or bucket and
+// the blob cache. It runs after the deploy limits, which the S3 backend
+// caps.
 func (c *Config) loadBlobs(get func(key, fallback string) string) error {
+	if err := c.loadBlobStore(get); err != nil {
+		return err
+	}
+	return c.loadBlobCache(get)
+}
+
+// loadBlobCache reads WARDLOCK_BLOB_CACHE_DIR and
+// WARDLOCK_BLOB_CACHE_MAX_BYTES, set together or not at all. The cache
+// evicts files in its directory, so it may not share one with the blobs.
+func (c *Config) loadBlobCache(get func(key, fallback string) string) error {
+	dir, rawMax := get("WARDLOCK_BLOB_CACHE_DIR", ""), get("WARDLOCK_BLOB_CACHE_MAX_BYTES", "")
+	if dir == "" && rawMax == "" {
+		return nil
+	}
+	if dir == "" || rawMax == "" {
+		return fmt.Errorf("%w: set WARDLOCK_BLOB_CACHE_DIR and WARDLOCK_BLOB_CACHE_MAX_BYTES together, or neither to cache no blobs", ErrInvalidConfig)
+	}
+	maxBytes, err := positiveInt(rawMax, 0)
+	if err != nil {
+		return fmt.Errorf("%w: WARDLOCK_BLOB_CACHE_MAX_BYTES must be a positive whole number of bytes, such as 2147483648 for 2 GiB", ErrInvalidConfig)
+	}
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("%w: WARDLOCK_BLOB_CACHE_DIR: %w", ErrInvalidConfig, err)
+	}
+	if c.BlobDir != "" {
+		blobs, err := filepath.Abs(c.BlobDir)
+		if err != nil {
+			return fmt.Errorf("%w: WARDLOCK_BLOB_DIR: %w", ErrInvalidConfig, err)
+		}
+		if within(dir, blobs) || within(blobs, dir) {
+			return fmt.Errorf("%w: WARDLOCK_BLOB_CACHE_DIR must not be, contain or sit inside the blob directory", ErrInvalidConfig)
+		}
+	}
+	c.BlobCacheDir, c.BlobCacheMaxBytes = dir, maxBytes
+	return nil
+}
+
+// within reports whether path is dir or inside it; both are absolute and
+// clean.
+func within(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// loadBlobStore reads WARDLOCK_BLOB_BACKEND and the blob directory or
+// bucket.
+func (c *Config) loadBlobStore(get func(key, fallback string) string) error {
 	c.BlobBackend = strings.ToLower(get("WARDLOCK_BLOB_BACKEND", BlobFS))
 	switch c.BlobBackend {
 	case BlobFS:

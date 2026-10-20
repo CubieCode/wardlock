@@ -57,7 +57,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	blobs, blobsReady, err := openBlobs(cfg)
+	blobs, blobsReady, err := openBlobs(cfg, log)
 	if err != nil {
 		return err
 	}
@@ -282,6 +282,8 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		slog.String("dashboard", dashURL.String()),
 		slog.String("data_dir", cfg.DataDir),
 		blobsAttr(cfg),
+		slog.String("blob_cache_dir", cfg.BlobCacheDir),
+		slog.Int64("blob_cache_max_bytes", cfg.BlobCacheMaxBytes),
 		slog.String("tls_mode", cfg.TLS.Mode),
 	)
 	if setupURL != "" {

@@ -200,7 +200,7 @@ func (w *gcWorld) serves(ctx context.Context, ownerID, site string) error {
 		return err
 	}
 	for _, f := range files {
-		r, err := w.blobs.Open(ctx, f.SHA256)
+		r, err := w.blobs.Open(ctx, f.SHA256, f.Size)
 		if err != nil {
 			return fmt.Errorf("%s of active deploy %s: %w", f.Path, s.ActiveDeployID, err)
 		}
