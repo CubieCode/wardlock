@@ -412,8 +412,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### O4.8: Enforce every module boundary in depguard
 
-- Status: `todo`
-- Owner:
+- Status: `review`
+- Owner: `feat/o4.8-depguard-boundaries`
 - PR:
 - Depends on: O4.6
 - Scope: O4.6 found that `.golangci.yml` enforces only some of docs/MODULES.md's "Must not import" rules: those for `edge`, `access`, `oauth`, `mail` and `tls`, the storage rule for domain packages, and the MIT modules. Add depguard rules for the rest: `platform` imports no other internal package; `store` and `dashboard` import no domain package (and `dashboard` not `store`); `deploys` and `sites` import neither `api` nor `edge`; `owners` and `api` do not import `edge`. Each rule gets a `desc` naming the boundary. Update MODULES so it says every row is enforced. The code already respects these rules, so no Go code changes.

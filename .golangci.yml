@@ -74,6 +74,101 @@ linters:
               desc: tls wraps the edge from cmd/wardlockd; it never imports the API
             - pkg: wardlock.nz/server/internal/edge
               desc: tls wraps the edge from cmd/wardlockd; it never imports the edge
+        platform:
+          files: ['**/apps/server/internal/platform/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/edge
+              desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/access
+              desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/oauth
+              desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/deploys
+              desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/sites
+              desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/owners
+              desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/mail
+              desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/tls
+              desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/api
+              desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/store
+              desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/dashboard
+              desc: platform is the base layer; it imports no other internal package
+        store:
+          files: ['**/apps/server/internal/store/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/edge
+              desc: store serves domain packages through repository interfaces; it never imports them
+            - pkg: wardlock.nz/server/internal/access
+              desc: store serves domain packages through repository interfaces; it never imports them
+            - pkg: wardlock.nz/server/internal/oauth
+              desc: store serves domain packages through repository interfaces; it never imports them
+            - pkg: wardlock.nz/server/internal/deploys
+              desc: store serves domain packages through repository interfaces; it never imports them
+            - pkg: wardlock.nz/server/internal/sites
+              desc: store serves domain packages through repository interfaces; it never imports them
+            - pkg: wardlock.nz/server/internal/owners
+              desc: store serves domain packages through repository interfaces; it never imports them
+            - pkg: wardlock.nz/server/internal/mail
+              desc: store serves domain packages through repository interfaces; it never imports them
+            - pkg: wardlock.nz/server/internal/tls
+              desc: store serves domain packages through repository interfaces; it never imports them
+            - pkg: wardlock.nz/server/internal/api
+              desc: store serves domain packages through repository interfaces; it never imports them
+            - pkg: wardlock.nz/server/internal/dashboard
+              desc: store serves domain packages through repository interfaces; it never imports them
+        dashboard:
+          files: ['**/apps/server/internal/dashboard/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/edge
+              desc: the dashboard only serves embedded files; it reaches the server through the API
+            - pkg: wardlock.nz/server/internal/access
+              desc: the dashboard only serves embedded files; it reaches the server through the API
+            - pkg: wardlock.nz/server/internal/oauth
+              desc: the dashboard only serves embedded files; it reaches the server through the API
+            - pkg: wardlock.nz/server/internal/deploys
+              desc: the dashboard only serves embedded files; it reaches the server through the API
+            - pkg: wardlock.nz/server/internal/sites
+              desc: the dashboard only serves embedded files; it reaches the server through the API
+            - pkg: wardlock.nz/server/internal/owners
+              desc: the dashboard only serves embedded files; it reaches the server through the API
+            - pkg: wardlock.nz/server/internal/mail
+              desc: the dashboard only serves embedded files; it reaches the server through the API
+            - pkg: wardlock.nz/server/internal/tls
+              desc: the dashboard only serves embedded files; it reaches the server through the API
+            - pkg: wardlock.nz/server/internal/api
+              desc: the dashboard only serves embedded files; it reaches the server through the API
+            - pkg: wardlock.nz/server/internal/store
+              desc: the dashboard only serves embedded files; it reaches the server through the API
+        deploys:
+          files: ['**/apps/server/internal/deploys/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/api
+              desc: deploys is a domain package; the API and edge call it, never the reverse
+            - pkg: wardlock.nz/server/internal/edge
+              desc: deploys is a domain package; the API and edge call it, never the reverse
+        sites:
+          files: ['**/apps/server/internal/sites/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/api
+              desc: sites is a domain package; the API and edge call it, never the reverse
+            - pkg: wardlock.nz/server/internal/edge
+              desc: sites is a domain package; the API and edge call it, never the reverse
+        owners:
+          files: ['**/apps/server/internal/owners/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/edge
+              desc: owners serves the dashboard and API; it never imports the edge
+        api:
+          files: ['**/apps/server/internal/api/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/edge
+              desc: the API and the edge meet only in cmd/wardlockd
         domain-storage:
           files:
             - '**/apps/server/internal/tls/**'
