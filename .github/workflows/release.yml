@@ -5,25 +5,34 @@ name: Release
 # runs as non-root and answers /healthz). scripts/test-module-tags.sh proves
 # the Go module tag scheme against a temporary local clone.
 #
-# Nothing is published. Snapshots never push or create a release, and there
-# is no tag trigger. The publish job is disabled with `if: false`; enabling it
-# (O4.4) needs explicit authorisation, a tag and a reviewed change to this
-# file. Snapshots are built and smoke-tested but not uploaded: nothing reads
-# them, and at about 65 MB a run they filled the Actions artifact quota.
+# Pull requests, main and manual runs only build snapshots: they never push
+# an image or create a release, and the publish job is skipped. Publishing
+# happens only when a vX.Y.Z tag is pushed to this repository (docs/
+# DEPLOYMENT.md, "Releases and module tags"): after the snapshot and module
+# tag checks pass, the publish job logs in to ghcr.io, pushes
+# ghcr.io/cubiecode/wardlock and creates a draft GitHub release. It is the
+# only job with write permissions. Tag filters match the whole tag name and
+# `*` does not match `/`, so the module tags (apps/cli/vX.Y.Z,
+# apps/server/vX.Y.Z, packages/apiclient-go/vX.Y.Z) do not trigger it.
+# Snapshots are built and smoke-tested but not uploaded: nothing reads them,
+# and at about 65 MB a run they filled the Actions artifact quota.
 #
 # Runners: vars.RUNNER as in ci.yml (unset means ubuntu-latest); pull
 # requests from forks always run on ubuntu-latest. A self-hosted runner needs
-# Docker with buildx; the arm64 image needs no emulation.
+# Docker with buildx; the arm64 image needs no emulation. Publishing always
+# runs on ubuntu-latest.
 on:
   pull_request:
   workflow_dispatch:
   push:
     branches: [main]
+    tags: ['v*']
 permissions:
   contents: read
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a tag run part-way through publishing.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
   snapshot:
     runs-on: &runner ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || fromJSON(vars.RUNNER || '"ubuntu-latest"') }}
@@ -73,12 +82,11 @@ jobs:
       - *go
       - run: bash scripts/test-module-tags.sh
 
-  # Disabled: publishing needs explicit authorisation (O4.4). When enabled it
-  # runs for a pushed vX.Y.Z tag, pushes ghcr.io/cubiecode/wardlock and creates
-  # a draft GitHub release; module tags are created separately (DEPLOYMENT).
-  # Enabling it also needs a trigger for those tags and a ghcr.io login step.
+  # Runs only for a vX.Y.Z tag pushed to this repository, never for pull
+  # requests, main or manual runs. Module tags are created separately
+  # (DEPLOYMENT) and do not match the tag filter.
   publish:
-    if: false
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository == 'CubieCode/wardlock'
     needs: [snapshot, module-tags]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -92,6 +100,11 @@ jobs:
       - *go
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - *syft
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
@@ -99,4 +112,7 @@ jobs:
           args: release --clean
         env:
           WARDLOCK_PUBLISH: 'true'
+          # The release commit also carries the module tags; name the one
+          # that triggered the run so GoReleaser never picks another.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
