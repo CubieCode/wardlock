@@ -13,6 +13,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../app.js';
 import type { Deploy, Policy, Site } from './format.js';
+import type { AccessLogEntry } from './visits.js';
 
 const me = {
   owner: {
@@ -265,6 +266,11 @@ describe('site detail', () => {
     expect(
       screen.getByRole('link', { name: 'Sites' }).getAttribute('aria-current'),
     ).toBe('page');
+    expect(
+      screen
+        .getByRole('link', { name: 'View access log' })
+        .getAttribute('href'),
+    ).toBe('/sites/docs/access-log');
   });
 
   it('shows the same not-found page for missing and foreign sites', async () => {
@@ -535,5 +541,160 @@ describe('site detail', () => {
       ).value,
     ).toBe('');
     expect(deleted).toBe(false);
+  });
+});
+
+describe('site access log', () => {
+  const base = '/api/v0/sites/docs/access-log';
+  const entry = (
+    n: number,
+    extra: Partial<AccessLogEntry> = {},
+  ): AccessLogEntry => ({
+    id: `01928c5e-7a1b-7c3d-9e4f-0000000001${n.toString().padStart(2, '0')}`,
+    occurredAt: now - n * hour,
+    host: 'docs.sites.example.test',
+    path: `/page-${n}`,
+    status: 200,
+    via: 'public',
+    ip: '203.0.113.0',
+    userAgent: 'Mozilla/5.0 (synthetic)',
+    ...extra,
+  });
+
+  beforeEach(() => at('/sites/docs/access-log'));
+
+  it('shows every visit newest first, how it got in, and loads older ones', async () => {
+    const refused = entry(5, { status: 401, via: 'none' });
+    delete refused.ip;
+    const { api, calls } = fakeServer({
+      [`GET ${base}`]: (request) =>
+        new URL(request.url).searchParams.get('cursor') === 'next'
+          ? Response.json({ items: [entry(6, { via: 'oauth' })] })
+          : Response.json({
+              items: [
+                entry(1, {
+                  via: 'link',
+                  linkPublicId: 'q4v7m2xkpa',
+                  linkLabel: 'Linear ENG-123',
+                }),
+                entry(2, { via: 'link', linkPublicId: 'b3c4d5e6f7' }),
+                entry(3, { via: 'password' }),
+                entry(4, { via: 'email', status: 304 }),
+                refused,
+              ],
+              nextCursor: 'next',
+            }),
+    });
+    render(<App api={api} />);
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Access log' }),
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(document.title).toBe('Access log · docs · Wardlock'),
+    );
+    const table = screen.getByRole('table', { name: 'Visits to docs' });
+    let rows = within(table).getAllByRole('row').slice(1);
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining('Share link Linear ENG-123'),
+      expect.stringContaining('Share link b3c4d5e6f7'),
+      expect.stringContaining('Password'),
+      expect.stringContaining('Email code'),
+      expect.stringContaining('Not let in'),
+    ]);
+    expect(rows[0]!.textContent).toContain('/page-1');
+    expect(rows[0]!.textContent).toContain('Opened · 200');
+    expect(rows[0]!.textContent).toContain('203.0.113.0');
+    expect(rows[3]!.textContent).toContain('Opened · 304');
+    expect(rows[4]!.textContent).toContain('Refused · 401');
+    expect(rows[4]!.textContent).toContain('Not recorded');
+    expect(
+      within(rows[0]!)
+        .getByRole('link', { name: 'Linear ENG-123' })
+        .getAttribute('href'),
+    ).toBe('/sites/docs/links/q4v7m2xkpa');
+    expect(
+      within(rows[1]!)
+        .getByRole('link', { name: 'b3c4d5e6f7' })
+        .getAttribute('href'),
+    ).toBe('/sites/docs/links/b3c4d5e6f7');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show older visits' }));
+    await waitFor(() =>
+      expect(within(table).getAllByRole('row')).toHaveLength(7),
+    );
+    rows = within(table).getAllByRole('row').slice(1);
+    expect(rows[5]!.textContent).toContain('Account sign-in');
+    expect(
+      screen.queryByRole('button', { name: 'Show older visits' }),
+    ).toBeNull();
+    expect(calls).toContain(`GET ${base}?cursor=next`);
+    expect(
+      screen.getByRole('link', { name: 'Back to docs' }).getAttribute('href'),
+    ).toBe('/sites/docs');
+    expect(document.body.innerHTML).not.toContain('wl_');
+  });
+
+  it('says when older visits fail to load and lets the owner try again', async () => {
+    let fail = true;
+    const { api } = fakeServer({
+      [`GET ${base}`]: (request) =>
+        new URL(request.url).searchParams.get('cursor')
+          ? fail
+            ? Response.json({ code: 'internal', message: 'x' }, { status: 500 })
+            : Response.json({ items: [entry(2)] })
+          : Response.json({ items: [entry(1)], nextCursor: 'next' }),
+    });
+    render(<App api={api} />);
+    const older = await screen.findByRole('button', {
+      name: 'Show older visits',
+    });
+    fireEvent.click(older);
+    expect(
+      await screen.findByText('Could not load older visits. Try again.'),
+    ).toBeTruthy();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Show older visits' }));
+    await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(3));
+    expect(
+      screen.queryByText('Could not load older visits. Try again.'),
+    ).toBeNull();
+  });
+
+  it('shows an empty state for a site nobody has visited', async () => {
+    const { api } = fakeServer({
+      [`GET ${base}`]: () => Response.json({ items: [] }),
+    });
+    render(<App api={api} />);
+    expect(
+      await screen.findByRole('heading', { name: 'No visits yet' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
+  });
+
+  it('treats a missing or foreign site as not found', async () => {
+    const { api } = fakeServer({});
+    render(<App api={api} />);
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Site not found' }),
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(document.title).toBe('Site not found · Wardlock'),
+    );
+  });
+
+  it('offers a retry when the log cannot load', async () => {
+    let fail = true;
+    const { api } = fakeServer({
+      [`GET ${base}`]: () =>
+        fail
+          ? Response.json({ code: 'internal', message: 'x' }, { status: 500 })
+          : Response.json({ items: [entry(1)] }),
+    });
+    render(<App api={api} />);
+    expect(await screen.findByRole('status')).toBeTruthy();
+    await screen.findByText(/Could not load the access log/);
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('table')).toBeTruthy();
   });
 });

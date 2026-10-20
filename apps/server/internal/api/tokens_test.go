@@ -13,15 +13,17 @@ import (
 	"testing"
 	"time"
 
+	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/api"
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/sites"
+	"wardlock.nz/server/internal/store"
 	"wardlock.nz/server/internal/store/storetest"
 )
 
-// newTokenHarness is the owner harness with the token service, sites and
-// deploys wired in. The token service shares the harness clock and logger
+// newTokenHarness is the owner harness with the token service, sites,
+// deploys and access wired in. The token service shares the harness clock and logger
 // output, so the cleanup log assertion covers tokens and device codes too.
 func newTokenHarness(t testing.TB, limits owners.TokenLimits) *ownerHarness {
 	t.Helper()
@@ -46,6 +48,16 @@ func newTokenHarness(t testing.TB, limits owners.TokenLimits) *ownerHarness {
 			t.Fatal(err)
 		}
 		s.Tokens = tokens
+		policies, err := access.New(access.Config{
+			Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(),
+			AccessLog: db.AccessLog(), EmailCodes: db.EmailCodes(), Notifier: notifier,
+			Secret: bytes.Repeat([]byte("a"), 32), Now: time.Now,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(policies.Close)
+		s.Access = policies
 	})
 	return h
 }
@@ -391,4 +403,32 @@ func TestCLILoginRateLimits(t *testing.T) {
 	limited(start())
 	h.clock.advance(44 * time.Minute)
 	wantStatus(t, start(), http.StatusCreated)
+}
+
+// TestSiteAccessLogWithTokens reads a site's access log with each API
+// token scope.
+func TestSiteAccessLogWithTokens(t *testing.T) {
+	h := newTokenHarness(t, owners.TokenLimits{})
+	session := h.owner("owner@example.test")
+	rec := h.do(req{method: http.MethodPost, path: "/api/v0/sites", cookie: session, body: api.CreateSiteRequest{Name: "docs"}})
+	wantStatus(t, rec, http.StatusCreated)
+	var site api.Site
+	decodeInto(t, rec, &site)
+	if err := h.db.AccessLog().Append(t.Context(), []store.AccessEntry{{
+		ID: store.NewID(), OccurredAt: time.Now(), SiteID: site.Id, Host: "docs.sites.example.test",
+		Path: "/", Status: http.StatusOK, Via: store.ViaPublic,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []api.Scope{api.ScopeDeploy, api.ScopeManage} {
+		tok := createToken(t, h, session, string(scope), scope).Token
+		rec := h.bearer(tok, req{method: http.MethodGet, path: "/api/v0/sites/docs/access-log"})
+		wantStatus(t, rec, http.StatusOK)
+		var page api.AccessLogPage
+		decodeInto(t, rec, &page)
+		if len(page.Items) != 1 || page.Items[0].Path != "/" {
+			t.Fatalf("%s token: %+v", scope, page)
+		}
+		wantError(t, h.bearer(tok, req{method: http.MethodGet, path: "/api/v0/sites/missing/access-log"}), http.StatusNotFound, "not_found")
+	}
 }

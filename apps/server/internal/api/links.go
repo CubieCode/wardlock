@@ -223,36 +223,66 @@ func (s *Server) ListShareLinkAccessLog(ctx context.Context, req ListShareLinkAc
 	if !ok {
 		return ListShareLinkAccessLogdefaultJSONResponse(*unauthenticated), nil
 	}
-	limit, f := pageLimit(req.Params.Limit)
+	page, f, err := s.accessLogPage(req.Params.Limit, req.Params.Cursor, func(cursor store.AccessCursor, limit int) ([]access.LoggedAccess, error) {
+		return s.Access.LinkAccessLog(ctx, owner, req.Site, req.LinkId, cursor, limit)
+	})
 	if f != nil {
 		return ListShareLinkAccessLogdefaultJSONResponse(*f), nil
 	}
-	before, beforeID, ok := linkCursor(req.Params.Cursor)
-	if !ok {
-		return ListShareLinkAccessLogdefaultJSONResponse(*badCursor), nil
-	}
-	cursor := store.AccessCursor{OccurredAt: before, ID: beforeID}
-	list, err := s.Access.LinkAccessLog(ctx, owner, req.Site, req.LinkId, cursor, limit+1)
 	if err != nil {
-		f, err := linkFailed(err)
-		if f == nil {
-			return nil, err
-		}
-		return ListShareLinkAccessLogdefaultJSONResponse(*f), nil
+		return nil, err
 	}
-	page := ListShareLinkAccessLog200JSONResponse{Items: []AccessLogEntry{}}
-	if len(list) > limit {
-		list = list[:limit]
-		last := list[limit-1]
-		page.NextCursor = encodeCursor(strconv.FormatInt(last.OccurredAt.UnixMilli(), 10) + ":" + last.ID)
-	}
-	for _, e := range list {
-		page.Items = append(page.Items, accessLogEntryBody(e))
-	}
-	return page, nil
+	return ListShareLinkAccessLog200JSONResponse(page), nil
 }
 
-func accessLogEntryBody(e store.AccessEntry) AccessLogEntry {
+// ListSiteAccessLog lists a site's access-log entries, newest first.
+func (s *Server) ListSiteAccessLog(ctx context.Context, req ListSiteAccessLogRequestObject) (ListSiteAccessLogResponseObject, error) {
+	owner, ok := OwnerID(ctx)
+	if !ok {
+		return ListSiteAccessLogdefaultJSONResponse(*unauthenticated), nil
+	}
+	page, f, err := s.accessLogPage(req.Params.Limit, req.Params.Cursor, func(cursor store.AccessCursor, limit int) ([]access.LoggedAccess, error) {
+		return s.Access.SiteAccessLog(ctx, owner, req.Site, cursor, limit)
+	})
+	if f != nil {
+		return ListSiteAccessLogdefaultJSONResponse(*f), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return ListSiteAccessLog200JSONResponse(page), nil
+}
+
+// accessLogPage reads one page through list, asking it for one entry more
+// than the page holds to learn whether another page follows. A bad limit or
+// cursor, or a missing site or link, is a failure.
+func (s *Server) accessLogPage(limitParam *Limit, cursorParam *Cursor, list func(store.AccessCursor, int) ([]access.LoggedAccess, error)) (AccessLogPage, *failure, error) {
+	limit, f := pageLimit(limitParam)
+	if f != nil {
+		return AccessLogPage{}, f, nil
+	}
+	before, beforeID, ok := linkCursor(cursorParam)
+	if !ok {
+		return AccessLogPage{}, badCursor, nil
+	}
+	entries, err := list(store.AccessCursor{OccurredAt: before, ID: beforeID}, limit+1)
+	if err != nil {
+		f, err := linkFailed(err)
+		return AccessLogPage{}, f, err
+	}
+	page := AccessLogPage{Items: []AccessLogEntry{}}
+	if len(entries) > limit {
+		entries = entries[:limit]
+		last := entries[limit-1]
+		page.NextCursor = encodeCursor(strconv.FormatInt(last.OccurredAt.UnixMilli(), 10) + ":" + last.ID)
+	}
+	for _, e := range entries {
+		page.Items = append(page.Items, accessLogEntryBody(e))
+	}
+	return page, nil, nil
+}
+
+func accessLogEntryBody(e access.LoggedAccess) AccessLogEntry {
 	out := AccessLogEntry{
 		Id:         e.ID,
 		OccurredAt: e.OccurredAt.UnixMilli(),
@@ -263,6 +293,9 @@ func accessLogEntryBody(e store.AccessEntry) AccessLogEntry {
 	}
 	if e.LinkPublicID != "" {
 		out.LinkPublicId = &e.LinkPublicID
+	}
+	if e.LinkLabel != "" {
+		out.LinkLabel = &e.LinkLabel
 	}
 	if e.IP != "" {
 		out.Ip = &e.IP

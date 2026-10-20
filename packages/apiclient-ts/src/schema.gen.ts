@@ -901,6 +901,32 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/sites/{site}/access-log': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    /**
+     * List a site's access log.
+     * @description Every logged request for the site's content, allowed or refused, newest first, however it got in. An entry that came through a share link names the link by public ID, and by label when the link has one; entries never hold a token. Only the site as it is now is read: a torn-down site's entries are not reachable, even after its name is reused. A missing site and another owner's answer the same `404`.
+     */
+    get: operations['listSiteAccessLog'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1405,6 +1431,8 @@ export interface components {
       via: components['schemas']['AccessVia'];
       /** @description The share link the request came through; absent unless `via` is `link`. */
       linkPublicId?: components['schemas']['LinkPublicId'];
+      /** @description That share link's label, kept after the link is revoked; absent when the request did not come through a link or the link has no label. */
+      linkLabel?: string;
       /** @description The client IP, truncated as the server is configured (IPv4 /24 and IPv6 /48 by default). Absent when not recorded. */
       ip?: string;
       /** @description The User-Agent header; absent when the request sent none. */
@@ -3550,6 +3578,77 @@ export interface operations {
            *           "userAgent": "Mozilla/5.0"
            *         }
            *       ]
+           *     }
+           */
+          'application/json': components['schemas']['AccessLogPage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  listSiteAccessLog: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+      };
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One page of access-log entries. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e61",
+           *           "occurredAt": 1767312060000,
+           *           "host": "docs.wardlock.example.net",
+           *           "path": "/pricing/",
+           *           "status": 401,
+           *           "via": "none",
+           *           "ip": "198.51.100.0",
+           *           "userAgent": "curl/8.5.0"
+           *         },
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e60",
+           *           "occurredAt": 1767312000000,
+           *           "host": "docs.wardlock.example.net",
+           *           "path": "/docs/",
+           *           "status": 200,
+           *           "via": "link",
+           *           "linkPublicId": "q4v7m2xkpa",
+           *           "linkLabel": "Linear ENG-123",
+           *           "ip": "203.0.113.0",
+           *           "userAgent": "Mozilla/5.0"
+           *         }
+           *       ],
+           *       "nextCursor": "MTc2NzMxMjAwMDAwMDowMTkyOGM1ZQ"
            *     }
            */
           'application/json': components['schemas']['AccessLogPage'];

@@ -292,6 +292,9 @@ type AccessLogEntry struct {
 	// Ip The client IP, truncated as the server is configured (IPv4 /24 and IPv6 /48 by default). Absent when not recorded.
 	Ip *string `json:"ip,omitempty"`
 
+	// LinkLabel That share link's label, kept after the link is revoked; absent when the request did not come through a link or the link has no label.
+	LinkLabel *string `json:"linkLabel,omitempty"`
+
 	// LinkPublicId The share link the request came through; absent unless `via` is `link`.
 	//
 	// Examples: q4v7m2xkpa
@@ -1215,6 +1218,15 @@ type ListSitesParams struct {
 	Hostname *Hostname `form:"hostname,omitempty" json:"hostname,omitempty"`
 }
 
+// ListSiteAccessLogParams defines parameters for ListSiteAccessLog.
+type ListSiteAccessLogParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListDeploysParams defines parameters for ListDeploys.
 type ListDeploysParams struct {
 	// Limit Page size.
@@ -1504,6 +1516,9 @@ type ServerInterface interface {
 	// GetSite Get one of the owner's sites.
 	// (GET /api/v0/sites/{site})
 	GetSite(w http.ResponseWriter, r *http.Request, site SiteName)
+	// ListSiteAccessLog List a site's access log.
+	// (GET /api/v0/sites/{site}/access-log)
+	ListSiteAccessLog(w http.ResponseWriter, r *http.Request, site SiteName, params ListSiteAccessLogParams)
 	// ListDeploys List a site's deploys.
 	// (GET /api/v0/sites/{site}/deploys)
 	ListDeploys(w http.ResponseWriter, r *http.Request, site SiteName, params ListDeploysParams)
@@ -2030,6 +2045,61 @@ func (siw *ServerInterfaceWrapper) GetSite(w http.ResponseWriter, r *http.Reques
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSite(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSiteAccessLog operation middleware
+func (siw *ServerInterfaceWrapper) ListSiteAccessLog(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSiteAccessLogParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSiteAccessLog(w, r, site, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2993,6 +3063,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/links/{linkId}", wrapper.RevokeShareLink)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/links/{linkId}/rotate", wrapper.RotateShareLink)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/links/{linkId}/access-log", wrapper.ListShareLinkAccessLog)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/access-log", wrapper.ListSiteAccessLog)
 
 	return m
 }
@@ -4856,6 +4927,102 @@ type GetSitedefaultJSONResponse struct {
 }
 
 func (response GetSitedefaultJSONResponse) VisitGetSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSiteAccessLogRequestObject struct {
+	Site   SiteName `json:"site"`
+	Params ListSiteAccessLogParams
+}
+
+type ListSiteAccessLogResponseObject interface {
+	VisitListSiteAccessLogResponse(w http.ResponseWriter) error
+}
+
+type ListSiteAccessLog200JSONResponse AccessLogPage
+
+func (response ListSiteAccessLog200JSONResponse) VisitListSiteAccessLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSiteAccessLog400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListSiteAccessLog400JSONResponse) VisitListSiteAccessLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSiteAccessLog401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListSiteAccessLog401JSONResponse) VisitListSiteAccessLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSiteAccessLog403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListSiteAccessLog403JSONResponse) VisitListSiteAccessLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSiteAccessLog404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListSiteAccessLog404JSONResponse) VisitListSiteAccessLogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSiteAccessLogdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListSiteAccessLogdefaultJSONResponse) VisitListSiteAccessLogResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -6874,6 +7041,9 @@ type StrictServerInterface interface {
 	// GetSite Get one of the owner's sites.
 	// (GET /api/v0/sites/{site})
 	GetSite(ctx context.Context, request GetSiteRequestObject) (GetSiteResponseObject, error)
+	// ListSiteAccessLog List a site's access log.
+	// (GET /api/v0/sites/{site}/access-log)
+	ListSiteAccessLog(ctx context.Context, request ListSiteAccessLogRequestObject) (ListSiteAccessLogResponseObject, error)
 	// ListDeploys List a site's deploys.
 	// (GET /api/v0/sites/{site}/deploys)
 	ListDeploys(ctx context.Context, request ListDeploysRequestObject) (ListDeploysResponseObject, error)
@@ -7643,6 +7813,33 @@ func (sh *strictHandler) GetSite(w http.ResponseWriter, r *http.Request, site Si
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetSiteResponseObject); ok {
 		if err := validResponse.VisitGetSiteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListSiteAccessLog operation middleware
+func (sh *strictHandler) ListSiteAccessLog(w http.ResponseWriter, r *http.Request, site SiteName, params ListSiteAccessLogParams) {
+	var request ListSiteAccessLogRequestObject
+
+	request.Site = site
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSiteAccessLog(ctx, request.(ListSiteAccessLogRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSiteAccessLog")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSiteAccessLogResponseObject); ok {
+		if err := validResponse.VisitListSiteAccessLogResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -66,6 +66,7 @@ var tokenScopes = map[string][]string{
 	"RotateShareLink": {"manage"},
 
 	"ListShareLinkAccessLog": {"deploy", "manage"},
+	"ListSiteAccessLog":      {"deploy", "manage"},
 }
 
 var sessionOnly = map[string]bool{

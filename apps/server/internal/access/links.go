@@ -229,11 +229,18 @@ func (s *Service) RotateLink(ctx context.Context, ownerID, siteName, publicID st
 	return l, token, nil
 }
 
+// LoggedAccess is an access-log entry with the label of the share link it
+// came through, if any, for the owner reading the log.
+type LoggedAccess struct {
+	store.AccessEntry
+	LinkLabel string
+}
+
 // LinkAccessLog returns up to limit of the access-log entries of the link
 // publicID on ownerID's site called siteName, newest first, before the
 // cursor. A revoked link's entries are still listed; a missing link, or one
 // on another site or of another owner, is ErrNotFound.
-func (s *Service) LinkAccessLog(ctx context.Context, ownerID, siteName, publicID string, before store.AccessCursor, limit int) ([]store.AccessEntry, error) {
+func (s *Service) LinkAccessLog(ctx context.Context, ownerID, siteName, publicID string, before store.AccessCursor, limit int) ([]LoggedAccess, error) {
 	if s.c.AccessLog == nil {
 		return nil, errors.New("link access log: no access log configured")
 	}
@@ -255,7 +262,54 @@ func (s *Service) LinkAccessLog(ctx context.Context, ownerID, siteName, publicID
 	if err != nil {
 		return nil, fmt.Errorf("link access log: %w", err)
 	}
-	return entries, nil
+	out := make([]LoggedAccess, len(entries))
+	for i, e := range entries {
+		out[i] = LoggedAccess{AccessEntry: e, LinkLabel: l.Label}
+	}
+	return out, nil
+}
+
+// SiteAccessLog returns up to limit of the access-log entries of ownerID's
+// site called siteName, newest first, before the cursor, each labelled with
+// its share link's label (revoked links included). Only the site that has
+// the name now is read, so a torn-down site's entries stay out of reach even
+// after its name is reused. A missing or foreign site is ErrNotFound.
+func (s *Service) SiteAccessLog(ctx context.Context, ownerID, siteName string, before store.AccessCursor, limit int) ([]LoggedAccess, error) {
+	if s.c.AccessLog == nil {
+		return nil, errors.New("site access log: no access log configured")
+	}
+	site, err := s.ownedSite(ctx, ownerID, siteName)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := s.c.AccessLog.ListBySite(ctx, ownerID, site.ID, before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("site access log: %w", err)
+	}
+	// One lookup per distinct link on the page. A link of another site
+	// (impossible while public IDs are unique) or one since deleted lends
+	// no label.
+	labels := map[string]string{}
+	out := make([]LoggedAccess, len(entries))
+	for i, e := range entries {
+		out[i] = LoggedAccess{AccessEntry: e}
+		if e.LinkPublicID == "" {
+			continue
+		}
+		label, seen := labels[e.LinkPublicID]
+		if !seen {
+			l, err := s.c.Links.GetByPublicID(ctx, e.LinkPublicID)
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				return nil, fmt.Errorf("site access log: %w", err)
+			}
+			if err == nil && l.SiteID == site.ID {
+				label = l.Label
+			}
+			labels[e.LinkPublicID] = label
+		}
+		out[i].LinkLabel = label
+	}
+	return out, nil
 }
 
 // decideToken lets r in with its share-link token, under protected policy

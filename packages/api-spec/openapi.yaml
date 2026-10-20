@@ -1844,6 +1844,66 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v0/sites/{site}/access-log:
+    parameters:
+      - $ref: '#/components/parameters/SiteName'
+    get:
+      operationId: listSiteAccessLog
+      summary: List a site's access log.
+      description: >-
+        Every logged request for the site's content, allowed or refused,
+        newest first, however it got in. An entry that came through a share
+        link names the link by public ID, and by label when the link has
+        one; entries never hold a token. Only the site as it is now is read:
+        a torn-down site's entries are not reachable, even after its name is
+        reused. A missing site and another owner's answer the same `404`.
+      tags: [sites]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of access-log entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessLogPage'
+              example:
+                items:
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e61
+                    occurredAt: 1767312060000
+                    host: docs.wardlock.example.net
+                    path: /pricing/
+                    status: 401
+                    via: none
+                    ip: 198.51.100.0
+                    userAgent: curl/8.5.0
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e60
+                    occurredAt: 1767312000000
+                    host: docs.wardlock.example.net
+                    path: /docs/
+                    status: 200
+                    via: link
+                    linkPublicId: q4v7m2xkpa
+                    linkLabel: Linear ENG-123
+                    ip: 203.0.113.0
+                    userAgent: Mozilla/5.0
+                nextCursor: MTc2NzMxMjAwMDAwMDowMTkyOGM1ZQ
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   securitySchemes:
     sessionCookie:
@@ -3190,6 +3250,13 @@ components:
         linkPublicId:
           description: The share link the request came through; absent unless `via` is `link`.
           $ref: '#/components/schemas/LinkPublicId'
+        linkLabel:
+          type: string
+          description: >-
+            That share link's label, kept after the link is revoked; absent
+            when the request did not come through a link or the link has no
+            label.
+          maxLength: 200
         ip:
           type: string
           description: >-

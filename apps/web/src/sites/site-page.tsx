@@ -256,6 +256,21 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
       <ShareLinksCard key={linksVersion} api={api} site={site} />
       <DomainsCard api={api} site={site} />
 
+      <Card title="Access log">
+        <p>
+          Every request for this site, allowed or refused, with how each visitor
+          got in.
+        </p>
+        <div>
+          <a
+            className="wl-button wl-button-secondary site-log-link"
+            href={`/sites/${encodeURIComponent(site.name)}/access-log`}
+          >
+            View access log
+          </a>
+        </div>
+      </Card>
+
       <Card title="Deploys">
         {rolledBack && (
           <Notice>

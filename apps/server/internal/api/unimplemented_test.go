@@ -60,6 +60,9 @@ var implemented = map[string]bool{
 	// Share-link access log (D3.3).
 	"ListShareLinkAccessLog": true,
 
+	// Site access log (A2.12).
+	"ListSiteAccessLog": true,
+
 	// C1.1 owners.
 	"CompleteSetup":    true,
 	"RedeemSignInLink": true,

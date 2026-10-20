@@ -139,6 +139,11 @@ func (Unimplemented) GetSite(context.Context, GetSiteRequestObject) (GetSiteResp
 	return nil, ErrNotImplemented
 }
 
+// ListSiteAccessLog is not implemented yet.
+func (Unimplemented) ListSiteAccessLog(context.Context, ListSiteAccessLogRequestObject) (ListSiteAccessLogResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // ListDeploys is not implemented yet.
 func (Unimplemented) ListDeploys(context.Context, ListDeploysRequestObject) (ListDeploysResponseObject, error) {
 	return nil, ErrNotImplemented
