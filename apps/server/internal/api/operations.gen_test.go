@@ -45,6 +45,7 @@ var operations = []operation{
 	{id: "CreateSite", method: "POST", path: "/api/v0/sites", jsonBody: true, security: []string{"sessionCookie", "apiToken:deploy"}},
 	{id: "DeleteSite", method: "DELETE", path: "/api/v0/sites/{site}", jsonBody: false, security: []string{"sessionCookie", "apiToken:manage"}},
 	{id: "GetSite", method: "GET", path: "/api/v0/sites/{site}", jsonBody: false, security: []string{"sessionCookie", "apiToken:deploy", "apiToken:manage"}},
+	{id: "ListSiteAccessLog", method: "GET", path: "/api/v0/sites/{site}/access-log", jsonBody: false, security: []string{"sessionCookie", "apiToken:deploy", "apiToken:manage"}},
 	{id: "ListDeploys", method: "GET", path: "/api/v0/sites/{site}/deploys", jsonBody: false, security: []string{"sessionCookie", "apiToken:deploy", "apiToken:manage"}},
 	{id: "CreateDeploy", method: "POST", path: "/api/v0/sites/{site}/deploys", jsonBody: true, security: []string{"sessionCookie", "apiToken:deploy"}},
 	{id: "ActivateDeploy", method: "POST", path: "/api/v0/sites/{site}/deploys/{deployId}/activate", jsonBody: false, security: []string{"sessionCookie", "apiToken:deploy"}},

@@ -508,6 +508,19 @@ describe('link access log', () => {
     expect(screen.getByText(/This link no longer works/)).toBeTruthy();
   });
 
+  it('names a revoked link by the label its visits carry', async () => {
+    const { api } = fakeServer({
+      [`GET ${base}/links`]: () => Response.json({ items: [] }),
+      [`GET ${base}/links/q4v7m2xkpa/access-log`]: () =>
+        Response.json({ items: [entry(1, { linkLabel: 'Linear ENG-123' })] }),
+    });
+    render(<App api={api} />);
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Linear ENG-123' }),
+    ).toBeTruthy();
+    expect(screen.getByText('Revoked')).toBeTruthy();
+  });
+
   it('shows an empty state for a link nobody has opened', async () => {
     const { api } = fakeServer({
       [`GET ${base}/links`]: () =>

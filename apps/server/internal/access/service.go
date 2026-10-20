@@ -63,7 +63,7 @@ type Config struct {
 	// PasswordSessions stores password sessions only while the password
 	// they were checked against still holds (A2.3).
 	PasswordSessions store.PasswordSessions
-	// AccessLog backs LinkAccessLog (D3.3); nil when the caller never reads
+	// AccessLog backs LinkAccessLog (D3.3) and SiteAccessLog (A2.12); nil when the caller never reads
 	// the access log.
 	AccessLog store.AccessLog
 	// EmailCodes stores visitor email codes and the sessions they earn

@@ -291,6 +291,9 @@ type AccessLogEntry struct {
 	// Ip The client IP, truncated as the server is configured (IPv4 /24 and IPv6 /48 by default). Absent when not recorded.
 	Ip *string `json:"ip,omitempty"`
 
+	// LinkLabel That share link's label, kept after the link is revoked; absent when the request did not come through a link or the link has no label.
+	LinkLabel *string `json:"linkLabel,omitempty"`
+
 	// LinkPublicId The share link the request came through; absent unless `via` is `link`.
 	//
 	// Examples: q4v7m2xkpa
@@ -1214,6 +1217,15 @@ type ListSitesParams struct {
 	Hostname *Hostname `form:"hostname,omitempty" json:"hostname,omitempty"`
 }
 
+// ListSiteAccessLogParams defines parameters for ListSiteAccessLog.
+type ListSiteAccessLogParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListDeploysParams defines parameters for ListDeploys.
 type ListDeploysParams struct {
 	// Limit Page size.
@@ -1798,6 +1810,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v0/sites/{site} (the `GetSite` operationId).
 	GetSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListSiteAccessLog List a site's access log.
+	//
+	// Every logged request for the site's content, allowed or refused, newest first, however it got in. An entry that came through a share link names the link by public ID, and by label when the link has one; entries never hold a token. Only the site as it is now is read: a torn-down site's entries are not reachable, even after its name is reused. A missing site and another owner's answer the same `404`.
+	//
+	// Corresponds with GET /api/v0/sites/{site}/access-log (the `ListSiteAccessLog` operationId).
+	ListSiteAccessLog(ctx context.Context, site SiteName, params *ListSiteAccessLogParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListDeploys List a site's deploys.
 	//
@@ -2659,6 +2678,23 @@ func (c *Client) DeleteSite(ctx context.Context, site SiteName, reqEditors ...Re
 // Corresponds with GET /api/v0/sites/{site} (the `GetSite` operationId).
 func (c *Client) GetSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSiteRequest(c.Server, site)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListSiteAccessLog List a site's access log.
+//
+// Every logged request for the site's content, allowed or refused, newest first, however it got in. An entry that came through a share link names the link by public ID, and by label when the link has one; entries never hold a token. Only the site as it is now is read: a torn-down site's entries are not reachable, even after its name is reused. A missing site and another owner's answer the same `404`.
+//
+// Corresponds with GET /api/v0/sites/{site}/access-log (the `ListSiteAccessLog` operationId).
+func (c *Client) ListSiteAccessLog(ctx context.Context, site SiteName, params *ListSiteAccessLogParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSiteAccessLogRequest(c.Server, site, params)
 	if err != nil {
 		return nil, err
 	}
@@ -4064,6 +4100,79 @@ func NewGetSiteRequest(server string, site SiteName) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListSiteAccessLogRequest constructs an http.Request for the ListSiteAccessLog method
+func NewListSiteAccessLogRequest(server string, site SiteName, params *ListSiteAccessLogParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/access-log", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -5521,6 +5630,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v0/sites/{site} (the `GetSite` operationId).
 	GetSiteWithResponse(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*GetSiteResponse, error)
+
+	// ListSiteAccessLogWithResponse List a site's access log.
+	//
+	// Every logged request for the site's content, allowed or refused, newest first, however it got in. An entry that came through a share link names the link by public ID, and by label when the link has one; entries never hold a token. Only the site as it is now is read: a torn-down site's entries are not reachable, even after its name is reused. A missing site and another owner's answer the same `404`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sites/{site}/access-log (the `ListSiteAccessLog` operationId).
+	ListSiteAccessLogWithResponse(ctx context.Context, site SiteName, params *ListSiteAccessLogParams, reqEditors ...RequestEditorFn) (*ListSiteAccessLogResponse, error)
 
 	// ListDeploysWithResponse List a site's deploys.
 	//
@@ -7407,6 +7525,82 @@ func (r GetSiteResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetSiteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListSiteAccessLogResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AccessLogPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListSiteAccessLogResponse) GetJSON200() *AccessLogPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListSiteAccessLogResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListSiteAccessLogResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListSiteAccessLogResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListSiteAccessLogResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListSiteAccessLogResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListSiteAccessLogResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListSiteAccessLogResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListSiteAccessLogResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListSiteAccessLogResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -9489,6 +9683,21 @@ func (c *ClientWithResponses) GetSiteWithResponse(ctx context.Context, site Site
 	return ParseGetSiteResponse(rsp)
 }
 
+// ListSiteAccessLogWithResponse List a site's access log.
+//
+// Every logged request for the site's content, allowed or refused, newest first, however it got in. An entry that came through a share link names the link by public ID, and by label when the link has one; entries never hold a token. Only the site as it is now is read: a torn-down site's entries are not reachable, even after its name is reused. A missing site and another owner's answer the same `404`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sites/{site}/access-log (the `ListSiteAccessLog` operationId).
+func (c *ClientWithResponses) ListSiteAccessLogWithResponse(ctx context.Context, site SiteName, params *ListSiteAccessLogParams, reqEditors ...RequestEditorFn) (*ListSiteAccessLogResponse, error) {
+	rsp, err := c.ListSiteAccessLog(ctx, site, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListSiteAccessLogResponse(rsp)
+}
+
 // ListDeploysWithResponse List a site's deploys.
 //
 // Newest first.
@@ -11261,6 +11470,67 @@ func ParseGetSiteResponse(rsp *http.Response) (*GetSiteResponse, error) {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListSiteAccessLogResponse parses an HTTP response from a ListSiteAccessLogWithResponse call
+func ParseListSiteAccessLogResponse(rsp *http.Response) (*ListSiteAccessLogResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSiteAccessLogResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AccessLogPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest Unauthenticated

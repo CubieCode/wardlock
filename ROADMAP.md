@@ -287,8 +287,8 @@ Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with
 
 ### A2.12: Per-site access log
 
-- Status: `todo`
-- Owner:
+- Status: `review`
+- Owner: `feat/a2.12-site-access-log`
 - PR:
 - Depends on: A2.8, D3.3
 - Scope: Let owners read a whole site's access log, not just one share link's (O4.6 found SPEC promised it). Add `listSiteAccessLog` (`GET /api/v0/sites/{site}/access-log`) to `packages/api-spec/openapi.yaml`, paged and filtered like `listShareLinkAccessLog` and readable with either API token scope, served from the existing owner-scoped `store.AccessLog.ListBySite`; a missing site and another owner's answer the same `404`, and entries of a torn-down site are not reachable through it. Add an "Access log" page to the dashboard, reached from the site page, showing time, path, status, how the visitor got in (with the share link's label when it came through one) and truncated IP, with the same empty, loading, error and paging states as the link access log. Update SPEC "Access log" and the API docs. No CLI command, matching the link log.

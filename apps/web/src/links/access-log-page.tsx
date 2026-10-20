@@ -2,16 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ApiClient } from '@wardlock/apiclient-ts';
-import {
-  Button,
-  Card,
-  EmptyState,
-  Notice,
-  PageHeader,
-  StatusBadge,
-  Table,
-  type TableColumn,
-} from '@wardlock/ui';
+import { Button, Notice, PageHeader, StatusBadge } from '@wardlock/ui';
 import { useEffect, useState } from 'react';
 import { useTitle } from '../shell/page.js';
 import {
@@ -20,16 +11,20 @@ import {
   LinkStatus,
   scopeText,
   usesText,
-  type AccessLogEntry,
   type ShareLink,
 } from './format.js';
+import {
+  useOlderVisits,
+  visitColumns,
+  VisitsCard,
+  type AccessLogPage,
+} from '../sites/visits.js';
 import './links.css';
 
 interface Loaded {
   /** Absent when the link is revoked: listings leave revoked links out. */
   link: ShareLink | undefined;
-  entries: AccessLogEntry[];
-  nextCursor: string | undefined;
+  first: AccessLogPage;
 }
 
 type PageState =
@@ -73,45 +68,15 @@ async function load(
   // 400 for a site name the server refuses to parse).
   if ([404, 400].includes(log.response.status)) throw new NotFound();
   if (!log.data) throw new Error('could not load the access log');
-  return { link, entries: log.data.items, nextCursor: log.data.nextCursor };
+  return { link, first: log.data };
 }
 
-const locale = 'en-NZ';
-const fullTime = new Intl.DateTimeFormat(locale, {
-  dateStyle: 'medium',
-  timeStyle: 'medium',
-});
-
-const columns: TableColumn<AccessLogEntry>[] = [
-  {
-    header: 'Time',
-    nowrap: true,
-    cell: (e) => {
-      const date = new Date(e.occurredAt);
-      return <time dateTime={date.toISOString()}>{fullTime.format(date)}</time>;
-    },
-  },
-  { header: 'Path', cell: (e) => e.path, mono: true },
-  {
-    header: 'Result',
-    nowrap: true,
-    cell: (e) =>
-      e.status < 400 ? (
-        <StatusBadge tone="success">Opened · {e.status}</StatusBadge>
-      ) : (
-        <StatusBadge tone="danger">Refused · {e.status}</StatusBadge>
-      ),
-  },
-  {
-    header: 'IP address',
-    cell: (e) => e.ip ?? <span className="link-muted">Not recorded</span>,
-    mono: true,
-    nowrap: true,
-  },
-  {
-    header: 'Browser or client',
-    cell: (e) => e.userAgent ?? <span className="link-muted">None sent</span>,
-  },
+const columns = [
+  visitColumns.time,
+  visitColumns.path,
+  visitColumns.result,
+  visitColumns.ip,
+  visitColumns.browser,
 ];
 
 /** `/sites/:name/links/:linkId`: who opened one share link, newest first. */
@@ -125,7 +90,6 @@ export function LinkAccessLogPage({
   publicId: string;
 }) {
   const [state, setState] = useState<PageState>({ kind: 'loading' });
-  const [more, setMore] = useState<'idle' | 'loading' | 'error'>('idle');
   const [attempt, setAttempt] = useState(0);
   useTitle(
     state.kind === 'not-found' ? 'Link not found' : `Link access log · ${name}`,
@@ -186,36 +150,12 @@ export function LinkAccessLogPage({
       </>
     );
 
-  const { link, entries, nextCursor } = state;
-  const loadOlder = async () => {
-    if (!nextCursor) return;
-    setMore('loading');
-    const { data } = await api
-      .GET('/api/v0/sites/{site}/links/{linkId}/access-log', {
-        params: {
-          path: { site: name, linkId: publicId },
-          query: { cursor: nextCursor },
-        },
-      })
-      .catch(() => ({ data: undefined }));
-    if (!data) return setMore('error');
-    setMore('idle');
-    setState((current) =>
-      current.kind === 'ready'
-        ? {
-            ...current,
-            entries: [...current.entries, ...data.items],
-            nextCursor: data.nextCursor,
-          }
-        : current,
-    );
-  };
-
+  const { link, first } = state;
   return (
     <>
       {back}
       <PageHeader
-        title={link?.label ?? `Link ${publicId}`}
+        title={link?.label ?? first.items[0]?.linkLabel ?? `Link ${publicId}`}
         description={
           <>
             Access log of share link <code>{publicId}</code> on {name}, newest
@@ -240,37 +180,45 @@ export function LinkAccessLogPage({
         )}
       </div>
 
-      <Card title="Visits">
-        {entries.length === 0 ? (
-          <EmptyState title="No visits yet">
-            <p>
-              Each request that comes in through this link is listed here, with
-              its time, path, IP address and browser.
-            </p>
-          </EmptyState>
-        ) : (
-          <Table
-            caption={`Visits through link ${publicId}`}
-            columns={columns}
-            rows={entries}
-            rowKey={(e) => e.id}
-          />
-        )}
-        {more === 'error' && (
-          <Notice tone="danger">Could not load older visits. Try again.</Notice>
-        )}
-        {nextCursor ? (
-          <div>
-            <Button
-              type="button"
-              disabled={more === 'loading'}
-              onClick={loadOlder}
-            >
-              {more === 'loading' ? 'Loading…' : 'Show older visits'}
-            </Button>
-          </div>
-        ) : null}
-      </Card>
+      <LinkVisits api={api} name={name} publicId={publicId} first={first} />
     </>
+  );
+}
+
+function LinkVisits({
+  api,
+  name,
+  publicId,
+  first,
+}: {
+  api: ApiClient;
+  name: string;
+  publicId: string;
+  first: AccessLogPage;
+}) {
+  const { entries, nextCursor, more, loadOlder } = useOlderVisits(
+    first,
+    async (cursor) =>
+      (
+        await api.GET('/api/v0/sites/{site}/links/{linkId}/access-log', {
+          params: { path: { site: name, linkId: publicId }, query: { cursor } },
+        })
+      ).data,
+  );
+  return (
+    <VisitsCard
+      caption={`Visits through link ${publicId}`}
+      columns={columns}
+      entries={entries}
+      nextCursor={nextCursor}
+      more={more}
+      onOlder={loadOlder}
+      empty={
+        <p>
+          Each request that comes in through this link is listed here, with its
+          time, path, IP address and browser.
+        </p>
+      }
+    />
   );
 }
