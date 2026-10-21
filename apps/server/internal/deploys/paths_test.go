@@ -37,7 +37,7 @@ func TestNormalisePrefix(t *testing.T) {
 	}
 	for _, in := range []string{
 		"", "/", "//", `\`, "mockup-x", "mockup-x/", "/mockup-x", "/a//b/", "/./", "/../", "/a/../b/", "/a/./",
-		"/.wardlock/", "/.WardLock/x/", "/a\x00/", "/a​/", "/\xff/", "/" + strings.Repeat("a", 1025) + "/",
+		"/.wardlock/", "/.WardLock/x/", "/a\x00/", "/a\u200b/", "/\xff/", "/" + strings.Repeat("a", 1025) + "/",
 	} {
 		_, err := deploys.NormalisePrefix(in)
 		var te *deploys.TargetError

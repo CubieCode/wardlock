@@ -383,7 +383,10 @@ function accessSummary(policy: Policy | undefined) {
   return 'Only visitors with access can open this site.';
 }
 
-/** One deploy: its status word, ID, message, time, size and rollback. */
+/**
+ * One deploy: its status word, ID, the path a path deploy replaced,
+ * message, time, size and rollback.
+ */
 function DeployRow({
   deploy,
   onRollback,
@@ -409,6 +412,14 @@ function DeployRow({
       <div className="deploy-row-main">
         <p className="deploy-row-title">
           <code>{id}</code>
+          {deploy.path !== undefined && (
+            // Only this part of the site changed; the rest is the deploy
+            // that was live before.
+            <span className="deploy-row-path">
+              <span className="deploy-row-muted">Path</span>{' '}
+              <code>{deploy.path}</code>
+            </span>
+          )}
           <span className={deploy.message ? undefined : 'deploy-row-muted'}>
             {deploy.message || 'No message'}
           </span>

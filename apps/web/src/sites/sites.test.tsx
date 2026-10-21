@@ -217,6 +217,7 @@ describe('site detail', () => {
     message: 'Fix typo on the install page',
     activatedAt: now - hour,
     immutableAssets: true,
+    path: '/mockup-x/',
   });
   const earlier = deploy('00000002', { message: 'First draft' });
   // A pending deploy has never been live, so it has no activation time.
@@ -276,6 +277,10 @@ describe('site detail', () => {
     expect(rows[1]!.textContent).toContain('Immutable assets');
     expect(rows[0]!.textContent).not.toContain('Immutable assets');
     expect(rows[2]!.textContent).not.toContain('Immutable assets');
+    // A path deploy names the prefix it replaced; a full deploy names none.
+    expect(rows[1]!.textContent).toContain('Path /mockup-x/');
+    expect(rows[0]!.textContent).not.toContain('Path');
+    expect(rows[2]!.textContent).not.toContain('Path');
     // Only an earlier, once-live deploy can be rolled back to.
     expect(within(rows[0]!).queryByRole('button')).toBeNull();
     expect(within(rows[1]!).queryByRole('button')).toBeNull();
