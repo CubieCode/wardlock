@@ -73,6 +73,13 @@ func newHarness(t *testing.T, limits deploys.Limits) *harness {
 // newQuotaHarness is newHarness with instance quotas (A2.14).
 func newQuotaHarness(t *testing.T, limits deploys.Limits, quotas store.Quotas) *harness {
 	t.Helper()
+	return newHarnessWith(t, limits, quotas, nil)
+}
+
+// newHarnessWith is newQuotaHarness with configure applied to the deploys
+// service's configuration, such as another blob store.
+func newHarnessWith(t *testing.T, limits deploys.Limits, quotas store.Quotas, configure func(*deploys.Config)) *harness {
+	t.Helper()
 	db := storetest.New(t)
 	hs := &harness{t: t, db: db, blobDir: filepath.Join(t.TempDir(), "blobs"), dns: sitestest.NewResolver()}
 	hs.blobs = deploys.NewFSBlobStore(hs.blobDir)
@@ -107,12 +114,16 @@ func newQuotaHarness(t *testing.T, limits deploys.Limits, quotas store.Quotas) *
 			Domains: db.Domains(), Resolver: hs.dns, CheckTimeout: 50 * time.Millisecond,
 			Quotas: quotas,
 		}),
-		Deploys: deploys.NewService(deploys.Config{
-			Sites: db.Sites(), Deploys: db.Deploys(), Blobs: hs.blobs, Notifier: notifier,
-			Limits: limits, Quotas: quotas, Now: time.Now,
-		}),
 		SiteURL: func(host string) string { return "http://" + host + ":8080/" },
 	}
+	dc := deploys.Config{
+		Sites: db.Sites(), Deploys: db.Deploys(), Blobs: hs.blobs, Notifier: notifier,
+		Limits: limits, Quotas: quotas, Now: time.Now,
+	}
+	if configure != nil {
+		configure(&dc)
+	}
+	srv.Deploys = deploys.NewService(dc)
 	inner := srv.Handler()
 	hs.h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if id := r.Header.Get(ownerHeader); id != "" {

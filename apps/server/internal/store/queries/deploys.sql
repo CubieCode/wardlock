@@ -42,6 +42,29 @@ JOIN sites ON sites.id = deploys.site_id
 WHERE deploy_files.deploy_id = sqlc.arg(deploy_id) AND deploys.site_id = sqlc.arg(site_id) AND sites.owner_id = sqlc.arg(owner_id)
 ORDER BY deploy_files.path;
 
+-- One page of an owner's deploy's files, ordered by path bytewise (SQLite's
+-- BINARY collation; Postgres needs COLLATE "C"), after the cursor path (''
+-- for the first page).
+-- name: ListOwnerDeployFilesPage :many
+SELECT deploy_files.path, deploy_files.sha256, deploy_files.size FROM deploy_files
+JOIN deploys ON deploys.id = deploy_files.deploy_id
+JOIN sites ON sites.id = deploys.site_id
+WHERE deploy_files.deploy_id = sqlc.arg(deploy_id) AND deploys.site_id = sqlc.arg(site_id) AND sites.owner_id = sqlc.arg(owner_id)
+  AND deploy_files.path > sqlc.arg(after_path)
+ORDER BY deploy_files.path
+LIMIT sqlc.arg(row_limit);
+
+-- The size the deploy lists sha256 with, only when the owner has also
+-- uploaded it: a deploy can list any hash before its upload.
+-- name: HeldManifestBlobSize :one
+SELECT deploy_files.size FROM deploy_files
+JOIN deploys ON deploys.id = deploy_files.deploy_id
+JOIN sites ON sites.id = deploys.site_id
+JOIN owner_blobs ON owner_blobs.owner_id = sites.owner_id AND owner_blobs.sha256 = deploy_files.sha256
+WHERE deploy_files.deploy_id = sqlc.arg(deploy_id) AND deploy_files.sha256 = sqlc.arg(sha256)
+  AND deploys.site_id = sqlc.arg(site_id) AND sites.owner_id = sqlc.arg(owner_id)
+LIMIT 1;
+
 -- name: ManifestBlobSize :one
 SELECT deploy_files.size FROM deploy_files
 JOIN deploys ON deploys.id = deploy_files.deploy_id

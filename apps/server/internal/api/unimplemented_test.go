@@ -39,6 +39,10 @@ var implemented = map[string]bool{
 	"ActivateDeploy":   true,
 	"RollbackSite":     true,
 
+	// Reading deploys back (C1.14).
+	"ListDeployFiles":    true,
+	"DownloadDeployBlob": true,
+
 	// Policies (A2.1).
 	"ListPolicies": true,
 	"SetPolicy":    true,

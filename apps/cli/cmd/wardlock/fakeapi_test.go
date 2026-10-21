@@ -4,11 +4,13 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -32,8 +34,9 @@ type fakeAPI struct {
 	sites map[string]*fakeSite
 	// taken are names held by another owner's sites.
 	taken map[string]bool
-	// blobs are hashes the owner has uploaded.
-	blobs map[string]bool
+	// blobs are hashes the owner has uploaded; content their bodies.
+	blobs   map[string]bool
+	content map[string][]byte
 	// scopes the token has; default deploy and manage.
 	scopes []string
 	// uploads counts blob PUTs by hash; inFlight and maxInFlight track
@@ -66,6 +69,16 @@ type fakeAPI struct {
 	// activation, under the lock: a test makes another deploy go live there
 	// to see a path deploy's base go stale.
 	beforeActivate func(s *fakeSite)
+	// downloads counts blob GETs by hash; failDownloads makes the next
+	// GETs fail like this, in order: an HTTP status, dropConnection,
+	// corruptBody, truncateBody or a 429 with Retry-After. withheld hashes answer 451,
+	// and takenDown sites 409 site_unavailable (pull_test.go).
+	downloads     map[string]int
+	failDownloads []int
+	withheld      map[string]bool
+	takenDown     map[string]bool
+	// dlInFlight and maxDlInFlight track download concurrency.
+	dlInFlight, maxDlInFlight int
 }
 
 // refusal is an error answer: an HTTP status and the API's error body.
@@ -93,6 +106,10 @@ const (
 	hashMismatch   = -2
 	// rateLimitedBare is a 429 without Retry-After.
 	rateLimitedBare = -3
+	// corruptBody sends a body of the right size with other bytes;
+	// truncateBody cuts the connection half way through the body.
+	corruptBody  = -4
+	truncateBody = -5
 	// fakePage is the fake's page size, so short lists still page.
 	fakePage = 2
 )
@@ -111,7 +128,8 @@ const fakeBase = "wardlock.example.test"
 func newFakeAPI(t *testing.T) *fakeAPI {
 	t.Helper()
 	f := &fakeAPI{t: t, sites: map[string]*fakeSite{}, taken: map[string]bool{}, blobs: map[string]bool{},
-		uploads: map[string]int{}, scopes: []string{"deploy", "manage"}}
+		uploads: map[string]int{}, scopes: []string{"deploy", "manage"},
+		content: map[string][]byte{}, downloads: map[string]int{}, withheld: map[string]bool{}, takenDown: map[string]bool{}}
 	mux := http.NewServeMux()
 	handle := func(pattern, scope string, h func(w http.ResponseWriter, r *http.Request)) {
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
@@ -157,6 +175,8 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 	handle("POST /api/v0/sites/{site}/deploys", "deploy", f.withSite(f.createDeploy))
 	handle("PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256}", "deploy", f.upload)
 	handle("POST /api/v0/sites/{site}/deploys/{deployId}/activate", "deploy", f.withSite(f.activate))
+	handle("GET /api/v0/sites/{site}/deploys/{deployId}/files", "", f.withSite(f.listFiles))
+	handle("GET /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256}", "", f.download)
 	handle("POST /api/v0/sites/{site}/rollback", "deploy", f.withSite(f.rollback))
 	f.handleLinks(handle)
 	f.handleDomains(handle)
@@ -420,6 +440,7 @@ func (f *fakeAPI) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.blobs[hash] = true
+	f.content[hash] = body
 	f.uploads[hash]++
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -509,4 +530,129 @@ func (f *fakeAPI) rollback(w http.ResponseWriter, r *http.Request, s *fakeSite) 
 		}
 	}
 	reply(w, http.StatusNotFound, notFound)
+}
+
+// deployOf finds one of s's deploys by ID.
+func (s *fakeSite) deployOf(id string) *fakeDeploy {
+	for _, d := range s.deploys {
+		if d.Id == id {
+			return d
+		}
+	}
+	return nil
+}
+
+func (f *fakeAPI) listFiles(w http.ResponseWriter, r *http.Request, s *fakeSite) {
+	if f.takenDown[s.site.Name] {
+		reply(w, http.StatusConflict, apiErr("site_unavailable", "The operator of this server has taken this site down."))
+		return
+	}
+	d := s.deployOf(r.PathValue("deployId"))
+	if d == nil {
+		reply(w, http.StatusNotFound, notFound)
+		return
+	}
+	var all []apiclient.DeployFile
+	for _, file := range d.files {
+		all = append(all, apiclient.DeployFile(file))
+	}
+	slices.SortFunc(all, func(a, b apiclient.DeployFile) int { return strings.Compare(a.Path, b.Path) })
+	items, next := paginate(r, all)
+	if items == nil {
+		items = []apiclient.DeployFile{}
+	}
+	reply(w, http.StatusOK, apiclient.DeployFilePage{Items: items, NextCursor: next})
+}
+
+func (f *fakeAPI) download(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	f.dlInFlight++
+	f.maxDlInFlight = max(f.maxDlInFlight, f.dlInFlight)
+	if f.barrier > 0 && f.dlInFlight == f.barrier {
+		close(f.reached)
+		f.barrier = 0
+	}
+	reached := f.reached
+	var fail int
+	if len(f.failDownloads) > 0 {
+		fail, f.failDownloads = f.failDownloads[0], f.failDownloads[1:]
+	}
+	f.mu.Unlock()
+	if reached != nil {
+		select {
+		case <-reached:
+		case <-time.After(30 * time.Second):
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.dlInFlight--
+	hash := r.PathValue("sha256")
+	f.downloads[hash]++
+	s, ok := f.sites[r.PathValue("site")]
+	var d *fakeDeploy
+	if ok {
+		d = s.deployOf(r.PathValue("deployId"))
+	}
+	body, held := f.content[hash]
+	switch {
+	case !ok || d == nil || !slices.Contains(d.hashes, hash) || !held:
+		reply(w, http.StatusNotFound, notFound)
+		return
+	case f.takenDown[s.site.Name]:
+		reply(w, http.StatusConflict, apiErr("site_unavailable", "The operator of this server has taken this site down."))
+		return
+	case f.withheld[hash]:
+		reply(w, http.StatusUnavailableForLegalReasons, apiErr("file_withheld", "The operator of this server has withheld this file, so it cannot be downloaded."))
+		return
+	}
+	switch fail {
+	case 0:
+	case dropConnection:
+		conn, _, err := http.NewResponseController(w).Hijack()
+		if err == nil {
+			_ = conn.Close()
+		}
+		return
+	case corruptBody:
+		body = bytes.Repeat([]byte("x"), len(body))
+	case truncateBody:
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = w.Write(body[:len(body)/2])
+		_ = http.NewResponseController(w).Flush()
+		panic(http.ErrAbortHandler)
+	case http.StatusTooManyRequests:
+		w.Header().Set("Retry-After", "120")
+		reply(w, fail, apiErr("rate_limited", "Too many requests."))
+		return
+	default:
+		reply(w, fail, apiErr("internal", "Internal server error."))
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", "attachment")
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	_, _ = w.Write(body)
+}
+
+// publish adds an active deploy of files (slash paths to bodies) to s, as
+// if deployed and activated, and returns it.
+func (f *fakeAPI) publish(s *fakeSite, files map[string]string) *fakeDeploy {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	d := &fakeDeploy{Deploy: apiclient.Deploy{Id: f.id(), Status: apiclient.DeployStatusPending, CreatedAt: 1_800_000_000_000}}
+	for _, p := range slices.Sorted(maps.Keys(files)) {
+		sum := sha256.Sum256([]byte(files[p]))
+		h := hex.EncodeToString(sum[:])
+		d.files = append(d.files, apiclient.ManifestFile{Path: p, Sha256: h, Size: int64(len(files[p]))})
+		if !slices.Contains(d.hashes, h) {
+			d.hashes = append(d.hashes, h)
+		}
+		f.blobs[h], f.content[h] = true, []byte(files[p])
+		d.TotalSize += int64(len(files[p]))
+	}
+	d.FileCount = int32(len(d.files))
+	s.deploys = append(s.deploys, d)
+	f.setActive(s, d)
+	return d
 }

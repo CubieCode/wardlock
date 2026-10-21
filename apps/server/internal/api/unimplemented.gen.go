@@ -159,8 +159,18 @@ func (Unimplemented) ActivateDeploy(context.Context, ActivateDeployRequestObject
 	return nil, ErrNotImplemented
 }
 
+// DownloadDeployBlob is not implemented yet.
+func (Unimplemented) DownloadDeployBlob(context.Context, DownloadDeployBlobRequestObject) (DownloadDeployBlobResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // UploadDeployBlob is not implemented yet.
 func (Unimplemented) UploadDeployBlob(context.Context, UploadDeployBlobRequestObject) (UploadDeployBlobResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListDeployFiles is not implemented yet.
+func (Unimplemented) ListDeployFiles(context.Context, ListDeployFilesRequestObject) (ListDeployFilesResponseObject, error) {
 	return nil, ErrNotImplemented
 }
 

@@ -579,6 +579,32 @@ type Deploy struct {
 // DeployStatus `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from.
 type DeployStatus string
 
+// DeployFile defines model for DeployFile.
+type DeployFile struct {
+	// Path The file's path in the site, with forward slashes and no leading slash.
+	//
+	// Examples: docs/install.html
+	Path string `json:"path"`
+
+	// Sha256 A SHA-256 digest as 64 lowercase hex characters.
+	//
+	// Examples: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+	Sha256 Sha256 `json:"sha256"`
+
+	// Size File size in bytes.
+	Size int64 `json:"size"`
+}
+
+// DeployFilePage defines model for DeployFilePage.
+type DeployFilePage struct {
+	Items []DeployFile `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
 // DeployPage defines model for DeployPage.
 type DeployPage struct {
 	Items []Deploy `json:"items"`
@@ -1203,6 +1229,9 @@ type Conflict = Error
 // FileTypeBlocked The body of every error response.
 type FileTypeBlocked = Error
 
+// FileWithheld The body of every error response.
+type FileWithheld = Error
+
 // Forbidden The body of every error response.
 type Forbidden = Error
 
@@ -1256,6 +1285,21 @@ type ListSiteAccessLogParams struct {
 
 // ListDeploysParams defines parameters for ListDeploys.
 type ListDeploysParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// DownloadDeployBlobParams defines parameters for DownloadDeployBlob.
+type DownloadDeployBlobParams struct {
+	// Range One or more byte ranges, as in RFC 9110 (`bytes=0-1023`).
+	Range *string `json:"Range,omitempty"`
+}
+
+// ListDeployFilesParams defines parameters for ListDeployFiles.
+type ListDeployFilesParams struct {
 	// Limit Page size.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 
@@ -1880,6 +1924,13 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
 	ActivateDeploy(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DownloadDeployBlob Download one file body of a deploy.
+	//
+	// Answers the raw bytes of a file the deploy lists, for any deploy in the site's history (C1.14). The hash must be listed by this deploy and uploaded by this owner: a hash the deploy does not list, one only another owner uploaded (a pending deploy can list any hash), and a body garbage collection has removed all answer the same `404 not_found` as a missing site or deploy, so content addressing never reveals or hands over another owner's file. `Range` requests are answered `206` with one range or `multipart/byteranges`, and a range outside the file `416`; `If-None-Match` with the `ETag` (the quoted hash) answers `304`. The body is always `application/octet-stream` with `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; sandbox` and `Cache-Control: private, no-store`, so site content never renders on the dashboard origin. A file content screening has withheld (A2.15) answers `451 file_withheld`. A site the operator has taken down answers `409 site_unavailable`, for its owner too: its files are kept for the operator, never handed out for rehosting.
+	//
+	// Corresponds with GET /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256} (the `DownloadDeployBlob` operationId).
+	DownloadDeployBlob(ctx context.Context, site SiteName, deployId DeployId, sha256 Sha256, params *DownloadDeployBlobParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// UploadDeployBlobWithBody Upload one file body for a pending deploy.
 	//
 	// The body is the file's raw bytes. The server verifies the SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in this deploy's manifest (`400 unexpected_blob`). Uploading a blob the server already holds succeeds without storing it again, so retries are safe. Bodies over the per-file limit answer `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
@@ -1888,6 +1939,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256} (the `UploadDeployBlob` operationId).
 	UploadDeployBlobWithBody(ctx context.Context, site SiteName, deployId DeployId, sha256 Sha256, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListDeployFiles List a deploy's files.
+	//
+	// Every file the deploy serves, ordered by path (bytewise), with its SHA-256 and size (C1.14). A path deploy lists the whole merged site, as it serves it. Download each body with `downloadDeployBlob`. Works for any deploy in the site's history, pending ones included. A site the operator has taken down answers `409 site_unavailable`, for its owner too.
+	//
+	// Corresponds with GET /api/v0/sites/{site}/deploys/{deployId}/files (the `ListDeployFiles` operationId).
+	ListDeployFiles(ctx context.Context, site SiteName, deployId DeployId, params *ListDeployFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListDomains List a site's custom domains.
 	//
@@ -2809,6 +2867,23 @@ func (c *Client) ActivateDeploy(ctx context.Context, site SiteName, deployId Dep
 	return c.Client.Do(req)
 }
 
+// DownloadDeployBlob Download one file body of a deploy.
+//
+// Answers the raw bytes of a file the deploy lists, for any deploy in the site's history (C1.14). The hash must be listed by this deploy and uploaded by this owner: a hash the deploy does not list, one only another owner uploaded (a pending deploy can list any hash), and a body garbage collection has removed all answer the same `404 not_found` as a missing site or deploy, so content addressing never reveals or hands over another owner's file. `Range` requests are answered `206` with one range or `multipart/byteranges`, and a range outside the file `416`; `If-None-Match` with the `ETag` (the quoted hash) answers `304`. The body is always `application/octet-stream` with `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; sandbox` and `Cache-Control: private, no-store`, so site content never renders on the dashboard origin. A file content screening has withheld (A2.15) answers `451 file_withheld`. A site the operator has taken down answers `409 site_unavailable`, for its owner too: its files are kept for the operator, never handed out for rehosting.
+//
+// Corresponds with GET /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256} (the `DownloadDeployBlob` operationId).
+func (c *Client) DownloadDeployBlob(ctx context.Context, site SiteName, deployId DeployId, sha256 Sha256, params *DownloadDeployBlobParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDownloadDeployBlobRequest(c.Server, site, deployId, sha256, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // UploadDeployBlobWithBody Upload one file body for a pending deploy.
 //
 // The body is the file's raw bytes. The server verifies the SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in this deploy's manifest (`400 unexpected_blob`). Uploading a blob the server already holds succeeds without storing it again, so retries are safe. Bodies over the per-file limit answer `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
@@ -2818,6 +2893,23 @@ func (c *Client) ActivateDeploy(ctx context.Context, site SiteName, deployId Dep
 // Corresponds with PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256} (the `UploadDeployBlob` operationId).
 func (c *Client) UploadDeployBlobWithBody(ctx context.Context, site SiteName, deployId DeployId, sha256 Sha256, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUploadDeployBlobRequestWithBody(c.Server, site, deployId, sha256, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListDeployFiles List a deploy's files.
+//
+// Every file the deploy serves, ordered by path (bytewise), with its SHA-256 and size (C1.14). A path deploy lists the whole merged site, as it serves it. Download each body with `downloadDeployBlob`. Works for any deploy in the site's history, pending ones included. A site the operator has taken down answers `409 site_unavailable`, for its owner too.
+//
+// Corresponds with GET /api/v0/sites/{site}/deploys/{deployId}/files (the `ListDeployFiles` operationId).
+func (c *Client) ListDeployFiles(ctx context.Context, site SiteName, deployId DeployId, params *ListDeployFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListDeployFilesRequest(c.Server, site, deployId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -4376,6 +4468,69 @@ func NewActivateDeployRequest(server string, site SiteName, deployId DeployId) (
 	return req, nil
 }
 
+// NewDownloadDeployBlobRequest constructs an http.Request for the DownloadDeployBlob method
+func NewDownloadDeployBlobRequest(server string, site SiteName, deployId DeployId, sha256 Sha256, params *DownloadDeployBlobParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "deployId", deployId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "sha256", sha256, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/deploys/%s/blobs/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.Range != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Range", *params.Range, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Range", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
 // NewUploadDeployBlobRequestWithBody constructs an http.Request for the UploadDeployBlob method, with any body, and a specified content type
 func NewUploadDeployBlobRequestWithBody(server string, site SiteName, deployId DeployId, sha256 Sha256, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
@@ -4422,6 +4577,86 @@ func NewUploadDeployBlobRequestWithBody(server string, site SiteName, deployId D
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListDeployFilesRequest constructs an http.Request for the ListDeployFiles method
+func NewListDeployFilesRequest(server string, site SiteName, deployId DeployId, params *ListDeployFilesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "deployId", deployId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/deploys/%s/files", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -5710,6 +5945,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
 	ActivateDeployWithResponse(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*ActivateDeployResponse, error)
 
+	// DownloadDeployBlobWithResponse Download one file body of a deploy.
+	//
+	// Answers the raw bytes of a file the deploy lists, for any deploy in the site's history (C1.14). The hash must be listed by this deploy and uploaded by this owner: a hash the deploy does not list, one only another owner uploaded (a pending deploy can list any hash), and a body garbage collection has removed all answer the same `404 not_found` as a missing site or deploy, so content addressing never reveals or hands over another owner's file. `Range` requests are answered `206` with one range or `multipart/byteranges`, and a range outside the file `416`; `If-None-Match` with the `ETag` (the quoted hash) answers `304`. The body is always `application/octet-stream` with `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; sandbox` and `Cache-Control: private, no-store`, so site content never renders on the dashboard origin. A file content screening has withheld (A2.15) answers `451 file_withheld`. A site the operator has taken down answers `409 site_unavailable`, for its owner too: its files are kept for the operator, never handed out for rehosting.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256} (the `DownloadDeployBlob` operationId).
+	DownloadDeployBlobWithResponse(ctx context.Context, site SiteName, deployId DeployId, sha256 Sha256, params *DownloadDeployBlobParams, reqEditors ...RequestEditorFn) (*DownloadDeployBlobResponse, error)
+
 	// UploadDeployBlobWithBodyWithResponse Upload one file body for a pending deploy.
 	//
 	// The body is the file's raw bytes. The server verifies the SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in this deploy's manifest (`400 unexpected_blob`). Uploading a blob the server already holds succeeds without storing it again, so retries are safe. Bodies over the per-file limit answer `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
@@ -5718,6 +5962,15 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256} (the `UploadDeployBlob` operationId).
 	UploadDeployBlobWithBodyWithResponse(ctx context.Context, site SiteName, deployId DeployId, sha256 Sha256, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UploadDeployBlobResponse, error)
+
+	// ListDeployFilesWithResponse List a deploy's files.
+	//
+	// Every file the deploy serves, ordered by path (bytewise), with its SHA-256 and size (C1.14). A path deploy lists the whole merged site, as it serves it. Download each body with `downloadDeployBlob`. Works for any deploy in the site's history, pending ones included. A site the operator has taken down answers `409 site_unavailable`, for its owner too.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sites/{site}/deploys/{deployId}/files (the `ListDeployFiles` operationId).
+	ListDeployFilesWithResponse(ctx context.Context, site SiteName, deployId DeployId, params *ListDeployFilesParams, reqEditors ...RequestEditorFn) (*ListDeployFilesResponse, error)
 
 	// ListDomainsWithResponse List a site's custom domains.
 	//
@@ -7904,6 +8157,98 @@ func (r ActivateDeployResponse) ContentType() string {
 	return ""
 }
 
+// DownloadDeployBlobResponse200Headers the declared response headers of an HTTP 200 response for DownloadDeployBlob
+type DownloadDeployBlobResponse200Headers struct {
+	ContentDisposition *string
+	ETag               *string
+}
+
+// DownloadDeployBlobResponse206Headers the declared response headers of an HTTP 206 response for DownloadDeployBlob
+type DownloadDeployBlobResponse206Headers struct {
+	ContentDisposition *string
+	ContentRange       *string
+}
+
+type DownloadDeployBlobResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON451 the response for an HTTP 451 `application/json` response
+	JSON451 *FileWithheld
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *DownloadDeployBlobResponse200Headers
+	// Headers206 the parsed response headers for an HTTP 206 response
+	Headers206 *DownloadDeployBlobResponse206Headers
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DownloadDeployBlobResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DownloadDeployBlobResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DownloadDeployBlobResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DownloadDeployBlobResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON451 returns the response for an HTTP 451 `application/json` response
+func (r DownloadDeployBlobResponse) GetJSON451() *FileWithheld {
+	return r.JSON451
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DownloadDeployBlobResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DownloadDeployBlobResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DownloadDeployBlobResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DownloadDeployBlobResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DownloadDeployBlobResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type UploadDeployBlobResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7981,6 +8326,89 @@ func (r UploadDeployBlobResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r UploadDeployBlobResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListDeployFilesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DeployFilePage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListDeployFilesResponse) GetJSON200() *DeployFilePage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListDeployFilesResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListDeployFilesResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListDeployFilesResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListDeployFilesResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ListDeployFilesResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListDeployFilesResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListDeployFilesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListDeployFilesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListDeployFilesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListDeployFilesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -9836,6 +10264,21 @@ func (c *ClientWithResponses) ActivateDeployWithResponse(ctx context.Context, si
 	return ParseActivateDeployResponse(rsp)
 }
 
+// DownloadDeployBlobWithResponse Download one file body of a deploy.
+//
+// Answers the raw bytes of a file the deploy lists, for any deploy in the site's history (C1.14). The hash must be listed by this deploy and uploaded by this owner: a hash the deploy does not list, one only another owner uploaded (a pending deploy can list any hash), and a body garbage collection has removed all answer the same `404 not_found` as a missing site or deploy, so content addressing never reveals or hands over another owner's file. `Range` requests are answered `206` with one range or `multipart/byteranges`, and a range outside the file `416`; `If-None-Match` with the `ETag` (the quoted hash) answers `304`. The body is always `application/octet-stream` with `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; sandbox` and `Cache-Control: private, no-store`, so site content never renders on the dashboard origin. A file content screening has withheld (A2.15) answers `451 file_withheld`. A site the operator has taken down answers `409 site_unavailable`, for its owner too: its files are kept for the operator, never handed out for rehosting.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256} (the `DownloadDeployBlob` operationId).
+func (c *ClientWithResponses) DownloadDeployBlobWithResponse(ctx context.Context, site SiteName, deployId DeployId, sha256 Sha256, params *DownloadDeployBlobParams, reqEditors ...RequestEditorFn) (*DownloadDeployBlobResponse, error) {
+	rsp, err := c.DownloadDeployBlob(ctx, site, deployId, sha256, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDownloadDeployBlobResponse(rsp)
+}
+
 // UploadDeployBlobWithBodyWithResponse Upload one file body for a pending deploy.
 //
 // The body is the file's raw bytes. The server verifies the SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in this deploy's manifest (`400 unexpected_blob`). Uploading a blob the server already holds succeeds without storing it again, so retries are safe. Bodies over the per-file limit answer `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
@@ -9849,6 +10292,21 @@ func (c *ClientWithResponses) UploadDeployBlobWithBodyWithResponse(ctx context.C
 		return nil, err
 	}
 	return ParseUploadDeployBlobResponse(rsp)
+}
+
+// ListDeployFilesWithResponse List a deploy's files.
+//
+// Every file the deploy serves, ordered by path (bytewise), with its SHA-256 and size (C1.14). A path deploy lists the whole merged site, as it serves it. Download each body with `downloadDeployBlob`. Works for any deploy in the site's history, pending ones included. A site the operator has taken down answers `409 site_unavailable`, for its owner too.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sites/{site}/deploys/{deployId}/files (the `ListDeployFiles` operationId).
+func (c *ClientWithResponses) ListDeployFilesWithResponse(ctx context.Context, site SiteName, deployId DeployId, params *ListDeployFilesParams, reqEditors ...RequestEditorFn) (*ListDeployFilesResponse, error) {
+	rsp, err := c.ListDeployFiles(ctx, site, deployId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListDeployFilesResponse(rsp)
 }
 
 // ListDomainsWithResponse List a site's custom domains.
@@ -11861,6 +12319,107 @@ func ParseActivateDeployResponse(rsp *http.Response) (*ActivateDeployResponse, e
 	return response, nil
 }
 
+// ParseDownloadDeployBlobResponse parses an HTTP response from a DownloadDeployBlobWithResponse call
+func ParseDownloadDeployBlobResponse(rsp *http.Response) (*DownloadDeployBlobResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DownloadDeployBlobResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 304:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 451:
+		var dest FileWithheld
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON451 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers DownloadDeployBlobResponse200Headers
+		if values := rsp.Header.Values("Content-Disposition"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Content-Disposition", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.ContentDisposition = &value
+		}
+		if values := rsp.Header.Values("ETag"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.ETag = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 206:
+		var headers DownloadDeployBlobResponse206Headers
+		if values := rsp.Header.Values("Content-Disposition"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Content-Disposition", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.ContentDisposition = &value
+		}
+		if values := rsp.Header.Values("Content-Range"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Content-Range", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.ContentRange = &value
+		}
+		response.Headers206 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseUploadDeployBlobResponse parses an HTTP response from a UploadDeployBlobWithResponse call
 func ParseUploadDeployBlobResponse(rsp *http.Response) (*UploadDeployBlobResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -11919,6 +12478,74 @@ func ParseUploadDeployBlobResponse(rsp *http.Response) (*UploadDeployBlobRespons
 			return nil, err
 		}
 		response.JSON413 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListDeployFilesResponse parses an HTTP response from a ListDeployFilesWithResponse call
+func ParseListDeployFilesResponse(rsp *http.Response) (*ListDeployFilesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListDeployFilesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DeployFilePage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

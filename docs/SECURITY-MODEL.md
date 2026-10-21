@@ -93,6 +93,21 @@ In full: every site is its own origin; site cookies are `HttpOnly` and host-only
 
 </details>
 
+### Reading content back
+
+Since C1.14 an owner can download the files of any of their deploys through the API (`wardlock pull`). Any API token can therefore read its owner's content as well as publish it: **a leaked `deploy`-scoped CI token now exposes every file of every one of the owner's sites**, protected ones included, not just the ability to publish. Keep CI tokens in the CI system's secret store, give them an expiry, and revoke one that may have leaked. Downloads never hand out another owner's file, a taken-down site's files or a withheld file, and never render on the dashboard origin.
+
+<details>
+<summary>How downloads are contained</summary>
+
+- **Scope.** Listing a deploy's files and downloading them are read operations, accepted with the dashboard session or a token with either scope, like every other read. A token that can deploy could already replace a site's content; reading it back adds confidentiality exposure, which is why the advice above changes. Tokens never reach protected content through the edge: a token is an API credential on the dashboard host only, and a share-link token, a site session cookie or the dashboard cookie on a site's host never authenticates the API.
+- **Content addressing.** Bodies are stored once per hash and shared across owners, and a deploy may list any hash before it is uploaded. A download is therefore answered only when the deploy lists the hash **and** its owner has uploaded those bytes themselves (`owner_blobs`); otherwise, and for another owner's site or deploy, the answer is the same `404` as for something missing. Guessing a hash and listing it in a pending deploy reveals and returns nothing.
+- **The dashboard origin.** Bodies come from the dashboard host, so they must never render there: every body is `application/octet-stream` with `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; sandbox`, plus `Cross-Origin-Resource-Policy: same-origin`, `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex` and `Cache-Control: private, no-store`. A hosted page opened this way is saved, not run, and even a browser that ignored the attachment would run it sandboxed with no scripts.
+- **Operator action.** A taken-down site answers `409 site_unavailable` to listing and downloads, for its owner too, and a file content screening withheld answers `451 file_withheld`: operator action preserves content as evidence and must not become a way to retrieve it for rehosting elsewhere. A suspended owner's tokens and sessions are refused outright.
+- **The CLI.** `wardlock pull` re-checks every path before writing (no `..`, absolute paths, names the local file system cannot hold, case-folding collisions), writes only through `os.Root` beneath DIR, and verifies each body's SHA-256 before renaming it into place, so a hostile or broken server cannot make it write outside DIR or leave a wrong file under a listed name.
+
+</details>
+
 ### Preview bots and email scanners
 
 Chat apps, email security scanners and link unfurlers fetch URLs automatically. For ordinary links that is intended (AI-readability is a feature). For use-limited links it would spend uses, so those links show an interstitial on GET and count a use only on POST. Bots do not press buttons.

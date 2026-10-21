@@ -12,8 +12,8 @@ info:
   summary: Owner API for the Wardlock server, used by the dashboard and the CLI.
   description: |
     All paths sit under `/api/v0/` on the dashboard host. Requests and
-    responses are JSON (`application/json`) except blob uploads, which send
-    raw bytes (`application/octet-stream`).
+    responses are JSON (`application/json`) except blob uploads and
+    downloads, which carry raw bytes (`application/octet-stream`).
 
     ## Authentication
 
@@ -30,7 +30,9 @@ info:
       token carries one or both scopes. `deploy` covers creating sites and
       deploys, uploading blobs, activation and rollback. `manage` covers
       deleting sites and managing custom domains. Read operations accept
-      either scope. `manage` also covers setting and deleting access
+      either scope, and include listing a deploy's files and downloading
+      them (C1.14), so a `deploy` token can read a site's content as well as
+      publish it. `manage` also covers setting and deleting access
       policies and creating, revoking and rotating share links. Tokens never
       manage owners, sessions or other tokens.
 
@@ -74,6 +76,7 @@ info:
     | 413 | `limit_exceeded`: a deploy limit (files, bytes per file or per video file, bytes in total) or one of the owner's quotas (bytes stored, sites, deploys in 24 hours); the `message` names the file and the limit, and `target` is the file's path, or `files`, `deploys` or `name` |
     | 422 | `file_type_blocked`: the manifest lists a file whose extension the operator has blocked; `target` is its path |
     | 429 | `rate_limited`, `slow_down`, `checked_recently` (a domain check came too soon after the last); `Retry-After` gives the seconds to wait |
+    | 451 | `file_withheld`: content screening has withheld this file on every site, so it cannot be downloaded either |
     | 500 | `internal` |
     | 501 | `not_implemented`: the operation is in the contract but not built yet |
   license:
@@ -1202,6 +1205,57 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v0/sites/{site}/deploys/{deployId}/files:
+    parameters:
+      - $ref: '#/components/parameters/SiteName'
+      - $ref: '#/components/parameters/DeployId'
+    get:
+      operationId: listDeployFiles
+      summary: List a deploy's files.
+      description: >-
+        Every file the deploy serves, ordered by path (bytewise), with its
+        SHA-256 and size (C1.14). A path deploy lists the whole merged site,
+        as it serves it. Download each body with `downloadDeployBlob`. Works
+        for any deploy in the site's history, pending ones included. A site
+        the operator has taken down answers `409 site_unavailable`, for its
+        owner too.
+      tags: [deploys]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of files.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeployFilePage'
+              example:
+                items:
+                  - path: assets/app.js
+                    sha256: fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9
+                    size: 48211
+                  - path: index.html
+                    sha256: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+                    size: 5120
+                nextCursor: aW5kZXguaHRtbA
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
   /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256}:
     parameters:
       - $ref: '#/components/parameters/SiteName'
@@ -1213,6 +1267,92 @@ paths:
         schema:
           $ref: '#/components/schemas/Sha256'
         example: fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9
+    get:
+      operationId: downloadDeployBlob
+      summary: Download one file body of a deploy.
+      description: >-
+        Answers the raw bytes of a file the deploy lists, for any deploy in
+        the site's history (C1.14). The hash must be listed by this deploy
+        and uploaded by this owner: a hash the deploy does not list, one only
+        another owner uploaded (a pending deploy can list any hash), and a
+        body garbage collection has removed all answer the same
+        `404 not_found` as a missing site or deploy, so content addressing
+        never reveals or hands over another owner's file. `Range` requests
+        are answered `206` with one range or `multipart/byteranges`, and a
+        range outside the file `416`; `If-None-Match` with the `ETag` (the
+        quoted hash) answers `304`. The body is always
+        `application/octet-stream` with `Content-Disposition: attachment`,
+        `X-Content-Type-Options: nosniff`,
+        `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; sandbox`
+        and `Cache-Control: private, no-store`, so site content never renders
+        on the dashboard origin. A file content screening has withheld
+        (A2.15) answers `451 file_withheld`. A site the operator has taken
+        down answers `409 site_unavailable`, for its owner too: its files
+        are kept for the operator, never handed out for rehosting.
+      tags: [deploys]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      parameters:
+        - name: Range
+          in: header
+          required: false
+          description: One or more byte ranges, as in RFC 9110 (`bytes=0-1023`).
+          schema:
+            type: string
+          example: bytes=0-1023
+      responses:
+        '200':
+          description: The whole file.
+          headers:
+            Content-Disposition:
+              $ref: '#/components/headers/Attachment'
+            ETag:
+              $ref: '#/components/headers/BlobETag'
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                contentMediaType: application/octet-stream
+              example: console.log("hello");
+        '206':
+          description: The requested range or ranges of the file.
+          headers:
+            Content-Disposition:
+              $ref: '#/components/headers/Attachment'
+            Content-Range:
+              description: The range sent, for a single range.
+              schema:
+                type: string
+              example: bytes 0-1023/48211
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                contentMediaType: application/octet-stream
+              example: console.log(
+        '304':
+          description: Not modified; the `If-None-Match` ETag matches.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '416':
+          description: The range lies outside the file.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: invalid range
+        '451':
+          $ref: '#/components/responses/FileWithheld'
+        default:
+          $ref: '#/components/responses/Error'
     put:
       operationId: uploadDeployBlob
       summary: Upload one file body for a pending deploy.
@@ -2084,6 +2224,16 @@ components:
       schema:
         type: string
       example: __Host-wardlock_session=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0
+    Attachment:
+      description: Always `attachment`, so a browser saves the file rather than showing it.
+      schema:
+        type: string
+      example: attachment
+    BlobETag:
+      description: The file's SHA-256 in quotes.
+      schema:
+        type: string
+      example: '"fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9"'
     RetryAfter:
       description: Seconds to wait before retrying.
       schema:
@@ -2184,6 +2334,15 @@ components:
             code: file_type_blocked
             message: downloads/setup.exe is a .exe file, a type this server does not accept.
             target: downloads/setup.exe
+    FileWithheld:
+      description: Content screening has withheld this file on every site (A2.15).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: file_withheld
+            message: The operator of this server has withheld this file, so it cannot be downloaded.
     RateLimited:
       description: Too many requests.
       headers:
@@ -2945,6 +3104,35 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Deploy'
+        nextCursor:
+          $ref: '#/components/schemas/Cursor'
+    DeployFile:
+      type: object
+      additionalProperties: false
+      required: [path, sha256, size]
+      properties:
+        path:
+          type: string
+          description: The file's path in the site, with forward slashes and no leading slash.
+          minLength: 1
+          maxLength: 1024
+          examples: [docs/install.html]
+        sha256:
+          $ref: '#/components/schemas/Sha256'
+        size:
+          type: integer
+          format: int64
+          description: File size in bytes.
+          minimum: 0
+    DeployFilePage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeployFile'
         nextCursor:
           $ref: '#/components/schemas/Cursor'
     ManifestFile:

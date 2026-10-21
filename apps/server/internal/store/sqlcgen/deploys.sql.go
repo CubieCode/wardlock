@@ -134,6 +134,37 @@ func (q *Queries) GetDeploy(ctx context.Context, arg GetDeployParams) (GetDeploy
 	return i, err
 }
 
+const heldManifestBlobSize = `-- name: HeldManifestBlobSize :one
+SELECT deploy_files.size FROM deploy_files
+JOIN deploys ON deploys.id = deploy_files.deploy_id
+JOIN sites ON sites.id = deploys.site_id
+JOIN owner_blobs ON owner_blobs.owner_id = sites.owner_id AND owner_blobs.sha256 = deploy_files.sha256
+WHERE deploy_files.deploy_id = ?1 AND deploy_files.sha256 = ?2
+  AND deploys.site_id = ?3 AND sites.owner_id = ?4
+LIMIT 1
+`
+
+type HeldManifestBlobSizeParams struct {
+	DeployID string
+	Sha256   string
+	SiteID   string
+	OwnerID  string
+}
+
+// The size the deploy lists sha256 with, only when the owner has also
+// uploaded it: a deploy can list any hash before its upload.
+func (q *Queries) HeldManifestBlobSize(ctx context.Context, arg HeldManifestBlobSizeParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, heldManifestBlobSize,
+		arg.DeployID,
+		arg.Sha256,
+		arg.SiteID,
+		arg.OwnerID,
+	)
+	var size int64
+	err := row.Scan(&size)
+	return size, err
+}
+
 const listDeployFiles = `-- name: ListDeployFiles :many
 SELECT path, sha256, size FROM deploy_files WHERE deploy_id = ?1 ORDER BY path
 `
@@ -273,6 +304,62 @@ func (q *Queries) ListOwnerDeployFiles(ctx context.Context, arg ListOwnerDeployF
 	var items []ListOwnerDeployFilesRow
 	for rows.Next() {
 		var i ListOwnerDeployFilesRow
+		if err := rows.Scan(&i.Path, &i.Sha256, &i.Size); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOwnerDeployFilesPage = `-- name: ListOwnerDeployFilesPage :many
+SELECT deploy_files.path, deploy_files.sha256, deploy_files.size FROM deploy_files
+JOIN deploys ON deploys.id = deploy_files.deploy_id
+JOIN sites ON sites.id = deploys.site_id
+WHERE deploy_files.deploy_id = ?1 AND deploys.site_id = ?2 AND sites.owner_id = ?3
+  AND deploy_files.path > ?4
+ORDER BY deploy_files.path
+LIMIT ?5
+`
+
+type ListOwnerDeployFilesPageParams struct {
+	DeployID  string
+	SiteID    string
+	OwnerID   string
+	AfterPath string
+	RowLimit  int64
+}
+
+type ListOwnerDeployFilesPageRow struct {
+	Path   string
+	Sha256 string
+	Size   int64
+}
+
+// One page of an owner's deploy's files, ordered by path bytewise (SQLite's
+// BINARY collation; Postgres needs COLLATE "C"), after the cursor path (”
+// for the first page).
+func (q *Queries) ListOwnerDeployFilesPage(ctx context.Context, arg ListOwnerDeployFilesPageParams) ([]ListOwnerDeployFilesPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOwnerDeployFilesPage,
+		arg.DeployID,
+		arg.SiteID,
+		arg.OwnerID,
+		arg.AfterPath,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOwnerDeployFilesPageRow
+	for rows.Next() {
+		var i ListOwnerDeployFilesPageRow
 		if err := rows.Scan(&i.Path, &i.Sha256, &i.Size); err != nil {
 			return nil, err
 		}
