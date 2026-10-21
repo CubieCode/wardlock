@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in Wardlock. It is alpha software and the roadmap is driven by the maintainers, so please open an issue to discuss a change before writing a large PR.
+Thanks for your interest in Wardlock. It is alpha software and the roadmap is driven by the maintainers. For now only collaborators can open pull requests: please open an issue to report a bug or suggest a change. Outside pull requests open once the CLA process below is in place.
 
 ## Contributor licence agreement
 
