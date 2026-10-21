@@ -126,28 +126,6 @@ func TestCreateHeldSizesPathDeploy(t *testing.T) {
 			t.Fatalf("Create = missing %v, %v; want nothing to upload", missing, err)
 		}
 	})
-	t.Run("base is not checked again", func(t *testing.T) {
-		// A deploy recorded before C1.16 that lists a held hash at the wrong
-		// size is left alone: path deploys on top of it still work.
-		w := notesWorld(t)
-		s, err := w.db.Sites().GetByOwnerName(t.Context(), w.owner.ID, "notes")
-		if err != nil {
-			t.Fatal(err)
-		}
-		old := store.Deploy{ID: store.NewID(), SiteID: s.ID, FileCount: 1, TotalSize: int64(n + 3), CreatedAt: gcEpoch}
-		files := []store.DeployFile{{Path: "old.html", SHA256: hashOf(heldBody), Size: int64(n + 3)}}
-		if err := w.db.Deploys().Create(t.Context(), w.owner.ID, old, files, store.Quotas{}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := w.db.Deploys().Activate(t.Context(), w.owner.ID, s.ID, old.ID, gcEpoch); err != nil {
-			t.Fatal(err)
-		}
-		m := w.manifest(map[string]string{"page.html": "<h1>Mockup</h1>"})
-		m.Path = "/mockup/"
-		if _, _, err := w.svc.Create(t.Context(), w.owner.ID, "notes", m); err != nil {
-			t.Fatalf("path deploy on an unchecked base: %v", err)
-		}
-	})
 }
 
 func TestCreateHeldSizesOwnerIsolation(t *testing.T) {
@@ -175,4 +153,68 @@ func TestCreateHeldSizesOwnerIsolation(t *testing.T) {
 	if alone != shared {
 		t.Errorf("refusal with another holder = %+v, alone = %+v", shared, alone)
 	}
+}
+
+// lateBody is uploaded only after the deploys listing it are created.
+const lateBody = "<h1>Late</h1>"
+
+func TestActivateChecksHeldSizes(t *testing.T) {
+	n := len(lateBody)
+	// pending creates a pending deploy of docs listing lateBody at p with
+	// the given size, under prefix when set; lateBody is not held yet, so
+	// Create asks for it rather than comparing.
+	pending := func(w *pathWorld, prefix, p string, size int) store.Deploy {
+		t.Helper()
+		m := listing(p, lateBody, int64(size))
+		m.Path = prefix
+		d, missing, err := w.svc.Create(t.Context(), w.owner.ID, "docs", m)
+		if err != nil || !slices.Equal(missing, []string{hashOf(lateBody)}) {
+			t.Fatalf("Create = missing %v, %v; want lateBody to upload", missing, err)
+		}
+		return d
+	}
+	// uploadElsewhere uploads lateBody at its true size through another
+	// deploy of docs.
+	uploadElsewhere := func(w *pathWorld) {
+		t.Helper()
+		b := pending(w, "", "b.html", n)
+		if err := w.svc.Upload(t.Context(), w.owner.ID, "docs", b.ID, hashOf(lateBody), strings.NewReader(lateBody)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name, prefix, target string
+	}{
+		{"full deploy", "", "a.html"},
+		{"path deploy", "/mockup/", "mockup/a.html"},
+	} {
+		t.Run(tc.name+" listed wrong, uploaded through another", func(t *testing.T) {
+			w := heldWorld(t)
+			a := pending(w, tc.prefix, "a.html", n+4)
+			uploadElsewhere(w)
+			// A needs nothing uploaded now, but its listed size is wrong.
+			_, _, err := w.svc.Activate(t.Context(), w.owner.ID, "docs", a.ID)
+			wantSizeRefused(t, err, tc.target, n+4, n)
+			// Uploading the true body to A does not help: it is checked
+			// against A's listed size.
+			err = w.svc.Upload(t.Context(), w.owner.ID, "docs", a.ID, hashOf(lateBody), strings.NewReader(lateBody))
+			if !errors.Is(err, deploys.ErrHashMismatch) {
+				t.Errorf("Upload to A = %v, want ErrHashMismatch", err)
+			}
+			// A can never activate; the site still serves its first deploy.
+			_, _, err = w.svc.Activate(t.Context(), w.owner.ID, "docs", a.ID)
+			wantSizeRefused(t, err, tc.target, n+4, n)
+			if _, served := w.served("docs"); len(served) != 1 || served["index.html"] != heldBody {
+				t.Errorf("served = %v, want the first deploy", served)
+			}
+		})
+	}
+	t.Run("listed right, uploaded through another", func(t *testing.T) {
+		w := heldWorld(t)
+		a := pending(w, "", "a.html", n)
+		uploadElsewhere(w)
+		if _, _, err := w.svc.Activate(t.Context(), w.owner.ID, "docs", a.ID); err != nil {
+			t.Fatalf("Activate = %v, want activated", err)
+		}
+	})
 }

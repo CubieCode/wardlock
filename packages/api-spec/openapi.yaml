@@ -1414,7 +1414,13 @@ paths:
         to return to an earlier deploy). A path deploy whose base is no
         longer the site's active deploy answers `409 stale_base`: another
         deploy or rollback went live after it was created, so create it
-        again, which pins the new base. A site the operator has taken down
+        again, which pins the new base. A deploy listing a file whose
+        content (its `sha256`) the owner holds at a size other than the
+        listed one answers `400 invalid_manifest` with the path as `target`
+        and a message naming both sizes, as `createDeploy` does; this
+        happens when that content was uploaded through another deploy after
+        this one was created. Such a deploy can never be activated: create a
+        new one with the right sizes. A site the operator has taken down
         answers `409 site_unavailable`.
       tags: [deploys]
       security:
@@ -1430,6 +1436,8 @@ paths:
               examples:
                 activation:
                   $ref: '#/components/examples/Activation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':

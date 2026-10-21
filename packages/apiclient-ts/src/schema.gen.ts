@@ -625,7 +625,7 @@ export interface paths {
     put?: never;
     /**
      * Make a pending deploy the site's active deploy.
-     * @description Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A site the operator has taken down answers `409 site_unavailable`.
+     * @description Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`.
      */
     post: operations['activateDeploy'];
     delete?: never;
@@ -3182,6 +3182,7 @@ export interface operations {
           'application/json': components['schemas']['Activation'];
         };
       };
+      400: components['responses']['BadRequest'];
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];

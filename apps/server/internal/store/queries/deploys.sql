@@ -72,6 +72,20 @@ SELECT blobs.size FROM owner_blobs
 JOIN blobs ON blobs.sha256 = owner_blobs.sha256
 WHERE owner_blobs.owner_id = sqlc.arg(owner_id) AND owner_blobs.sha256 = sqlc.arg(sha256);
 
+-- The first file, by path, of one of the owner's deploys that lists a hash
+-- the owner holds at a size other than the stored blob's.
+-- name: HeldSizeMismatch :one
+SELECT deploy_files.path, deploy_files.size AS listed_size, blobs.size AS stored_size
+FROM deploy_files
+JOIN deploys ON deploys.id = deploy_files.deploy_id
+JOIN sites ON sites.id = deploys.site_id
+JOIN owner_blobs ON owner_blobs.owner_id = sites.owner_id AND owner_blobs.sha256 = deploy_files.sha256
+JOIN blobs ON blobs.sha256 = deploy_files.sha256
+WHERE deploy_files.deploy_id = sqlc.arg(deploy_id) AND deploys.site_id = sqlc.arg(site_id)
+  AND sites.owner_id = sqlc.arg(owner_id) AND deploy_files.size <> blobs.size
+ORDER BY deploy_files.path
+LIMIT 1;
+
 -- name: ManifestBlobSize :one
 SELECT deploy_files.size FROM deploy_files
 JOIN deploys ON deploys.id = deploy_files.deploy_id

@@ -73,7 +73,24 @@ var (
 	// ErrStaleBase means Activate was given a path deploy whose base is no
 	// longer the site's active deploy.
 	ErrStaleBase = errors.New("path deploy base is no longer active")
+	// ErrSizeMismatch means a deploy lists a hash the owner holds at a size
+	// other than the stored blob's; the error is a *SizeMismatchError.
+	ErrSizeMismatch = errors.New("listed size differs from the stored blob's")
 )
+
+// SizeMismatchError names the file whose listed size differs from its
+// held blob's stored size.
+type SizeMismatchError struct {
+	Path   string
+	Listed int64
+	Stored int64
+}
+
+func (e *SizeMismatchError) Error() string {
+	return fmt.Sprintf("%s listed with size %d, stored with size %d", e.Path, e.Listed, e.Stored)
+}
+
+func (e *SizeMismatchError) Unwrap() error { return ErrSizeMismatch }
 
 // Deploys stores deploys, their manifests and blob records. Methods that
 // take ownerID and siteID match only that owner's deploys on that site;
@@ -118,6 +135,10 @@ type Deploys interface {
 	// has recorded with RecordUpload. A hash it has not, including one only
 	// other owners hold, is left out.
 	HeldBlobSizes(ctx context.Context, ownerID string, hashes []string) (map[string]int64, error)
+	// CheckHeldSizes is nil unless the deploy lists a hash ownerID has
+	// recorded with RecordUpload at a size other than the stored blob's,
+	// when it is a *SizeMismatchError for the first such path.
+	CheckHeldSizes(ctx context.Context, ownerID, siteID, deployID string) error
 	// RecordUpload records that ownerID uploaded b with a verified hash:
 	// the blob row and the owner's claim to it, in one transaction.
 	// Recording either again is a no-op.
@@ -125,7 +146,8 @@ type Deploys interface {
 	// Activate makes a pending deploy the site's active deploy in one
 	// transaction, stamping it with at. It fails with ErrDeployNotPending if
 	// the deploy was activated before, ErrBlobsMissing unless ownerID has
-	// recorded every blob in its manifest, and ErrStaleBase for a path
+	// recorded every blob in its manifest, a *SizeMismatchError as
+	// CheckHeldSizes, and ErrStaleBase for a path
 	// deploy whose base is no longer the site's active deploy.
 	Activate(ctx context.Context, ownerID, siteID, deployID string, at time.Time) (Deploy, error)
 	// Rollback reactivates an earlier activated deploy in one transaction:
@@ -385,6 +407,24 @@ func (r deploysRepo) HeldBlobSizes(ctx context.Context, ownerID string, hashes [
 	return sizes, nil
 }
 
+func (r deploysRepo) CheckHeldSizes(ctx context.Context, ownerID, siteID, deployID string) error {
+	if _, err := r.Get(ctx, ownerID, siteID, deployID); err != nil {
+		return err
+	}
+	return checkHeldSizes(ctx, r.db.q, ownerID, siteID, deployID)
+}
+
+func checkHeldSizes(ctx context.Context, q *sqlcgen.Queries, ownerID, siteID, deployID string) error {
+	row, err := q.HeldSizeMismatch(ctx, sqlcgen.HeldSizeMismatchParams{DeployID: deployID, SiteID: siteID, OwnerID: ownerID})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return mapErr("check held sizes", err)
+	}
+	return &SizeMismatchError{Path: row.Path, Listed: row.ListedSize, Stored: row.StoredSize}
+}
+
 func (r deploysRepo) RecordUpload(ctx context.Context, ownerID string, b Blob) error {
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		err := q.PutBlob(ctx, sqlcgen.PutBlobParams{Sha256: b.SHA256, Size: b.Size, CreatedAt: ms(b.CreatedAt)})
@@ -412,6 +452,9 @@ func (r deploysRepo) Activate(ctx context.Context, ownerID, siteID, deployID str
 		}
 		if len(missing) > 0 {
 			return fmt.Errorf("activate deploy: %d missing: %w", len(missing), ErrBlobsMissing)
+		}
+		if err := checkHeldSizes(ctx, q, ownerID, siteID, deployID); err != nil {
+			return err
 		}
 		if d.PathPrefix != "" {
 			site, err := q.GetSite(ctx, sqlcgen.GetSiteParams{ID: siteID, OwnerID: ownerID})

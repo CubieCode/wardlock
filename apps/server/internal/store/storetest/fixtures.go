@@ -95,7 +95,9 @@ func (f *fixture) uploadAll(ownerID, siteID, deployID string) {
 	hashes, err := f.r.Deploys.Hashes(f.t.Context(), ownerID, siteID, deployID)
 	f.must(err)
 	for _, h := range hashes {
-		f.must(f.r.Deploys.RecordUpload(f.t.Context(), ownerID, store.Blob{SHA256: h, Size: 5, CreatedAt: now}))
+		size, err := f.r.Deploys.ManifestSize(f.t.Context(), ownerID, siteID, deployID, h)
+		f.must(err)
+		f.must(f.r.Deploys.RecordUpload(f.t.Context(), ownerID, store.Blob{SHA256: h, Size: size, CreatedAt: now}))
 	}
 }
 

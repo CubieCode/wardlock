@@ -5535,6 +5535,20 @@ func (response ActivateDeploy200JSONResponse) VisitActivateDeployResponse(w http
 	return err
 }
 
+type ActivateDeploy400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ActivateDeploy400JSONResponse) VisitActivateDeployResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ActivateDeploy401JSONResponse struct{ UnauthenticatedJSONResponse }
 
 func (response ActivateDeploy401JSONResponse) VisitActivateDeployResponse(w http.ResponseWriter) error {

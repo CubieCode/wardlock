@@ -1919,7 +1919,7 @@ type ClientInterface interface {
 
 	// ActivateDeploy Make a pending deploy the site's active deploy.
 	//
-	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A site the operator has taken down answers `409 site_unavailable`.
+	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
 	ActivateDeploy(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2852,7 +2852,7 @@ func (c *Client) CreateDeploy(ctx context.Context, site SiteName, body CreateDep
 
 // ActivateDeploy Make a pending deploy the site's active deploy.
 //
-// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A site the operator has taken down answers `409 site_unavailable`.
+// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`.
 //
 // Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
 func (c *Client) ActivateDeploy(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5938,7 +5938,7 @@ type ClientWithResponsesInterface interface {
 
 	// ActivateDeployWithResponse Make a pending deploy the site's active deploy.
 	//
-	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A site the operator has taken down answers `409 site_unavailable`.
+	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -8086,6 +8086,8 @@ type ActivateDeployResponse struct {
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *Activation
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *Unauthenticated
 	// JSON403 the response for an HTTP 403 `application/json` response
@@ -8101,6 +8103,11 @@ type ActivateDeployResponse struct {
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
 func (r ActivateDeployResponse) GetJSON200() *Activation {
 	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ActivateDeployResponse) GetJSON400() *BadRequest {
+	return r.JSON400
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -10251,7 +10258,7 @@ func (c *ClientWithResponses) CreateDeployWithResponse(ctx context.Context, site
 
 // ActivateDeployWithResponse Make a pending deploy the site's active deploy.
 //
-// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A site the operator has taken down answers `409 site_unavailable`.
+// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -12278,6 +12285,13 @@ func ParseActivateDeployResponse(rsp *http.Response) (*ActivateDeployResponse, e
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest Unauthenticated
