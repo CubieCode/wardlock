@@ -10,7 +10,7 @@ Publish a static directory as a private page under one **root site** on the user
 
 This skill only publishes. Making the content (HTML, a built prototype, a report) is the user's job or another skill's; this skill takes a finished directory with an `index.html` at its top.
 
-Use only the commands in [references/cli.md](references/cli.md), written exactly as there. Pass `--json` on every call and read stdout as one JSON object; on failure stdout is empty, the exit status is not 0 and stderr says why. Put `--json` where the reference does: `policy set` accepts it only after the subcommand.
+Use only the commands in [references/cli.md](references/cli.md), written exactly as there. Pass `--json` on every call and read stdout as one JSON object; on failure stdout is empty, the exit status is not 0 and stderr says why. Write `--json` first, straight after `wardlock`, as the reference does.
 
 ## Rules
 
@@ -32,7 +32,7 @@ Use only the commands in [references/cli.md](references/cli.md), written exactly
 Use the root site the user names (call it ROOT). If they name none, suggest one, such as `previews`, and confirm it before creating anything.
 
 - **ROOT is in `sites` with `policy` `protected`**: use it.
-- **ROOT is in `sites` with `policy` `public`**: stop. Tell the user its pages would be public, and only continue after they have protected it (they can ask you to run `wardlock policy set ROOT --protected --links --json`).
+- **ROOT is in `sites` with `policy` `public`**: stop. Tell the user its pages would be public, and only continue after they have protected it (they can ask you to run `wardlock --json policy set ROOT --protected --links`).
 - **ROOT is not in `sites`**: create it as below.
 
 ### Create a root site
@@ -41,7 +41,7 @@ Do these in order, and do not deploy any real content until step 3 succeeds.
 
 1. Make a temporary directory outside the user's project with one `index.html` holding no content of value (for example `<!doctype html><title>Private</title><p>Nothing to see here.</p>`).
 2. Deploy it as the whole site: `wardlock --json deploy PLACEHOLDER_DIR ROOT --message "wardlock-publish: placeholder"`. If the name is taken or invalid, ask the user for another. If the output's `siteCreated` is not `true`, ROOT already existed (it may have been created since you listed the sites): stop here. Do not protect it and never tear it down. Tell the user the site already exists and that the placeholder is now its live deploy (they can restore the previous one with `wardlock rollback ROOT`), then go back to "Choose the root site".
-3. Protect it: `wardlock policy set ROOT --protected --links --json`. Add `--password`, `--email` or `--oauth` (with `--allow LIST` or `--github-org LIST`) only when the user asks for those sign-in methods as well; `--links` must always stay on, since this skill hands out links.
+3. Protect it: `wardlock --json policy set ROOT --protected --links`. Add `--password`, `--email` or `--oauth` (with `--allow LIST` or `--github-org LIST`) only when the user asks for those sign-in methods as well; `--links` must always stay on, since this skill hands out links.
 4. Confirm it: run `wardlock --json list` and check ROOT's `policy` is `protected`.
 5. Delete the temporary directory.
 
@@ -63,7 +63,16 @@ Only when the user asks to update a named page that already exists:
 
 `wardlock --json deploy DIR ROOT --path /SLUG/ --message "wardlock-publish: update /SLUG/"`
 
-The page's existing links keep working and now show the new content; every other page is untouched. Create a new link only if the user asks for one.
+The page's existing links keep working and now show the new content; every other page is untouched. Create a new link only if the user asks for one. If you no longer have the page's source, get it with "Download a page" first.
+
+## Download a page
+
+When the user asks to update a page whose source you no longer have (it was generated in another session, or its directory was deleted), pull the live page first:
+
+1. Make a new, empty temporary directory outside the user's project (call it PULL_DIR). Never pull into the user's project, or any directory holding their files, without asking them first.
+2. Run `wardlock --json pull ROOT PULL_DIR --path /SLUG/`. It writes only that page's files, relative to `/SLUG/`, as "Publish a page" took them, each checked against its SHA-256. Do not add `--force`: PULL_DIR must be empty. The output's `files` and `bytes` count what was written. If the command fails, PULL_DIR may hold only part of the page: never publish from it; stop and report the error.
+3. Check PULL_DIR has `index.html` at its top, make the change the user asked for, then publish it back with "Update a page", using PULL_DIR as DIR.
+4. Delete PULL_DIR when the update succeeds.
 
 ## Remove a page
 
