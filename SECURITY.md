@@ -22,4 +22,4 @@ To report a site hosted on a Wardlock server (phishing, malware, illegal or sexu
 
 ## Supported versions
 
-Only the latest commit on `main` is supported until the first release.
+Only the latest release is supported; fixes ship in a new release, not as patches to older ones. Releases are listed on [GitHub](https://github.com/CubieCode/wardlock/releases).
