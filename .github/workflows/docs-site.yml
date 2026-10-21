@@ -1,14 +1,14 @@
 name: Docs site
 # Builds the public documentation site from docs/ (docs-site/README.md) and
 # checks every link in it. The build and the checker need no network beyond
-# the package install, and nothing here contacts a Wardlock instance.
+# the package install, and the build job contacts no Wardlock instance.
 # Nothing is uploaded; the deploy job builds the site itself.
 #
-# Nothing is deployed. The deploy job is disabled with `if: false`; enabling
-# it needs explicit authorisation, a reviewed change to this file and the
-# WARDLOCK_SERVER variable and WARDLOCK_TOKEN secret, neither of which exists
-# yet. The site is public: a new site has no `/` policy, so the deploy job
-# sets none.
+# The deploy job publishes the site to the instance in the WARDLOCK_SERVER
+# variable with the WARDLOCK_TOKEN secret (a deploy-scope API token) on every
+# push to main that changes the docs, and on a manual run from main. Pull
+# requests only build. The site is public: a new site has no `/` policy, so
+# the deploy job sets none.
 #
 # Runners: vars.RUNNER as in ci.yml (unset means ubuntu-latest); pull
 # requests from forks always run on ubuntu-latest.
@@ -50,8 +50,8 @@ jobs:
         run: pnpm docs:build
 
   deploy:
-    # Disabled: deploying needs explicit authorisation (see the header).
-    if: false
+    # Main only: pull requests never deploy (see the header).
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
     runs-on: *runner
     timeout-minutes: 10
