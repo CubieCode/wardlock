@@ -211,6 +211,13 @@ linters:
     rules:
       - path: _test\.go
         linters: [gosec]
+      # wardlock pull creates the directory the user names (or one named
+      # after the site, whose name it checks first). gosec's taint analysis
+      # reports that intended flow only on some runs, which fails CI at
+      # random, so G703 is excluded for that file alone.
+      - path: apps/cli/cmd/wardlock/pull\.go
+        linters: [gosec]
+        text: G703
 formatters:
   enable:
     - gofmt
