@@ -40,12 +40,12 @@ Use the root site the user names (call it ROOT). If they name none, suggest one,
 Do these in order, and do not deploy any real content until step 3 succeeds.
 
 1. Make a temporary directory outside the user's project with one `index.html` holding no content of value (for example `<!doctype html><title>Private</title><p>Nothing to see here.</p>`).
-2. Deploy it as the whole site: `wardlock --json deploy PLACEHOLDER_DIR ROOT --message "wardlock-publish: placeholder"`. Expect `siteCreated: true`. If the name is taken or invalid, ask the user for another.
+2. Deploy it as the whole site: `wardlock --json deploy PLACEHOLDER_DIR ROOT --message "wardlock-publish: placeholder"`. If the name is taken or invalid, ask the user for another. If the output's `siteCreated` is not `true`, ROOT already existed (it may have been created since you listed the sites): stop here. Do not protect it and never tear it down. Tell the user the site already exists and that the placeholder is now its live deploy (they can restore the previous one with `wardlock rollback ROOT`), then go back to "Choose the root site".
 3. Protect it: `wardlock policy set ROOT --protected --links --json`. Add `--password`, `--email` or `--oauth` (with `--allow LIST` or `--github-org LIST`) only when the user asks for those sign-in methods as well; `--links` must always stay on, since this skill hands out links.
 4. Confirm it: run `wardlock --json list` and check ROOT's `policy` is `protected`.
 5. Delete the temporary directory.
 
-If step 3 or 4 fails, run `wardlock --json teardown ROOT --yes` so nothing stays public, and report the error. Never go on to publish a page to a site whose `policy` is not `protected`.
+If step 3 or 4 fails, and step 2 of this same run reported `siteCreated: true` for ROOT, run `wardlock --json teardown ROOT --yes` so nothing stays public, and report the error. In any other case report the error and leave the site alone: never tear down a site this run did not create. Never go on to publish a page to a site whose `policy` is not `protected`.
 
 ## 3. Publish a page
 
