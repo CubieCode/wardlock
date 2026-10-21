@@ -1,0 +1,41 @@
+name: Home site
+# Deploys home-site/ (the page wardlock.nz serves: the Go vanity import paths
+# and a redirect to the docs) to the instance in the WARDLOCK_SERVER variable
+# with the WARDLOCK_TOKEN secret (a deploy-scope API token), on every push to
+# main that changes it and on a manual run from main. Pull requests check the
+# page in `pnpm check` (scripts/home-site.test.mjs) and the release workflow
+# (scripts/test-module-tags.sh); they never deploy. The custom domain
+# wardlock.nz was attached to the site once by hand (home-site/README.md).
+#
+# Runners: vars.RUNNER as in ci.yml (unset means ubuntu-latest).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - home-site/**
+      - .github/workflows/home-site.yml
+permissions:
+  contents: read
+concurrency:
+  group: home-site-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  deploy:
+    # Main only, as in the Docs site workflow.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ${{ fromJSON(vars.RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+      - run: go build -o "$RUNNER_TEMP/wardlock" ./apps/cli/cmd/wardlock
+      # wardlock.json names the site (home), the directory (public) and the
+      # SPA fallback.
+      - working-directory: home-site
+        env:
+          WARDLOCK_SERVER: ${{ vars.WARDLOCK_SERVER }}
+          WARDLOCK_TOKEN: ${{ secrets.WARDLOCK_TOKEN }}
+        run: '"$RUNNER_TEMP/wardlock" deploy --json --message "home ${GITHUB_SHA::12}"'

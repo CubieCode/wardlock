@@ -9,9 +9,10 @@
 # runs `go install wardlock.nz/<module>/cmd/...@<version>` through Go's real
 # vanity-path lookup:
 #
-# - a local HTTP proxy (HTTP_PROXY) answers https://wardlock.nz/<module>?go-get=1
-#   with the go-import meta tag DEPLOYMENT documents, except that the
-#   repository is the temporary clone served by `git daemon` on 127.0.0.1;
+# - a local HTTP proxy (HTTP_PROXY) answers https://wardlock.nz/<module>/...?go-get=1
+#   with home-site/public/index.html, the page wardlock.nz serves, except that
+#   its repository URL points at the temporary clone served by `git daemon` on
+#   127.0.0.1;
 # - GOPRIVATE and GOINSECURE cover wardlock.nz only, and the proxy refuses
 #   HTTPS to wardlock.nz, so nothing reaches the real domain (other HTTPS,
 #   such as the checksum database, is tunnelled unchanged);
@@ -73,14 +74,13 @@ pids+=($!)
 
 mkdir "$tmp/vanity"
 cat >"$tmp/vanity/main.go" <<'EOF'
-// Answers go-get=1 lookups for wardlock.nz like the real site will, but
-// pointing at a local repository. Tunnels HTTPS to other hosts (the module
+// Answers go-get=1 lookups for wardlock.nz with the real site's page, its
+// repository URL replaced by a local repository. Tunnels HTTPS to other hosts (the module
 // proxy and checksum database) unchanged; refuses everything else, including
 // HTTPS to wardlock.nz, so the real domain is never contacted.
 package main
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -89,8 +89,12 @@ import (
 )
 
 func main() {
-	dirs := map[string]string{"cli": "apps/cli", "server": "apps/server", "apiclient": "packages/apiclient-go"}
-	repo := os.Args[2]
+	modules := map[string]bool{"cli": true, "server": true, "apiclient": true}
+	page, err := os.ReadFile(os.Args[3])
+	if err != nil {
+		panic(err)
+	}
+	body := strings.ReplaceAll(string(page), "https://github.com/CubieCode/wardlock", os.Args[2])
 	l, err := net.Listen("tcp", "127.0.0.1:"+os.Args[1])
 	if err != nil {
 		panic(err)
@@ -106,12 +110,11 @@ func main() {
 			return
 		}
 		mod, _, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
-		dir, ok := dirs[mod]
-		if r.URL.Hostname() != "wardlock.nz" || r.URL.Query().Get("go-get") != "1" || !ok {
+		if r.URL.Hostname() != "wardlock.nz" || r.URL.Query().Get("go-get") != "1" || !modules[mod] {
 			http.Error(w, "refused", http.StatusForbidden)
 			return
 		}
-		fmt.Fprintf(w, "<!doctype html><meta name=\"go-import\" content=\"wardlock.nz/%s git %s %s\">\n", mod, repo, dir)
+		io.WriteString(w, body)
 	})))
 }
 
@@ -134,7 +137,7 @@ func tunnel(w http.ResponseWriter, addr string) {
 EOF
 proxy_port=$(free_port)
 (cd "$tmp/vanity" && GOWORK=off GOFLAGS= go mod init vanity >/dev/null 2>&1 && GOWORK=off GOFLAGS= go build -o vanity .)
-"$tmp/vanity/vanity" "$proxy_port" "git://127.0.0.1:$git_port/wardlock" >"$tmp/vanity.log" 2>&1 &
+"$tmp/vanity/vanity" "$proxy_port" "git://127.0.0.1:$git_port/wardlock" "$repo/home-site/public/index.html" >"$tmp/vanity.log" 2>&1 &
 pids+=($!)
 for _ in $(seq 1 50); do
   (exec 3<>"/dev/tcp/127.0.0.1/$proxy_port") 2>/dev/null && (exec 3<>"/dev/tcp/127.0.0.1/$git_port") 2>/dev/null && break
