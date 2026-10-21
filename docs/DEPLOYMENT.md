@@ -221,20 +221,27 @@ The per-address limit on sign-in emails (5 per hour) counts every request for th
 
 ## Docker
 
-[`deploy/Dockerfile`](../deploy/Dockerfile) packages the static `wardlockd` into a distroless image that runs as the `nonroot` user (uid 65532) with data in the `/data` volume; [`deploy/compose.yaml`](../deploy/compose.yaml) is an example. No images are published yet, so build a snapshot and point the example at it:
+Release images are multi-arch (`linux/amd64`, `linux/arm64`) distroless images at `ghcr.io/cubiecode/wardlock:<version>` and `:latest`, built from [`deploy/Dockerfile`](../deploy/Dockerfile). They run as the `nonroot` user (uid 65532) with data in the `/data` volume; [`deploy/compose.yaml`](../deploy/compose.yaml) is an example:
 
 ```sh
-goreleaser release --snapshot --clean   # images ghcr.io/cubiecode/wardlock:<version>-amd64 and -arm64
 export WARDLOCK_SECRET=$(openssl rand -base64 32 | tr '+/' '-_')   # keep it; see Backups
-WARDLOCK_IMAGE=ghcr.io/cubiecode/wardlock:<version>-amd64 docker compose -f deploy/compose.yaml up -d
+WARDLOCK_IMAGE=ghcr.io/cubiecode/wardlock:0.1.0 docker compose -f deploy/compose.yaml up -d
 curl http://127.0.0.1:8080/healthz
 curl http://127.0.0.1:9740/readyz      # the operator listener; see Health, readiness and metrics
 ```
 
 <details>
-<summary>Release images and the example's hardening</summary>
+<summary>The example's hardening, and running a snapshot instead</summary>
 
-Release images will be multi-arch (`linux/amd64`, `linux/arm64`) at `ghcr.io/cubiecode/wardlock:<version>` and `:latest`. The example compose file has a read-only root filesystem, all capabilities dropped and one volume for data.
+The example compose file has a read-only root filesystem, all capabilities dropped and one volume for data. Check a release image's signature with `gh attestation verify oci://ghcr.io/cubiecode/wardlock:<version> --repo CubieCode/wardlock` ([Verifying a release](#verifying-a-release)).
+
+To run an unreleased commit, build a snapshot and point the example at it. `GORELEASER_CURRENT_TAG` names the newest release, since the nearest tag on `main` is a module tag:
+
+```sh
+GORELEASER_CURRENT_TAG=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n 1) \
+  goreleaser release --snapshot --clean   # images ghcr.io/cubiecode/wardlock:<version>-amd64 and -arm64
+WARDLOCK_IMAGE=ghcr.io/cubiecode/wardlock:<version>-amd64 docker compose -f deploy/compose.yaml up -d
+```
 
 </details>
 
@@ -1073,6 +1080,6 @@ Main keeps its `replace` directives; only the release commit drops them.
 
 [`scripts/test-module-tags.sh`](../scripts/test-module-tags.sh) proves this scheme without publishing: it makes the release commit and tags in a temporary clone, serves that clone with `git daemon` and answers `wardlock.nz/<module>?go-get=1` from a local proxy, then runs `go install` for both commands. It also checks that an unprefixed tag and a tag on a commit with `replace` directives fail. The tags exist only in the deleted clone. The release workflow runs it on every pull request.
 
-[`.goreleaser.yaml`](../.goreleaser.yaml) builds every artefact, and [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs `goreleaser release --snapshot --clean` on pull requests and main, then [`scripts/release-smoke.sh`](../scripts/release-smoke.sh) checks the snapshot: all 12 archives and SBOMs match `checksums.txt`, `install.sh` installs them and rejects a bad checksum, and the image runs as uid 65532 and answers `/healthz`. Pull requests, main and manual runs never publish: snapshots never push, the image and GitHub release are skipped outside snapshots unless `WARDLOCK_PUBLISH=true`, and the `publish` job that sets it runs only when `github.event_name == 'push'` and the ref starts with `refs/tags/v` in `CubieCode/wardlock`. The workflow triggers on tags matching `v*`; GitHub matches tag filters against the whole tag name and `*` does not match `/`, so `apps/cli/vX.Y.Z`, `apps/server/vX.Y.Z` and `packages/apiclient-go/vX.Y.Z` do not start it. Only `publish` gets `contents: write` and `packages: write`; every other job has `contents: read`. GoReleaser is told the triggering tag (`GORELEASER_CURRENT_TAG`), since the release commit also carries the module tags. The GitHub release is always a draft.
+[`.goreleaser.yaml`](../.goreleaser.yaml) builds every artefact, and [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs `goreleaser release --snapshot --clean` on pull requests and main, then [`scripts/release-smoke.sh`](../scripts/release-smoke.sh) checks the snapshot: all 12 archives and SBOMs match `checksums.txt`, `install.sh` installs them and rejects a bad checksum, and the image runs as uid 65532 and answers `/healthz`. Pull requests, main and manual runs never publish: snapshots never push, the image and GitHub release are skipped outside snapshots unless `WARDLOCK_PUBLISH=true`, and the `publish` job that sets it runs only when `github.event_name == 'push'` and the ref starts with `refs/tags/v` in `CubieCode/wardlock`. The workflow triggers on tags matching `v*`; GitHub matches tag filters against the whole tag name and `*` does not match `/`, so `apps/cli/vX.Y.Z`, `apps/server/vX.Y.Z` and `packages/apiclient-go/vX.Y.Z` do not start it. Only `publish` gets `contents: write` and `packages: write`; every other job has `contents: read`. GoReleaser is told the triggering tag (`GORELEASER_CURRENT_TAG`), since the release commit also carries the module tags; snapshots outside a tag run are told the newest `vX.Y.Z` tag, because `main`'s history carries only the module tags, which GoReleaser cannot parse as versions. The GitHub release is always a draft.
 
 </details>

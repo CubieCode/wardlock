@@ -80,7 +80,8 @@ Needs Docker with buildx; nothing is pushed or published:
 ```sh
 GOWORK=off GOFLAGS= GOBIN="$PWD/.local/bin" go -C /tmp install github.com/goreleaser/goreleaser/v2@v2.18.3
 GOWORK=off GOFLAGS= GOBIN="$PWD/.local/bin" go -C /tmp install github.com/anchore/syft/cmd/syft@v1.52.0
-PATH="$PWD/.local/bin:$PATH" goreleaser release --snapshot --clean   # writes .local/goreleaser
+GORELEASER_CURRENT_TAG=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n 1) \
+  PATH="$PWD/.local/bin:$PATH" goreleaser release --snapshot --clean   # writes .local/goreleaser
 bash scripts/release-smoke.sh
 bash scripts/test-module-tags.sh
 ```
