@@ -7,7 +7,9 @@
   fallback, so every package path (wardlock.nz/cli/cmd/wardlock?go-get=1)
   answers this page with status 200, and Go uses the tag whose module path is
   a prefix of the package it looks up. scripts/home-site.test.mjs checks the
-  tags against the modules in go.work.
+  tags against the modules in go.work. The redirect is a page, not an HTTP
+  redirect, and waits a few seconds: search engines read an instant refresh as
+  a permanent move, and wardlock.nz may get a page of its own later.
 -->
 <html lang="en">
   <head>
@@ -26,7 +28,7 @@
       name="go-import"
       content="wardlock.nz/server git https://github.com/CubieCode/wardlock apps/server"
     />
-    <meta http-equiv="refresh" content="0; url=https://docs.wardlock.nz/" />
+    <meta http-equiv="refresh" content="3; url=https://docs.wardlock.nz/" />
   </head>
   <body>
     <p><a href="https://docs.wardlock.nz/">Wardlock documentation</a></p>
