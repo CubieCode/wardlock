@@ -60,7 +60,7 @@ It is built for agencies and freelancers sending client previews, teams sharing 
 
 ## Quick start (development)
 
-You need Go 1.27 (the build pins go1.27.2 and Go downloads it if needed), Node 24 (`.nvmrc`) and pnpm 12 (Corepack or `npm install -g pnpm`). Docker is not required.
+You need Go 1.27 (the build pins go1.27.3 and Go downloads it if needed), Node 24 (`.nvmrc`) and pnpm 12 (Corepack or `npm install -g pnpm`). Docker is not required.
 
 ```sh
 pnpm install --frozen-lockfile

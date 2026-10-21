@@ -1,7 +1,7 @@
 go 1.27.0
 
 // The toolchain every lane and CI builds with; go downloads it when needed.
-toolchain go1.27.2
+toolchain go1.27.3
 
 use (
 	./apps/cli

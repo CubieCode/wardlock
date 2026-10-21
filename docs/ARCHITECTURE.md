@@ -719,7 +719,7 @@ flowchart LR
 
 ## Go workspace
 
-`go.work` lists `apps/server`, `apps/cli` and `packages/apiclient-go` and pins the toolchain (`go1.27.2`). Module paths are vanity paths on `wardlock.nz`. `tools/` is deliberately outside the workspace so linter dependencies never affect product builds.
+`go.work` lists `apps/server`, `apps/cli` and `packages/apiclient-go` and pins the toolchain (`go1.27.3`). Module paths are vanity paths on `wardlock.nz`. `tools/` is deliberately outside the workspace so linter dependencies never affect product builds.
 
 <details>
 <summary>Why the modules use replace directives</summary>

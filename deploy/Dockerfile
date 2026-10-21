@@ -30,7 +30,7 @@ RUN pnpm install --frozen-lockfile \
 
 # Source build, step 2: wardlockd with the dashboard embedded, as
 # scripts/build-go.sh does. Cross-compiles for the target platform.
-FROM --platform=$BUILDPLATFORM golang:1.27.2-bookworm AS server
+FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm AS server
 ARG TARGETOS TARGETARCH
 ARG WARDLOCK_VERSION=dev
 ENV GOTOOLCHAIN=local CGO_ENABLED=0
