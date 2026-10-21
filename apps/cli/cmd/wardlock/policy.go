@@ -37,10 +37,15 @@ const policyUsage = "Usage: wardlock policy set DOMAIN [--path P] (--public | --
 	"manage scope."
 
 func runPolicy(ctx context.Context, a *app, args []string) error {
-	if len(args) > 0 && args[0] == "set" {
-		return runPolicySet(ctx, a, args[1:])
+	// The subcommand is the first argument that is not a global flag.
+	global, rest, err := leadingGlobalFlags(args)
+	if err != nil {
+		return err
 	}
-	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help") {
+	if len(rest) > 0 && rest[0] == "set" {
+		return runPolicySet(ctx, a, append(global, rest[1:]...))
+	}
+	if len(rest) > 0 && (rest[0] == "--help" || rest[0] == "-h" || rest[0] == "help") {
 		fmt.Fprintln(a.stdout, policyUsage)
 		return nil
 	}
