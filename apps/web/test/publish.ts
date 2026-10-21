@@ -19,13 +19,14 @@ export async function createSite(request: APIRequestContext, name: string) {
 
 /**
  * Uploads a one-page deploy saying `text`, with the given deploy options,
- * and makes it live.
+ * and makes it live. With `path`, the page goes to that prefix and the rest
+ * of the site stays as it is.
  */
 export async function publish(
   request: APIRequestContext,
   site: string,
   text: string,
-  options: { immutableAssets?: boolean } = {},
+  options: { immutableAssets?: boolean; path?: string } = {},
 ) {
   const body = Buffer.from(`<!doctype html><title>${text}</title><p>${text}`);
   const sha256 = createHash('sha256').update(body).digest('hex');

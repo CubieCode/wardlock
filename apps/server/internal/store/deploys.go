@@ -24,8 +24,15 @@ type Deploy struct {
 	SPA       bool // serve /index.html for missing extensionless paths
 	// ImmutableAssets caches hashed files under /assets/ for a year.
 	ImmutableAssets bool
-	CreatedAt       time.Time
-	ActivatedAt     time.Time // most recent activation; zero if never
+	// PathPrefix is the prefix a path deploy replaced, such as
+	// "/mockup-x/"; "" for a full deploy (C1.13).
+	PathPrefix string
+	// BaseDeployID is the site's active deploy when a path deploy was
+	// created, which activation requires still to be active; "" for a full
+	// deploy and for a path deploy to a site with nothing live.
+	BaseDeployID string
+	CreatedAt    time.Time
+	ActivatedAt  time.Time // most recent activation; zero if never
 }
 
 // DeployFile is one manifest entry. Its blob need not exist yet: activation
@@ -63,6 +70,9 @@ var (
 	// ErrBlobsMissing means the owner has not uploaded every blob in the
 	// deploy's manifest.
 	ErrBlobsMissing = errors.New("deploy blobs missing")
+	// ErrStaleBase means Activate was given a path deploy whose base is no
+	// longer the site's active deploy.
+	ErrStaleBase = errors.New("path deploy base is no longer active")
 )
 
 // Deploys stores deploys, their manifests and blob records. Methods that
@@ -86,6 +96,8 @@ type Deploys interface {
 	// instance-wide read for the edge and must never back an owner API
 	// handler.
 	Files(ctx context.Context, deployID string) ([]DeployFile, error)
+	// Manifest returns one of ownerID's deploys' manifest ordered by path.
+	Manifest(ctx context.Context, ownerID, siteID, deployID string) ([]DeployFile, error)
 	// Hashes returns the distinct hashes in the deploy's manifest.
 	Hashes(ctx context.Context, ownerID, siteID, deployID string) ([]string, error)
 	// MissingBlobs returns the distinct hashes in the deploy's manifest that
@@ -100,8 +112,9 @@ type Deploys interface {
 	RecordUpload(ctx context.Context, ownerID string, b Blob) error
 	// Activate makes a pending deploy the site's active deploy in one
 	// transaction, stamping it with at. It fails with ErrDeployNotPending if
-	// the deploy was activated before and ErrBlobsMissing unless ownerID has
-	// recorded every blob in its manifest.
+	// the deploy was activated before, ErrBlobsMissing unless ownerID has
+	// recorded every blob in its manifest, and ErrStaleBase for a path
+	// deploy whose base is no longer the site's active deploy.
 	Activate(ctx context.Context, ownerID, siteID, deployID string, at time.Time) (Deploy, error)
 	// Rollback reactivates an earlier activated deploy in one transaction:
 	// deployID, or with "" the most recently activated deploy other than the
@@ -144,6 +157,8 @@ func (r deploysRepo) Create(ctx context.Context, ownerID string, d Deploy, files
 			ImmutableAssets: boolInt(d.ImmutableAssets),
 			CreatedAt:       ms(d.CreatedAt),
 			ActivatedAt:     nullMs(d.ActivatedAt),
+			PathPrefix:      nullString(d.PathPrefix),
+			BaseDeployID:    nullString(d.BaseDeployID),
 		})
 		if err != nil {
 			return mapErr("create deploy", err)
@@ -234,6 +249,8 @@ func deployFrom(row sqlcgen.GetDeployRow) Deploy {
 		TotalSize:       row.TotalSize,
 		SPA:             row.Spa == 1,
 		ImmutableAssets: row.ImmutableAssets == 1,
+		PathPrefix:      row.PathPrefix.String,
+		BaseDeployID:    row.BaseDeployID.String,
 		CreatedAt:       fromMs(row.CreatedAt),
 		ActivatedAt:     fromNullMs(row.ActivatedAt),
 	}
@@ -263,6 +280,21 @@ func (r deploysRepo) List(ctx context.Context, ownerID, siteID string, before De
 
 func (r deploysRepo) Files(ctx context.Context, deployID string) ([]DeployFile, error) {
 	rows, err := r.db.q.ListDeployFiles(ctx, deployID)
+	if err != nil {
+		return nil, mapErr("list deploy files", err)
+	}
+	files := make([]DeployFile, 0, len(rows))
+	for _, row := range rows {
+		files = append(files, DeployFile{Path: row.Path, SHA256: row.Sha256, Size: row.Size})
+	}
+	return files, nil
+}
+
+func (r deploysRepo) Manifest(ctx context.Context, ownerID, siteID, deployID string) ([]DeployFile, error) {
+	if _, err := r.Get(ctx, ownerID, siteID, deployID); err != nil {
+		return nil, err
+	}
+	rows, err := r.db.q.ListOwnerDeployFiles(ctx, sqlcgen.ListOwnerDeployFilesParams{DeployID: deployID, SiteID: siteID, OwnerID: ownerID})
 	if err != nil {
 		return nil, mapErr("list deploy files", err)
 	}
@@ -326,6 +358,15 @@ func (r deploysRepo) Activate(ctx context.Context, ownerID, siteID, deployID str
 		}
 		if len(missing) > 0 {
 			return fmt.Errorf("activate deploy: %d missing: %w", len(missing), ErrBlobsMissing)
+		}
+		if d.PathPrefix != "" {
+			site, err := q.GetSite(ctx, sqlcgen.GetSiteParams{ID: siteID, OwnerID: ownerID})
+			if err != nil {
+				return mapErr("get site", err)
+			}
+			if site.ActiveDeployID.String != d.BaseDeployID {
+				return fmt.Errorf("activate deploy: %w", ErrStaleBase)
+			}
 		}
 		return setActive(ctx, q, ownerID, &d, at)
 	})

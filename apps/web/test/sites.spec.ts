@@ -21,12 +21,12 @@ async function check(page: Page, info: TestInfo, name: string) {
   });
 }
 
-/** What a visitor sees at the site's own address. */
-async function served(page: Page, site: string) {
+/** What a visitor sees at the site's own address, or a path under it. */
+async function served(page: Page, site: string, path = '/') {
   const visitor = await page.context().newPage();
   try {
     const res = await visitor.goto(
-      `http://${site}.wardlock.localhost:${port}/`,
+      `http://${site}.wardlock.localhost:${port}${path}`,
     );
     return { status: res?.status(), text: await visitor.textContent('body') };
   } finally {
@@ -169,6 +169,21 @@ for (const scheme of schemes) {
       ).toBeVisible();
       await shot('rolled-back');
       expect((await served(page, name)).text).toContain('First version');
+    });
+
+    await test.step('a path deploy names its prefix and keeps the rest live', async () => {
+      await publish(page.request, name, 'Mockup', { path: '/mockup-x/' });
+      await page.reload();
+      const rows = page
+        .getByRole('list', { name: 'Deploy history' })
+        .getByRole('listitem');
+      await expect(rows).toHaveCount(3);
+      await expect(rows.nth(0)).toContainText('Live');
+      await expect(rows.nth(0)).toContainText('Path /mockup-x/');
+      await expect(rows.nth(1)).not.toContainText('Path');
+      await shot('path-deploy');
+      expect((await served(page, name)).text).toContain('First version');
+      expect((await served(page, name, '/mockup-x/')).text).toContain('Mockup');
     });
 
     await test.step('tearing down needs the site name, then frees it', async () => {

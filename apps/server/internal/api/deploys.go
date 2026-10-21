@@ -73,6 +73,7 @@ func failed(err error) (*failure, error) {
 		{deploys.ErrNotPending, http.StatusConflict, "deploy_not_pending", "This deploy has been activated before; use rollback to return to it.", ""},
 		{deploys.ErrNotActivated, http.StatusConflict, "deploy_not_activated", "This deploy was never activated.", ""},
 		{deploys.ErrNoPreviousDeploy, http.StatusConflict, "no_previous_deploy", "The site has no earlier deploy to roll back to.", ""},
+		{deploys.ErrStaleBase, http.StatusConflict, "stale_base", "Another deploy went live on this site after this path deploy was created; create it again.", ""},
 		{deploys.ErrSiteUnavailable, http.StatusConflict, "site_unavailable", siteUnavailable, ""},
 		{sites.ErrUnavailable, http.StatusConflict, "site_unavailable", siteUnavailable, ""},
 	} {
@@ -156,6 +157,9 @@ func deployBody(site store.Site, d store.Deploy) Deploy {
 	}
 	if d.Message != "" {
 		out.Message = &d.Message
+	}
+	if d.PathPrefix != "" {
+		out.Path = &d.PathPrefix
 	}
 	if !d.ActivatedAt.IsZero() {
 		out.ActivatedAt = millis(d.ActivatedAt)
@@ -324,11 +328,12 @@ func (s *Server) CreateDeploy(ctx context.Context, req CreateDeployRequestObject
 	if req.Body.Message != nil {
 		m.Message = *req.Body.Message
 	}
-	if req.Body.Spa != nil {
-		m.SPA = *req.Body.Spa
-	}
-	if req.Body.ImmutableAssets != nil {
-		m.ImmutableAssets = *req.Body.ImmutableAssets
+	m.SPA, m.ImmutableAssets = req.Body.Spa, req.Body.ImmutableAssets
+	if req.Body.Path != nil {
+		if *req.Body.Path == "" {
+			return CreateDeploydefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_path", "path must be a prefix such as /mockup-x/; leave it out to deploy the whole site.", "path")), nil
+		}
+		m.Path = *req.Body.Path
 	}
 	d, missing, err := s.Deploys.Create(ctx, owner, req.Site, m)
 	if err != nil {

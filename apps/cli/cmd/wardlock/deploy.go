@@ -20,6 +20,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"golang.org/x/text/unicode/norm"
+
 	"wardlock.nz/apiclient"
 )
 
@@ -41,6 +43,8 @@ const (
 // Activation plus what this run did.
 type deployResult struct {
 	apiclient.Activation
+	// Path is the prefix a path deploy replaced; absent for a full deploy.
+	Path        string        `json:"path,omitempty"`
 	SiteCreated bool          `json:"siteCreated"`
 	Uploaded    uploadedStats `json:"uploaded"`
 	Skipped     []string      `json:"skipped"`
@@ -61,11 +65,17 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 		"Left out: .git/, node_modules/, .DS_Store, .env*, wardlock.json,\n"+
 		"other dotfiles except .well-known/, symbolic links, and whatever\n"+
 		"DIR/.wardlockignore lists in .gitignore syntax (\"!\" re-includes a\n"+
-		"dotfile).")
+		"dotfile).\n\n"+
+		"With --path /mockup-x/ (default \"path\" from wardlock.json), DIR\n"+
+		"replaces only that part of the site and everything else stays live.\n"+
+		"An empty DIR removes it, after you confirm by typing the path;\n"+
+		"without a terminal, or with --json, pass --yes instead.")
 	g := addGlobalFlags(fs)
 	message := fs.String("message", "", "describe this deploy in its history")
 	spa := fs.Bool("spa", false, "serve /index.html for missing paths without a file extension (default \"spa\" from wardlock.json)")
 	immutable := fs.Bool("immutable-assets", false, "cache hashed files under /assets/, such as index-BdK3j2Lp.js, for a year without revalidating (default \"immutableAssets\" from wardlock.json)")
+	pathFlag := fs.String("path", "", "deploy DIR into this part of the site, such as /mockup-x/, keeping the rest (default \"path\" from wardlock.json; '' for the whole site)")
+	yes := fs.Bool("yes", false, "with --path and an empty DIR, remove the path without asking")
 	pos, err := parseArgs(fs, args)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
@@ -105,16 +115,27 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 	if err != nil {
 		return err
 	}
-	useSPA := cfg.Spa != nil && *cfg.Spa
-	useImmutable := cfg.ImmutableAssets != nil && *cfg.ImmutableAssets
+	// With a path, flags left unset follow the deploy the path goes into,
+	// so they are sent only when given (here or in wardlock.json).
+	useSPA, useImmutable := cfg.Spa, cfg.ImmutableAssets
+	prefix := cfg.Path
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "spa":
-			useSPA = *spa
+			useSPA = spa
 		case "immutable-assets":
-			useImmutable = *immutable
+			useImmutable = immutable
+		case "path":
+			prefix = *pathFlag
 		}
 	})
+	if prefix != "" {
+		if prefix, err = cleanPrefix(prefix); err != nil {
+			return err
+		}
+	} else {
+		useSPA, useImmutable = orFalse(useSPA), orFalse(useImmutable)
+	}
 	if n := utf8.RuneCountInString(*message); n > maxMessageChars {
 		return usageErrorf("--message is %d characters; the limit is %d", n, maxMessageChars)
 	}
@@ -136,15 +157,42 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 	}
 
 	d := &deployer{a: a, c: c, root: root, prog: &progress{w: a.stderr, live: a.liveProgress, now: a.now}}
-	return d.run(ctx, deployRequest{path: path, shown: shown, target: t, message: *message, spa: useSPA, immutableAssets: useImmutable, json: g.json})
+	return d.run(ctx, deployRequest{path: path, shown: shown, target: t, message: *message, spa: useSPA, immutableAssets: useImmutable,
+		prefix: prefix, yes: *yes, json: g.json})
+}
+
+// cleanPrefix turns --path into the API's form, /dir/: in NFC like file
+// paths, with the leading and trailing slashes added when left out. The
+// server checks the rest.
+func cleanPrefix(p string) (string, error) {
+	p = norm.NFC.String(p)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	if !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+	if p == "/" || p == "//" {
+		return "", usageErrorf("--path / is the whole site: leave --path out to deploy all of it")
+	}
+	return p, nil
+}
+
+// orFalse is *b, or false when b is nil, as a pointer to send.
+func orFalse(b *bool) *bool {
+	v := b != nil && *b
+	return &v
 }
 
 type deployRequest struct {
-	path, shown     string
-	target          target
-	message         string
-	spa, json       bool
-	immutableAssets bool
+	path, shown string
+	target      target
+	message     string
+	// spa and immutableAssets are nil to follow the base of a path deploy.
+	spa, immutableAssets *bool
+	// prefix is the path deploy's prefix, /dir/, or "" for the whole site.
+	prefix    string
+	yes, json bool
 }
 
 type deployer struct {
@@ -169,8 +217,12 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 	for _, s := range skipped {
 		fmt.Fprintf(a.stderr, "Skipped %s: not a regular file (symbolic links are not followed)\n", s)
 	}
-	if len(files) == 0 {
+	removing := len(files) == 0
+	if removing && r.prefix == "" {
 		return fmt.Errorf("nothing to deploy: %s has no files that are not ignored", r.shown)
+	}
+	if removing && !r.yes && (r.json || !a.canPrompt) {
+		return usageErrorf("%s is empty, so this removes everything under %s from %s: pass --yes to confirm when there is no terminal to ask in, or with --json", r.shown, r.prefix, r.target)
 	}
 
 	var hashed atomic.Int64
@@ -187,10 +239,27 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 	for _, f := range files {
 		total += f.size
 	}
-	d.prog.done("Hashed %s (%s).", plural(len(files), "file", "files"), formatBytes(total))
+	if !removing {
+		d.prog.done("Hashed %s (%s).", plural(len(files), "file", "files"), formatBytes(total))
+	}
 
-	site, created, err := d.site(ctx, r.target)
-	if err != nil {
+	var site apiclient.Site
+	created := false
+	if removing {
+		// Nothing to remove from a site that does not exist: never create one.
+		if site, err = c.mustFindSite(ctx, r.target); err != nil {
+			return err
+		}
+		if !r.yes {
+			ok, err := a.confirm(fmt.Sprintf("%s is empty, so this removes every file under %s from %s at once.\nType the path to confirm: ", r.shown, r.prefix, site.Hostname), r.prefix)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return errors.New("not confirmed: nothing was removed")
+			}
+		}
+	} else if site, created, err = d.site(ctx, r.target); err != nil {
 		return err
 	}
 	manifest := make([]apiclient.ManifestFile, len(files))
@@ -199,16 +268,74 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 		manifest[i] = apiclient.ManifestFile{Path: f.path, Sha256: f.sha256, Size: f.size}
 		byHash[f.sha256] = f
 	}
-	body := apiclient.CreateDeployRequest{Files: manifest, Spa: &r.spa, ImmutableAssets: &r.immutableAssets}
+	body := apiclient.CreateDeployRequest{Files: manifest, Spa: r.spa, ImmutableAssets: r.immutableAssets}
 	if r.message != "" {
 		body.Message = &r.message
 	}
-	cres, err := c.api.CreateDeployWithResponse(ctx, site.Name, body, c.auth)
+	if r.prefix != "" {
+		body.Path = &r.prefix
+	}
+	up := &uploadedStats{}
+	act, err := d.deploy(ctx, site.Name, body, byHash, up, len(files))
+	if errors.Is(err, errStaleBase) {
+		// Another deploy went live after the server pinned this path
+		// deploy's base. Recreating it pins the new one; its files are
+		// already uploaded, so nothing is sent again.
+		d.prog.done("The site changed while deploying; deploying into the new version.")
+		act, err = d.deploy(ctx, site.Name, body, byHash, up, len(files))
+		if errors.Is(err, errStaleBase) {
+			return fmt.Errorf("%s changed again while deploying %s; run the deploy again", site.Name, r.prefix)
+		}
+	}
 	if err != nil {
-		return c.unreachable(ctx, err)
+		return err
+	}
+	if r.json {
+		return writeJSON(a.stdout, deployResult{
+			Activation:  act,
+			Path:        r.prefix,
+			SiteCreated: created,
+			Uploaded:    *up,
+			Skipped:     skipped,
+		})
+	}
+	took := a.now().Sub(start).Seconds()
+	if removing {
+		fmt.Fprintf(a.stdout, "Removed %s from %s in %.1fs. Deploy %s is live:\n%s\n", r.prefix, act.Site.Name, took, shortID(act.Deploy.Id), act.Site.Url)
+		return nil
+	}
+	verb := "Deployed"
+	if created {
+		verb = "Created " + act.Site.Name + " and deployed"
+	}
+	url, into := act.Site.Url, ""
+	if r.prefix != "" {
+		url, into = strings.TrimSuffix(url, "/")+r.prefix, " to "+r.prefix
+	}
+	fmt.Fprintf(a.stdout, "%s %s (%s)%s in %.1fs. Deploy %s is live:\n%s\n", verb, plural(len(files), "file", "files"), formatBytes(total),
+		into, took, shortID(act.Deploy.Id), url)
+	return nil
+}
+
+// errStaleBase is activateDeploy's 409 stale_base: a path deploy whose
+// base is no longer live.
+var errStaleBase = errors.New("stale base")
+
+// deploy creates a deploy from body, uploads what the server is missing
+// (adding it to up) and activates it. It returns errStaleBase, with nothing
+// activated, when the server refuses a path deploy whose base changed.
+func (d *deployer) deploy(ctx context.Context, site string, body apiclient.CreateDeployRequest, byHash map[string]localFile, up *uploadedStats, fileCount int) (apiclient.Activation, error) {
+	c := d.c
+	cres, err := c.api.CreateDeployWithResponse(ctx, site, body, c.auth)
+	if err != nil {
+		return apiclient.Activation{}, c.unreachable(ctx, err)
 	}
 	if cres.JSON201 == nil {
-		return refusedFile(c.failed(cres.HTTPResponse, cres.Body), cres.Body, manifest)
+		prefix := ""
+		if body.Path != nil {
+			prefix = *body.Path
+		}
+		return apiclient.Activation{}, refusedFile(c.failed(cres.HTTPResponse, cres.Body), cres.Body, prefix, body.Files)
 	}
 	deploy := cres.JSON201.Deploy
 
@@ -217,62 +344,54 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 	for _, h := range cres.JSON201.Missing {
 		f, ok := byHash[h]
 		if !ok {
-			return fmt.Errorf("server %s asked for a file this deploy does not have", c.server)
+			return apiclient.Activation{}, fmt.Errorf("server %s asked for a file this deploy does not have", c.server)
 		}
 		toUpload = append(toUpload, f)
 		uploadBytes += f.size
 	}
 	if len(toUpload) > 0 {
 		var sent atomic.Int64
-		err = d.uploadAll(ctx, site.Name, deploy.Id, toUpload, func() {
+		err = d.uploadAll(ctx, site, deploy.Id, toUpload, func() {
 			n := sent.Add(1)
 			d.prog.update("Uploading: %d of %d files (%s of %s)", n, len(toUpload), formatBytes(d.uploaded.Load()), formatBytes(uploadBytes))
 		})
 		if err != nil {
-			return err
+			return apiclient.Activation{}, err
 		}
-		d.prog.done("Uploaded %s (%s); %d unchanged.", plural(len(toUpload), "file", "files"), formatBytes(uploadBytes), len(files)-len(toUpload))
-	} else {
-		d.prog.done("Nothing to upload: the server already has all %s.", plural(len(files), "file", "files"))
+		d.prog.done("Uploaded %s (%s); %d unchanged.", plural(len(toUpload), "file", "files"), formatBytes(uploadBytes), fileCount-len(toUpload))
+		up.Files += len(toUpload)
+		up.Bytes += uploadBytes
+	} else if fileCount > 0 {
+		d.prog.done("Nothing to upload: the server already has all %s.", plural(fileCount, "file", "files"))
 	}
 
-	ares, err := c.api.ActivateDeployWithResponse(ctx, site.Name, deploy.Id, c.auth)
+	ares, err := c.api.ActivateDeployWithResponse(ctx, site, deploy.Id, c.auth)
 	if err != nil {
-		return c.unreachable(ctx, err)
+		return apiclient.Activation{}, c.unreachable(ctx, err)
 	}
 	if ares.JSON200 == nil {
-		return c.failed(ares.HTTPResponse, ares.Body)
+		if ares.StatusCode() == http.StatusConflict && errorCode(ares.Body) == "stale_base" {
+			return apiclient.Activation{}, errStaleBase
+		}
+		return apiclient.Activation{}, c.failed(ares.HTTPResponse, ares.Body)
 	}
-	act := *ares.JSON200
-	if r.json {
-		return writeJSON(a.stdout, deployResult{
-			Activation:  act,
-			SiteCreated: created,
-			Uploaded:    uploadedStats{Files: len(toUpload), Bytes: uploadBytes},
-			Skipped:     skipped,
-		})
-	}
-	verb := "Deployed"
-	if created {
-		verb = "Created " + act.Site.Name + " and deployed"
-	}
-	fmt.Fprintf(a.stdout, "%s %s (%s) in %.1fs. Deploy %s is live:\n%s\n", verb, plural(len(files), "file", "files"), formatBytes(total),
-		a.now().Sub(start).Seconds(), shortID(act.Deploy.Id), act.Site.Url)
-	return nil
+	return *ares.JSON200, nil
 }
 
 // refusedFile adds what to do when the server refuses the deploy because
 // of one of its files: a file over a size limit (limit_exceeded naming the
 // path) or of a blocked type (file_type_blocked). The server's message
 // already names the file and the limit; quotas name no file and need no
-// more.
-func refusedFile(err error, body []byte, manifest []apiclient.ManifestFile) error {
+// more. A path deploy's server names files with prefix, without its
+// leading slash, in front; a file the site already serves outside the
+// prefix is not in DIR and gets no advice.
+func refusedFile(err error, body []byte, prefix string, manifest []apiclient.ManifestFile) error {
 	var e apiclient.Error
 	if json.Unmarshal(body, &e) != nil || e.Target == nil || (e.Code != "limit_exceeded" && e.Code != "file_type_blocked") {
 		return err
 	}
 	for _, f := range manifest {
-		if f.Path == *e.Target {
+		if strings.TrimPrefix(prefix, "/")+f.Path == *e.Target {
 			return fmt.Errorf("%w To deploy without it, list %s in %s", err, f.Path, ignoreFile)
 		}
 	}

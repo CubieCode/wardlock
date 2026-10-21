@@ -445,13 +445,19 @@ type CreateApiTokenRequest struct {
 
 // CreateDeployRequest defines model for CreateDeployRequest.
 type CreateDeployRequest struct {
+	// Files The deploy's files, relative to `path` when it is given. At least one for a full deploy; empty with `path` removes the prefix.
 	Files []ManifestFile `json:"files"`
 
-	// ImmutableAssets Cache files under `/assets/` with a content hash in their name for a year as immutable (SPEC "Serving"). Only set it when every such name changes whenever its content does.
+	// ImmutableAssets Cache files under `/assets/` with a content hash in their name for a year as immutable (SPEC "Serving"). Only set it when every such name changes whenever its content does. Defaults to false, or with `path` to the base deploy's setting.
 	ImmutableAssets *bool   `json:"immutableAssets,omitempty"`
 	Message         *string `json:"message,omitempty"`
 
-	// Spa Serve `/index.html` for missing extensionless paths.
+	// Path Replace only this prefix of the site, keeping the active deploy's files outside it (see `createDeploy`).
+	//
+	// Examples: /mockup-x/
+	Path *DeployPath `json:"path,omitempty"`
+
+	// Spa Serve `/index.html` for missing extensionless paths. Defaults to false, or with `path` to the base deploy's setting.
 	Spa *bool `json:"spa,omitempty"`
 }
 
@@ -555,6 +561,11 @@ type Deploy struct {
 	ImmutableAssets bool    `json:"immutableAssets"`
 	Message         *string `json:"message,omitempty"`
 
+	// Path The prefix a path deploy replaced, keeping the rest of its base. Absent for a full deploy. Either way the deploy lists every file the site serves while it is active.
+	//
+	// Examples: /mockup-x/
+	Path *DeployPath `json:"path,omitempty"`
+
 	// Spa Whether missing paths without a file extension serve `/index.html` while this deploy is active.
 	Spa bool `json:"spa"`
 
@@ -577,6 +588,11 @@ type DeployPage struct {
 	// Examples: c2l0ZTpkb2Nz
 	NextCursor *Cursor `json:"nextCursor,omitempty"`
 }
+
+// DeployPath A directory prefix starting and ending with `/`, such as `/mockup-x/`: never `/` itself, with no empty, `.` or `..` segments, no control or invisible format characters, and never under `/.wardlock/`. Matched byte for byte against deploy paths.
+//
+// Examples: /mockup-x/
+type DeployPath = string
 
 // DnsRecord defines model for DnsRecord.
 type DnsRecord struct {
@@ -1840,6 +1856,7 @@ type ClientInterface interface {
 	// CreateDeployWithBody Create a deploy from a manifest.
 	//
 	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
+	// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1849,6 +1866,7 @@ type ClientInterface interface {
 	// CreateDeploy Create a deploy from a manifest.
 	//
 	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
+	// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1857,7 +1875,7 @@ type ClientInterface interface {
 
 	// ActivateDeploy Make a pending deploy the site's active deploy.
 	//
-	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A site the operator has taken down answers `409 site_unavailable`.
+	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
 	ActivateDeploy(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2737,6 +2755,7 @@ func (c *Client) ListDeploys(ctx context.Context, site SiteName, params *ListDep
 // CreateDeployWithBody Create a deploy from a manifest.
 //
 // Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
+// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 //
 // Takes any type of body and a specified content type.
 //
@@ -2756,6 +2775,7 @@ func (c *Client) CreateDeployWithBody(ctx context.Context, site SiteName, conten
 // CreateDeploy Create a deploy from a manifest.
 //
 // Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
+// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2774,7 +2794,7 @@ func (c *Client) CreateDeploy(ctx context.Context, site SiteName, body CreateDep
 
 // ActivateDeploy Make a pending deploy the site's active deploy.
 //
-// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A site the operator has taken down answers `409 site_unavailable`.
+// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A site the operator has taken down answers `409 site_unavailable`.
 //
 // Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
 func (c *Client) ActivateDeploy(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5664,6 +5684,7 @@ type ClientWithResponsesInterface interface {
 	// CreateDeployWithBodyWithResponse Create a deploy from a manifest.
 	//
 	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
+	// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5673,6 +5694,7 @@ type ClientWithResponsesInterface interface {
 	// CreateDeployWithResponse Create a deploy from a manifest.
 	//
 	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
+	// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5681,7 +5703,7 @@ type ClientWithResponsesInterface interface {
 
 	// ActivateDeployWithResponse Make a pending deploy the site's active deploy.
 	//
-	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A site the operator has taken down answers `409 site_unavailable`.
+	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -9770,6 +9792,7 @@ func (c *ClientWithResponses) ListDeploysWithResponse(ctx context.Context, site 
 // CreateDeployWithBodyWithResponse Create a deploy from a manifest.
 //
 // Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
+// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9785,6 +9808,7 @@ func (c *ClientWithResponses) CreateDeployWithBodyWithResponse(ctx context.Conte
 // CreateDeployWithResponse Create a deploy from a manifest.
 //
 // Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
+// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9799,7 +9823,7 @@ func (c *ClientWithResponses) CreateDeployWithResponse(ctx context.Context, site
 
 // ActivateDeployWithResponse Make a pending deploy the site's active deploy.
 //
-// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A site the operator has taken down answers `409 site_unavailable`.
+// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A site the operator has taken down answers `409 site_unavailable`.
 //
 // Returns a wrapper object for the known response body format(s).
 //

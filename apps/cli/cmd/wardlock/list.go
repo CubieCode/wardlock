@@ -163,13 +163,18 @@ func listDeploys(ctx context.Context, a *app, c *conn, t target, asJSON bool) er
 		return nil
 	}
 	tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "DEPLOY\tSTATUS\tCREATED\tFILES\tSIZE\tMESSAGE")
+	fmt.Fprintln(tw, "DEPLOY\tSTATUS\tCREATED\tPATH\tFILES\tSIZE\tMESSAGE")
 	for _, d := range deploys {
 		msg := ""
 		if d.Message != nil {
 			msg = *d.Message
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\n", shortID(d.Id), deployStatus(d.Status), formatTime(d.CreatedAt), d.FileCount, formatBytes(d.TotalSize), msg)
+		// A path deploy shows the prefix it replaced; a full deploy, /.
+		path := "/"
+		if d.Path != nil {
+			path = *d.Path
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n", shortID(d.Id), deployStatus(d.Status), formatTime(d.CreatedAt), path, d.FileCount, formatBytes(d.TotalSize), msg)
 	}
 	return tw.Flush()
 }

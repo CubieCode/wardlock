@@ -69,6 +69,8 @@ type Deploy struct {
 	ActivatedAt     sql.NullInt64
 	Spa             int64
 	ImmutableAssets int64
+	PathPrefix      sql.NullString
+	BaseDeployID    sql.NullString
 }
 
 type DeployFile struct {

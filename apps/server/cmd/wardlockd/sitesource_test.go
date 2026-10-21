@@ -70,7 +70,7 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 	// both set to options.
 	deploy := func(options bool, files map[string]string) string {
 		t.Helper()
-		m := deploys.Manifest{SPA: options, ImmutableAssets: options}
+		m := deploys.Manifest{SPA: &options, ImmutableAssets: &options}
 		for p, body := range files {
 			sum := sha256.Sum256([]byte(body))
 			m.Files = append(m.Files, store.DeployFile{Path: p, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(body))})

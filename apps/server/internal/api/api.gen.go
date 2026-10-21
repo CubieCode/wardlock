@@ -446,13 +446,19 @@ type CreateApiTokenRequest struct {
 
 // CreateDeployRequest defines model for CreateDeployRequest.
 type CreateDeployRequest struct {
+	// Files The deploy's files, relative to `path` when it is given. At least one for a full deploy; empty with `path` removes the prefix.
 	Files []ManifestFile `json:"files"`
 
-	// ImmutableAssets Cache files under `/assets/` with a content hash in their name for a year as immutable (SPEC "Serving"). Only set it when every such name changes whenever its content does.
+	// ImmutableAssets Cache files under `/assets/` with a content hash in their name for a year as immutable (SPEC "Serving"). Only set it when every such name changes whenever its content does. Defaults to false, or with `path` to the base deploy's setting.
 	ImmutableAssets *bool   `json:"immutableAssets,omitempty"`
 	Message         *string `json:"message,omitempty"`
 
-	// Spa Serve `/index.html` for missing extensionless paths.
+	// Path Replace only this prefix of the site, keeping the active deploy's files outside it (see `createDeploy`).
+	//
+	// Examples: /mockup-x/
+	Path *DeployPath `json:"path,omitempty"`
+
+	// Spa Serve `/index.html` for missing extensionless paths. Defaults to false, or with `path` to the base deploy's setting.
 	Spa *bool `json:"spa,omitempty"`
 }
 
@@ -556,6 +562,11 @@ type Deploy struct {
 	ImmutableAssets bool    `json:"immutableAssets"`
 	Message         *string `json:"message,omitempty"`
 
+	// Path The prefix a path deploy replaced, keeping the rest of its base. Absent for a full deploy. Either way the deploy lists every file the site serves while it is active.
+	//
+	// Examples: /mockup-x/
+	Path *DeployPath `json:"path,omitempty"`
+
 	// Spa Whether missing paths without a file extension serve `/index.html` while this deploy is active.
 	Spa bool `json:"spa"`
 
@@ -578,6 +589,11 @@ type DeployPage struct {
 	// Examples: c2l0ZTpkb2Nz
 	NextCursor *Cursor `json:"nextCursor,omitempty"`
 }
+
+// DeployPath A directory prefix starting and ending with `/`, such as `/mockup-x/`: never `/` itself, with no empty, `.` or `..` segments, no control or invisible format characters, and never under `/.wardlock/`. Matched byte for byte against deploy paths.
+//
+// Examples: /mockup-x/
+type DeployPath = string
 
 // DnsRecord defines model for DnsRecord.
 type DnsRecord struct {
