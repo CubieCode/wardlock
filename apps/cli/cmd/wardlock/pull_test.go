@@ -142,6 +142,27 @@ func TestPullNonEmptyDir(t *testing.T) {
 	}
 }
 
+// A site name from the server names the default DIR, so one that is not
+// a plain site name is refused before anything is written.
+func TestPullRefusesInvalidSiteName(t *testing.T) {
+	srv := newFakeAPI(t)
+	s := srv.addSite("docs", "")
+	srv.publish(s, map[string]string{"index.html": "x"})
+	s.site.Name = "../escape"
+	a, _, _ := ciApp(t, srv)
+
+	err := run(t.Context(), a, []string{"pull", "docs"})
+	if err == nil || !strings.Contains(err.Error(), "invalid site name") {
+		t.Fatalf("pull with a bad site name: %v", err)
+	}
+	if len(srv.downloads) != 0 {
+		t.Fatalf("downloaded %v", srv.downloads)
+	}
+	if _, err := os.Stat(filepath.Join(workDir(t, a), "..", "escape")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("created a directory outside the working directory: %v", err)
+	}
+}
+
 func TestPullDeployAndPath(t *testing.T) {
 	srv := newFakeAPI(t)
 	s := srv.addSite("docs", "")
