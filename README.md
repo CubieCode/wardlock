@@ -80,7 +80,7 @@ Then open:
 <details>
 <summary>Go import paths</summary>
 
-The Go modules use vanity import paths on `wardlock.nz`, which does not serve `go-import` metadata yet. Local builds work because `go.work` lists every module and each consuming `go.mod` has a `replace` pointing at `packages/apiclient-go`. See [deployment](docs/DEPLOYMENT.md#go-import-paths).
+The Go modules use vanity import paths on `wardlock.nz`, which serves their `go-import` metadata from [`home-site/`](home-site/README.md). Local builds use the workspace: `go.work` lists every module and each consuming `go.mod` has a `replace` pointing at `packages/apiclient-go`. See [deployment](docs/DEPLOYMENT.md#go-import-paths).
 
 </details>
 

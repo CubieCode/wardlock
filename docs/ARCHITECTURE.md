@@ -724,7 +724,7 @@ flowchart LR
 <details>
 <summary>Why the modules use replace directives</summary>
 
-Because that domain does not yet serve `go-import` metadata, the server and CLI `go.mod` files `replace wardlock.nz/apiclient => ../../packages/apiclient-go`: `go.work` covers workspace builds, and the `replace` covers `GOWORK=off` builds and `go mod tidy`. (A `replace` in `go.work` itself is rejected by Go for a module the workspace also uses.)
+`wardlock.nz` serves the `go-import` metadata (`home-site/`), but `main` builds against the client in this repository, not a published version: the server and CLI `go.mod` files `replace wardlock.nz/apiclient => ../../packages/apiclient-go`. `go.work` covers workspace builds, and the `replace` covers `GOWORK=off` builds and `go mod tidy`. Only a release commit drops the `replace` directives and requires a tagged client (DEPLOYMENT "Releases and module tags"). (A `replace` in `go.work` itself is rejected by Go for a module the workspace also uses.)
 
 </details>
 
