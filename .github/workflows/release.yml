@@ -68,6 +68,18 @@ jobs:
         run: |
           GOWORK=off GOFLAGS= GOBIN="$RUNNER_TEMP/syft" go -C "$RUNNER_TEMP" install github.com/anchore/syft/cmd/syft@v1.52.0
           echo "$RUNNER_TEMP/syft" >> "$GITHUB_PATH"
+      - name: Choose the snapshot's base version
+        # GoReleaser versions a snapshot from the nearest tag, but main's
+        # history carries only the module tags (packages/apiclient-go/vX.Y.Z,
+        # not semver to GoReleaser); vX.Y.Z sits on the release commit. Use
+        # the pushed tag, else the newest vX.Y.Z (v0.0.0 before the first).
+        run: |
+          if [[ $GITHUB_REF_TYPE == tag ]]; then
+            tag=$GITHUB_REF_NAME
+          else
+            tag=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n 1)
+          fi
+          echo "GORELEASER_CURRENT_TAG=${tag:-v0.0.0}" >> "$GITHUB_ENV"
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser

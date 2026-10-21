@@ -149,9 +149,10 @@ Give the token the narrowest scope the provider allows and nothing else:
 
 ## Install a release binary
 
-Releases are not published yet; see the [launch checklist](LAUNCH-CHECKLIST.md). When they are, [`deploy/install.sh`](../deploy/install.sh) installs the binary for this machine (Linux or macOS) after checking the archive against `checksums.txt`; it refuses a missing or mismatched checksum and never runs `sudo` itself:
+Releases are on [GitHub](https://github.com/CubieCode/wardlock/releases). [`deploy/install.sh`](../deploy/install.sh) installs the binary for this machine (Linux or macOS) after checking the archive against `checksums.txt`; it refuses a missing or mismatched checksum and never runs `sudo` itself. With no options it installs the latest `wardlock` CLI to `/usr/local/bin`:
 
 ```sh
+curl -fsSLO https://raw.githubusercontent.com/CubieCode/wardlock/main/deploy/install.sh
 sh install.sh --version 0.1.0 --component wardlockd   # or wardlock (default), or all
 sh install.sh --component all --dir ~/.local/bin      # latest release, no root
 ```
@@ -220,20 +221,27 @@ The per-address limit on sign-in emails (5 per hour) counts every request for th
 
 ## Docker
 
-[`deploy/Dockerfile`](../deploy/Dockerfile) packages the static `wardlockd` into a distroless image that runs as the `nonroot` user (uid 65532) with data in the `/data` volume; [`deploy/compose.yaml`](../deploy/compose.yaml) is an example. No images are published yet, so build a snapshot and point the example at it:
+Release images are multi-arch (`linux/amd64`, `linux/arm64`) distroless images at `ghcr.io/cubiecode/wardlock:<version>` and `:latest`, built from [`deploy/Dockerfile`](../deploy/Dockerfile). They run as the `nonroot` user (uid 65532) with data in the `/data` volume; [`deploy/compose.yaml`](../deploy/compose.yaml) is an example:
 
 ```sh
-goreleaser release --snapshot --clean   # images ghcr.io/cubiecode/wardlock:<version>-amd64 and -arm64
 export WARDLOCK_SECRET=$(openssl rand -base64 32 | tr '+/' '-_')   # keep it; see Backups
-WARDLOCK_IMAGE=ghcr.io/cubiecode/wardlock:<version>-amd64 docker compose -f deploy/compose.yaml up -d
+WARDLOCK_IMAGE=ghcr.io/cubiecode/wardlock:0.1.0 docker compose -f deploy/compose.yaml up -d
 curl http://127.0.0.1:8080/healthz
 curl http://127.0.0.1:9740/readyz      # the operator listener; see Health, readiness and metrics
 ```
 
 <details>
-<summary>Release images and the example's hardening</summary>
+<summary>The example's hardening, and running a snapshot instead</summary>
 
-Release images will be multi-arch (`linux/amd64`, `linux/arm64`) at `ghcr.io/cubiecode/wardlock:<version>` and `:latest`. The example compose file has a read-only root filesystem, all capabilities dropped and one volume for data.
+The example compose file has a read-only root filesystem, all capabilities dropped and one volume for data. Check a release image's signature with `gh attestation verify oci://ghcr.io/cubiecode/wardlock:<version> --repo CubieCode/wardlock` ([Verifying a release](#verifying-a-release)).
+
+To run an unreleased commit, build a snapshot and point the example at it. `GORELEASER_CURRENT_TAG` names the newest release, since the nearest tag on `main` is a module tag:
+
+```sh
+GORELEASER_CURRENT_TAG=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n 1) \
+  goreleaser release --snapshot --clean   # images ghcr.io/cubiecode/wardlock:<version>-amd64 and -arm64
+WARDLOCK_IMAGE=ghcr.io/cubiecode/wardlock:<version>-amd64 docker compose -f deploy/compose.yaml up -d
+```
 
 </details>
 
@@ -307,16 +315,28 @@ Create an API token (not the global API key) with _Zone → DNS → Edit_ and _Z
 
 ### Configure and start
 
-Until a release image is published, build one from source on the server (or anywhere, then `docker save` and `docker load`). The `source` target of [`deploy/Dockerfile`](../deploy/Dockerfile) builds the dashboard and `wardlockd` into the same distroless image as the release:
+Clone the repository on the server. `compose.yaml` runs the release image `ghcr.io/cubiecode/wardlock:<version>`, pinned by version, so nothing is built:
 
 ```sh
 sudo git clone https://github.com/CubieCode/wardlock /opt/wardlock
+```
+
+<details>
+<summary>Building the image from source instead</summary>
+
+The `source` target of [`deploy/Dockerfile`](../deploy/Dockerfile) builds the dashboard and `wardlockd` into the same distroless image as the release, on the server or anywhere else (then `docker save` and `docker load`). A `.env` beside `compose.yaml` points the stack at it:
+
+```sh
 cd /opt/wardlock
 sudo docker build -f deploy/Dockerfile --target source -t wardlock:source .
 echo WARDLOCK_IMAGE=wardlock:source | sudo tee deploy/vps/.env
 ```
 
-Once releases exist, skip the build and leave `.env` out: `compose.yaml` names `ghcr.io/cubiecode/wardlock:<version>`. Then configure:
+Delete `deploy/vps/.env` to go back to the release image.
+
+</details>
+
+Then configure:
 
 ```sh
 cd /opt/wardlock/deploy/vps
@@ -1047,7 +1067,9 @@ Module tags are prefixed with the module's directory, the fourth `go-import` fie
 2. In `apps/cli/go.mod` and `apps/server/go.mod`, drop the `replace wardlock.nz/apiclient` directives, require `wardlock.nz/apiclient vX.Y.Z` where it is used, and run `GOWORK=off go mod tidy` so `go.sum` records the client's hash (the release owner holds the lockfile gate for this). Commit.
 3. Tag that commit `apps/cli/vX.Y.Z` and `apps/server/vX.Y.Z` and push those tags (with `packages/apiclient-go/vX.Y.Z`). Module tags never start the publish job.
 4. Tag the same commit `vX.Y.Z` and push that tag on its own (`git push origin vX.Y.Z`). GitHub creates no push events when more than three tags are pushed at once, so pushing every tag together can skip the release run. The tag push starts the release workflow: `snapshot` and `module-tags` run first, then `publish` logs in to ghcr.io with the workflow's `GITHUB_TOKEN`, pushes `ghcr.io/cubiecode/wardlock:X.Y.Z` and `:latest`, creates a draft GitHub release with the archives, SBOMs and `checksums.txt`, and signs the archives, SBOMs and image with artefact attestations ([Verifying a release](#verifying-a-release)).
-5. Check the draft release, add the release notes and publish it by hand. After the first image push, set the ghcr.io package's visibility.
+5. Check the draft release, add the release notes (`docs/releases/vX.Y.Z.md`, with relative links made absolute, since they break on a release page) and publish it by hand. The ghcr.io package is public; it was made so after the first push, which needed the organisation's package settings to allow public packages.
+
+Do not fetch `wardlock.nz/apiclient@vX.Y.Z` (with `go`, GoReleaser or a build) before its tag is pushed: the Go module proxy caches the "not found" answer for a few minutes, and `go install` fails until it expires.
 
 Main keeps its `replace` directives; only the release commit drops them.
 
@@ -1058,6 +1080,6 @@ Main keeps its `replace` directives; only the release commit drops them.
 
 [`scripts/test-module-tags.sh`](../scripts/test-module-tags.sh) proves this scheme without publishing: it makes the release commit and tags in a temporary clone, serves that clone with `git daemon` and answers `wardlock.nz/<module>?go-get=1` from a local proxy, then runs `go install` for both commands. It also checks that an unprefixed tag and a tag on a commit with `replace` directives fail. The tags exist only in the deleted clone. The release workflow runs it on every pull request.
 
-[`.goreleaser.yaml`](../.goreleaser.yaml) builds every artefact, and [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs `goreleaser release --snapshot --clean` on pull requests and main, then [`scripts/release-smoke.sh`](../scripts/release-smoke.sh) checks the snapshot: all 12 archives and SBOMs match `checksums.txt`, `install.sh` installs them and rejects a bad checksum, and the image runs as uid 65532 and answers `/healthz`. Pull requests, main and manual runs never publish: snapshots never push, the image and GitHub release are skipped outside snapshots unless `WARDLOCK_PUBLISH=true`, and the `publish` job that sets it runs only when `github.event_name == 'push'` and the ref starts with `refs/tags/v` in `CubieCode/wardlock`. The workflow triggers on tags matching `v*`; GitHub matches tag filters against the whole tag name and `*` does not match `/`, so `apps/cli/vX.Y.Z`, `apps/server/vX.Y.Z` and `packages/apiclient-go/vX.Y.Z` do not start it. Only `publish` gets `contents: write` and `packages: write`; every other job has `contents: read`. GoReleaser is told the triggering tag (`GORELEASER_CURRENT_TAG`), since the release commit also carries the module tags. The GitHub release is always a draft.
+[`.goreleaser.yaml`](../.goreleaser.yaml) builds every artefact, and [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs `goreleaser release --snapshot --clean` on pull requests and main, then [`scripts/release-smoke.sh`](../scripts/release-smoke.sh) checks the snapshot: all 12 archives and SBOMs match `checksums.txt`, `install.sh` installs them and rejects a bad checksum, and the image runs as uid 65532 and answers `/healthz`. Pull requests, main and manual runs never publish: snapshots never push, the image and GitHub release are skipped outside snapshots unless `WARDLOCK_PUBLISH=true`, and the `publish` job that sets it runs only when `github.event_name == 'push'` and the ref starts with `refs/tags/v` in `CubieCode/wardlock`. The workflow triggers on tags matching `v*`; GitHub matches tag filters against the whole tag name and `*` does not match `/`, so `apps/cli/vX.Y.Z`, `apps/server/vX.Y.Z` and `packages/apiclient-go/vX.Y.Z` do not start it. Only `publish` gets `contents: write` and `packages: write`; every other job has `contents: read`. GoReleaser is told the triggering tag (`GORELEASER_CURRENT_TAG`), since the release commit also carries the module tags; snapshots outside a tag run are told the newest `vX.Y.Z` tag, because `main`'s history carries only the module tags, which GoReleaser cannot parse as versions. The GitHub release is always a draft.
 
 </details>
