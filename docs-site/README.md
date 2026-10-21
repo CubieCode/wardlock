@@ -23,7 +23,7 @@ This writes `docs-site/dist` and then checks every link in it without network ac
 
 ## Deploy
 
-Deploying is a manual, authorised step; CI never deploys (the workflow's deploy job is disabled). With the CLI logged in to the target instance:
+The `Docs site` workflow's deploy job publishes the site on every push to `main` that changes `docs/` or `docs-site/`, and on a manual run from `main`; pull requests only build. It deploys to the instance in the `WARDLOCK_SERVER` repository variable with the `WARDLOCK_TOKEN` secret, an API token with the deploy scope only. To deploy by hand instead, with the CLI logged in to the target instance:
 
 ```sh
 pnpm docs:build

@@ -30,7 +30,7 @@ These lines need a decision rather than work. The recommendation is the checklis
 | CLA Assistant is enabled on the repository                       | @OhYea777 | open  | `gh api repos/CubieCode/wardlock/hooks` returns `[]` (no CLA Assistant webhook) and no CLA status appears on `main`'s checks. Enable it at cla-assistant.io with the gist above, then open a test PR from an account outside CubieCode                                                                                                                                                                               |
 
 <details>
-<summary>Done (7)</summary>
+<summary>Done (8)</summary>
 
 | Check                                                           | Owner     | State | Evidence                                                                                                                                                                                                                                                  |
 | --------------------------------------------------------------- | --------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -143,22 +143,21 @@ bash scripts/test-module-tags.sh
 
 ## Documentation
 
-| Check              | Owner     | State | Evidence                                                                                                                                                                                                                                 |
-| ------------------ | --------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Docs site deployed | @OhYea777 | open  | Deploy job disabled (`.github/workflows/docs-site.yml:54` `if: false`); needs an instance, the `WARDLOCK_SERVER` variable and `WARDLOCK_TOKEN` secret (neither exists) and explicit authorisation; manual steps in `docs-site/README.md` |
+Every documentation line is done.
 
 <details>
 <summary>Done (7)</summary>
 
-| Check                                    | Owner     | State | Evidence                                                                                                                                                                                                                          |
-| ---------------------------------------- | --------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| README is accurate for the alpha         | @OhYea777 | done  | O4.6: `README.md:7` carries the alpha notice and "What it does" describes built features. `README.md:38` still says `wardlock.nz` serves no `go-import` metadata, which stays true until that launch task is done; update it then |
-| CONTRIBUTING is accurate for the alpha   | @OhYea777 | done  | O4.6: `CONTRIBUTING.md:3` says alpha                                                                                                                                                                                              |
-| DEPLOYMENT is accurate for the alpha     | @OhYea777 | done  | O4.6: `docs/DEPLOYMENT.md:3` says alpha. Its statements that releases and images are not published and that `wardlock.nz` serves no metadata stay true until the release; update them with it                                     |
-| SPEC is accurate for the alpha           | @OhYea777 | done  | A2.7 reconciled SPEC with the code (PR #65); O4.6 corrected the remaining stale statements and replaced the "built so far" list                                                                                                   |
-| Docs site builds with every link checked | @OhYea777 | done  | `pnpm check` includes `pnpm docs:build` and its link check, exit 0; `Docs site` workflow `build` on PRs                                                                                                                           |
-| Docs site carries an alpha warning       | @OhYea777 | done  | O4.6: the home page notice (`docs-site/src/build.mjs:56`) and every page's footer (`docs-site/src/render.mjs:187`) say alpha                                                                                                      |
-| Alpha warnings present                   | @OhYea777 | done  | `README.md:7`, `SECURITY.md:3`, `docs/DEPLOYMENT.md:3`, both docs-site pages above                                                                                                                                                |
+| Check                                    | Owner     | State | Evidence                                                                                                                                                                                                                                                                      |
+| ---------------------------------------- | --------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| README is accurate for the alpha         | @OhYea777 | done  | O4.6: `README.md:7` carries the alpha notice and "What it does" describes built features. `README.md:38` still says `wardlock.nz` serves no `go-import` metadata, which stays true until that launch task is done; update it then                                             |
+| CONTRIBUTING is accurate for the alpha   | @OhYea777 | done  | O4.6: `CONTRIBUTING.md:3` says alpha                                                                                                                                                                                                                                          |
+| DEPLOYMENT is accurate for the alpha     | @OhYea777 | done  | O4.6: `docs/DEPLOYMENT.md:3` says alpha. Its statements that releases and images are not published and that `wardlock.nz` serves no metadata stay true until the release; update them with it                                                                                 |
+| SPEC is accurate for the alpha           | @OhYea777 | done  | A2.7 reconciled SPEC with the code (PR #65); O4.6 corrected the remaining stale statements and replaced the "built so far" list                                                                                                                                               |
+| Docs site deployed                       | @OhYea777 | done  | Deployed 2026-10-21 by hand with `wardlock deploy` as site `docs` on the operator's instance, served at `docs.wardlock.nz`; the `Docs site` workflow's deploy job now publishes it from `main` with the `WARDLOCK_SERVER` variable and `WARDLOCK_TOKEN` secret (deploy scope) |
+| Docs site builds with every link checked | @OhYea777 | done  | `pnpm check` includes `pnpm docs:build` and its link check, exit 0; `Docs site` workflow `build` on PRs                                                                                                                                                                       |
+| Docs site carries an alpha warning       | @OhYea777 | done  | O4.6: the home page notice (`docs-site/src/build.mjs:56`) and every page's footer (`docs-site/src/render.mjs:187`) say alpha                                                                                                                                                  |
+| Alpha warnings present                   | @OhYea777 | done  | `README.md:7`, `SECURITY.md:3`, `docs/DEPLOYMENT.md:3`, both docs-site pages above                                                                                                                                                                                            |
 
 </details>
 
