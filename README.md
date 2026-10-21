@@ -46,6 +46,28 @@ Alpha. Every v1 feature is built; the open items are fewer object-store calls, a
 
 It is built for agencies and freelancers sending client previews, teams sharing internal reports and docs, and anyone sharing AI-generated HTML reports who wants a permanent link to put in Linear or similar tools.
 
+## Agent skill
+
+[![skills.sh](https://skills.sh/b/CubieCode/wardlock)](https://skills.sh/CubieCode/wardlock)
+
+`wardlock-publish` lets a coding agent publish a page it generated (a mockup, prototype or report) privately under one of your sites and hand you a share link that opens only that page. It needs the `wardlock` CLI, logged in to your server.
+
+```sh
+npx skills add CubieCode/wardlock --skill wardlock-publish
+```
+
+<details>
+<summary>What the skill does</summary>
+
+- Checks that `wardlock` is installed and logged in, and asks you to run `wardlock login` rather than logging in itself.
+- Publishes only to a protected root site. For a new one it deploys a placeholder, protects the site with share links, and only then deploys content, so nothing is ever public.
+- Deploys each page into its own path (`/<slug>/`) with `wardlock deploy --path`, never overwriting another page unless you ask, and creates a share link scoped to that path. It shows you the link once and never writes it to a file or log.
+- Lists, updates and removes the pages it published. It does not generate content.
+
+The skill is [`skills/wardlock-publish`](skills/wardlock-publish/SKILL.md), MIT under [LICENSE](LICENSE). The repository's own skills in `.agents/skills/` are for working on Wardlock and are not offered for installation.
+
+</details>
+
 ## Stack
 
 | Area      | Choice                                                                                                                |
@@ -137,7 +159,8 @@ scripts/              Checks, codegen, dev runner, worktree setup
 tools/                Pinned Go tool versions (sqlc, oapi-codegen, linters)
 docs/                 Spec, architecture, modules, security model, deployment
 docs-site/            Static docs site generated from docs/ (MIT)
-.agents/skills/       Agent skills; .claude/skills links here
+skills/               Public agent skill: wardlock-publish (MIT)
+.agents/skills/       Agent skills for working on the repository; .claude/skills links here
 ```
 
 </details>

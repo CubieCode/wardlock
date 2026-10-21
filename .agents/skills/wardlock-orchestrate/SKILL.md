@@ -1,6 +1,8 @@
 ---
 name: wardlock-orchestrate
 description: Coordinate explicitly assigned parallel Wardlock roadmap items in Orca worktrees, review their PRs, resolve dependencies and merge when authorised.
+metadata:
+  internal: true
 ---
 
 # Roadmap coordination

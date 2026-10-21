@@ -1,6 +1,8 @@
 ---
 name: wardlock-access
-description: Security rules for Wardlock's access layer: tokens, share links, cookies, the reserved path, OAuth, rate limits, response headers, access logging and the required test matrix. Load for any change touching internal/edge or internal/access.
+description: "Security rules for Wardlock's access layer: tokens, share links, cookies, the reserved path, OAuth, rate limits, response headers, access logging and the required test matrix. Load for any change touching internal/edge or internal/access."
+metadata:
+  internal: true
 ---
 
 # Access layer

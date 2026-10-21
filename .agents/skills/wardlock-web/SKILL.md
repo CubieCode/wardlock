@@ -1,6 +1,8 @@
 ---
 name: wardlock-web
 description: Design, build or review Wardlock dashboard screens and the packages/ui design system, including Mobbin design research, components, tokens, API access, states, accessibility and the desktop/mobile and light/dark gates.
+metadata:
+  internal: true
 ---
 
 # Dashboard and design system
