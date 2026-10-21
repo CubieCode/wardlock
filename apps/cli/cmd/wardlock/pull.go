@@ -93,6 +93,11 @@ func runPull(ctx context.Context, a *app, args []string) error {
 	if err != nil {
 		return err
 	}
+	// The default DIR is named after the site, so a name from the server
+	// must be one plain path segment, never something like "../x".
+	if !siteNamePattern.MatchString(site.Name) {
+		return fmt.Errorf("the server returned an invalid site name %q", site.Name)
+	}
 	dir := filepath.Join(wd, site.Name)
 	if len(pos) == 2 {
 		if dir = pos[1]; !filepath.IsAbs(dir) {
