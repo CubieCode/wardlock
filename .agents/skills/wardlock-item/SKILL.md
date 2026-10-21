@@ -1,6 +1,8 @@
 ---
 name: wardlock-item
 description: Implement one Wardlock roadmap item in an Orca worktree, from claiming it through tests, status and PR. Use only for an explicit implementation assignment.
+metadata:
+  internal: true
 ---
 
 # One roadmap item

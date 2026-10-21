@@ -1,6 +1,8 @@
 ---
 name: wardlock-go-service
 description: Write or review Go in the Wardlock server, CLI or API client, covering package layout, errors, logging, storage behind repository interfaces, portable SQL, tests and owner isolation.
+metadata:
+  internal: true
 ---
 
 # Go service code
