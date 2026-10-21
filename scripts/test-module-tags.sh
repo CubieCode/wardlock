@@ -57,7 +57,13 @@ git -C "$repo" config user.email 'module-tag-test@wardlock.invalid'
 git -C "$repo" config commit.gpgsign false
 git -C "$repo" config tag.gpgsign false
 
-# Wrong on purpose: HEAD still has the development replace directives.
+# Wrong on purpose: a commit that still has the development replace
+# directive. On main HEAD has it; on a release commit, which has dropped it,
+# add it back in a commit of its own so the check still means something.
+if ! grep -q '^replace wardlock.nz/apiclient ' "$repo/apps/cli/go.mod"; then
+  (cd "$repo/apps/cli" && go mod edit -replace=wardlock.nz/apiclient=../../packages/apiclient-go)
+  git -C "$repo" commit --quiet -am "Development replace directive (module tag test)"
+fi
 git -C "$repo" tag apps/cli/v0.0.9-tagtest.1
 
 # The release, in the order DEPLOYMENT describes.
