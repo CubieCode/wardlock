@@ -5,6 +5,7 @@ package storetest
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -397,6 +398,32 @@ func deploysContract(t *testing.T, open Opener) {
 		wantErr(t, err, store.ErrNotFound)
 		_, err = f.r.Deploys.HeldSize(t.Context(), o.ID, f.site(o.ID).ID, d.ID, sha('c'))
 		wantErr(t, err, store.ErrNotFound)
+	})
+	t.Run("HeldBlobSizes", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		a, b := f.owner(), f.owner()
+		f.must(f.r.Deploys.RecordUpload(t.Context(), a.ID, store.Blob{SHA256: sha('a'), Size: 5, CreatedAt: now}))
+		f.must(f.r.Deploys.RecordUpload(t.Context(), a.ID, store.Blob{SHA256: sha('b'), Size: 0, CreatedAt: now}))
+		// Held only by B: A's answer leaves it out.
+		f.must(f.r.Deploys.RecordUpload(t.Context(), b.ID, store.Blob{SHA256: sha('c'), Size: 7, CreatedAt: now}))
+		hashes := []string{sha('a'), sha('b'), sha('c'), sha('d')}
+		got, err := f.r.Deploys.HeldBlobSizes(t.Context(), a.ID, hashes)
+		if want := map[string]int64{sha('a'): 5, sha('b'): 0}; err != nil || !maps.Equal(got, want) {
+			t.Fatalf("HeldBlobSizes(A) = %v, %v; want %v", got, err, want)
+		}
+		got, err = f.r.Deploys.HeldBlobSizes(t.Context(), b.ID, hashes)
+		if want := map[string]int64{sha('c'): 7}; err != nil || !maps.Equal(got, want) {
+			t.Fatalf("HeldBlobSizes(B) = %v, %v; want %v", got, err, want)
+		}
+		got, err = f.r.Deploys.HeldBlobSizes(t.Context(), store.NewID(), hashes)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("HeldBlobSizes(unknown owner) = %v, %v; want none", got, err)
+		}
+		got, err = f.r.Deploys.HeldBlobSizes(t.Context(), a.ID, nil)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("HeldBlobSizes(no hashes) = %v, %v; want none", got, err)
+		}
 	})
 	t.Run("RecordUpload", func(t *testing.T) {
 		t.Parallel()

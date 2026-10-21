@@ -65,6 +65,13 @@ WHERE deploy_files.deploy_id = sqlc.arg(deploy_id) AND deploy_files.sha256 = sql
   AND deploys.site_id = sqlc.arg(site_id) AND sites.owner_id = sqlc.arg(owner_id)
 LIMIT 1;
 
+-- The stored size of a blob the owner has uploaded; no row for a hash only
+-- other owners hold, so the answer says nothing about their blobs.
+-- name: OwnerHeldBlobSize :one
+SELECT blobs.size FROM owner_blobs
+JOIN blobs ON blobs.sha256 = owner_blobs.sha256
+WHERE owner_blobs.owner_id = sqlc.arg(owner_id) AND owner_blobs.sha256 = sqlc.arg(sha256);
+
 -- name: ManifestBlobSize :one
 SELECT deploy_files.size FROM deploy_files
 JOIN deploys ON deploys.id = deploy_files.deploy_id

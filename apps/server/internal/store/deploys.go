@@ -114,6 +114,10 @@ type Deploys interface {
 	// RecordUpload; ErrNotFound otherwise, as for a hash the deploy does not
 	// list.
 	HeldSize(ctx context.Context, ownerID, siteID, deployID, sha256 string) (int64, error)
+	// HeldBlobSizes returns the stored size of each of hashes that ownerID
+	// has recorded with RecordUpload. A hash it has not, including one only
+	// other owners hold, is left out.
+	HeldBlobSizes(ctx context.Context, ownerID string, hashes []string) (map[string]int64, error)
 	// RecordUpload records that ownerID uploaded b with a verified hash:
 	// the blob row and the owner's claim to it, in one transaction.
 	// Recording either again is a no-op.
@@ -364,6 +368,21 @@ func (r deploysRepo) HeldSize(ctx context.Context, ownerID, siteID, deployID, sh
 		OwnerID:  ownerID,
 	})
 	return size, mapErr("find held manifest blob", err)
+}
+
+func (r deploysRepo) HeldBlobSizes(ctx context.Context, ownerID string, hashes []string) (map[string]int64, error) {
+	sizes := make(map[string]int64)
+	for _, h := range hashes {
+		size, err := r.db.q.OwnerHeldBlobSize(ctx, sqlcgen.OwnerHeldBlobSizeParams{OwnerID: ownerID, Sha256: h})
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, mapErr("find held blob", err)
+		}
+		sizes[h] = size
+	}
+	return sizes, nil
 }
 
 func (r deploysRepo) RecordUpload(ctx context.Context, ownerID string, b Blob) error {

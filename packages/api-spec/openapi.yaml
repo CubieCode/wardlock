@@ -1118,7 +1118,11 @@ paths:
         Paths are normalised to forward slashes and must be valid UTF-8,
         without `..`, empty segments, control characters or a leading
         `.wardlock/`; a rejected path answers `400 invalid_path` with the
-        path as `target`. A duplicate path answers `400 invalid_manifest`.
+        path as `target`. A duplicate path answers `400 invalid_manifest`,
+        and so does a file whose content (its `sha256`) the owner has already
+        uploaded but whose listed `size` is not that content's size, with the
+        path as `target` and a message naming both sizes; only the owner's
+        own uploads are compared, never another owner's.
         Exceeding the file count, file size or total size limits, or the
         lower per-file limit for video files (by extension: `.mp4`, `.webm`,
         `.mov` and the like), answers `413 limit_exceeded` with the file's
@@ -1142,7 +1146,9 @@ paths:
         the prefix's files alone. `spa` and `immutableAssets` carry over from
         the base unless given. Limits, blocked file types, the video limit
         and quotas apply to the merged deploy exactly as to a full one, and
-        `fileCount` and `totalSize` describe it. A prefix that is `/`, does
+        `fileCount` and `totalSize` describe it; listed sizes are checked
+        against the owner's uploads for `files` only, since the base's were
+        checked when it was created. A prefix that is `/`, does
         not start and end with `/`, breaks the path rules or lies under
         `/.wardlock/` answers `400 invalid_path` with target `path`.
         Activation refuses a path deploy with `409 stale_base` once the site

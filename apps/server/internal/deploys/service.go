@@ -159,6 +159,9 @@ func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manife
 	if err := s.c.Limits.validate(&m); err != nil {
 		return store.Deploy{}, nil, err
 	}
+	if err := s.checkHeldSizes(ctx, ownerID, &m); err != nil {
+		return store.Deploy{}, nil, err
+	}
 	d.FileCount = len(m.Files)
 	d.SPA = m.SPA != nil && *m.SPA
 	d.ImmutableAssets = m.ImmutableAssets != nil && *m.ImmutableAssets
@@ -226,6 +229,43 @@ func (s *Service) merge(ctx context.Context, ownerID string, site store.Site, m 
 		}
 	}
 	m.Files = files
+	return nil
+}
+
+// checkHeldSizes refuses a manifest that lists a hash the owner already
+// holds with a size other than the stored blob's: the hash is not uploaded
+// again, so nothing else would catch it, and the edge, limits and quotas
+// all trust the listed size. Only the owner's own blobs are compared, so the
+// answer says nothing about other owners'. A path deploy checks only the
+// files under its prefix; the base's were checked when the base was created,
+// and validate has made any base file sharing one of their hashes list the
+// same size.
+func (s *Service) checkHeldSizes(ctx context.Context, ownerID string, m *Manifest) error {
+	dir := ""
+	if m.Path != "" {
+		dir = m.Path[1:]
+	}
+	var hashes []string
+	seen := make(map[string]bool, len(m.Files))
+	for _, f := range m.Files {
+		if strings.HasPrefix(f.Path, dir) && !seen[f.SHA256] {
+			seen[f.SHA256] = true
+			hashes = append(hashes, f.SHA256)
+		}
+	}
+	if len(hashes) == 0 {
+		return nil
+	}
+	held, err := s.c.Deploys.HeldBlobSizes(ctx, ownerID, hashes)
+	if err != nil {
+		return storeErr("find held blobs", err)
+	}
+	for _, f := range m.Files {
+		size, ok := held[f.SHA256]
+		if ok && size != f.Size {
+			return &TargetError{Err: ErrInvalidManifest, Target: f.Path, Message: fmt.Sprintf("%q is listed with size %d, but its sha256 matches a file you have already uploaded of size %d.", f.Path, f.Size, size)}
+		}
+	}
 	return nil
 }
 

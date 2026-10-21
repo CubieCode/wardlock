@@ -482,6 +482,26 @@ func (q *Queries) MissingOwnerBlobs(ctx context.Context, arg MissingOwnerBlobsPa
 	return items, nil
 }
 
+const ownerHeldBlobSize = `-- name: OwnerHeldBlobSize :one
+SELECT blobs.size FROM owner_blobs
+JOIN blobs ON blobs.sha256 = owner_blobs.sha256
+WHERE owner_blobs.owner_id = ?1 AND owner_blobs.sha256 = ?2
+`
+
+type OwnerHeldBlobSizeParams struct {
+	OwnerID string
+	Sha256  string
+}
+
+// The stored size of a blob the owner has uploaded; no row for a hash only
+// other owners hold, so the answer says nothing about their blobs.
+func (q *Queries) OwnerHeldBlobSize(ctx context.Context, arg OwnerHeldBlobSizeParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, ownerHeldBlobSize, arg.OwnerID, arg.Sha256)
+	var size int64
+	err := row.Scan(&size)
+	return size, err
+}
+
 const previousDeploy = `-- name: PreviousDeploy :one
 SELECT deploys.id FROM deploys
 WHERE deploys.site_id = ?1 AND deploys.activated_at IS NOT NULL AND deploys.id <> ?2
