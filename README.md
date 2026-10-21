@@ -38,7 +38,7 @@ Alpha. Every v1 feature is built; the open items are fewer object-store calls, a
 
 ## What it does
 
-- **Deploy.** `wardlock deploy ./dist docs.example.com` uploads only the files that changed, then switches the site over atomically. Every deploy can be rolled back instantly. TLS certificates are automatic, including wildcards and custom domains.
+- **Deploy.** `wardlock deploy ./dist docs.example.com` uploads only the files that changed, then switches the site over atomically. Every deploy can be rolled back instantly. `wardlock pull docs.example.com` downloads any deploy's files back. TLS certificates are automatic, including wildcards and custom domains.
 - **Share links.** The headline feature: a URL carrying a token (`?t=…`) that opens the page immediately, with no login screen. Links can expire or never expire, have a use limit, carry a label ("Linear ENG-123", "sent to Alice"), be limited to a path, and be revoked or rotated at any time.
 - **Other policies.** Public, password, one-time email code (with address and domain allowlists) and OAuth/OIDC (with email, domain or organisation allowlists), per site or per path.
 - **AI-readable.** Share links work for AI fetch tools, `curl` and link-preview bots, which keep no cookies and run no JavaScript. Every page is also available as Markdown or plain text with `?format=md` or `?format=txt`.

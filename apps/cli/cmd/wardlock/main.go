@@ -36,6 +36,7 @@ var commands = []command{
 	{"deploy", "Publish a directory to a site", runDeploy},
 	{"list", "List your sites, or one site's deploys", runList},
 	{"rollback", "Reactivate an earlier deploy of a site", runRollback},
+	{"pull", "Download the files of a site's deploy", runPull},
 	{"teardown", "Delete a site with all its deploys", runTeardown},
 	{"policy", "Set who may open a site or a path", runPolicy},
 	{"share", "Create, list, revoke and rotate share links", runShare},

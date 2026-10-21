@@ -74,6 +74,7 @@ func failed(err error) (*failure, error) {
 		{deploys.ErrNotActivated, http.StatusConflict, "deploy_not_activated", "This deploy was never activated.", ""},
 		{deploys.ErrNoPreviousDeploy, http.StatusConflict, "no_previous_deploy", "The site has no earlier deploy to roll back to.", ""},
 		{deploys.ErrStaleBase, http.StatusConflict, "stale_base", "Another deploy went live on this site after this path deploy was created; create it again.", ""},
+		{deploys.ErrWithheld, http.StatusUnavailableForLegalReasons, "file_withheld", "The operator of this server has withheld this file, so it cannot be downloaded.", ""},
 		{deploys.ErrSiteUnavailable, http.StatusConflict, "site_unavailable", siteUnavailable, ""},
 		{sites.ErrUnavailable, http.StatusConflict, "site_unavailable", siteUnavailable, ""},
 	} {

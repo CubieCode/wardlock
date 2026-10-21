@@ -228,6 +228,8 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			// Renditions (A2.6) link to the site's base-domain address.
 			Renditions: db.Renditions(),
 			SiteOrigin: func(name string) string { return publicOrigin(name+"."+cfg.BaseDomain, port).String() },
+			// A withheld file is not downloadable either (C1.14).
+			Withheld: quarantine,
 		}),
 		SiteURL: func(host string) string { return publicOrigin(host, port).String() + "/" },
 	}

@@ -73,7 +73,7 @@ func newHandler(ssi StrictServerInterface) http.Handler {
 }
 
 func newLoggedHandler(ssi StrictServerInterface, log *slog.Logger) http.Handler {
-	strict := NewStrictHandlerWithOptions(ssi, []StrictMiddlewareFunc{requireTokenScopes, noStoreSecrets}, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(ssi, []StrictMiddlewareFunc{requireTokenScopes, noStoreSecrets, withDownloadRequest}, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  badRequest,
 		ResponseErrorHandlerFunc: responseError(log),
 	})

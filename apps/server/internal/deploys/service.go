@@ -38,6 +38,9 @@ var (
 	// active deploy, so activating it would drop what went live since; the
 	// client creates the deploy again (C1.13).
 	ErrStaleBase = errors.New("path deploy base is no longer active")
+	// ErrWithheld means content screening has withheld a file on every
+	// site (A2.15), so it is not downloadable either (C1.14).
+	ErrWithheld = errors.New("file withheld by content screening")
 )
 
 // TargetError is an input error about one manifest path or field. Message
@@ -94,6 +97,15 @@ type Config struct {
 	// MaxRenditionSource is the largest HTML file, in bytes, that gets
 	// renditions; 0 means DefaultMaxRenditionSource.
 	MaxRenditionSource int64
+	// Withheld lists the hashes content screening withholds (A2.15), which
+	// Open refuses; nil withholds none.
+	Withheld Withheld
+}
+
+// Withheld reports whether a content hash is quarantined. The moderation
+// Quarantine satisfies it.
+type Withheld interface {
+	Has(sha256 string) bool
 }
 
 // Service creates, uploads, activates, lists and rolls back deploys. Every
@@ -113,7 +125,9 @@ func (s *Service) site(ctx context.Context, ownerID, name string) (store.Site, e
 }
 
 // changeable returns the site unless the operator has taken it down, when
-// deploys, activations and rollbacks are refused with ErrSiteUnavailable.
+// deploys, activations and rollbacks are refused with ErrSiteUnavailable,
+// and so is reading its files (Files, Open): they are kept for the
+// operator, never handed out for rehosting.
 func (s *Service) changeable(ctx context.Context, ownerID, name string) (store.Site, error) {
 	site, err := s.site(ctx, ownerID, name)
 	if err == nil && !site.TakenDownAt.IsZero() {
@@ -400,6 +414,61 @@ func (s *Service) List(ctx context.Context, ownerID, siteName string, before sto
 		return store.Site{}, nil, storeErr("list deploys", err)
 	}
 	return site, deploys, nil
+}
+
+// Files returns up to limit of one of the site's deploys' files, ordered
+// by path, with paths after after ("" for the first page). Any deploy in
+// the site's history can be read, but not on a taken-down site
+// (ErrSiteUnavailable).
+func (s *Service) Files(ctx context.Context, ownerID, siteName, deployID, after string, limit int) ([]store.DeployFile, error) {
+	site, err := s.changeable(ctx, ownerID, siteName)
+	if err != nil {
+		return nil, err
+	}
+	files, err := s.c.Deploys.FilesPage(ctx, ownerID, site.ID, deployID, after, limit)
+	return files, storeErr("list deploy files", err)
+}
+
+// Open opens a file body the deploy lists for download and returns it with
+// its size. The owner must have uploaded the hash too: a pending deploy can
+// list any hash, and content addressing must never hand one owner another's
+// file. A hash the deploy does not list, one the owner never uploaded and a
+// body garbage collection has removed are all ErrNotFound, like a missing
+// site or deploy. A withheld file is ErrWithheld; a taken-down site,
+// ErrSiteUnavailable.
+func (s *Service) Open(ctx context.Context, ownerID, siteName, deployID, hash string) (io.ReadSeekCloser, int64, error) {
+	site, err := s.changeable(ctx, ownerID, siteName)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !ValidHash(hash) {
+		return nil, 0, ErrNotFound
+	}
+	size, err := s.c.Deploys.HeldSize(ctx, ownerID, site.ID, deployID, hash)
+	if err != nil {
+		return nil, 0, storeErr("find held blob", err)
+	}
+	if s.c.Withheld != nil && s.c.Withheld.Has(hash) {
+		return nil, 0, ErrWithheld
+	}
+	// A bucket reports a missing object only on the first read, so ask
+	// first; a body removed between here and that read cuts the download
+	// short, which the client's hash check catches.
+	ok, err := s.c.Blobs.Has(ctx, hash)
+	if err != nil {
+		return nil, 0, fmt.Errorf("check blob: %w", err)
+	}
+	if !ok {
+		return nil, 0, ErrNotFound
+	}
+	body, err := s.c.Blobs.Open(ctx, hash, size)
+	if errors.Is(err, ErrBlobNotFound) {
+		return nil, 0, ErrNotFound
+	}
+	if err != nil {
+		return nil, 0, fmt.Errorf("open blob: %w", err)
+	}
+	return body, size, nil
 }
 
 func (s *Service) now() time.Time { return s.c.Now().UTC().Truncate(time.Millisecond) }

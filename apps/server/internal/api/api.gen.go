@@ -580,6 +580,32 @@ type Deploy struct {
 // DeployStatus `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from.
 type DeployStatus string
 
+// DeployFile defines model for DeployFile.
+type DeployFile struct {
+	// Path The file's path in the site, with forward slashes and no leading slash.
+	//
+	// Examples: docs/install.html
+	Path string `json:"path"`
+
+	// Sha256 A SHA-256 digest as 64 lowercase hex characters.
+	//
+	// Examples: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+	Sha256 Sha256 `json:"sha256"`
+
+	// Size File size in bytes.
+	Size int64 `json:"size"`
+}
+
+// DeployFilePage defines model for DeployFilePage.
+type DeployFilePage struct {
+	Items []DeployFile `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
 // DeployPage defines model for DeployPage.
 type DeployPage struct {
 	Items []Deploy `json:"items"`
@@ -1204,6 +1230,9 @@ type Conflict = Error
 // FileTypeBlocked The body of every error response.
 type FileTypeBlocked = Error
 
+// FileWithheld The body of every error response.
+type FileWithheld = Error
+
 // Forbidden The body of every error response.
 type Forbidden = Error
 
@@ -1257,6 +1286,21 @@ type ListSiteAccessLogParams struct {
 
 // ListDeploysParams defines parameters for ListDeploys.
 type ListDeploysParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// DownloadDeployBlobParams defines parameters for DownloadDeployBlob.
+type DownloadDeployBlobParams struct {
+	// Range One or more byte ranges, as in RFC 9110 (`bytes=0-1023`).
+	Range *string `json:"Range,omitempty"`
+}
+
+// ListDeployFilesParams defines parameters for ListDeployFiles.
+type ListDeployFilesParams struct {
 	// Limit Page size.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 
@@ -1556,9 +1600,15 @@ type ServerInterface interface {
 	// ActivateDeploy Make a pending deploy the site's active deploy.
 	// (POST /api/v0/sites/{site}/deploys/{deployId}/activate)
 	ActivateDeploy(w http.ResponseWriter, r *http.Request, site SiteName, deployId DeployId)
+	// DownloadDeployBlob Download one file body of a deploy.
+	// (GET /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256})
+	DownloadDeployBlob(w http.ResponseWriter, r *http.Request, site SiteName, deployId DeployId, sha256 Sha256, params DownloadDeployBlobParams)
 	// UploadDeployBlob Upload one file body for a pending deploy.
 	// (PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256})
 	UploadDeployBlob(w http.ResponseWriter, r *http.Request, site SiteName, deployId DeployId, sha256 Sha256)
+	// ListDeployFiles List a deploy's files.
+	// (GET /api/v0/sites/{site}/deploys/{deployId}/files)
+	ListDeployFiles(w http.ResponseWriter, r *http.Request, site SiteName, deployId DeployId, params ListDeployFilesParams)
 	// ListDomains List a site's custom domains.
 	// (GET /api/v0/sites/{site}/domains)
 	ListDomains(w http.ResponseWriter, r *http.Request, site SiteName, params ListDomainsParams)
@@ -2253,6 +2303,74 @@ func (siw *ServerInterfaceWrapper) ActivateDeploy(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// DownloadDeployBlob operation middleware
+func (siw *ServerInterfaceWrapper) DownloadDeployBlob(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "deployId" -------------
+	var deployId DeployId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deployId", r.PathValue("deployId"), &deployId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "deployId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "sha256" -------------
+	var sha256 Sha256
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sha256", r.PathValue("sha256"), &sha256, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sha256", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DownloadDeployBlobParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Range" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Range")]; found {
+		var Range string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Range", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Range", valueList[0], &Range, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Range", Err: err})
+			return
+		}
+
+		params.Range = &Range
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DownloadDeployBlob(w, r, site, deployId, sha256, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // UploadDeployBlob operation middleware
 func (siw *ServerInterfaceWrapper) UploadDeployBlob(w http.ResponseWriter, r *http.Request) {
 
@@ -2288,6 +2406,70 @@ func (siw *ServerInterfaceWrapper) UploadDeployBlob(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UploadDeployBlob(w, r, site, deployId, sha256)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDeployFiles operation middleware
+func (siw *ServerInterfaceWrapper) ListDeployFiles(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "deployId" -------------
+	var deployId DeployId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deployId", r.PathValue("deployId"), &deployId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "deployId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListDeployFilesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDeployFiles(w, r, site, deployId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3075,6 +3257,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}", wrapper.GetSite)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/deploys", wrapper.ListDeploys)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/deploys", wrapper.CreateDeploy)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/deploys/{deployId}/files", wrapper.ListDeployFiles)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256}", wrapper.DownloadDeployBlob)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256}", wrapper.UploadDeployBlob)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/deploys/{deployId}/activate", wrapper.ActivateDeploy)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/rollback", wrapper.RollbackSite)
@@ -3112,6 +3296,8 @@ type ConflictJSONResponse Error
 type ErrorJSONResponse Error
 
 type FileTypeBlockedJSONResponse Error
+
+type FileWithheldJSONResponse Error
 
 type ForbiddenJSONResponse Error
 
@@ -5422,6 +5608,187 @@ func (response ActivateDeploydefaultJSONResponse) VisitActivateDeployResponse(w 
 	return err
 }
 
+type DownloadDeployBlobRequestObject struct {
+	Site     SiteName `json:"site"`
+	DeployId DeployId `json:"deployId"`
+	Sha256   Sha256   `json:"sha256"`
+	Params   DownloadDeployBlobParams
+}
+
+type DownloadDeployBlobResponseObject interface {
+	VisitDownloadDeployBlobResponse(w http.ResponseWriter) error
+}
+
+type DownloadDeployBlob200ResponseHeaders struct {
+	ContentDisposition *string
+	ETag               *string
+}
+
+type DownloadDeployBlob200ApplicationoctetStreamResponse struct {
+	Body          io.Reader
+	Headers       DownloadDeployBlob200ResponseHeaders
+	ContentLength int64
+}
+
+func (response DownloadDeployBlob200ApplicationoctetStreamResponse) VisitDownloadDeployBlobResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	if response.Headers.ContentDisposition != nil {
+		w.Header().Set("Content-Disposition", fmt.Sprint(*response.Headers.ContentDisposition))
+	}
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type DownloadDeployBlob206ResponseHeaders struct {
+	ContentDisposition *string
+	ContentRange       *string
+}
+
+type DownloadDeployBlob206ApplicationoctetStreamResponse struct {
+	Body          io.Reader
+	Headers       DownloadDeployBlob206ResponseHeaders
+	ContentLength int64
+}
+
+func (response DownloadDeployBlob206ApplicationoctetStreamResponse) VisitDownloadDeployBlobResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	if response.Headers.ContentDisposition != nil {
+		w.Header().Set("Content-Disposition", fmt.Sprint(*response.Headers.ContentDisposition))
+	}
+	if response.Headers.ContentRange != nil {
+		w.Header().Set("Content-Range", fmt.Sprint(*response.Headers.ContentRange))
+	}
+	w.WriteHeader(206)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type DownloadDeployBlob304Response struct {
+}
+
+func (response DownloadDeployBlob304Response) VisitDownloadDeployBlobResponse(w http.ResponseWriter) error {
+	w.WriteHeader(304)
+	return nil
+}
+
+type DownloadDeployBlob401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DownloadDeployBlob401JSONResponse) VisitDownloadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadDeployBlob403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DownloadDeployBlob403JSONResponse) VisitDownloadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadDeployBlob404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DownloadDeployBlob404JSONResponse) VisitDownloadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadDeployBlob409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DownloadDeployBlob409JSONResponse) VisitDownloadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadDeployBlob416TextResponse string
+
+func (response DownloadDeployBlob416TextResponse) VisitDownloadDeployBlobResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(416)
+
+	_, err := w.Write([]byte(fmt.Sprint(response)))
+	return err
+}
+
+type DownloadDeployBlob451JSONResponse struct{ FileWithheldJSONResponse }
+
+func (response DownloadDeployBlob451JSONResponse) VisitDownloadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(451)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadDeployBlobdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DownloadDeployBlobdefaultJSONResponse) VisitDownloadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UploadDeployBlobRequestObject struct {
 	Site     SiteName `json:"site"`
 	DeployId DeployId `json:"deployId"`
@@ -5531,6 +5898,117 @@ type UploadDeployBlobdefaultJSONResponse struct {
 }
 
 func (response UploadDeployBlobdefaultJSONResponse) VisitUploadDeployBlobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeployFilesRequestObject struct {
+	Site     SiteName `json:"site"`
+	DeployId DeployId `json:"deployId"`
+	Params   ListDeployFilesParams
+}
+
+type ListDeployFilesResponseObject interface {
+	VisitListDeployFilesResponse(w http.ResponseWriter) error
+}
+
+type ListDeployFiles200JSONResponse DeployFilePage
+
+func (response ListDeployFiles200JSONResponse) VisitListDeployFilesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeployFiles400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListDeployFiles400JSONResponse) VisitListDeployFilesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeployFiles401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListDeployFiles401JSONResponse) VisitListDeployFilesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeployFiles403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListDeployFiles403JSONResponse) VisitListDeployFilesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeployFiles404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListDeployFiles404JSONResponse) VisitListDeployFilesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeployFiles409JSONResponse struct{ ConflictJSONResponse }
+
+func (response ListDeployFiles409JSONResponse) VisitListDeployFilesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeployFilesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListDeployFilesdefaultJSONResponse) VisitListDeployFilesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -7167,9 +7645,15 @@ type StrictServerInterface interface {
 	// ActivateDeploy Make a pending deploy the site's active deploy.
 	// (POST /api/v0/sites/{site}/deploys/{deployId}/activate)
 	ActivateDeploy(ctx context.Context, request ActivateDeployRequestObject) (ActivateDeployResponseObject, error)
+	// DownloadDeployBlob Download one file body of a deploy.
+	// (GET /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256})
+	DownloadDeployBlob(ctx context.Context, request DownloadDeployBlobRequestObject) (DownloadDeployBlobResponseObject, error)
 	// UploadDeployBlob Upload one file body for a pending deploy.
 	// (PUT /api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256})
 	UploadDeployBlob(ctx context.Context, request UploadDeployBlobRequestObject) (UploadDeployBlobResponseObject, error)
+	// ListDeployFiles List a deploy's files.
+	// (GET /api/v0/sites/{site}/deploys/{deployId}/files)
+	ListDeployFiles(ctx context.Context, request ListDeployFilesRequestObject) (ListDeployFilesResponseObject, error)
 	// ListDomains List a site's custom domains.
 	// (GET /api/v0/sites/{site}/domains)
 	ListDomains(ctx context.Context, request ListDomainsRequestObject) (ListDomainsResponseObject, error)
@@ -8048,6 +8532,35 @@ func (sh *strictHandler) ActivateDeploy(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// DownloadDeployBlob operation middleware
+func (sh *strictHandler) DownloadDeployBlob(w http.ResponseWriter, r *http.Request, site SiteName, deployId DeployId, sha256 Sha256, params DownloadDeployBlobParams) {
+	var request DownloadDeployBlobRequestObject
+
+	request.Site = site
+	request.DeployId = deployId
+	request.Sha256 = sha256
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DownloadDeployBlob(ctx, request.(DownloadDeployBlobRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DownloadDeployBlob")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DownloadDeployBlobResponseObject); ok {
+		if err := validResponse.VisitDownloadDeployBlobResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // UploadDeployBlob operation middleware
 func (sh *strictHandler) UploadDeployBlob(w http.ResponseWriter, r *http.Request, site SiteName, deployId DeployId, sha256 Sha256) {
 	var request UploadDeployBlobRequestObject
@@ -8071,6 +8584,34 @@ func (sh *strictHandler) UploadDeployBlob(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UploadDeployBlobResponseObject); ok {
 		if err := validResponse.VisitUploadDeployBlobResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDeployFiles operation middleware
+func (sh *strictHandler) ListDeployFiles(w http.ResponseWriter, r *http.Request, site SiteName, deployId DeployId, params ListDeployFilesParams) {
+	var request ListDeployFilesRequestObject
+
+	request.Site = site
+	request.DeployId = deployId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDeployFiles(ctx, request.(ListDeployFilesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDeployFiles")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListDeployFilesResponseObject); ok {
+		if err := validResponse.VisitListDeployFilesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

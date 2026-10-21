@@ -532,6 +532,37 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/sites/{site}/deploys/{deployId}/files': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The deploy's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
+         */
+        deployId: components['parameters']['DeployId'];
+      };
+      cookie?: never;
+    };
+    /**
+     * List a deploy's files.
+     * @description Every file the deploy serves, ordered by path (bytewise), with its SHA-256 and size (C1.14). A path deploy lists the whole merged site, as it serves it. Download each body with `downloadDeployBlob`. Works for any deploy in the site's history, pending ones included. A site the operator has taken down answers `409 site_unavailable`, for its owner too.
+     */
+    get: operations['listDeployFiles'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v0/sites/{site}/deploys/{deployId}/blobs/{sha256}': {
     parameters: {
       query?: never;
@@ -555,7 +586,11 @@ export interface paths {
       };
       cookie?: never;
     };
-    get?: never;
+    /**
+     * Download one file body of a deploy.
+     * @description Answers the raw bytes of a file the deploy lists, for any deploy in the site's history (C1.14). The hash must be listed by this deploy and uploaded by this owner: a hash the deploy does not list, one only another owner uploaded (a pending deploy can list any hash), and a body garbage collection has removed all answer the same `404 not_found` as a missing site or deploy, so content addressing never reveals or hands over another owner's file. `Range` requests are answered `206` with one range or `multipart/byteranges`, and a range outside the file `416`; `If-None-Match` with the `ETag` (the quoted hash) answers `304`. The body is always `application/octet-stream` with `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; sandbox` and `Cache-Control: private, no-store`, so site content never renders on the dashboard origin. A file content screening has withheld (A2.15) answers `451 file_withheld`. A site the operator has taken down answers `409 site_unavailable`, for its owner too: its files are kept for the operator, never handed out for rehosting.
+     */
+    get: operations['downloadDeployBlob'];
     /**
      * Upload one file body for a pending deploy.
      * @description The body is the file's raw bytes. The server verifies the SHA-256 before storing it (`400 hash_mismatch`) and accepts only hashes in this deploy's manifest (`400 unexpected_blob`). Uploading a blob the server already holds succeeds without storing it again, so retries are safe. Bodies over the per-file limit answer `413 limit_exceeded`. A site the operator has taken down answers `409 site_unavailable`.
@@ -1232,6 +1267,23 @@ export interface components {
       items: components['schemas']['Deploy'][];
       nextCursor?: components['schemas']['Cursor'];
     };
+    DeployFile: {
+      /**
+       * @description The file's path in the site, with forward slashes and no leading slash.
+       * @example docs/install.html
+       */
+      path: string;
+      sha256: components['schemas']['Sha256'];
+      /**
+       * Format: int64
+       * @description File size in bytes.
+       */
+      size: number;
+    };
+    DeployFilePage: {
+      items: components['schemas']['DeployFile'][];
+      nextCursor?: components['schemas']['Cursor'];
+    };
     ManifestFile: {
       /**
        * @description Path relative to the deployed directory, with forward slashes.
@@ -1620,6 +1672,21 @@ export interface components {
         'application/json': components['schemas']['Error'];
       };
     };
+    /** @description Content screening has withheld this file on every site (A2.15). */
+    FileWithheld: {
+      headers: {
+        [name: string]: unknown;
+      };
+      content: {
+        /**
+         * @example {
+         *       "code": "file_withheld",
+         *       "message": "The operator of this server has withheld this file, so it cannot be downloaded."
+         *     }
+         */
+        'application/json': components['schemas']['Error'];
+      };
+    };
     /** @description Too many requests. */
     RateLimited: {
       headers: {
@@ -1732,6 +1799,16 @@ export interface components {
      * @example __Host-wardlock_session=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0
      */
     ClearSessionCookie: string;
+    /**
+     * @description Always `attachment`, so a browser saves the file rather than showing it.
+     * @example attachment
+     */
+    Attachment: string;
+    /**
+     * @description The file's SHA-256 in quotes.
+     * @example "fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9"
+     */
+    BlobETag: string;
     /**
      * @description Seconds to wait before retrying.
      * @example 30
@@ -2878,6 +2955,155 @@ export interface operations {
       409: components['responses']['Conflict'];
       413: components['responses']['TooLarge'];
       422: components['responses']['FileTypeBlocked'];
+      default: components['responses']['Error'];
+    };
+  };
+  listDeployFiles: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+      };
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The deploy's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
+         */
+        deployId: components['parameters']['DeployId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One page of files. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "path": "assets/app.js",
+           *           "sha256": "fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9",
+           *           "size": 48211
+           *         },
+           *         {
+           *           "path": "index.html",
+           *           "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+           *           "size": 5120
+           *         }
+           *       ],
+           *       "nextCursor": "aW5kZXguaHRtbA"
+           *     }
+           */
+          'application/json': components['schemas']['DeployFilePage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  downloadDeployBlob: {
+    parameters: {
+      query?: never;
+      header?: {
+        /**
+         * @description One or more byte ranges, as in RFC 9110 (`bytes=0-1023`).
+         * @example bytes=0-1023
+         */
+        Range?: string;
+      };
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The deploy's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
+         */
+        deployId: components['parameters']['DeployId'];
+        /**
+         * @description The blob's SHA-256, as listed in the deploy's manifest.
+         * @example fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9
+         */
+        sha256: components['schemas']['Sha256'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The whole file. */
+      200: {
+        headers: {
+          'Content-Disposition': components['headers']['Attachment'];
+          ETag: components['headers']['BlobETag'];
+          [name: string]: unknown;
+        };
+        content: {
+          /** @example console.log("hello"); */
+          'application/octet-stream': string;
+        };
+      };
+      /** @description The requested range or ranges of the file. */
+      206: {
+        headers: {
+          'Content-Disposition': components['headers']['Attachment'];
+          /**
+           * @description The range sent, for a single range.
+           * @example bytes 0-1023/48211
+           */
+          'Content-Range'?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          /** @example console.log( */
+          'application/octet-stream': string;
+        };
+      };
+      /** @description Not modified; the `If-None-Match` ETag matches. */
+      304: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      /** @description The range lies outside the file. */
+      416: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /** @example invalid range */
+          'text/plain': string;
+        };
+      };
+      451: components['responses']['FileWithheld'];
       default: components['responses']['Error'];
     };
   };

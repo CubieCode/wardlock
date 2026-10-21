@@ -322,6 +322,82 @@ func deploysContract(t *testing.T, open Opener) {
 		_, err = f.r.Deploys.ManifestSize(t.Context(), o.ID, f.site(o.ID).ID, d.ID, sha('c'))
 		wantErr(t, err, store.ErrNotFound)
 	})
+	t.Run("FilesPage", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		// Bytewise order: "B" < "a" < "a/b" < "a0".
+		d := f.deployFiles(o.ID, s.ID,
+			store.DeployFile{Path: "a0", SHA256: sha('a'), Size: 1},
+			store.DeployFile{Path: "a/b", SHA256: sha('b'), Size: 2},
+			store.DeployFile{Path: "B", SHA256: sha('c'), Size: 3},
+			store.DeployFile{Path: "a", SHA256: sha('a'), Size: 1},
+		)
+		var paths []string
+		after := ""
+		for range 3 {
+			page, err := f.r.Deploys.FilesPage(t.Context(), o.ID, s.ID, d.ID, after, 2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, file := range page {
+				paths = append(paths, file.Path)
+			}
+			if len(page) < 2 {
+				break
+			}
+			after = page[len(page)-1].Path
+		}
+		if want := []string{"B", "a", "a/b", "a0"}; !slices.Equal(paths, want) {
+			t.Fatalf("FilesPage() pages = %v, want %v", paths, want)
+		}
+		page, err := f.r.Deploys.FilesPage(t.Context(), o.ID, s.ID, d.ID, "a", 10)
+		if err != nil || len(page) != 2 || page[0] != (store.DeployFile{Path: "a/b", SHA256: sha('b'), Size: 2}) {
+			t.Fatalf("FilesPage(after a) = %+v, %v", page, err)
+		}
+		_, err = f.r.Deploys.FilesPage(t.Context(), f.owner().ID, s.ID, d.ID, "", 10)
+		wantErr(t, err, store.ErrNotFound)
+		_, err = f.r.Deploys.FilesPage(t.Context(), o.ID, f.site(o.ID).ID, d.ID, "", 10)
+		wantErr(t, err, store.ErrNotFound)
+		_, err = f.r.Deploys.FilesPage(t.Context(), o.ID, s.ID, store.NewID(), "", 10)
+		wantErr(t, err, store.ErrNotFound)
+		empty := f.deployFiles(o.ID, s.ID)
+		page, err = f.r.Deploys.FilesPage(t.Context(), o.ID, s.ID, empty.ID, "", 10)
+		if err != nil || len(page) != 0 {
+			t.Fatalf("FilesPage(empty deploy) = %+v, %v", page, err)
+		}
+	})
+	t.Run("HeldSize", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		d := f.deployFiles(o.ID, s.ID,
+			store.DeployFile{Path: "a.html", SHA256: sha('a'), Size: 5},
+			store.DeployFile{Path: "c.js", SHA256: sha('c'), Size: 7},
+		)
+		// Listed but not uploaded by this owner, even though another owner
+		// holds it.
+		other := f.owner()
+		f.must(f.r.Deploys.RecordUpload(t.Context(), other.ID, store.Blob{SHA256: sha('c'), Size: 7, CreatedAt: now}))
+		_, err := f.r.Deploys.HeldSize(t.Context(), o.ID, s.ID, d.ID, sha('c'))
+		wantErr(t, err, store.ErrNotFound)
+
+		f.must(f.r.Deploys.RecordUpload(t.Context(), o.ID, store.Blob{SHA256: sha('c'), Size: 7, CreatedAt: now}))
+		size, err := f.r.Deploys.HeldSize(t.Context(), o.ID, s.ID, d.ID, sha('c'))
+		if err != nil || size != 7 {
+			t.Fatalf("HeldSize() = %d, %v; want 7", size, err)
+		}
+		// Uploaded, but not listed by this deploy.
+		f.must(f.r.Deploys.RecordUpload(t.Context(), o.ID, store.Blob{SHA256: sha('d'), Size: 1, CreatedAt: now}))
+		_, err = f.r.Deploys.HeldSize(t.Context(), o.ID, s.ID, d.ID, sha('d'))
+		wantErr(t, err, store.ErrNotFound)
+		_, err = f.r.Deploys.HeldSize(t.Context(), other.ID, s.ID, d.ID, sha('c'))
+		wantErr(t, err, store.ErrNotFound)
+		_, err = f.r.Deploys.HeldSize(t.Context(), o.ID, f.site(o.ID).ID, d.ID, sha('c'))
+		wantErr(t, err, store.ErrNotFound)
+	})
 	t.Run("RecordUpload", func(t *testing.T) {
 		t.Parallel()
 		runInsertCases(t, open,

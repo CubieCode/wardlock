@@ -98,6 +98,10 @@ type Deploys interface {
 	Files(ctx context.Context, deployID string) ([]DeployFile, error)
 	// Manifest returns one of ownerID's deploys' manifest ordered by path.
 	Manifest(ctx context.Context, ownerID, siteID, deployID string) ([]DeployFile, error)
+	// FilesPage returns up to limit of one of ownerID's deploys' files,
+	// ordered by path (bytewise), with paths after after ("" for the first
+	// page). A missing deploy, or another owner's, is ErrNotFound.
+	FilesPage(ctx context.Context, ownerID, siteID, deployID, after string, limit int) ([]DeployFile, error)
 	// Hashes returns the distinct hashes in the deploy's manifest.
 	Hashes(ctx context.Context, ownerID, siteID, deployID string) ([]string, error)
 	// MissingBlobs returns the distinct hashes in the deploy's manifest that
@@ -106,6 +110,10 @@ type Deploys interface {
 	// ManifestSize returns the size the deploy's manifest gives sha256;
 	// ErrNotFound if the deploy is not found or does not list it.
 	ManifestSize(ctx context.Context, ownerID, siteID, deployID, sha256 string) (int64, error)
+	// HeldSize is ManifestSize for a hash ownerID has also recorded with
+	// RecordUpload; ErrNotFound otherwise, as for a hash the deploy does not
+	// list.
+	HeldSize(ctx context.Context, ownerID, siteID, deployID, sha256 string) (int64, error)
 	// RecordUpload records that ownerID uploaded b with a verified hash:
 	// the blob row and the owner's claim to it, in one transaction.
 	// Recording either again is a no-op.
@@ -305,6 +313,23 @@ func (r deploysRepo) Manifest(ctx context.Context, ownerID, siteID, deployID str
 	return files, nil
 }
 
+func (r deploysRepo) FilesPage(ctx context.Context, ownerID, siteID, deployID, after string, limit int) ([]DeployFile, error) {
+	if _, err := r.Get(ctx, ownerID, siteID, deployID); err != nil {
+		return nil, err
+	}
+	rows, err := r.db.q.ListOwnerDeployFilesPage(ctx, sqlcgen.ListOwnerDeployFilesPageParams{
+		DeployID: deployID, SiteID: siteID, OwnerID: ownerID, AfterPath: after, RowLimit: int64(limit),
+	})
+	if err != nil {
+		return nil, mapErr("list deploy files", err)
+	}
+	files := make([]DeployFile, 0, len(rows))
+	for _, row := range rows {
+		files = append(files, DeployFile{Path: row.Path, SHA256: row.Sha256, Size: row.Size})
+	}
+	return files, nil
+}
+
 func (r deploysRepo) Hashes(ctx context.Context, ownerID, siteID, deployID string) ([]string, error) {
 	if _, err := r.Get(ctx, ownerID, siteID, deployID); err != nil {
 		return nil, err
@@ -329,6 +354,16 @@ func (r deploysRepo) ManifestSize(ctx context.Context, ownerID, siteID, deployID
 		OwnerID:  ownerID,
 	})
 	return size, mapErr("find manifest blob", err)
+}
+
+func (r deploysRepo) HeldSize(ctx context.Context, ownerID, siteID, deployID, sha256 string) (int64, error) {
+	size, err := r.db.q.HeldManifestBlobSize(ctx, sqlcgen.HeldManifestBlobSizeParams{
+		DeployID: deployID,
+		Sha256:   sha256,
+		SiteID:   siteID,
+		OwnerID:  ownerID,
+	})
+	return size, mapErr("find held manifest blob", err)
 }
 
 func (r deploysRepo) RecordUpload(ctx context.Context, ownerID string, b Blob) error {
