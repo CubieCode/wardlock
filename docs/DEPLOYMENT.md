@@ -165,6 +165,31 @@ Each GitHub release carries `wardlockd_<version>_<os>_<arch>` and `wardlock_<ver
 
 </details>
 
+### Verifying a release
+
+Every archive, SBOM and the container image of a release is signed with a [GitHub artefact attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations): a Sigstore-signed statement that the release workflow in `CubieCode/wardlock` built it from the tagged commit. Check one with the GitHub CLI before installing or running it:
+
+```sh
+gh attestation verify wardlockd_0.1.0_linux_amd64.tar.gz --repo CubieCode/wardlock
+gh attestation verify oci://ghcr.io/cubiecode/wardlock:0.1.0 --repo CubieCode/wardlock
+```
+
+<details>
+<summary>What is signed, and a stricter check</summary>
+
+The publish job of [`release.yml`](../.github/workflows/release.yml) makes two build provenance attestations with `actions/attest-build-provenance`: one for every file listed in `checksums.txt` (each archive and SBOM), and one for the image's multi-arch index digest, which is also pushed to ghcr.io beside the image. `checksums.txt` itself is not attested; verify the archive it describes. `install.sh` checks the archive against `checksums.txt` only, which catches a corrupted download but not a replaced release, so verify the archive as well when that matters.
+
+To require the release workflow and the tag, not just this repository:
+
+```sh
+gh attestation verify wardlockd_0.1.0_linux_amd64.tar.gz --repo CubieCode/wardlock \
+  --signer-workflow CubieCode/wardlock/.github/workflows/release.yml --source-ref refs/tags/v0.1.0
+```
+
+Attestations are made only when a `vX.Y.Z` tag publishes; snapshots and pull requests have none.
+
+</details>
+
 ## Single binary with systemd
 
 ```sh
@@ -1021,7 +1046,7 @@ Module tags are prefixed with the module's directory, the fourth `go-import` fie
 1. On the release branch, tag `packages/apiclient-go/vX.Y.Z` at the commit to release.
 2. In `apps/cli/go.mod` and `apps/server/go.mod`, drop the `replace wardlock.nz/apiclient` directives, require `wardlock.nz/apiclient vX.Y.Z` where it is used, and run `GOWORK=off go mod tidy` so `go.sum` records the client's hash (the release owner holds the lockfile gate for this). Commit.
 3. Tag that commit `apps/cli/vX.Y.Z` and `apps/server/vX.Y.Z` and push those tags (with `packages/apiclient-go/vX.Y.Z`). Module tags never start the publish job.
-4. Tag the same commit `vX.Y.Z` and push that tag on its own (`git push origin vX.Y.Z`). GitHub creates no push events when more than three tags are pushed at once, so pushing every tag together can skip the release run. The tag push starts the release workflow: `snapshot` and `module-tags` run first, then `publish` logs in to ghcr.io with the workflow's `GITHUB_TOKEN`, pushes `ghcr.io/cubiecode/wardlock:X.Y.Z` and `:latest`, and creates a draft GitHub release with the archives, SBOMs and `checksums.txt`.
+4. Tag the same commit `vX.Y.Z` and push that tag on its own (`git push origin vX.Y.Z`). GitHub creates no push events when more than three tags are pushed at once, so pushing every tag together can skip the release run. The tag push starts the release workflow: `snapshot` and `module-tags` run first, then `publish` logs in to ghcr.io with the workflow's `GITHUB_TOKEN`, pushes `ghcr.io/cubiecode/wardlock:X.Y.Z` and `:latest`, creates a draft GitHub release with the archives, SBOMs and `checksums.txt`, and signs the archives, SBOMs and image with artefact attestations ([Verifying a release](#verifying-a-release)).
 5. Check the draft release, add the release notes and publish it by hand. After the first image push, set the ghcr.io package's visibility.
 
 Main keeps its `replace` directives; only the release commit drops them.
