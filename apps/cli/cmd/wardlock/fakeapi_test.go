@@ -62,6 +62,10 @@ type fakeAPI struct {
 	// refuseDeploy and refuseSite, when set, answer the next deploy or site
 	// creation with that error, as the server's limits and quotas do.
 	refuseDeploy, refuseSite *refusal
+	// beforeActivate, when set, runs once at the start of the next
+	// activation, under the lock: a test makes another deploy go live there
+	// to see a path deploy's base go stale.
+	beforeActivate func(s *fakeSite)
 }
 
 // refusal is an error answer: an HTTP status and the API's error body.
@@ -96,6 +100,10 @@ const (
 type fakeDeploy struct {
 	apiclient.Deploy
 	hashes []string
+	// files is the whole manifest; base the deploy a path deploy was built
+	// on ("" for none).
+	files []apiclient.ManifestFile
+	base  string
 }
 
 const fakeBase = "wardlock.example.test"
@@ -276,8 +284,12 @@ func (f *fakeAPI) createDeploy(w http.ResponseWriter, r *http.Request, s *fakeSi
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	var body apiclient.CreateDeployRequest
-	if err := dec.Decode(&body); err != nil || len(body.Files) == 0 {
+	if err := dec.Decode(&body); err != nil || (len(body.Files) == 0 && body.Path == nil) {
 		reply(w, http.StatusBadRequest, apiErr("invalid_request", "Invalid manifest."))
+		return
+	}
+	if p := body.Path; p != nil && (len(*p) < 3 || !strings.HasPrefix(*p, "/") || !strings.HasSuffix(*p, "/")) {
+		reply(w, http.StatusBadRequest, apiclient.Error{Code: "invalid_path", Message: "Invalid path.", Target: ptr("path")})
 		return
 	}
 	if r := f.refuseDeploy; r != nil {
@@ -287,10 +299,39 @@ func (f *fakeAPI) createDeploy(w http.ResponseWriter, r *http.Request, s *fakeSi
 	}
 	f.created = append(f.created, body)
 	d := &fakeDeploy{Deploy: apiclient.Deploy{Id: f.id(), Status: apiclient.DeployStatusPending, CreatedAt: 1_800_000_000_000,
-		FileCount: int32(len(body.Files)), Message: body.Message, Spa: body.Spa != nil && *body.Spa,
+		Message: body.Message, Spa: body.Spa != nil && *body.Spa,
 		ImmutableAssets: body.ImmutableAssets != nil && *body.ImmutableAssets}}
+	files := body.Files
+	if body.Path != nil {
+		// A path deploy: the active deploy's files outside the prefix plus
+		// the upload under it, with the flags following the base.
+		dir := strings.TrimPrefix(*body.Path, "/")
+		d.Path = body.Path
+		files = nil
+		for _, file := range body.Files {
+			file.Path = dir + file.Path
+			files = append(files, file)
+		}
+		if id := s.site.ActiveDeployId; id != nil {
+			for _, x := range s.deploys {
+				if x.Id != *id {
+					continue
+				}
+				d.base = x.Id
+				for _, file := range x.files {
+					if !strings.HasPrefix(file.Path, dir) {
+						files = append(files, file)
+					}
+				}
+				d.Spa = cmpOr(body.Spa, x.Spa)
+				d.ImmutableAssets = cmpOr(body.ImmutableAssets, x.ImmutableAssets)
+			}
+		}
+	}
+	d.files = files
+	d.FileCount = int32(len(files))
 	missing := []string{}
-	for _, file := range body.Files {
+	for _, file := range files {
 		if strings.HasPrefix(strings.ToLower(file.Path), ".wardlock/") || strings.Contains(file.Path, `\`) {
 			reply(w, http.StatusBadRequest, apiclient.Error{Code: "invalid_path", Message: "Invalid path.", Target: &file.Path})
 			return
@@ -392,6 +433,14 @@ func (f *fakeAPI) activate(w http.ResponseWriter, r *http.Request, s *fakeSite) 
 			reply(w, http.StatusConflict, apiErr("deploy_not_pending", "The deploy is not pending."))
 			return
 		}
+		if hook := f.beforeActivate; hook != nil {
+			f.beforeActivate = nil
+			hook(s)
+		}
+		if active := s.site.ActiveDeployId; d.Path != nil && d.base != deref(active) {
+			reply(w, http.StatusConflict, apiErr("stale_base", "Another deploy went live on this site after this path deploy was created; create it again."))
+			return
+		}
 		for _, h := range d.hashes {
 			if !f.blobs[h] {
 				reply(w, http.StatusConflict, apiErr("blobs_missing", "Upload every file first."))
@@ -403,6 +452,21 @@ func (f *fakeAPI) activate(w http.ResponseWriter, r *http.Request, s *fakeSite) 
 		return
 	}
 	reply(w, http.StatusNotFound, notFound)
+}
+
+// cmpOr is *given, or else base.
+func cmpOr(given *bool, base bool) bool {
+	if given != nil {
+		return *given
+	}
+	return base
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func (f *fakeAPI) setActive(s *fakeSite, d *fakeDeploy) {
