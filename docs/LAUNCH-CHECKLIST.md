@@ -16,11 +16,16 @@ First checked against `main` at `41e4817` on 2026-10-19 (O4.4) and re-checked af
 
 ## Decisions for the maintainer
 
-These lines need a decision rather than work. The recommendation is the checklist author's; the decision is @OhYea777's.
+These lines need a decision rather than work. The recommendation is the checklist author's; the decision is @OhYea777's. Every decision is made.
 
-| Decision                              | Recommendation                                                                                                                   | Owner     | State |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------- | ----- |
-| Sign release artefacts for the alpha? | Optional for the alpha: checksums and SBOMs exist, nothing is signed. Consider GitHub artefact attestations or cosign before v1. | @OhYea777 | open  |
+<details>
+<summary>Done (1)</summary>
+
+| Decision                              | Recommendation                                                                                                                                                                                                                                                                                        | Owner     | State |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ----- |
+| Sign release artefacts for the alpha? | Decided 2026-10-21: yes, with GitHub artefact attestations. The publish job attests every archive and SBOM (`checksums.txt`) and the image digest; DEPLOYMENT "Verifying a release" shows `gh attestation verify`. The first `vX.Y.Z` tag's publish run makes the first attestations; verify one then | @OhYea777 | done  |
+
+</details>
 
 ## Licence and CLA
 
@@ -82,9 +87,9 @@ bash scripts/test-module-tags.sh
 
 </details>
 
-| Check                                 | Owner     | State                    | Evidence                                                                                                                                                                          |
-| ------------------------------------- | --------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Published release verified end to end | @OhYea777 | not verifiable from here | After publishing: `sh deploy/install.sh --version 0.1.0 --component all --dir <tmp>`, `docker run ghcr.io/cubiecode/wardlock:0.1.0`, and the checksums against the GitHub release |
+| Check                                 | Owner     | State                    | Evidence                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------- | --------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Published release verified end to end | @OhYea777 | not verifiable from here | After publishing: `sh deploy/install.sh --version 0.1.0 --component all --dir <tmp>`, `docker run ghcr.io/cubiecode/wardlock:0.1.0`, and the checksums against the GitHub release; `gh attestation verify` for an archive and for `oci://ghcr.io/cubiecode/wardlock:0.1.0` ([DEPLOYMENT "Verifying a release"](DEPLOYMENT.md#verifying-a-release)) |
 
 <details>
 <summary>Done (7)</summary>

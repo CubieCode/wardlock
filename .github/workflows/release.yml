@@ -10,8 +10,10 @@ name: Release
 # happens only when a vX.Y.Z tag is pushed to this repository (docs/
 # DEPLOYMENT.md, "Releases and module tags"): after the snapshot and module
 # tag checks pass, the publish job logs in to ghcr.io, pushes
-# ghcr.io/cubiecode/wardlock and creates a draft GitHub release. It is the
-# only job with write permissions. Tag filters match the whole tag name and
+# ghcr.io/cubiecode/wardlock, creates a draft GitHub release and signs every
+# archive, SBOM and the image with GitHub artefact attestations (build
+# provenance; verify with `gh attestation verify`, docs/DEPLOYMENT.md
+# "Verifying a release"). It is the only job with write permissions. Tag filters match the whole tag name and
 # `*` does not match `/`, so the module tags (apps/cli/vX.Y.Z,
 # apps/server/vX.Y.Z, packages/apiclient-go/vX.Y.Z) do not trigger it.
 # Snapshots are built and smoke-tested but not uploaded: nothing reads them,
@@ -93,6 +95,11 @@ jobs:
     permissions:
       contents: write
       packages: write
+      # Artefact attestations: an OIDC token for Sigstore signing, and
+      # writing the attestations to the repository (and the image's to
+      # ghcr.io, with packages: write).
+      id-token: write
+      attestations: write
     steps:
       - *checkout
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -117,3 +124,19 @@ jobs:
           # that triggered the run so GoReleaser never picks another.
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # checksums.txt lists every archive and SBOM, so one attestation covers
+      # all of them.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: .local/goreleaser/checksums.txt
+      - name: Find the image digest
+        id: image
+        run: |
+          digest=$(docker buildx imagetools inspect "ghcr.io/cubiecode/wardlock:${GITHUB_REF_NAME#v}" --format '{{ .Manifest.Digest }}')
+          [[ $digest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "unexpected image digest: $digest" >&2; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/cubiecode/wardlock
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
