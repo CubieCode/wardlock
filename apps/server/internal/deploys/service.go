@@ -159,6 +159,9 @@ func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manife
 	if err := s.c.Limits.validate(&m); err != nil {
 		return store.Deploy{}, nil, err
 	}
+	if err := s.checkHeldSizes(ctx, ownerID, &m); err != nil {
+		return store.Deploy{}, nil, err
+	}
 	d.FileCount = len(m.Files)
 	d.SPA = m.SPA != nil && *m.SPA
 	d.ImmutableAssets = m.ImmutableAssets != nil && *m.ImmutableAssets
@@ -227,6 +230,58 @@ func (s *Service) merge(ctx context.Context, ownerID string, site store.Site, m 
 	}
 	m.Files = files
 	return nil
+}
+
+// checkHeldSizes refuses a manifest that lists a hash the owner already
+// holds with a size other than the stored blob's: the hash is not uploaded
+// again, so nothing else would catch it, and the edge, limits and quotas
+// all trust the listed size. Only the owner's own blobs are compared, so the
+// answer says nothing about other owners'. A path deploy checks only the
+// files under its prefix; the base's were checked when the base was created,
+// and validate has made any base file sharing one of their hashes list the
+// same size.
+func (s *Service) checkHeldSizes(ctx context.Context, ownerID string, m *Manifest) error {
+	dir := ""
+	if m.Path != "" {
+		dir = m.Path[1:]
+	}
+	var hashes []string
+	seen := make(map[string]bool, len(m.Files))
+	for _, f := range m.Files {
+		if strings.HasPrefix(f.Path, dir) && !seen[f.SHA256] {
+			seen[f.SHA256] = true
+			hashes = append(hashes, f.SHA256)
+		}
+	}
+	if len(hashes) == 0 {
+		return nil
+	}
+	held, err := s.c.Deploys.HeldBlobSizes(ctx, ownerID, hashes)
+	if err != nil {
+		return storeErr("find held blobs", err)
+	}
+	for _, f := range m.Files {
+		size, ok := held[f.SHA256]
+		if ok && size != f.Size {
+			return sizeMismatch(f.Path, f.Size, size)
+		}
+	}
+	return nil
+}
+
+// sizeMismatch is the ErrInvalidManifest for a path listed at a size other
+// than its held blob's.
+func sizeMismatch(path string, listed, stored int64) *TargetError {
+	return &TargetError{Err: ErrInvalidManifest, Target: path, Message: fmt.Sprintf("%q is listed with size %d, but its sha256 matches a file you have already uploaded of size %d.", path, listed, stored)}
+}
+
+// heldSizeErr turns a *store.SizeMismatchError from activation into the
+// same ErrInvalidManifest Create answers, and other errors as storeErr does.
+func heldSizeErr(what string, err error) error {
+	if me := (*store.SizeMismatchError)(nil); errors.As(err, &me) {
+		return sizeMismatch(me.Path, me.Listed, me.Stored)
+	}
+	return storeErr(what, err)
 }
 
 // quotaErr explains a refused deploy to its owner.
@@ -334,8 +389,10 @@ func (c *countingReader) Read(p []byte) (int, error) {
 
 // Activate generates the renditions of the deploy's HTML files, then makes
 // it the site's active deploy atomically and notifies subscribers. It fails with ErrBlobsMissing until the owner has
-// uploaded every blob, ErrNotPending once activated (see Rollback) and
-// ErrStaleBase for a path deploy whose base the site no longer serves.
+// uploaded every blob, ErrNotPending once activated (see Rollback),
+// ErrStaleBase for a path deploy whose base the site no longer serves and
+// ErrInvalidManifest, for good, when the deploy lists a hash the owner holds
+// at a size other than the stored blob's (C1.16).
 func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID string) (store.Site, store.Deploy, error) {
 	site, err := s.changeable(ctx, ownerID, siteName)
 	if err != nil {
@@ -363,13 +420,21 @@ func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID stri
 			Message: fmt.Sprintf("%d blobs have not been uploaded.", len(missing)),
 		}
 	}
+	// A hash the deploy did not need uploaded may have been uploaded since
+	// it was created, through another deploy, at a size this one does not
+	// list; Create could not catch that. Checked again in the activation
+	// transaction; this spares the renditions.
+	if err := s.c.Deploys.CheckHeldSizes(ctx, ownerID, site.ID, deployID); err != nil {
+		return store.Site{}, store.Deploy{}, heldSizeErr("check held sizes", err)
+	}
 	if err := s.render(ctx, ownerID, site, deployID); err != nil {
 		return store.Site{}, store.Deploy{}, err
 	}
-	// The store re-checks the owner's uploads inside the transaction.
+	// The store re-checks the owner's uploads and their sizes inside the
+	// transaction.
 	d, err = s.c.Deploys.Activate(ctx, ownerID, site.ID, deployID, s.now())
 	if err != nil {
-		return store.Site{}, store.Deploy{}, storeErr("activate deploy", err)
+		return store.Site{}, store.Deploy{}, heldSizeErr("activate deploy", err)
 	}
 	return s.served(ctx, site, d), d, nil
 }

@@ -165,6 +165,40 @@ func (q *Queries) HeldManifestBlobSize(ctx context.Context, arg HeldManifestBlob
 	return size, err
 }
 
+const heldSizeMismatch = `-- name: HeldSizeMismatch :one
+SELECT deploy_files.path, deploy_files.size AS listed_size, blobs.size AS stored_size
+FROM deploy_files
+JOIN deploys ON deploys.id = deploy_files.deploy_id
+JOIN sites ON sites.id = deploys.site_id
+JOIN owner_blobs ON owner_blobs.owner_id = sites.owner_id AND owner_blobs.sha256 = deploy_files.sha256
+JOIN blobs ON blobs.sha256 = deploy_files.sha256
+WHERE deploy_files.deploy_id = ?1 AND deploys.site_id = ?2
+  AND sites.owner_id = ?3 AND deploy_files.size <> blobs.size
+ORDER BY deploy_files.path
+LIMIT 1
+`
+
+type HeldSizeMismatchParams struct {
+	DeployID string
+	SiteID   string
+	OwnerID  string
+}
+
+type HeldSizeMismatchRow struct {
+	Path       string
+	ListedSize int64
+	StoredSize int64
+}
+
+// The first file, by path, of one of the owner's deploys that lists a hash
+// the owner holds at a size other than the stored blob's.
+func (q *Queries) HeldSizeMismatch(ctx context.Context, arg HeldSizeMismatchParams) (HeldSizeMismatchRow, error) {
+	row := q.db.QueryRowContext(ctx, heldSizeMismatch, arg.DeployID, arg.SiteID, arg.OwnerID)
+	var i HeldSizeMismatchRow
+	err := row.Scan(&i.Path, &i.ListedSize, &i.StoredSize)
+	return i, err
+}
+
 const listDeployFiles = `-- name: ListDeployFiles :many
 SELECT path, sha256, size FROM deploy_files WHERE deploy_id = ?1 ORDER BY path
 `
@@ -480,6 +514,26 @@ func (q *Queries) MissingOwnerBlobs(ctx context.Context, arg MissingOwnerBlobsPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const ownerHeldBlobSize = `-- name: OwnerHeldBlobSize :one
+SELECT blobs.size FROM owner_blobs
+JOIN blobs ON blobs.sha256 = owner_blobs.sha256
+WHERE owner_blobs.owner_id = ?1 AND owner_blobs.sha256 = ?2
+`
+
+type OwnerHeldBlobSizeParams struct {
+	OwnerID string
+	Sha256  string
+}
+
+// The stored size of a blob the owner has uploaded; no row for a hash only
+// other owners hold, so the answer says nothing about their blobs.
+func (q *Queries) OwnerHeldBlobSize(ctx context.Context, arg OwnerHeldBlobSizeParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, ownerHeldBlobSize, arg.OwnerID, arg.Sha256)
+	var size int64
+	err := row.Scan(&size)
+	return size, err
 }
 
 const previousDeploy = `-- name: PreviousDeploy :one

@@ -5,6 +5,7 @@ package storetest
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -397,6 +398,72 @@ func deploysContract(t *testing.T, open Opener) {
 		wantErr(t, err, store.ErrNotFound)
 		_, err = f.r.Deploys.HeldSize(t.Context(), o.ID, f.site(o.ID).ID, d.ID, sha('c'))
 		wantErr(t, err, store.ErrNotFound)
+	})
+	t.Run("HeldBlobSizes", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		a, b := f.owner(), f.owner()
+		f.must(f.r.Deploys.RecordUpload(t.Context(), a.ID, store.Blob{SHA256: sha('a'), Size: 5, CreatedAt: now}))
+		f.must(f.r.Deploys.RecordUpload(t.Context(), a.ID, store.Blob{SHA256: sha('b'), Size: 0, CreatedAt: now}))
+		// Held only by B: A's answer leaves it out.
+		f.must(f.r.Deploys.RecordUpload(t.Context(), b.ID, store.Blob{SHA256: sha('c'), Size: 7, CreatedAt: now}))
+		hashes := []string{sha('a'), sha('b'), sha('c'), sha('d')}
+		got, err := f.r.Deploys.HeldBlobSizes(t.Context(), a.ID, hashes)
+		if want := map[string]int64{sha('a'): 5, sha('b'): 0}; err != nil || !maps.Equal(got, want) {
+			t.Fatalf("HeldBlobSizes(A) = %v, %v; want %v", got, err, want)
+		}
+		got, err = f.r.Deploys.HeldBlobSizes(t.Context(), b.ID, hashes)
+		if want := map[string]int64{sha('c'): 7}; err != nil || !maps.Equal(got, want) {
+			t.Fatalf("HeldBlobSizes(B) = %v, %v; want %v", got, err, want)
+		}
+		got, err = f.r.Deploys.HeldBlobSizes(t.Context(), store.NewID(), hashes)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("HeldBlobSizes(unknown owner) = %v, %v; want none", got, err)
+		}
+		got, err = f.r.Deploys.HeldBlobSizes(t.Context(), a.ID, nil)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("HeldBlobSizes(no hashes) = %v, %v; want none", got, err)
+		}
+	})
+	t.Run("CheckHeldSizes", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o, other := f.owner(), f.owner()
+		s := f.site(o.ID)
+		d := f.deployFiles(o.ID, s.ID,
+			store.DeployFile{Path: "a.html", SHA256: sha('a'), Size: 5},
+			store.DeployFile{Path: "b.js", SHA256: sha('b'), Size: 3},
+			store.DeployFile{Path: "c.css", SHA256: sha('c'), Size: 2},
+		)
+		check := func(ownerID, siteID, deployID string) error {
+			return f.r.Deploys.CheckHeldSizes(t.Context(), ownerID, siteID, deployID)
+		}
+		f.must(check(o.ID, s.ID, d.ID))
+		f.must(f.r.Deploys.RecordUpload(t.Context(), o.ID, store.Blob{SHA256: sha('a'), Size: 5, CreatedAt: now}))
+		// Another owner's blob is never compared, whatever its size.
+		f.must(f.r.Deploys.RecordUpload(t.Context(), other.ID, store.Blob{SHA256: sha('c'), Size: 9, CreatedAt: now}))
+		f.must(check(o.ID, s.ID, d.ID))
+
+		f.must(f.r.Deploys.RecordUpload(t.Context(), o.ID, store.Blob{SHA256: sha('b'), Size: 4, CreatedAt: now}))
+		err := check(o.ID, s.ID, d.ID)
+		var me *store.SizeMismatchError
+		if !errors.Is(err, store.ErrSizeMismatch) || !errors.As(err, &me) || *me != (store.SizeMismatchError{Path: "b.js", Listed: 3, Stored: 4}) {
+			t.Fatalf("CheckHeldSizes() = %v, want b.js listed 3, stored 4", err)
+		}
+		wantErr(t, check(other.ID, s.ID, d.ID), store.ErrNotFound)
+		wantErr(t, check(o.ID, f.site(o.ID).ID, d.ID), store.ErrNotFound)
+		wantErr(t, check(o.ID, s.ID, store.NewID()), store.ErrNotFound)
+
+		// Activation refuses the same deploy in its transaction.
+		f.must(f.r.Deploys.RecordUpload(t.Context(), o.ID, store.Blob{SHA256: sha('c'), Size: 2, CreatedAt: now}))
+		_, err = f.r.Deploys.Activate(t.Context(), o.ID, s.ID, d.ID, now)
+		if !errors.As(err, &me) || me.Path != "b.js" {
+			t.Fatalf("Activate() = %v, want a size mismatch for b.js", err)
+		}
+		got, err := f.r.Deploys.Get(t.Context(), o.ID, s.ID, d.ID)
+		if err != nil || !got.ActivatedAt.IsZero() {
+			t.Fatalf("deploy after refused activation = %+v, %v; want still pending", got, err)
+		}
 	})
 	t.Run("RecordUpload", func(t *testing.T) {
 		t.Parallel()
