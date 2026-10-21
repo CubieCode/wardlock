@@ -38,7 +38,7 @@ func hashOf(body string) string {
 // it.
 func (p *policyEdge) publishAs(ownerID, name string, spa bool, files map[string]string) {
 	p.t.Helper()
-	p.publishWith(ownerID, name, deploys.Manifest{SPA: spa}, files)
+	p.publishWith(ownerID, name, deploys.Manifest{SPA: &spa}, files)
 }
 
 // publishWith is publishAs with m's options.
@@ -497,7 +497,7 @@ func TestScreeningCacheAndSiblings(t *testing.T) {
 	files := map[string]string{"index.html": page, "index.html.gz": gz(page), "index.html.br": "brotli-bytes", asset[1:]: js}
 	docs := map[string]string{"other.html": "<p>Other</p>", "other.html.gz": gz("<p>abusive-sibling</p>")}
 	maps.Copy(docs, files)
-	p.publishWith(p.owner.ID, "docs", deploys.Manifest{ImmutableAssets: true}, docs)
+	p.publishWith(p.owner.ID, "docs", deploys.Manifest{ImmutableAssets: new(true)}, docs)
 	exempt := store.Owner{ID: store.NewID(), Email: "trusted@example.test", CreatedAt: p.now()}
 	if err := p.db.Owners().Create(ctx, exempt); err != nil {
 		t.Fatal(err)
@@ -505,7 +505,7 @@ func TestScreeningCacheAndSiblings(t *testing.T) {
 	if err := p.db.Moderation().SetExempt(ctx, exempt.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	p.publishWith(exempt.ID, "trusted", deploys.Manifest{ImmutableAssets: true}, files)
+	p.publishWith(exempt.ID, "trusted", deploys.Manifest{ImmutableAssets: new(true)}, files)
 	const docsHost, trustedHost = "docs.wardlock.localhost", "trusted.wardlock.localhost"
 	both := http.Header{"Accept-Encoding": {"br, gzip"}}
 	encoding := func(host, target string, h http.Header, want, body string) {

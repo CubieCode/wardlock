@@ -69,7 +69,7 @@ info:
     | 401 | `unauthenticated`: no credential, or an expired, revoked or unknown one |
     | 403 | `forbidden`: the credential lacks the scope, or a cookie request came from another origin; `invites_restricted`: the operator has kept invitations to themselves |
     | 404 | `not_found` |
-    | 409 | `site_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `default_policy`, `passkey_limit`, `site_unavailable` (the operator has taken the site down) |
+    | 409 | `site_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `stale_base` (a path deploy's site changed after it was created; create it again), `default_policy`, `passkey_limit`, `site_unavailable` (the operator has taken the site down) |
     | 410 | `login_expired` |
     | 413 | `limit_exceeded`: a deploy limit (files, bytes per file or per video file, bytes in total) or one of the owner's quotas (bytes stored, sites, deploys in 24 hours); the `message` names the file and the limit, and `target` is the file's path, or `files`, `deploys` or `name` |
     | 422 | `file_type_blocked`: the manifest lists a file whose extension the operator has blocked; `target` is its path |
@@ -1129,6 +1129,22 @@ paths:
         24 hours, answered `413 limit_exceeded` with target `deploys`. A
         refused deploy counts towards neither. A site the operator has taken
         down answers `409 site_unavailable`.
+
+        With `path` (a prefix such as `/mockup-x/`), the deploy replaces
+        only that prefix of the site and keeps everything else. The server
+        pins the site's active deploy as the base; the new deploy lists the
+        base's files outside the prefix unchanged plus `files` placed under
+        the prefix (`index.html` becomes `mockup-x/index.html`), and `files`
+        may be empty to remove the prefix. A site with nothing live takes
+        the prefix's files alone. `spa` and `immutableAssets` carry over from
+        the base unless given. Limits, blocked file types, the video limit
+        and quotas apply to the merged deploy exactly as to a full one, and
+        `fileCount` and `totalSize` describe it. A prefix that is `/`, does
+        not start and end with `/`, breaks the path rules or lies under
+        `/.wardlock/` answers `400 invalid_path` with target `path`.
+        Activation refuses a path deploy with `409 stale_base` once the site
+        serves another deploy than its base; create it again (nothing needs
+        uploading again).
       tags: [deploys]
       security:
         - sessionCookie: []
@@ -1249,7 +1265,10 @@ paths:
         Atomic: visitors see the previous deploy or this one, never a mix. A
         deploy with blobs still missing answers `409 blobs_missing`; one that
         is not pending answers `409 deploy_not_pending` (use `rollbackSite`
-        to return to an earlier deploy). A site the operator has taken down
+        to return to an earlier deploy). A path deploy whose base is no
+        longer the site's active deploy answers `409 stale_base`: another
+        deploy or rollback went live after it was created, so create it
+        again, which pins the new base. A site the operator has taken down
         answers `409 site_unavailable`.
       tags: [deploys]
       security:
@@ -2900,6 +2919,23 @@ components:
             are served with `Cache-Control: public, max-age=31536000,
             immutable` (`private` on protected sites) while this deploy is
             active. See SPEC "Serving" for the hash rule.
+        path:
+          description: >-
+            The prefix a path deploy replaced, keeping the rest of its base.
+            Absent for a full deploy. Either way the deploy lists every file
+            the site serves while it is active.
+          $ref: '#/components/schemas/DeployPath'
+    DeployPath:
+      type: string
+      description: >-
+        A directory prefix starting and ending with `/`, such as
+        `/mockup-x/`: never `/` itself, with no empty, `.` or `..` segments,
+        no control or invisible format characters, and never under
+        `/.wardlock/`. Matched byte for byte against deploy paths.
+      minLength: 3
+      maxLength: 1024
+      pattern: ^/.+/$
+      examples: [/mockup-x/]
     DeployPage:
       type: object
       additionalProperties: false
@@ -2936,7 +2972,9 @@ components:
       properties:
         files:
           type: array
-          minItems: 1
+          description: >-
+            The deploy's files, relative to `path` when it is given. At least
+            one for a full deploy; empty with `path` removes the prefix.
           items:
             $ref: '#/components/schemas/ManifestFile'
         message:
@@ -2944,15 +2982,21 @@ components:
           maxLength: 500
         spa:
           type: boolean
-          default: false
-          description: Serve `/index.html` for missing extensionless paths.
+          description: >-
+            Serve `/index.html` for missing extensionless paths. Defaults to
+            false, or with `path` to the base deploy's setting.
         immutableAssets:
           type: boolean
-          default: false
           description: >-
             Cache files under `/assets/` with a content hash in their name
             for a year as immutable (SPEC "Serving"). Only set it when every
-            such name changes whenever its content does.
+            such name changes whenever its content does. Defaults to false,
+            or with `path` to the base deploy's setting.
+        path:
+          description: >-
+            Replace only this prefix of the site, keeping the active
+            deploy's files outside it (see `createDeploy`).
+          $ref: '#/components/schemas/DeployPath'
     CreatedDeploy:
       type: object
       additionalProperties: false

@@ -65,10 +65,17 @@ func extension(p string) string { return strings.ToLower(path.Ext(p)) }
 type Manifest struct {
 	Files   []store.DeployFile
 	Message string
-	SPA     bool
+	// SPA turns on the SPA fallback; nil is off for a full deploy and the
+	// base's setting for a path deploy.
+	SPA *bool
 	// ImmutableAssets opts hashed files under /assets/ into long-term
-	// caching while the deploy is active.
-	ImmutableAssets bool
+	// caching while the deploy is active; nil as for SPA.
+	ImmutableAssets *bool
+	// Path, when set, makes this a path deploy (C1.13): a prefix such as
+	// "/mockup-x/" that Files are relative to and that replaces only that
+	// prefix of the site's active deploy. Files may then be empty, which
+	// removes the prefix.
+	Path string
 }
 
 // NormalisePath turns backslashes into forward slashes and checks the
@@ -80,38 +87,71 @@ type Manifest struct {
 // otherwise kept byte for byte, with no Unicode normalisation; the CLI
 // (C1.5) sends them in NFC.
 func NormalisePath(p string) (string, error) {
-	orig := p
-	invalid := func(why string) (string, error) {
-		return "", &TargetError{Err: ErrInvalidPath, Target: orig, Message: fmt.Sprintf("Path %q %s.", orig, why)}
+	clean, why := checkPath(p)
+	if why != "" {
+		return "", &TargetError{Err: ErrInvalidPath, Target: p, Message: fmt.Sprintf("Path %q %s.", p, why)}
 	}
+	return clean, nil
+}
+
+// checkPath normalises p as NormalisePath does, or says why it cannot.
+func checkPath(p string) (clean, why string) {
 	if !utf8.ValidString(p) {
-		return invalid("is not valid UTF-8")
+		return "", "is not valid UTF-8"
 	}
 	p = strings.ReplaceAll(p, `\`, "/")
 	if p == "" || len(p) > maxPathBytes {
-		return invalid(fmt.Sprintf("must be 1 to %d bytes", maxPathBytes))
+		return "", fmt.Sprintf("must be 1 to %d bytes", maxPathBytes)
 	}
 	if strings.ContainsFunc(p, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) {
-		return invalid("contains a control or invisible format character")
+		return "", "contains a control or invisible format character"
 	}
 	segments := strings.Split(p, "/")
 	for _, seg := range segments {
 		switch seg {
 		case "":
-			return invalid("has an empty segment")
+			return "", "has an empty segment"
 		case ".", "..":
-			return invalid("contains a . or .. segment")
+			return "", "contains a . or .. segment"
 		}
 	}
 	if strings.EqualFold(segments[0], ".wardlock") {
-		return invalid("is under the reserved .wardlock/ path")
+		return "", "is under the reserved .wardlock/ path"
 	}
-	return p, nil
+	return p, ""
+}
+
+// NormalisePrefix checks a path deploy's prefix (C1.13): a directory such
+// as "/mockup-x/" that starts and ends with a slash, is not "/" itself and
+// whose inside follows NormalisePath's rules, so it is never under
+// .wardlock/. Backslashes become forward slashes, as in file paths. The
+// error's target is "path", the API field.
+func NormalisePrefix(p string) (string, error) {
+	invalid := func(why string) (string, error) {
+		return "", &TargetError{Err: ErrInvalidPath, Target: "path", Message: fmt.Sprintf("The path %q %s.", p, why)}
+	}
+	if !utf8.ValidString(p) {
+		return invalid("is not valid UTF-8")
+	}
+	q := strings.ReplaceAll(p, `\`, "/")
+	if q == "/" {
+		return invalid("is the whole site; deploy without a path to replace it")
+	}
+	if len(q) < 3 || !strings.HasPrefix(q, "/") || !strings.HasSuffix(q, "/") {
+		return invalid("must start and end with /, such as /mockup-x/")
+	}
+	inner, why := checkPath(q[1 : len(q)-1])
+	if why != "" {
+		return invalid(why)
+	}
+	return "/" + inner + "/", nil
 }
 
 // validate normalises m's paths in place and checks it against the limits.
+// Only a path deploy, whose merged manifest has every file the site will
+// serve, may be empty.
 func (l Limits) validate(m *Manifest) error {
-	if len(m.Files) == 0 {
+	if len(m.Files) == 0 && m.Path == "" {
 		return &TargetError{Err: ErrInvalidManifest, Target: "files", Message: "A deploy needs at least one file."}
 	}
 	if utf8.RuneCountInString(m.Message) > maxMessageChars || !utf8.ValidString(m.Message) {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"wardlock.nz/server/internal/store"
@@ -33,6 +34,10 @@ var (
 	// ErrSiteUnavailable means the operator has taken the site down: its
 	// deploys are kept as they are until it is restored (A2.13).
 	ErrSiteUnavailable = errors.New("site taken down by the operator")
+	// ErrStaleBase means a path deploy's base is no longer the site's
+	// active deploy, so activating it would drop what went live since; the
+	// client creates the deploy again (C1.13).
+	ErrStaleBase = errors.New("path deploy base is no longer active")
 )
 
 // TargetError is an input error about one manifest path or field. Message
@@ -122,23 +127,28 @@ func (s *Service) changeable(ctx context.Context, ownerID, name string) (store.S
 // or daily deploy quota is ErrLimitExceeded. A hash counts as held only when
 // this owner uploaded it and the blob is still stored, so the answer never
 // reveals another owner's content.
+//
+// With m.Path, the deploy is the site's active deploy (its base) with only
+// that prefix replaced by m.Files; limits and quotas apply to the merged
+// deploy exactly as to a full one.
 func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manifest) (store.Deploy, []string, error) {
 	site, err := s.changeable(ctx, ownerID, siteName)
 	if err != nil {
 		return store.Deploy{}, nil, err
 	}
+	d := store.Deploy{ID: store.NewID(), SiteID: site.ID, Message: m.Message}
+	if m.Path != "" {
+		if err := s.merge(ctx, ownerID, site, &m, &d); err != nil {
+			return store.Deploy{}, nil, err
+		}
+	}
 	if err := s.c.Limits.validate(&m); err != nil {
 		return store.Deploy{}, nil, err
 	}
-	d := store.Deploy{
-		ID:              store.NewID(),
-		SiteID:          site.ID,
-		Message:         m.Message,
-		FileCount:       len(m.Files),
-		SPA:             m.SPA,
-		ImmutableAssets: m.ImmutableAssets,
-		CreatedAt:       s.now(),
-	}
+	d.FileCount = len(m.Files)
+	d.SPA = m.SPA != nil && *m.SPA
+	d.ImmutableAssets = m.ImmutableAssets != nil && *m.ImmutableAssets
+	d.CreatedAt = s.now()
 	for _, f := range m.Files {
 		d.TotalSize += f.Size
 	}
@@ -153,6 +163,56 @@ func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manife
 		return store.Deploy{}, nil, err
 	}
 	return d, missing, nil
+}
+
+// merge turns a path deploy's manifest into the whole site's: the files of
+// the site's active deploy, pinned as d's base, outside the prefix, as they
+// are, and m's files under it. SPA and ImmutableAssets left unset follow
+// the base. A site with nothing live takes m's files alone.
+func (s *Service) merge(ctx context.Context, ownerID string, site store.Site, m *Manifest, d *store.Deploy) error {
+	prefix, err := NormalisePrefix(m.Path)
+	if err != nil {
+		return err
+	}
+	m.Path, d.PathPrefix = prefix, prefix
+	dir := prefix[1:]
+	files := make([]store.DeployFile, 0, len(m.Files))
+	for _, f := range m.Files {
+		p, err := NormalisePath(f.Path)
+		if err != nil {
+			return err
+		}
+		f.Path = dir + p
+		files = append(files, f)
+	}
+	if site.ActiveDeployID != "" {
+		base, err := s.c.Deploys.Get(ctx, ownerID, site.ID, site.ActiveDeployID)
+		if errors.Is(err, store.ErrNotFound) {
+			// Replaced and collected since the site was read.
+			return ErrStaleBase
+		}
+		if err != nil {
+			return storeErr("find base deploy", err)
+		}
+		kept, err := s.c.Deploys.Manifest(ctx, ownerID, site.ID, base.ID)
+		if err != nil {
+			return storeErr("list base files", err)
+		}
+		for _, f := range kept {
+			if !strings.HasPrefix(f.Path, dir) {
+				files = append(files, f)
+			}
+		}
+		d.BaseDeployID = base.ID
+		if m.SPA == nil {
+			m.SPA = &base.SPA
+		}
+		if m.ImmutableAssets == nil {
+			m.ImmutableAssets = &base.ImmutableAssets
+		}
+	}
+	m.Files = files
+	return nil
 }
 
 // quotaErr explains a refused deploy to its owner.
@@ -260,7 +320,8 @@ func (c *countingReader) Read(p []byte) (int, error) {
 
 // Activate generates the renditions of the deploy's HTML files, then makes
 // it the site's active deploy atomically and notifies subscribers. It fails with ErrBlobsMissing until the owner has
-// uploaded every blob, and ErrNotPending once activated (see Rollback).
+// uploaded every blob, ErrNotPending once activated (see Rollback) and
+// ErrStaleBase for a path deploy whose base the site no longer serves.
 func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID string) (store.Site, store.Deploy, error) {
 	site, err := s.changeable(ctx, ownerID, siteName)
 	if err != nil {
@@ -272,6 +333,11 @@ func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID stri
 	}
 	if !d.ActivatedAt.IsZero() {
 		return store.Site{}, store.Deploy{}, ErrNotPending
+	}
+	if d.PathPrefix != "" && d.BaseDeployID != site.ActiveDeployID {
+		// Checked again in the activation transaction; this spares the
+		// renditions.
+		return store.Site{}, store.Deploy{}, ErrStaleBase
 	}
 	missing, err := s.missing(ctx, ownerID, site.ID, deployID)
 	if err != nil {
@@ -346,6 +412,7 @@ func storeErr(what string, err error) error {
 		{store.ErrDeployNotPending, ErrNotPending},
 		{store.ErrDeployNotActivated, ErrNotActivated},
 		{store.ErrNoPreviousDeploy, ErrNoPreviousDeploy},
+		{store.ErrStaleBase, ErrStaleBase},
 	} {
 		if errors.Is(err, m.from) {
 			return fmt.Errorf("%s: %w", what, m.to)

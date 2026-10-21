@@ -14,8 +14,8 @@ import (
 )
 
 const createDeploy = `-- name: CreateDeploy :exec
-INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, immutable_assets, created_at, activated_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, immutable_assets, created_at, activated_at, path_prefix, base_deploy_id)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
 `
 
 type CreateDeployParams struct {
@@ -28,6 +28,8 @@ type CreateDeployParams struct {
 	ImmutableAssets int64
 	CreatedAt       int64
 	ActivatedAt     sql.NullInt64
+	PathPrefix      sql.NullString
+	BaseDeployID    sql.NullString
 }
 
 func (q *Queries) CreateDeploy(ctx context.Context, arg CreateDeployParams) error {
@@ -41,6 +43,8 @@ func (q *Queries) CreateDeploy(ctx context.Context, arg CreateDeployParams) erro
 		arg.ImmutableAssets,
 		arg.CreatedAt,
 		arg.ActivatedAt,
+		arg.PathPrefix,
+		arg.BaseDeployID,
 	)
 	return err
 }
@@ -86,7 +90,7 @@ func (q *Queries) DeleteDeploy(ctx context.Context, arg DeleteDeployParams) (int
 }
 
 const getDeploy = `-- name: GetDeploy :one
-SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id
 FROM deploys JOIN sites ON sites.id = deploys.site_id
 WHERE deploys.id = ?1 AND deploys.site_id = ?2 AND sites.owner_id = ?3
 `
@@ -107,6 +111,8 @@ type GetDeployRow struct {
 	ImmutableAssets int64
 	CreatedAt       int64
 	ActivatedAt     sql.NullInt64
+	PathPrefix      sql.NullString
+	BaseDeployID    sql.NullString
 }
 
 func (q *Queries) GetDeploy(ctx context.Context, arg GetDeployParams) (GetDeployRow, error) {
@@ -122,6 +128,8 @@ func (q *Queries) GetDeploy(ctx context.Context, arg GetDeployParams) (GetDeploy
 		&i.ImmutableAssets,
 		&i.CreatedAt,
 		&i.ActivatedAt,
+		&i.PathPrefix,
+		&i.BaseDeployID,
 	)
 	return i, err
 }
@@ -161,7 +169,7 @@ func (q *Queries) ListDeployFiles(ctx context.Context, deployID string) ([]ListD
 }
 
 const listDeploys = `-- name: ListDeploys :many
-SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id
 FROM deploys JOIN sites ON sites.id = deploys.site_id
 WHERE deploys.site_id = ?1 AND sites.owner_id = ?2
   AND (deploys.created_at < ?3
@@ -188,6 +196,8 @@ type ListDeploysRow struct {
 	ImmutableAssets int64
 	CreatedAt       int64
 	ActivatedAt     sql.NullInt64
+	PathPrefix      sql.NullString
+	BaseDeployID    sql.NullString
 }
 
 // Newest first, strictly before the cursor (created_at, id); the first page
@@ -217,7 +227,53 @@ func (q *Queries) ListDeploys(ctx context.Context, arg ListDeploysParams) ([]Lis
 			&i.ImmutableAssets,
 			&i.CreatedAt,
 			&i.ActivatedAt,
+			&i.PathPrefix,
+			&i.BaseDeployID,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOwnerDeployFiles = `-- name: ListOwnerDeployFiles :many
+SELECT deploy_files.path, deploy_files.sha256, deploy_files.size FROM deploy_files
+JOIN deploys ON deploys.id = deploy_files.deploy_id
+JOIN sites ON sites.id = deploys.site_id
+WHERE deploy_files.deploy_id = ?1 AND deploys.site_id = ?2 AND sites.owner_id = ?3
+ORDER BY deploy_files.path
+`
+
+type ListOwnerDeployFilesParams struct {
+	DeployID string
+	SiteID   string
+	OwnerID  string
+}
+
+type ListOwnerDeployFilesRow struct {
+	Path   string
+	Sha256 string
+	Size   int64
+}
+
+// One of the owner's deploys' manifest, ordered by path.
+func (q *Queries) ListOwnerDeployFiles(ctx context.Context, arg ListOwnerDeployFilesParams) ([]ListOwnerDeployFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOwnerDeployFiles, arg.DeployID, arg.SiteID, arg.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOwnerDeployFilesRow
+	for rows.Next() {
+		var i ListOwnerDeployFilesRow
+		if err := rows.Scan(&i.Path, &i.Sha256, &i.Size); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

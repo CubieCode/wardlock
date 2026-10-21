@@ -187,6 +187,110 @@ func deploysContract(t *testing.T, open Opener) {
 			t.Fatalf("Files(unknown) = %v, %v; want none", got, err)
 		}
 	})
+	t.Run("Manifest", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		want := []store.DeployFile{
+			{Path: "mockup/index.html", SHA256: sha('b'), Size: 3},
+			{Path: "index.html", SHA256: sha('a'), Size: 5},
+		}
+		d := f.deployFiles(o.ID, s.ID, want...)
+		got, err := f.r.Deploys.Manifest(t.Context(), o.ID, s.ID, d.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		slices.SortFunc(want, func(a, b store.DeployFile) int { return strings.Compare(a.Path, b.Path) })
+		if !slices.Equal(got, want) {
+			t.Fatalf("Manifest() = %+v, want %+v", got, want)
+		}
+		// Another owner, another of the owner's sites and an unknown deploy
+		// are all the same not found.
+		_, err = f.r.Deploys.Manifest(t.Context(), f.owner().ID, s.ID, d.ID)
+		wantErr(t, err, store.ErrNotFound)
+		_, err = f.r.Deploys.Manifest(t.Context(), o.ID, f.site(o.ID).ID, d.ID)
+		wantErr(t, err, store.ErrNotFound)
+		_, err = f.r.Deploys.Manifest(t.Context(), o.ID, s.ID, store.NewID())
+		wantErr(t, err, store.ErrNotFound)
+		empty := f.deployFiles(o.ID, s.ID)
+		got, err = f.r.Deploys.Manifest(t.Context(), o.ID, s.ID, empty.ID)
+		if err != nil || len(got) != 0 {
+			t.Fatalf("Manifest(empty) = %v, %v; want none", got, err)
+		}
+	})
+	t.Run("PathDeploy", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		base := f.activated(o.ID, s.ID, now)
+		want := f.validDeploy(s.ID)
+		want.PathPrefix, want.BaseDeployID = "/mockup-x/", base.ID
+		f.must(f.r.Deploys.Create(t.Context(), o.ID, want, []store.DeployFile{{Path: "mockup-x/index.html", SHA256: sha('a'), Size: 5}}, store.Quotas{}))
+		got, err := f.r.Deploys.Get(t.Context(), o.ID, s.ID, want.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("Get() = %+v, want %+v", got, want)
+		}
+		list, err := f.r.Deploys.List(t.Context(), o.ID, s.ID, store.DeployCursor{}, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i := slices.IndexFunc(list, func(d store.Deploy) bool { return d.ID == want.ID }); i < 0 || list[i] != want {
+			t.Fatalf("List() = %+v, want it to hold %+v", list, want)
+		}
+		bad := f.validDeploy(s.ID)
+		bad.PathPrefix = "/"
+		wantErr(t, f.r.Deploys.Create(t.Context(), o.ID, bad, nil, store.Quotas{}), store.ErrConstraint)
+		bad.PathPrefix, bad.BaseDeployID = "/x/", store.NewID()
+		wantErr(t, f.r.Deploys.Create(t.Context(), o.ID, bad, nil, store.Quotas{}), store.ErrConstraint)
+	})
+	t.Run("ActivatePathDeployNeedsItsBase", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		pathDeploy := func(baseID string) store.Deploy {
+			t.Helper()
+			d := f.validDeploy(s.ID)
+			d.PathPrefix, d.BaseDeployID = "/mockup-x/", baseID
+			f.must(f.r.Deploys.Create(t.Context(), o.ID, d, []store.DeployFile{{Path: "mockup-x/index.html", SHA256: sha('a'), Size: 5}}, store.Quotas{}))
+			f.uploadAll(o.ID, s.ID, d.ID)
+			return d
+		}
+		// Built on nothing live: activates only while nothing is live.
+		first := pathDeploy("")
+		late := pathDeploy("")
+		if _, err := f.r.Deploys.Activate(t.Context(), o.ID, s.ID, first.ID, now); err != nil {
+			t.Fatal(err)
+		}
+		_, err := f.r.Deploys.Activate(t.Context(), o.ID, s.ID, late.ID, now)
+		wantErr(t, err, store.ErrStaleBase)
+
+		// Built on first: refused once another deploy goes live, and allowed
+		// again once first is back.
+		onFirst := pathDeploy(first.ID)
+		f.activated(o.ID, s.ID, now.Add(time.Minute))
+		_, err = f.r.Deploys.Activate(t.Context(), o.ID, s.ID, onFirst.ID, now.Add(2*time.Minute))
+		wantErr(t, err, store.ErrStaleBase)
+		if _, _, err := f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, first.ID, now.Add(3*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.r.Deploys.Activate(t.Context(), o.ID, s.ID, onFirst.ID, now.Add(4*time.Minute)); err != nil {
+			t.Fatalf("Activate() on its restored base: %v", err)
+		}
+		site, err := f.r.Sites.Get(t.Context(), o.ID, s.ID)
+		if err != nil || site.ActiveDeployID != onFirst.ID {
+			t.Fatalf("ActiveDeployID = %q, %v; want %q", site.ActiveDeployID, err, onFirst.ID)
+		}
+		// A full deploy never checks a base.
+		if _, err := f.r.Deploys.Activate(t.Context(), o.ID, s.ID, f.deploy(o.ID, s.ID).ID, now.Add(5*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	})
 	t.Run("HashesAndManifestSize", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, open)
