@@ -971,7 +971,7 @@ Replace the binary or image and restart. Migrations are forward-only and run on 
 
 ## Go import paths
 
-The Go modules use vanity import paths on the project's own domain: `wardlock.nz/server`, `wardlock.nz/cli` and `wardlock.nz/apiclient`. This lets the repository move without breaking imports. The page that serves the `go-import` metadata is [`home-site/`](../home-site/README.md), deployed as the site `home` with `wardlock.nz` as its custom domain; the `Home site` workflow deploys it from `main`. Until the domain serves it, local builds rely on `go.work` and the `replace` directives in `apps/server/go.mod` and `apps/cli/go.mod`; serving it is a launch task in the [launch checklist](LAUNCH-CHECKLIST.md).
+The Go modules use vanity import paths on the project's own domain: `wardlock.nz/server`, `wardlock.nz/cli` and `wardlock.nz/apiclient`. This lets the repository move without breaking imports. The page that serves the `go-import` metadata is [`home-site/`](../home-site/README.md), deployed as the site `home` with `wardlock.nz` as its custom domain; the `Home site` workflow deploys it from `main`. Local builds on `main` use `go.work` and the `replace` directives in `apps/server/go.mod` and `apps/cli/go.mod`, so they build against the client in this repository; a release commit drops them ([Releases and module tags](#releases-and-module-tags)).
 
 <details>
 <summary>The <code>go-import</code> metadata each path must serve</summary>
