@@ -1,0 +1,34 @@
+<!doctype html>
+<!-- SPDX-FileCopyrightText: 2026 CubieCode -->
+<!-- SPDX-License-Identifier: MIT -->
+<!--
+  wardlock.nz: the Go vanity import paths (docs/DEPLOYMENT.md, "Go import
+  paths"), then a redirect to the documentation. The site deploys with the SPA
+  fallback, so every package path (wardlock.nz/cli/cmd/wardlock?go-get=1)
+  answers this page with status 200, and Go uses the tag whose module path is
+  a prefix of the package it looks up. scripts/home-site.test.mjs checks the
+  tags against the modules in go.work.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Wardlock</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="go-import"
+      content="wardlock.nz/apiclient git https://github.com/CubieCode/wardlock packages/apiclient-go"
+    />
+    <meta
+      name="go-import"
+      content="wardlock.nz/cli git https://github.com/CubieCode/wardlock apps/cli"
+    />
+    <meta
+      name="go-import"
+      content="wardlock.nz/server git https://github.com/CubieCode/wardlock apps/server"
+    />
+    <meta http-equiv="refresh" content="0; url=https://docs.wardlock.nz/" />
+  </head>
+  <body>
+    <p><a href="https://docs.wardlock.nz/">Wardlock documentation</a></p>
+  </body>
+</html>
