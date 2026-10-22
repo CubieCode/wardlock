@@ -25,6 +25,9 @@ Use only the commands in [references/cli.md](references/cli.md), written exactly
 1. Run `wardlock --json version`. If the command is not found, tell the user to install the CLI and stop:
    - `curl -fsSLO https://raw.githubusercontent.com/CubieCode/wardlock/main/deploy/install.sh && sh install.sh`, or
    - `go install wardlock.nz/cli/cmd/wardlock@latest`.
+
+   If `version` is older than `0.2.0` (a `dev` build is fine), tell the user to upgrade with the same commands and stop. If a deploy later fails with "does not support deploying into a path", their server is older than v0.2.0: tell them and stop.
+
 2. Run `wardlock --json list`. If it fails with "not logged in", or asks to log in again, ask the user to run `wardlock login --server URL` (their server's address) in their own terminal, then wait. On success, `sites` lists their sites, each with `name`, `url` and `policy`.
 
 ## 2. Choose the root site
