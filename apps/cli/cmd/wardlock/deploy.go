@@ -338,6 +338,12 @@ func (d *deployer) deploy(ctx context.Context, site string, body apiclient.Creat
 		return apiclient.Activation{}, refusedFile(c.failed(cres.HTTPResponse, cres.Body), cres.Body, prefix, body.Files)
 	}
 	deploy := cres.JSON201.Deploy
+	// A server older than path deploys ignores the path and would replace
+	// the whole site with this upload, so never upload to or activate a
+	// deploy that does not carry the prefix asked for.
+	if body.Path != nil && (deploy.Path == nil || *deploy.Path != *body.Path) {
+		return apiclient.Activation{}, fmt.Errorf("server %s does not support deploying into a path (it needs Wardlock 0.2.0 or later); nothing was changed", c.server)
+	}
 
 	var toUpload []localFile
 	var uploadBytes int64
