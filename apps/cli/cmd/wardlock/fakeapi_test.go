@@ -69,6 +69,9 @@ type fakeAPI struct {
 	// activation, under the lock: a test makes another deploy go live there
 	// to see a path deploy's base go stale.
 	beforeActivate func(s *fakeSite)
+	// ignorePath makes deploy creation drop the path, as a server older
+	// than path deploys (C1.13) does with a field it does not know.
+	ignorePath bool
 	// downloads counts blob GETs by hash; failDownloads makes the next
 	// GETs fail like this, in order: an HTTP status, dropConnection,
 	// corruptBody, truncateBody or a 429 with Retry-After. withheld hashes answer 451,
@@ -304,7 +307,11 @@ func (f *fakeAPI) createDeploy(w http.ResponseWriter, r *http.Request, s *fakeSi
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	var body apiclient.CreateDeployRequest
-	if err := dec.Decode(&body); err != nil || (len(body.Files) == 0 && body.Path == nil) {
+	err := dec.Decode(&body)
+	if f.ignorePath {
+		body.Path = nil
+	}
+	if err != nil || (len(body.Files) == 0 && body.Path == nil) {
 		reply(w, http.StatusBadRequest, apiErr("invalid_request", "Invalid manifest."))
 		return
 	}

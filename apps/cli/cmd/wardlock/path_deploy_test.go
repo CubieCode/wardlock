@@ -304,6 +304,32 @@ func TestDeployPathRetriesStaleBaseOnce(t *testing.T) {
 	}
 }
 
+func TestDeployPathRefusesServerWithoutPathDeploys(t *testing.T) {
+	srv := newFakeAPI(t)
+	a, _, errOut := ciApp(t, srv)
+	baseSite(t, srv, a)
+	writeFiles(t, filepath.Join(workDir(t, a), "mock"), map[string]string{"index.html": "new"})
+	srv.ignorePath = true
+	srv.uploads = map[string]int{}
+	for _, args := range [][]string{
+		{"deploy", "mock", "docs", "--path", "/mockup-x/"},
+		{"--json", "deploy", "mock", "docs", "--path", "/mockup-x/"},
+	} {
+		errOut.Reset()
+		err := run(t.Context(), a, args)
+		if code := exitCode(errOut, err); code != 1 || !strings.Contains(errOut.String(), "does not support deploying into a path") {
+			t.Fatalf("%q: exit %d %q", args, code, errOut)
+		}
+		// Nothing was uploaded or activated: the full deploy stays live.
+		if len(srv.uploads) != 0 {
+			t.Fatalf("%q: uploaded %v", args, srv.uploads)
+		}
+		if want := []string{"index.html", "mockup-x/old.html"}; !slices.Equal(livePaths(t, srv, "docs"), want) {
+			t.Fatalf("%q: live %q, want %q", args, livePaths(t, srv, "docs"), want)
+		}
+	}
+}
+
 func sameRequest(a, b apiclient.CreateDeployRequest) bool {
 	x, _ := json.Marshal(a)
 	y, _ := json.Marshal(b)
