@@ -3,8 +3,9 @@
 
 // The sites map (V5.9) in a real browser against a real server: the List/Map
 // switch keeps the filters, filters fade the sites they leave out, a focused
-// dot shows its tooltip, a hub filters to its group, and the text list holds
-// every site. All sites, groups and names are synthetic.
+// dot shows its tooltip, a hub filters to its group, the text list holds
+// every site, and a site named map keeps its own address. All sites, groups
+// and names are synthetic.
 import { execFileSync } from 'node:child_process';
 import {
   expect,
@@ -112,7 +113,8 @@ for (const scheme of schemes) {
         await expect(
           page.getByRole('heading', { level: 1, name: 'Sites map' }),
         ).toBeVisible();
-        expect(new URL(page.url()).pathname).toBe('/sites/map');
+        expect(new URL(page.url()).pathname).toBe('/sites');
+        expect(new URL(page.url()).searchParams.get('view')).toBe('map');
         expect(new URL(page.url()).searchParams.get('q')).toBe(prefix);
         expect(new URL(page.url()).searchParams.get('sort')).toBe('name');
         await expect(
@@ -175,7 +177,7 @@ for (const scheme of schemes) {
       });
 
       await test.step('the whole map, with the text list open', async () => {
-        await page.goto(`${origin}/sites/map`);
+        await page.goto(`${origin}/sites?view=map`);
         await expect(map).toBeVisible();
         await expect(dot(5)).toHaveAttribute('data-access', 'down');
         await shot('default');
@@ -194,12 +196,11 @@ for (const scheme of schemes) {
       });
 
       await test.step('a hub filters the map to its group; List keeps it', async () => {
-        // The hub's circle: the link's box also spans its title.
+        // From the keyboard: a pinned site's label can lie over the hub.
         await map
           .getByRole('link', { name: `North ${label}: 20 sites` })
-          .locator('.map-hub-mark')
-          .click();
-        await expect(page).toHaveURL(`${origin}/sites/map?g=${north.id}`);
+          .press('Enter');
+        await expect(page).toHaveURL(`${origin}/sites?g=${north.id}&view=map`);
         await expect(
           page.getByRole('group', { name: 'Filters' }),
         ).toContainText(`Group: North ${label}`);
@@ -217,5 +218,30 @@ for (const scheme of schemes) {
     } finally {
       admin('restore-site', name(5));
     }
+  });
+
+  test(`a site named map keeps /sites/map as its Overview (${scheme})`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    // Every project and theme shares the one site named map.
+    const res = await page.request.post(`${origin}/api/v0/sites`, {
+      data: { name: 'map' },
+      headers,
+    });
+    expect([201, 409], `create map: ${res.status()}`).toContain(res.status());
+    expect((await page.request.get(`${origin}/api/v0/sites/map`)).ok()).toBe(
+      true,
+    );
+    await page.goto(`${origin}/sites/map`);
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'map' }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole('navigation', { name: 'Site sections' })
+        .getByRole('link', { name: 'Overview' }),
+    ).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('group', { name: /^Map of / })).toHaveCount(0);
   });
 }

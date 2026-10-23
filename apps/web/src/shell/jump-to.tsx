@@ -23,7 +23,6 @@ type Group = components['schemas']['Group'];
 type Tag = components['schemas']['Tag'];
 type SiteCounts = components['schemas']['SiteCounts'];
 
-const mapPath = '/sites/map';
 const mapLabel = 'Sites map';
 
 /** How many sites jump-to shows for a search. */
@@ -270,12 +269,12 @@ export function results(
   // Sites.
   const pages = out.at(-1)!.items;
   const after = pages.findIndex((item) => item.href === '/sites') + 1;
-  if (matches(mapLabel) && shellRoutes.some((r) => r.path === mapPath))
+  if (matches(mapLabel))
     pages.splice(after, 0, {
-      id: `page:${mapPath}`,
+      id: 'page:sites-map',
       label: mapLabel,
       icon: icon(pageIcon),
-      href: mapPath,
+      href: sitesHref({ view: 'map' }),
     });
   return out;
 }

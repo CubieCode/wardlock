@@ -32,7 +32,8 @@ import { savedViews, sitesChanged } from '../shell/navigator.js';
 import { useTitle } from '../shell/page.js';
 import { navigate, useLocation } from '../shell/router.js';
 import { useFlash } from './flash.js';
-import { ViewSwitch } from './map-switch.js';
+import { MapPage } from './map-page.js';
+import { isMap, ViewSwitch } from './map-switch.js';
 import type { Group, Tag } from './site-page-organise.js';
 import { useMeta, useSites, type MetaState } from './sites-page-data.js';
 import {
@@ -330,9 +331,15 @@ const SectionView = memo(function SectionView({
 /**
  * `/sites`: the owner's sites in sections on wires, filtered by the
  * navigator and the search, with multi-select and bulk organising. Every
- * filter and view setting lives in the address.
+ * filter and view setting lives in the address; `view=map` shows the same
+ * sites as the sites map.
  */
 export function SitesPage({ api }: { api: ApiClient }) {
+  const { params } = useLocation();
+  return isMap(params) ? <MapPage api={api} /> : <SitesList api={api} />;
+}
+
+function SitesList({ api }: { api: ApiClient }) {
   const { params } = useLocation();
   const query = useMemo(() => readQuery(params), [params]);
   const list = useSites(api, query);

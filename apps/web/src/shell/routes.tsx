@@ -8,7 +8,6 @@ import { analyticsIcon } from '../analytics/icon.js';
 import { PasskeysPage } from '../auth/passkeys.js';
 import { OrganisePage } from '../organise/organise-page.js';
 import { OverviewPage } from '../overview/overview.js';
-import { MapPage } from '../sites/map-page.js';
 import { SitePage } from '../sites/site-page.js';
 import { siteTabs } from '../sites/site-page-tabs.js';
 import { SitesPage } from '../sites/sites-page.js';
@@ -63,11 +62,6 @@ export const shellRoutes: ShellRoute[] = [
     rail: { label: 'Sites', icon: sitesIcon, bar: true },
     navigator: true,
     render: ({ api }) => <SitesPage api={api} />,
-  },
-  {
-    path: '/sites/map',
-    navigator: true,
-    render: ({ api }) => <MapPage api={api} />,
   },
   // One entry per tab. The same key for every tab of a site keeps the page,
   // and the site it read, while the owner moves between tabs; another site

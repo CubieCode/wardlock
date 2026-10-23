@@ -78,13 +78,8 @@ export function hubName(hub: MapHub, filtering: boolean) {
     .join(', ');
 }
 
-/** A site name whose overview address is this page's. */
-const mapName = 'map';
-
 const siteHref = (site: SiteSummary) =>
-  site.name === mapName
-    ? `/sites/${mapName}/links`
-    : `/sites/${encodeURIComponent(site.name)}`;
+  `/sites/${encodeURIComponent(site.name)}`;
 
 /** The map filtered to one group, keeping how the list is drawn. */
 const hubHref = (hub: MapHub, query: ListQuery) =>
@@ -501,7 +496,7 @@ function SitesByGroup({
 }
 
 /**
- * `/sites/map`: every site around the server, by group, coloured by access
+ * `/sites?view=map`: every site around the server, by group, coloured by access
  * and sized by requests. The list's filters and search fade the sites they
  * leave out instead of hiding them.
  */
@@ -658,14 +653,6 @@ export function MapPage({ api }: { api: ApiClient }) {
         </EmptyState>
       ) : (
         <div className="map-body" aria-busy={data.pending}>
-          {ready?.sites.some((site) => site.name === mapName) ? (
-            // `/sites/map` is this page, so a site named map is reached
-            // through one of its other tabs.
-            <p className="map-note">
-              This page has the address of your site named map;{' '}
-              <a href={`/sites/${mapName}/links`}>open that site</a> from here.
-            </p>
-          ) : null}
           {filtering && ready?.matches?.size === 0 ? (
             <p className="map-note" role="status">
               No sites match. Search looks at names, addresses, domains, tags

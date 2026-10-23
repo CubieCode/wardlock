@@ -5,12 +5,13 @@ import { listIcon } from '../shell/icons.js';
 import { queryHref, type ListQuery } from './sites-page-query.js';
 import './map.css';
 
-/** The sites map's path. */
-export const mapPath = '/sites/map';
+/** Whether the sites page's address asks for the map. */
+export const isMap = (params: URLSearchParams) => params.get('view') === 'map';
 
 /** The map's address for this list state: the same filters and settings. */
 export function mapHref(query: ListQuery) {
-  return mapPath + queryHref(query).slice('/sites'.length);
+  const list = queryHref(query);
+  return `${list}${list.includes('?') ? '&' : '?'}view=map`;
 }
 
 const mapIcon = (

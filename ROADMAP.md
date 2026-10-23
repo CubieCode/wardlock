@@ -930,7 +930,7 @@ The dashboard's new visual direction (Constellation) and the organisation, list,
 - Owner: feat/v5.9-sites-map
 - PR: https://github.com/CubieCode/wardlock/pull/161
 - Depends on: V5.8
-- Scope: `/sites/map`: the server at the centre, one hub per group (and No group) on a dashed wire, a ward on wires to groups with protected sites, each site a dot coloured by access (violet protected, coral public, dashed outline taken down) sized by 7-day requests, pinned sites labelled; the list's filters and search dim non-matching sites instead of hiding them; each dot and hub is a link with a keyboard-reachable tooltip; a legend; an accessible text alternative listing groups and their sites.
+- Scope: `/sites?view=map`: the server at the centre, one hub per group (and No group) on a dashed wire, a ward on wires to groups with protected sites, each site a dot coloured by access (violet protected, coral public, dashed outline taken down) sized by 7-day requests, pinned sites labelled; the list's filters and search dim non-matching sites instead of hiding them; each dot and hub is a link with a keyboard-reachable tooltip; a legend; an accessible text alternative listing groups and their sites.
 - Acceptance: Component tests for layout input, dimming and accessible names; Playwright at both widths and themes; Mobbin references cited.
 - Skills: wardlock-item, wardlock-web
 - Parallel: Owns `apps/web/src/sites/map*`. No gates.

@@ -160,7 +160,7 @@ function fakeServer(w: World) {
   return { api, calls };
 }
 
-async function open(path = '/sites/map', w = world()) {
+async function open(path = '/sites?view=map', w = world()) {
   window.history.replaceState(null, '', path);
   const server = fakeServer(w);
   render(<App api={server.api} />);
@@ -217,7 +217,7 @@ describe('sites map', () => {
       within(map())
         .getByRole('link', { name: 'Docs: 1 site' })
         .getAttribute('href'),
-    ).toBe(`/sites/map?g=${docs}`);
+    ).toBe(`/sites?g=${docs}&view=map`);
     // All pages, and no per-site reads.
     const summaries = calls.filter(
       (u) => u.pathname === '/api/v0/site-summaries',
@@ -273,7 +273,7 @@ describe('sites map', () => {
   });
 
   it('dims the sites the filters leave out instead of hiding them', async () => {
-    const { calls } = await open('/sites/map?q=po');
+    const { calls } = await open('/sites?q=po&view=map');
     await waitFor(() =>
       expect(screen.getByText('1 of 5 sites match')).toBeTruthy(),
     );
@@ -316,7 +316,7 @@ describe('sites map', () => {
     const search = screen.getByRole('searchbox', { name: 'Search sites' });
     fireEvent.change(search, { target: { value: '' } });
     fireEvent.keyDown(search, { key: 'Enter' });
-    await waitFor(() => expect(window.location.search).toBe(''));
+    await waitFor(() => expect(window.location.search).toBe('?view=map'));
     await waitFor(() =>
       expect(
         within(map())
@@ -358,8 +358,8 @@ describe('sites map', () => {
     ).toBe('page');
     fireEvent.click(within(views).getByRole('link', { name: 'Map' }));
     await screen.findByRole('group', { name: /^Map of / });
-    expect(window.location.pathname).toBe('/sites/map');
-    expect(window.location.search).toBe(`?g=${work}&sort=name`);
+    expect(window.location.pathname).toBe('/sites');
+    expect(window.location.search).toBe(`?g=${work}&sort=name&view=map`);
     expect(
       screen.getByRole('group', { name: 'Filters' }).textContent,
     ).toContain('Group: Client work');
@@ -375,20 +375,20 @@ describe('sites map', () => {
   });
 
   it('keeps the navigator’s filters on the map', async () => {
-    await open(`/sites/map?g=${docs}`);
+    await open(`/sites?g=${docs}&view=map`);
     const nav = screen.getByRole('complementary', { name: 'Sites navigator' });
     const group = await within(nav).findByRole('link', { name: 'Docs 1' });
-    expect(group.getAttribute('href')).toBe(`/sites/map?g=${docs}`);
+    expect(group.getAttribute('href')).toBe(`/sites?g=${docs}&view=map`);
     expect(group.getAttribute('aria-current')).toBe('page');
     expect(
       within(nav)
         .getByRole('link', { name: /^All sites/ })
         .getAttribute('href'),
-    ).toBe('/sites/map');
+    ).toBe('/sites?view=map');
   });
 
   it('says when a group or tag in the address is not the owner’s', async () => {
-    window.history.replaceState(null, '', `/sites/map?g=${id(1)}`);
+    window.history.replaceState(null, '', `/sites?g=${id(1)}&view=map`);
     const server = fakeServer(world());
     render(<App api={server.api} />);
     expect(
@@ -396,20 +396,17 @@ describe('sites map', () => {
     ).toBeTruthy();
   });
 
-  it('reaches a site named map through its Links tab', async () => {
+  it('links a site named map to its own Overview', async () => {
     const w = world();
     w.sites.push(summary('map'));
-    await open('/sites/map', w);
+    await open('/sites?view=map', w);
     expect(
       within(map()).getByRole('link', { name: /^map:/ }).getAttribute('href'),
-    ).toBe('/sites/map/links');
-    expect(
-      screen.getByRole('link', { name: 'open that site' }).getAttribute('href'),
-    ).toBe('/sites/map/links');
+    ).toBe('/sites/map');
   });
 
   it('shows the empty state with no sites', async () => {
-    window.history.replaceState(null, '', '/sites/map');
+    window.history.replaceState(null, '', '/sites?view=map');
     const server = fakeServer({ sites: [], groups: [], tags: [] });
     render(<App api={server.api} />);
     expect(
