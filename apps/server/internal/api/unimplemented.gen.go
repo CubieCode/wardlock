@@ -69,6 +69,26 @@ func (Unimplemented) PollCliLogin(context.Context, PollCliLoginRequestObject) (P
 	return nil, ErrNotImplemented
 }
 
+// ListGroups is not implemented yet.
+func (Unimplemented) ListGroups(context.Context, ListGroupsRequestObject) (ListGroupsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// CreateGroup is not implemented yet.
+func (Unimplemented) CreateGroup(context.Context, CreateGroupRequestObject) (CreateGroupResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeleteGroup is not implemented yet.
+func (Unimplemented) DeleteGroup(context.Context, DeleteGroupRequestObject) (DeleteGroupResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// UpdateGroup is not implemented yet.
+func (Unimplemented) UpdateGroup(context.Context, UpdateGroupRequestObject) (UpdateGroupResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // GetHealth is not implemented yet.
 func (Unimplemented) GetHealth(context.Context, GetHealthRequestObject) (GetHealthResponseObject, error) {
 	return nil, ErrNotImplemented
@@ -76,6 +96,11 @@ func (Unimplemented) GetHealth(context.Context, GetHealthRequestObject) (GetHeal
 
 // GetMe is not implemented yet.
 func (Unimplemented) GetMe(context.Context, GetMeRequestObject) (GetMeResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// OrganiseSites is not implemented yet.
+func (Unimplemented) OrganiseSites(context.Context, OrganiseSitesRequestObject) (OrganiseSitesResponseObject, error) {
 	return nil, ErrNotImplemented
 }
 
@@ -224,6 +249,21 @@ func (Unimplemented) RotateShareLink(context.Context, RotateShareLinkRequestObje
 	return nil, ErrNotImplemented
 }
 
+// SetSiteOrganisation is not implemented yet.
+func (Unimplemented) SetSiteOrganisation(context.Context, SetSiteOrganisationRequestObject) (SetSiteOrganisationResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// UnpinSite is not implemented yet.
+func (Unimplemented) UnpinSite(context.Context, UnpinSiteRequestObject) (UnpinSiteResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// PinSite is not implemented yet.
+func (Unimplemented) PinSite(context.Context, PinSiteRequestObject) (PinSiteResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // ListPolicies is not implemented yet.
 func (Unimplemented) ListPolicies(context.Context, ListPoliciesRequestObject) (ListPoliciesResponseObject, error) {
 	return nil, ErrNotImplemented
@@ -241,6 +281,26 @@ func (Unimplemented) DeletePolicy(context.Context, DeletePolicyRequestObject) (D
 
 // RollbackSite is not implemented yet.
 func (Unimplemented) RollbackSite(context.Context, RollbackSiteRequestObject) (RollbackSiteResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListTags is not implemented yet.
+func (Unimplemented) ListTags(context.Context, ListTagsRequestObject) (ListTagsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// CreateTag is not implemented yet.
+func (Unimplemented) CreateTag(context.Context, CreateTagRequestObject) (CreateTagResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeleteTag is not implemented yet.
+func (Unimplemented) DeleteTag(context.Context, DeleteTagRequestObject) (DeleteTagResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// UpdateTag is not implemented yet.
+func (Unimplemented) UpdateTag(context.Context, UpdateTagRequestObject) (UpdateTagResponseObject, error) {
 	return nil, ErrNotImplemented
 }
 

@@ -109,7 +109,7 @@ func newHarnessWith(t *testing.T, limits deploys.Limits, quotas store.Quotas, co
 	srv := &api.Server{
 		Access: policies,
 		Sites: sites.NewService(sites.Config{
-			Sites: db.Sites(), Notifier: notifier, BaseDomain: baseDomain,
+			Sites: db.Sites(), Organisation: db.Organisation(), Notifier: notifier, BaseDomain: baseDomain,
 			DashboardHost: "console." + baseDomain, Now: hs.now,
 			Domains: db.Domains(), Resolver: hs.dns, CheckTimeout: 50 * time.Millisecond,
 			Quotas: quotas,

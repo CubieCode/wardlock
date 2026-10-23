@@ -69,6 +69,21 @@ var tokenScopes = map[string][]string{
 
 	"ListShareLinkAccessLog": {"deploy", "manage"},
 	"ListSiteAccessLog":      {"deploy", "manage"},
+
+	"ListGroups":  {"deploy", "manage"},
+	"CreateGroup": {"manage"},
+	"UpdateGroup": {"manage"},
+	"DeleteGroup": {"manage"},
+	"ListTags":    {"deploy", "manage"},
+	"CreateTag":   {"manage"},
+	"UpdateTag":   {"manage"},
+	"DeleteTag":   {"manage"},
+	// A deploy may file the site it publishes under existing groups and
+	// tags (V5.15); everything else here needs manage.
+	"SetSiteOrganisation": {"deploy", "manage"},
+	"PinSite":             {"manage"},
+	"UnpinSite":           {"manage"},
+	"OrganiseSites":       {"manage"},
 }
 
 var sessionOnly = map[string]bool{

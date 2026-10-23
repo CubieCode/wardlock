@@ -3,37 +3,37 @@ INSERT INTO sites (id, owner_id, name, created_at)
 VALUES (sqlc.arg(id), sqlc.arg(owner_id), sqlc.arg(name), sqlc.arg(created_at));
 
 -- name: GetSite :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.id = sqlc.arg(id) AND sites.owner_id = sqlc.arg(owner_id);
 
 -- name: GetSiteByOwnerName :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.name = sqlc.arg(name) AND sites.owner_id = sqlc.arg(owner_id);
 
 -- Instance-wide: edge routing only, never owner API handlers.
 -- name: GetSiteByName :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.name = sqlc.arg(name);
 
 -- Instance-wide: edge routing only, never owner API handlers.
 -- name: GetSiteByID :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.id = sqlc.arg(id);
 
 -- Any status: the owner API resolves pending and lapsed hostnames too.
 -- name: GetSiteByOwnerDomain :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
 FROM sites
 JOIN domains ON domains.site_id = sites.id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE domains.hostname = sqlc.arg(hostname) AND sites.owner_id = sqlc.arg(owner_id);
 
 -- name: ListSites :many
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.owner_id = sqlc.arg(owner_id) AND sites.name > sqlc.arg(after_name)
 ORDER BY sites.name
@@ -66,7 +66,7 @@ UPDATE sites SET taken_down_at = NULL WHERE id = sqlc.arg(id);
 DELETE FROM sites WHERE id = sqlc.arg(id) AND taken_down_at IS NOT NULL;
 
 -- name: ListAllSites :many
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at,
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
   owners.email AS owner_email, owners.suspended_at AS owner_suspended_at
 FROM sites
 JOIN owners ON owners.id = sites.owner_id

@@ -33,6 +33,8 @@ const docs: Site = {
   url: 'https://docs.sites.example.test/',
   createdAt: now,
   unavailable: false,
+  tagIds: [],
+  pinned: false,
 };
 
 function policy(visibility: Policy['visibility']): Policy {

@@ -461,6 +461,19 @@ type CreateDeployRequest struct {
 	Spa *bool `json:"spa,omitempty"`
 }
 
+// CreateGroupRequest defines model for CreateGroupRequest.
+type CreateGroupRequest struct {
+	// Name 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+	//
+	// Examples: Client work
+	Name GroupName `json:"name"`
+
+	// Note Up to 200 characters with no control characters. Surrounding spaces are trimmed; an empty note is no note.
+	//
+	// Examples: Previews for clients
+	Note *GroupNote `json:"note,omitempty"`
+}
+
 // CreatePasskeyRequest defines model for CreatePasskeyRequest.
 type CreatePasskeyRequest struct {
 	CeremonyId string `json:"ceremonyId"`
@@ -497,6 +510,19 @@ type CreateSiteRequest struct {
 	//
 	// Examples: docs
 	Name SiteName `json:"name"`
+}
+
+// CreateTagRequest defines model for CreateTagRequest.
+type CreateTagRequest struct {
+	// Colour Absent for the lowest free slot 1-8, else 0.
+	//
+	// Examples: 1
+	Colour *TagColour `json:"colour,omitempty"`
+
+	// Name 1 to 30 characters of a-z, 0-9 and '-', unique among the owner's tags.
+	//
+	// Examples: preview
+	Name TagName `json:"name"`
 }
 
 // CreatedApiToken defines model for CreatedApiToken.
@@ -740,6 +766,44 @@ type Error struct {
 	Target *string `json:"target,omitempty"`
 }
 
+// Group defines model for Group.
+type Group struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Name 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+	//
+	// Examples: Client work
+	Name GroupName `json:"name"`
+
+	// Note Absent when the group has no note.
+	//
+	// Examples: Previews for clients
+	Note *GroupNote `json:"note,omitempty"`
+}
+
+// GroupList defines model for GroupList.
+type GroupList struct {
+	Items []Group `json:"items"`
+}
+
+// GroupName 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+//
+// Examples: Client work
+type GroupName = string
+
+// GroupNote Up to 200 characters with no control characters. Surrounding spaces are trimmed; an empty note is no note.
+//
+// Examples: Previews for clients
+type GroupNote = string
+
 // Health defines model for Health.
 type Health struct {
 	Status HealthStatus `json:"status"`
@@ -804,6 +868,35 @@ type Me struct {
 
 // MeCredential How this request was authenticated.
 type MeCredential string
+
+// OrganiseSitesRequest At least one of `addTagIds`, `removeTagIds`, `groupId`, `ungroup` and `pinned` must change something.
+type OrganiseSitesRequest struct {
+	// AddTagIds Tags to add to every site; tags a site has are kept.
+	AddTagIds *[]Id `json:"addTagIds,omitempty"`
+
+	// GroupId Put every site in this group.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId *Id `json:"groupId,omitempty"`
+
+	// Pinned Pin (true) or unpin (false) every site; a pinned site stays pinned since it was first pinned.
+	Pinned *bool `json:"pinned,omitempty"`
+
+	// RemoveTagIds Tags to remove from every site that has them.
+	RemoveTagIds *[]Id `json:"removeTagIds,omitempty"`
+
+	// Sites The sites to change, by name, each at most once.
+	Sites []SiteName `json:"sites"`
+
+	// Ungroup True takes every site out of its group. Not with `groupId`.
+	Ungroup *bool `json:"ungroup,omitempty"`
+}
+
+// OrganiseSitesResult defines model for OrganiseSitesResult.
+type OrganiseSitesResult struct {
+	// Prior Each site's group, tags and pin before the change, in the order named.
+	Prior []SiteOrganisation `json:"prior"`
+}
 
 // Owner defines model for Owner.
 type Owner struct {
@@ -1026,6 +1119,17 @@ type SetPolicyRequest struct {
 	Visibility PolicyVisibility `json:"visibility"`
 }
 
+// SetSiteOrganisationRequest defines model for SetSiteOrganisationRequest.
+type SetSiteOrganisationRequest struct {
+	// GroupId The site's group; absent for no group.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId *Id `json:"groupId,omitempty"`
+
+	// TagIds Every tag the site should have, at most 20; empty for none.
+	TagIds []Id `json:"tagIds"`
+}
+
 // SetupRequest defines model for SetupRequest.
 type SetupRequest struct {
 	// Code The `code` query parameter of the setup URL.
@@ -1126,6 +1230,11 @@ type Site struct {
 	// Examples: 1767225600000
 	CreatedAt Timestamp `json:"createdAt"`
 
+	// GroupId The owner's group the site is in; absent when ungrouped. Read only: set with setSiteOrganisation or organiseSites.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId *Id `json:"groupId,omitempty"`
+
 	// Hostname `<name>.<base domain>`.
 	//
 	// Examples: docs.example.com
@@ -1141,6 +1250,12 @@ type Site struct {
 	// Examples: docs
 	Name SiteName `json:"name"`
 
+	// Pinned True while the owner has the site pinned. Read only: set with pinSite, unpinSite or organiseSites.
+	Pinned bool `json:"pinned"`
+
+	// TagIds The site's tags in tag-name order; empty when it has none. Read only, like `groupId`.
+	TagIds []Id `json:"tagIds"`
+
 	// Unavailable True while the instance's operator has taken the site down: visitors see an unavailable page on every hostname, and deploys, activations, rollbacks and deletion answer `409 site_unavailable`. Only the operator can restore it.
 	Unavailable bool `json:"unavailable"`
 
@@ -1152,6 +1267,23 @@ type Site struct {
 //
 // Examples: docs
 type SiteName = string
+
+// SiteOrganisation defines model for SiteOrganisation.
+type SiteOrganisation struct {
+	// GroupId Absent when the site was in no group.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId *Id  `json:"groupId,omitempty"`
+	Pinned  bool `json:"pinned"`
+
+	// Site A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Site SiteName `json:"site"`
+
+	// TagIds In tag-name order.
+	TagIds []Id `json:"tagIds"`
+}
 
 // SitePage defines model for SitePage.
 type SitePage struct {
@@ -1169,10 +1301,74 @@ type StartCliLoginRequest struct {
 	ClientName *string `json:"clientName,omitempty"`
 }
 
+// Tag defines model for Tag.
+type Tag struct {
+	// Colour A slot in the dashboard's tag palette: 0 is neutral, 1 to 8 the categorical colours. The dashboard always shows a tag's name beside its colour.
+	//
+	// Examples: 1
+	Colour TagColour `json:"colour"`
+
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Name 1 to 30 characters of a-z, 0-9 and '-', unique among the owner's tags.
+	//
+	// Examples: preview
+	Name TagName `json:"name"`
+}
+
+// TagColour A slot in the dashboard's tag palette: 0 is neutral, 1 to 8 the categorical colours. The dashboard always shows a tag's name beside its colour.
+//
+// Examples: 1
+type TagColour = int32
+
+// TagList defines model for TagList.
+type TagList struct {
+	Items []Tag `json:"items"`
+}
+
+// TagName 1 to 30 characters of a-z, 0-9 and '-', unique among the owner's tags.
+//
+// Examples: preview
+type TagName = string
+
 // Timestamp UTC milliseconds since the Unix epoch.
 //
 // Examples: 1767225600000
 type Timestamp = int64
+
+// UpdateGroupRequest defines model for UpdateGroupRequest.
+type UpdateGroupRequest struct {
+	// Name 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+	//
+	// Examples: Client work
+	Name *GroupName `json:"name,omitempty"`
+
+	// Note Up to 200 characters with no control characters. Surrounding spaces are trimmed; an empty note is no note.
+	//
+	// Examples: Previews for clients
+	Note *GroupNote `json:"note,omitempty"`
+}
+
+// UpdateTagRequest defines model for UpdateTagRequest.
+type UpdateTagRequest struct {
+	// Colour A slot in the dashboard's tag palette: 0 is neutral, 1 to 8 the categorical colours. The dashboard always shows a tag's name beside its colour.
+	//
+	// Examples: 1
+	Colour *TagColour `json:"colour,omitempty"`
+
+	// Name 1 to 30 characters of a-z, 0-9 and '-', unique among the owner's tags.
+	//
+	// Examples: preview
+	Name *TagName `json:"name,omitempty"`
+}
 
 // UserCode Eight letters from an alphabet without vowels or look-alikes, in two groups of four.
 //
@@ -1188,6 +1384,11 @@ type DeployId = Id
 //
 // Examples: docs.example.com
 type DomainHostname = Hostname
+
+// GroupId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type GroupId = Id
 
 // Limit defines model for Limit.
 type Limit = int32
@@ -1211,6 +1412,11 @@ type PolicyId = Id
 //
 // Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
 type SessionId = Id
+
+// TagId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type TagId = Id
 
 // TokenId A lowercase, hyphenated UUIDv7.
 //
@@ -1376,6 +1582,15 @@ type DenyCliLoginJSONRequestBody = DenyCliLoginRequest
 // PollCliLoginJSONRequestBody defines body for PollCliLogin for application/json ContentType.
 type PollCliLoginJSONRequestBody = PollCliLoginRequest
 
+// CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
+type CreateGroupJSONRequestBody = CreateGroupRequest
+
+// UpdateGroupJSONRequestBody defines body for UpdateGroup for application/json ContentType.
+type UpdateGroupJSONRequestBody = UpdateGroupRequest
+
+// OrganiseSitesJSONRequestBody defines body for OrganiseSites for application/json ContentType.
+type OrganiseSitesJSONRequestBody = OrganiseSitesRequest
+
 // InviteOwnerJSONRequestBody defines body for InviteOwner for application/json ContentType.
 type InviteOwnerJSONRequestBody = InviteOwnerRequest
 
@@ -1397,11 +1612,20 @@ type AddDomainJSONRequestBody = AddDomainRequest
 // CreateShareLinkJSONRequestBody defines body for CreateShareLink for application/json ContentType.
 type CreateShareLinkJSONRequestBody = CreateShareLinkRequest
 
+// SetSiteOrganisationJSONRequestBody defines body for SetSiteOrganisation for application/json ContentType.
+type SetSiteOrganisationJSONRequestBody = SetSiteOrganisationRequest
+
 // SetPolicyJSONRequestBody defines body for SetPolicy for application/json ContentType.
 type SetPolicyJSONRequestBody = SetPolicyRequest
 
 // RollbackSiteJSONRequestBody defines body for RollbackSite for application/json ContentType.
 type RollbackSiteJSONRequestBody = RollbackRequest
+
+// CreateTagJSONRequestBody defines body for CreateTag for application/json ContentType.
+type CreateTagJSONRequestBody = CreateTagRequest
+
+// UpdateTagJSONRequestBody defines body for UpdateTag for application/json ContentType.
+type UpdateTagJSONRequestBody = UpdateTagRequest
 
 // CreateApiTokenJSONRequestBody defines body for CreateApiToken for application/json ContentType.
 type CreateApiTokenJSONRequestBody = CreateApiTokenRequest
@@ -1745,6 +1969,56 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
 	PollCliLogin(ctx context.Context, body PollCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListGroups List the owner's groups.
+	//
+	// Every group, by name. Not paged: an owner has at most 100.
+	//
+	// Corresponds with GET /api/v0/groups (the `ListGroups` operationId).
+	ListGroups(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateGroupWithBody Create a group.
+	//
+	// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
+	CreateGroupWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateGroup Create a group.
+	//
+	// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
+	CreateGroup(ctx context.Context, body CreateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteGroup Delete a group.
+	//
+	// Its sites are kept and become ungrouped.
+	//
+	// Corresponds with DELETE /api/v0/groups/{groupId} (the `DeleteGroup` operationId).
+	DeleteGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateGroupWithBody Rename a group or change its note.
+	//
+	// Fields left out keep their value; an empty `note` removes it.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /api/v0/groups/{groupId} (the `UpdateGroup` operationId).
+	UpdateGroupWithBody(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateGroup Rename a group or change its note.
+	//
+	// Fields left out keep their value; an empty `note` removes it.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /api/v0/groups/{groupId} (the `UpdateGroup` operationId).
+	UpdateGroup(ctx context.Context, groupId GroupId, body UpdateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetHealth Report that the API is serving requests.
 	//
 	// Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
@@ -1756,6 +2030,24 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v0/me (the `GetMe` operationId).
 	GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OrganiseSitesWithBody Change the group, tags or pin of many sites at once.
+	//
+	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
+	OrganiseSitesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OrganiseSites Change the group, tags or pin of many sites at once.
+	//
+	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
+	OrganiseSites(ctx context.Context, body OrganiseSitesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// InviteOwnerWithBody Invite another owner by email.
 	//
@@ -2037,6 +2329,38 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v0/sites/{site}/links/{linkId}/rotate (the `RotateShareLink` operationId).
 	RotateShareLink(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// SetSiteOrganisationWithBody Set a site's group and tags.
+	//
+	// Puts the site in `groupId` (no group when absent) and replaces its tags with `tagIds` (none when empty), naming only the owner's existing groups and tags: this never creates one. A missing or another owner's site, group or tag answers `404 not_found` and changes nothing. More than 20 tags answers `413 limit_exceeded` with target `tagIds`. The pin is unchanged. Besides `manage`, a `deploy`-scoped token may call this, so a deploy can file the site it publishes (V5.15); creating groups and tags still needs `manage`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/organisation (the `SetSiteOrganisation` operationId).
+	SetSiteOrganisationWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetSiteOrganisation Set a site's group and tags.
+	//
+	// Puts the site in `groupId` (no group when absent) and replaces its tags with `tagIds` (none when empty), naming only the owner's existing groups and tags: this never creates one. A missing or another owner's site, group or tag answers `404 not_found` and changes nothing. More than 20 tags answers `413 limit_exceeded` with target `tagIds`. The pin is unchanged. Besides `manage`, a `deploy`-scoped token may call this, so a deploy can file the site it publishes (V5.15); creating groups and tags still needs `manage`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/organisation (the `SetSiteOrganisation` operationId).
+	SetSiteOrganisation(ctx context.Context, site SiteName, body SetSiteOrganisationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UnpinSite Unpin a site.
+	//
+	// Unpinning a site that is not pinned changes nothing.
+	//
+	// Corresponds with DELETE /api/v0/sites/{site}/pin (the `UnpinSite` operationId).
+	UnpinSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PinSite Pin a site.
+	//
+	// Pinning a pinned site changes nothing.
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/pin (the `PinSite` operationId).
+	PinSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListPolicies List a site's access policies.
 	//
 	// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is public, so protection is opt-in per site or path.
@@ -2086,6 +2410,56 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
 	RollbackSite(ctx context.Context, site SiteName, body RollbackSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListTags List the owner's tags.
+	//
+	// Every tag, by name. Not paged: an owner has at most 200.
+	//
+	// Corresponds with GET /api/v0/tags (the `ListTags` operationId).
+	ListTags(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateTagWithBody Create a tag.
+	//
+	// Without `colour`, the tag takes the lowest slot from 1 to 8 that none of the owner's tags has, or 0 (neutral) when all eight are taken. A name the owner already gives a tag answers `409 tag_name_taken`; an owner with 200 tags gets `413 limit_exceeded` with target `name`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
+	CreateTagWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateTag Create a tag.
+	//
+	// Without `colour`, the tag takes the lowest slot from 1 to 8 that none of the owner's tags has, or 0 (neutral) when all eight are taken. A name the owner already gives a tag answers `409 tag_name_taken`; an owner with 200 tags gets `413 limit_exceeded` with target `name`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
+	CreateTag(ctx context.Context, body CreateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteTag Delete a tag.
+	//
+	// It is removed from every site that has it.
+	//
+	// Corresponds with DELETE /api/v0/tags/{tagId} (the `DeleteTag` operationId).
+	DeleteTag(ctx context.Context, tagId TagId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateTagWithBody Rename a tag or change its colour.
+	//
+	// Fields left out keep their value.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /api/v0/tags/{tagId} (the `UpdateTag` operationId).
+	UpdateTagWithBody(ctx context.Context, tagId TagId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateTag Rename a tag or change its colour.
+	//
+	// Fields left out keep their value.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /api/v0/tags/{tagId} (the `UpdateTag` operationId).
+	UpdateTag(ctx context.Context, tagId TagId, body UpdateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListApiTokens List the signed-in owner's API tokens.
 	//
@@ -2458,6 +2832,116 @@ func (c *Client) PollCliLogin(ctx context.Context, body PollCliLoginJSONRequestB
 	return c.Client.Do(req)
 }
 
+// ListGroups List the owner's groups.
+//
+// Every group, by name. Not paged: an owner has at most 100.
+//
+// Corresponds with GET /api/v0/groups (the `ListGroups` operationId).
+func (c *Client) ListGroups(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListGroupsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateGroupWithBody Create a group.
+//
+// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
+func (c *Client) CreateGroupWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateGroupRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateGroup Create a group.
+//
+// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
+func (c *Client) CreateGroup(ctx context.Context, body CreateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateGroupRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteGroup Delete a group.
+//
+// Its sites are kept and become ungrouped.
+//
+// Corresponds with DELETE /api/v0/groups/{groupId} (the `DeleteGroup` operationId).
+func (c *Client) DeleteGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteGroupRequest(c.Server, groupId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateGroupWithBody Rename a group or change its note.
+//
+// Fields left out keep their value; an empty `note` removes it.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /api/v0/groups/{groupId} (the `UpdateGroup` operationId).
+func (c *Client) UpdateGroupWithBody(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateGroupRequestWithBody(c.Server, groupId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateGroup Rename a group or change its note.
+//
+// Fields left out keep their value; an empty `note` removes it.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /api/v0/groups/{groupId} (the `UpdateGroup` operationId).
+func (c *Client) UpdateGroup(ctx context.Context, groupId GroupId, body UpdateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateGroupRequest(c.Server, groupId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetHealth Report that the API is serving requests.
 //
 // Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
@@ -2480,6 +2964,44 @@ func (c *Client) GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (
 // Corresponds with GET /api/v0/me (the `GetMe` operationId).
 func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetMeRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// OrganiseSitesWithBody Change the group, tags or pin of many sites at once.
+//
+// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
+func (c *Client) OrganiseSitesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOrganiseSitesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// OrganiseSites Change the group, tags or pin of many sites at once.
+//
+// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
+func (c *Client) OrganiseSites(ctx context.Context, body OrganiseSitesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOrganiseSitesRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3130,6 +3652,78 @@ func (c *Client) RotateShareLink(ctx context.Context, site SiteName, linkId Link
 	return c.Client.Do(req)
 }
 
+// SetSiteOrganisationWithBody Set a site's group and tags.
+//
+// Puts the site in `groupId` (no group when absent) and replaces its tags with `tagIds` (none when empty), naming only the owner's existing groups and tags: this never creates one. A missing or another owner's site, group or tag answers `404 not_found` and changes nothing. More than 20 tags answers `413 limit_exceeded` with target `tagIds`. The pin is unchanged. Besides `manage`, a `deploy`-scoped token may call this, so a deploy can file the site it publishes (V5.15); creating groups and tags still needs `manage`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v0/sites/{site}/organisation (the `SetSiteOrganisation` operationId).
+func (c *Client) SetSiteOrganisationWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetSiteOrganisationRequestWithBody(c.Server, site, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetSiteOrganisation Set a site's group and tags.
+//
+// Puts the site in `groupId` (no group when absent) and replaces its tags with `tagIds` (none when empty), naming only the owner's existing groups and tags: this never creates one. A missing or another owner's site, group or tag answers `404 not_found` and changes nothing. More than 20 tags answers `413 limit_exceeded` with target `tagIds`. The pin is unchanged. Besides `manage`, a `deploy`-scoped token may call this, so a deploy can file the site it publishes (V5.15); creating groups and tags still needs `manage`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v0/sites/{site}/organisation (the `SetSiteOrganisation` operationId).
+func (c *Client) SetSiteOrganisation(ctx context.Context, site SiteName, body SetSiteOrganisationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetSiteOrganisationRequest(c.Server, site, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UnpinSite Unpin a site.
+//
+// Unpinning a site that is not pinned changes nothing.
+//
+// Corresponds with DELETE /api/v0/sites/{site}/pin (the `UnpinSite` operationId).
+func (c *Client) UnpinSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUnpinSiteRequest(c.Server, site)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PinSite Pin a site.
+//
+// Pinning a pinned site changes nothing.
+//
+// Corresponds with PUT /api/v0/sites/{site}/pin (the `PinSite` operationId).
+func (c *Client) PinSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPinSiteRequest(c.Server, site)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListPolicies List a site's access policies.
 //
 // Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is public, so protection is opt-in per site or path.
@@ -3230,6 +3824,116 @@ func (c *Client) RollbackSiteWithBody(ctx context.Context, site SiteName, conten
 // Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
 func (c *Client) RollbackSite(ctx context.Context, site SiteName, body RollbackSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRollbackSiteRequest(c.Server, site, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListTags List the owner's tags.
+//
+// Every tag, by name. Not paged: an owner has at most 200.
+//
+// Corresponds with GET /api/v0/tags (the `ListTags` operationId).
+func (c *Client) ListTags(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListTagsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateTagWithBody Create a tag.
+//
+// Without `colour`, the tag takes the lowest slot from 1 to 8 that none of the owner's tags has, or 0 (neutral) when all eight are taken. A name the owner already gives a tag answers `409 tag_name_taken`; an owner with 200 tags gets `413 limit_exceeded` with target `name`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
+func (c *Client) CreateTagWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTagRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateTag Create a tag.
+//
+// Without `colour`, the tag takes the lowest slot from 1 to 8 that none of the owner's tags has, or 0 (neutral) when all eight are taken. A name the owner already gives a tag answers `409 tag_name_taken`; an owner with 200 tags gets `413 limit_exceeded` with target `name`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
+func (c *Client) CreateTag(ctx context.Context, body CreateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTagRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteTag Delete a tag.
+//
+// It is removed from every site that has it.
+//
+// Corresponds with DELETE /api/v0/tags/{tagId} (the `DeleteTag` operationId).
+func (c *Client) DeleteTag(ctx context.Context, tagId TagId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteTagRequest(c.Server, tagId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateTagWithBody Rename a tag or change its colour.
+//
+// Fields left out keep their value.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /api/v0/tags/{tagId} (the `UpdateTag` operationId).
+func (c *Client) UpdateTagWithBody(ctx context.Context, tagId TagId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateTagRequestWithBody(c.Server, tagId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateTag Rename a tag or change its colour.
+//
+// Fields left out keep their value.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /api/v0/tags/{tagId} (the `UpdateTag` operationId).
+func (c *Client) UpdateTag(ctx context.Context, tagId TagId, body UpdateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateTagRequest(c.Server, tagId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3686,6 +4390,154 @@ func NewPollCliLoginRequestWithBody(server string, contentType string, body io.R
 	return req, nil
 }
 
+// NewListGroupsRequest constructs an http.Request for the ListGroups method
+func NewListGroupsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/groups")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateGroupRequest calls the generic CreateGroup builder with application/json body
+func NewCreateGroupRequest(server string, body CreateGroupJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateGroupRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateGroupRequestWithBody constructs an http.Request for the CreateGroup method, with any body, and a specified content type
+func NewCreateGroupRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/groups")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteGroupRequest constructs an http.Request for the DeleteGroup method
+func NewDeleteGroupRequest(server string, groupId GroupId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/groups/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateGroupRequest calls the generic UpdateGroup builder with application/json body
+func NewUpdateGroupRequest(server string, groupId GroupId, body UpdateGroupJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateGroupRequestWithBody(server, groupId, "application/json", bodyReader)
+}
+
+// NewUpdateGroupRequestWithBody constructs an http.Request for the UpdateGroup method, with any body, and a specified content type
+func NewUpdateGroupRequestWithBody(server string, groupId GroupId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/groups/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetHealthRequest constructs an http.Request for the GetHealth method
 func NewGetHealthRequest(server string) (*http.Request, error) {
 	var err error
@@ -3736,6 +4588,46 @@ func NewGetMeRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewOrganiseSitesRequest calls the generic OrganiseSites builder with application/json body
+func NewOrganiseSitesRequest(server string, body OrganiseSitesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewOrganiseSitesRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewOrganiseSitesRequestWithBody constructs an http.Request for the OrganiseSites method, with any body, and a specified content type
+func NewOrganiseSitesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/organise")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -5186,6 +6078,121 @@ func NewRotateShareLinkRequest(server string, site SiteName, linkId LinkId) (*ht
 	return req, nil
 }
 
+// NewSetSiteOrganisationRequest calls the generic SetSiteOrganisation builder with application/json body
+func NewSetSiteOrganisationRequest(server string, site SiteName, body SetSiteOrganisationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetSiteOrganisationRequestWithBody(server, site, "application/json", bodyReader)
+}
+
+// NewSetSiteOrganisationRequestWithBody constructs an http.Request for the SetSiteOrganisation method, with any body, and a specified content type
+func NewSetSiteOrganisationRequestWithBody(server string, site SiteName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/organisation", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewUnpinSiteRequest constructs an http.Request for the UnpinSite method
+func NewUnpinSiteRequest(server string, site SiteName) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/pin", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPinSiteRequest constructs an http.Request for the PinSite method
+func NewPinSiteRequest(server string, site SiteName) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/pin", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListPoliciesRequest constructs an http.Request for the ListPolicies method
 func NewListPoliciesRequest(server string, site SiteName, params *ListPoliciesParams) (*http.Request, error) {
 	var err error
@@ -5385,6 +6392,154 @@ func NewRollbackSiteRequestWithBody(server string, site SiteName, contentType st
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListTagsRequest constructs an http.Request for the ListTags method
+func NewListTagsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/tags")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateTagRequest calls the generic CreateTag builder with application/json body
+func NewCreateTagRequest(server string, body CreateTagJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateTagRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateTagRequestWithBody constructs an http.Request for the CreateTag method, with any body, and a specified content type
+func NewCreateTagRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/tags")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteTagRequest constructs an http.Request for the DeleteTag method
+func NewDeleteTagRequest(server string, tagId TagId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "tagId", tagId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/tags/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateTagRequest calls the generic UpdateTag builder with application/json body
+func NewUpdateTagRequest(server string, tagId TagId, body UpdateTagJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateTagRequestWithBody(server, tagId, "application/json", bodyReader)
+}
+
+// NewUpdateTagRequestWithBody constructs an http.Request for the UpdateTag method, with any body, and a specified content type
+func NewUpdateTagRequestWithBody(server string, tagId TagId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "tagId", tagId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/tags/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -5740,6 +6895,60 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
 	PollCliLoginWithResponse(ctx context.Context, body PollCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*PollCliLoginResponse, error)
 
+	// ListGroupsWithResponse List the owner's groups.
+	//
+	// Every group, by name. Not paged: an owner has at most 100.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/groups (the `ListGroups` operationId).
+	ListGroupsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListGroupsResponse, error)
+
+	// CreateGroupWithBodyWithResponse Create a group.
+	//
+	// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
+	CreateGroupWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateGroupResponse, error)
+
+	// CreateGroupWithResponse Create a group.
+	//
+	// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
+	CreateGroupWithResponse(ctx context.Context, body CreateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateGroupResponse, error)
+
+	// DeleteGroupWithResponse Delete a group.
+	//
+	// Its sites are kept and become ungrouped.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/groups/{groupId} (the `DeleteGroup` operationId).
+	DeleteGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*DeleteGroupResponse, error)
+
+	// UpdateGroupWithBodyWithResponse Rename a group or change its note.
+	//
+	// Fields left out keep their value; an empty `note` removes it.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v0/groups/{groupId} (the `UpdateGroup` operationId).
+	UpdateGroupWithBodyWithResponse(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateGroupResponse, error)
+
+	// UpdateGroupWithResponse Rename a group or change its note.
+	//
+	// Fields left out keep their value; an empty `note` removes it.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v0/groups/{groupId} (the `UpdateGroup` operationId).
+	UpdateGroupWithResponse(ctx context.Context, groupId GroupId, body UpdateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateGroupResponse, error)
+
 	// GetHealthWithResponse Report that the API is serving requests.
 	//
 	// Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
@@ -5755,6 +6964,24 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v0/me (the `GetMe` operationId).
 	GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
+
+	// OrganiseSitesWithBodyWithResponse Change the group, tags or pin of many sites at once.
+	//
+	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
+	OrganiseSitesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*OrganiseSitesResponse, error)
+
+	// OrganiseSitesWithResponse Change the group, tags or pin of many sites at once.
+	//
+	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
+	OrganiseSitesWithResponse(ctx context.Context, body OrganiseSitesJSONRequestBody, reqEditors ...RequestEditorFn) (*OrganiseSitesResponse, error)
 
 	// InviteOwnerWithBodyWithResponse Invite another owner by email.
 	//
@@ -6078,6 +7305,42 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v0/sites/{site}/links/{linkId}/rotate (the `RotateShareLink` operationId).
 	RotateShareLinkWithResponse(ctx context.Context, site SiteName, linkId LinkId, reqEditors ...RequestEditorFn) (*RotateShareLinkResponse, error)
 
+	// SetSiteOrganisationWithBodyWithResponse Set a site's group and tags.
+	//
+	// Puts the site in `groupId` (no group when absent) and replaces its tags with `tagIds` (none when empty), naming only the owner's existing groups and tags: this never creates one. A missing or another owner's site, group or tag answers `404 not_found` and changes nothing. More than 20 tags answers `413 limit_exceeded` with target `tagIds`. The pin is unchanged. Besides `manage`, a `deploy`-scoped token may call this, so a deploy can file the site it publishes (V5.15); creating groups and tags still needs `manage`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/organisation (the `SetSiteOrganisation` operationId).
+	SetSiteOrganisationWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetSiteOrganisationResponse, error)
+
+	// SetSiteOrganisationWithResponse Set a site's group and tags.
+	//
+	// Puts the site in `groupId` (no group when absent) and replaces its tags with `tagIds` (none when empty), naming only the owner's existing groups and tags: this never creates one. A missing or another owner's site, group or tag answers `404 not_found` and changes nothing. More than 20 tags answers `413 limit_exceeded` with target `tagIds`. The pin is unchanged. Besides `manage`, a `deploy`-scoped token may call this, so a deploy can file the site it publishes (V5.15); creating groups and tags still needs `manage`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/organisation (the `SetSiteOrganisation` operationId).
+	SetSiteOrganisationWithResponse(ctx context.Context, site SiteName, body SetSiteOrganisationJSONRequestBody, reqEditors ...RequestEditorFn) (*SetSiteOrganisationResponse, error)
+
+	// UnpinSiteWithResponse Unpin a site.
+	//
+	// Unpinning a site that is not pinned changes nothing.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/sites/{site}/pin (the `UnpinSite` operationId).
+	UnpinSiteWithResponse(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*UnpinSiteResponse, error)
+
+	// PinSiteWithResponse Pin a site.
+	//
+	// Pinning a pinned site changes nothing.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/pin (the `PinSite` operationId).
+	PinSiteWithResponse(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*PinSiteResponse, error)
+
 	// ListPoliciesWithResponse List a site's access policies.
 	//
 	// Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is public, so protection is opt-in per site or path.
@@ -6131,6 +7394,60 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
 	RollbackSiteWithResponse(ctx context.Context, site SiteName, body RollbackSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*RollbackSiteResponse, error)
+
+	// ListTagsWithResponse List the owner's tags.
+	//
+	// Every tag, by name. Not paged: an owner has at most 200.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/tags (the `ListTags` operationId).
+	ListTagsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListTagsResponse, error)
+
+	// CreateTagWithBodyWithResponse Create a tag.
+	//
+	// Without `colour`, the tag takes the lowest slot from 1 to 8 that none of the owner's tags has, or 0 (neutral) when all eight are taken. A name the owner already gives a tag answers `409 tag_name_taken`; an owner with 200 tags gets `413 limit_exceeded` with target `name`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
+	CreateTagWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTagResponse, error)
+
+	// CreateTagWithResponse Create a tag.
+	//
+	// Without `colour`, the tag takes the lowest slot from 1 to 8 that none of the owner's tags has, or 0 (neutral) when all eight are taken. A name the owner already gives a tag answers `409 tag_name_taken`; an owner with 200 tags gets `413 limit_exceeded` with target `name`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
+	CreateTagWithResponse(ctx context.Context, body CreateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTagResponse, error)
+
+	// DeleteTagWithResponse Delete a tag.
+	//
+	// It is removed from every site that has it.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/tags/{tagId} (the `DeleteTag` operationId).
+	DeleteTagWithResponse(ctx context.Context, tagId TagId, reqEditors ...RequestEditorFn) (*DeleteTagResponse, error)
+
+	// UpdateTagWithBodyWithResponse Rename a tag or change its colour.
+	//
+	// Fields left out keep their value.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v0/tags/{tagId} (the `UpdateTag` operationId).
+	UpdateTagWithBodyWithResponse(ctx context.Context, tagId TagId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateTagResponse, error)
+
+	// UpdateTagWithResponse Rename a tag or change its colour.
+	//
+	// Fields left out keep their value.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v0/tags/{tagId} (the `UpdateTag` operationId).
+	UpdateTagWithResponse(ctx context.Context, tagId TagId, body UpdateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTagResponse, error)
 
 	// ListApiTokensWithResponse List the signed-in owner's API tokens.
 	//
@@ -6887,6 +8204,296 @@ func (r PollCliLoginResponse) ContentType() string {
 	return ""
 }
 
+type ListGroupsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *GroupList
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListGroupsResponse) GetJSON200() *GroupList {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListGroupsResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListGroupsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListGroupsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListGroupsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListGroupsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListGroupsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListGroupsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Group
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON413 the response for an HTTP 413 `application/json` response
+	JSON413 *TooLarge
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateGroupResponse) GetJSON201() *Group {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateGroupResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateGroupResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateGroupResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateGroupResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON413 returns the response for an HTTP 413 `application/json` response
+func (r CreateGroupResponse) GetJSON413() *TooLarge {
+	return r.JSON413
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateGroupResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateGroupResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateGroupResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteGroupResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteGroupResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteGroupResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteGroupResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteGroupResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteGroupResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Group
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateGroupResponse) GetJSON200() *Group {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateGroupResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r UpdateGroupResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r UpdateGroupResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UpdateGroupResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateGroupResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r UpdateGroupResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateGroupResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateGroupResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetHealthResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6984,6 +8591,89 @@ func (r GetMeResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetMeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type OrganiseSitesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *OrganiseSitesResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON413 the response for an HTTP 413 `application/json` response
+	JSON413 *TooLarge
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r OrganiseSitesResponse) GetJSON200() *OrganiseSitesResult {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r OrganiseSitesResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r OrganiseSitesResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r OrganiseSitesResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r OrganiseSitesResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON413 returns the response for an HTTP 413 `application/json` response
+func (r OrganiseSitesResponse) GetJSON413() *TooLarge {
+	return r.JSON413
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r OrganiseSitesResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r OrganiseSitesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r OrganiseSitesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OrganiseSitesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OrganiseSitesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -9161,6 +10851,227 @@ func (r RotateShareLinkResponse) ContentType() string {
 	return ""
 }
 
+type SetSiteOrganisationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Site
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON413 the response for an HTTP 413 `application/json` response
+	JSON413 *TooLarge
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SetSiteOrganisationResponse) GetJSON200() *Site {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SetSiteOrganisationResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r SetSiteOrganisationResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r SetSiteOrganisationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r SetSiteOrganisationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON413 returns the response for an HTTP 413 `application/json` response
+func (r SetSiteOrganisationResponse) GetJSON413() *TooLarge {
+	return r.JSON413
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SetSiteOrganisationResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SetSiteOrganisationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SetSiteOrganisationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetSiteOrganisationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetSiteOrganisationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UnpinSiteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Site
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UnpinSiteResponse) GetJSON200() *Site {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r UnpinSiteResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r UnpinSiteResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UnpinSiteResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r UnpinSiteResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UnpinSiteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UnpinSiteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UnpinSiteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UnpinSiteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PinSiteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Site
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PinSiteResponse) GetJSON200() *Site {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r PinSiteResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r PinSiteResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r PinSiteResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PinSiteResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PinSiteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PinSiteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PinSiteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PinSiteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListPoliciesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9459,6 +11370,296 @@ func (r RollbackSiteResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r RollbackSiteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListTagsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TagList
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListTagsResponse) GetJSON200() *TagList {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListTagsResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListTagsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListTagsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListTagsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListTagsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListTagsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListTagsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateTagResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Tag
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON413 the response for an HTTP 413 `application/json` response
+	JSON413 *TooLarge
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateTagResponse) GetJSON201() *Tag {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateTagResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateTagResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateTagResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateTagResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON413 returns the response for an HTTP 413 `application/json` response
+func (r CreateTagResponse) GetJSON413() *TooLarge {
+	return r.JSON413
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateTagResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateTagResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateTagResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateTagResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateTagResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteTagResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteTagResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteTagResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteTagResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteTagResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteTagResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteTagResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteTagResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteTagResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateTagResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Tag
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateTagResponse) GetJSON200() *Tag {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateTagResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r UpdateTagResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r UpdateTagResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UpdateTagResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateTagResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r UpdateTagResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateTagResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateTagResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateTagResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateTagResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -9928,6 +12129,96 @@ func (c *ClientWithResponses) PollCliLoginWithResponse(ctx context.Context, body
 	return ParsePollCliLoginResponse(rsp)
 }
 
+// ListGroupsWithResponse List the owner's groups.
+//
+// Every group, by name. Not paged: an owner has at most 100.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/groups (the `ListGroups` operationId).
+func (c *ClientWithResponses) ListGroupsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListGroupsResponse, error) {
+	rsp, err := c.ListGroups(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListGroupsResponse(rsp)
+}
+
+// CreateGroupWithBodyWithResponse Create a group.
+//
+// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
+func (c *ClientWithResponses) CreateGroupWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateGroupResponse, error) {
+	rsp, err := c.CreateGroupWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateGroupResponse(rsp)
+}
+
+// CreateGroupWithResponse Create a group.
+//
+// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
+func (c *ClientWithResponses) CreateGroupWithResponse(ctx context.Context, body CreateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateGroupResponse, error) {
+	rsp, err := c.CreateGroup(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateGroupResponse(rsp)
+}
+
+// DeleteGroupWithResponse Delete a group.
+//
+// Its sites are kept and become ungrouped.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/groups/{groupId} (the `DeleteGroup` operationId).
+func (c *ClientWithResponses) DeleteGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*DeleteGroupResponse, error) {
+	rsp, err := c.DeleteGroup(ctx, groupId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteGroupResponse(rsp)
+}
+
+// UpdateGroupWithBodyWithResponse Rename a group or change its note.
+//
+// Fields left out keep their value; an empty `note` removes it.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v0/groups/{groupId} (the `UpdateGroup` operationId).
+func (c *ClientWithResponses) UpdateGroupWithBodyWithResponse(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateGroupResponse, error) {
+	rsp, err := c.UpdateGroupWithBody(ctx, groupId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateGroupResponse(rsp)
+}
+
+// UpdateGroupWithResponse Rename a group or change its note.
+//
+// Fields left out keep their value; an empty `note` removes it.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v0/groups/{groupId} (the `UpdateGroup` operationId).
+func (c *ClientWithResponses) UpdateGroupWithResponse(ctx context.Context, groupId GroupId, body UpdateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateGroupResponse, error) {
+	rsp, err := c.UpdateGroup(ctx, groupId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateGroupResponse(rsp)
+}
+
 // GetHealthWithResponse Report that the API is serving requests.
 //
 // Returns the server version so clients can report it. Database and certificate readiness are reported separately (O4.2).
@@ -9954,6 +12245,36 @@ func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors 
 		return nil, err
 	}
 	return ParseGetMeResponse(rsp)
+}
+
+// OrganiseSitesWithBodyWithResponse Change the group, tags or pin of many sites at once.
+//
+// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
+func (c *ClientWithResponses) OrganiseSitesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*OrganiseSitesResponse, error) {
+	rsp, err := c.OrganiseSitesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOrganiseSitesResponse(rsp)
+}
+
+// OrganiseSitesWithResponse Change the group, tags or pin of many sites at once.
+//
+// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
+func (c *ClientWithResponses) OrganiseSitesWithResponse(ctx context.Context, body OrganiseSitesJSONRequestBody, reqEditors ...RequestEditorFn) (*OrganiseSitesResponse, error) {
+	rsp, err := c.OrganiseSites(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOrganiseSitesResponse(rsp)
 }
 
 // InviteOwnerWithBodyWithResponse Invite another owner by email.
@@ -10494,6 +12815,66 @@ func (c *ClientWithResponses) RotateShareLinkWithResponse(ctx context.Context, s
 	return ParseRotateShareLinkResponse(rsp)
 }
 
+// SetSiteOrganisationWithBodyWithResponse Set a site's group and tags.
+//
+// Puts the site in `groupId` (no group when absent) and replaces its tags with `tagIds` (none when empty), naming only the owner's existing groups and tags: this never creates one. A missing or another owner's site, group or tag answers `404 not_found` and changes nothing. More than 20 tags answers `413 limit_exceeded` with target `tagIds`. The pin is unchanged. Besides `manage`, a `deploy`-scoped token may call this, so a deploy can file the site it publishes (V5.15); creating groups and tags still needs `manage`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v0/sites/{site}/organisation (the `SetSiteOrganisation` operationId).
+func (c *ClientWithResponses) SetSiteOrganisationWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetSiteOrganisationResponse, error) {
+	rsp, err := c.SetSiteOrganisationWithBody(ctx, site, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetSiteOrganisationResponse(rsp)
+}
+
+// SetSiteOrganisationWithResponse Set a site's group and tags.
+//
+// Puts the site in `groupId` (no group when absent) and replaces its tags with `tagIds` (none when empty), naming only the owner's existing groups and tags: this never creates one. A missing or another owner's site, group or tag answers `404 not_found` and changes nothing. More than 20 tags answers `413 limit_exceeded` with target `tagIds`. The pin is unchanged. Besides `manage`, a `deploy`-scoped token may call this, so a deploy can file the site it publishes (V5.15); creating groups and tags still needs `manage`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v0/sites/{site}/organisation (the `SetSiteOrganisation` operationId).
+func (c *ClientWithResponses) SetSiteOrganisationWithResponse(ctx context.Context, site SiteName, body SetSiteOrganisationJSONRequestBody, reqEditors ...RequestEditorFn) (*SetSiteOrganisationResponse, error) {
+	rsp, err := c.SetSiteOrganisation(ctx, site, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetSiteOrganisationResponse(rsp)
+}
+
+// UnpinSiteWithResponse Unpin a site.
+//
+// Unpinning a site that is not pinned changes nothing.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/sites/{site}/pin (the `UnpinSite` operationId).
+func (c *ClientWithResponses) UnpinSiteWithResponse(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*UnpinSiteResponse, error) {
+	rsp, err := c.UnpinSite(ctx, site, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUnpinSiteResponse(rsp)
+}
+
+// PinSiteWithResponse Pin a site.
+//
+// Pinning a pinned site changes nothing.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v0/sites/{site}/pin (the `PinSite` operationId).
+func (c *ClientWithResponses) PinSiteWithResponse(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*PinSiteResponse, error) {
+	rsp, err := c.PinSite(ctx, site, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePinSiteResponse(rsp)
+}
+
 // ListPoliciesWithResponse List a site's access policies.
 //
 // Ordered by path, so the site default (`/`) comes first. Every site has a default; until its owner sets one it is public, so protection is opt-in per site or path.
@@ -10582,6 +12963,96 @@ func (c *ClientWithResponses) RollbackSiteWithResponse(ctx context.Context, site
 		return nil, err
 	}
 	return ParseRollbackSiteResponse(rsp)
+}
+
+// ListTagsWithResponse List the owner's tags.
+//
+// Every tag, by name. Not paged: an owner has at most 200.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/tags (the `ListTags` operationId).
+func (c *ClientWithResponses) ListTagsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListTagsResponse, error) {
+	rsp, err := c.ListTags(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListTagsResponse(rsp)
+}
+
+// CreateTagWithBodyWithResponse Create a tag.
+//
+// Without `colour`, the tag takes the lowest slot from 1 to 8 that none of the owner's tags has, or 0 (neutral) when all eight are taken. A name the owner already gives a tag answers `409 tag_name_taken`; an owner with 200 tags gets `413 limit_exceeded` with target `name`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
+func (c *ClientWithResponses) CreateTagWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTagResponse, error) {
+	rsp, err := c.CreateTagWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateTagResponse(rsp)
+}
+
+// CreateTagWithResponse Create a tag.
+//
+// Without `colour`, the tag takes the lowest slot from 1 to 8 that none of the owner's tags has, or 0 (neutral) when all eight are taken. A name the owner already gives a tag answers `409 tag_name_taken`; an owner with 200 tags gets `413 limit_exceeded` with target `name`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
+func (c *ClientWithResponses) CreateTagWithResponse(ctx context.Context, body CreateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTagResponse, error) {
+	rsp, err := c.CreateTag(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateTagResponse(rsp)
+}
+
+// DeleteTagWithResponse Delete a tag.
+//
+// It is removed from every site that has it.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/tags/{tagId} (the `DeleteTag` operationId).
+func (c *ClientWithResponses) DeleteTagWithResponse(ctx context.Context, tagId TagId, reqEditors ...RequestEditorFn) (*DeleteTagResponse, error) {
+	rsp, err := c.DeleteTag(ctx, tagId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteTagResponse(rsp)
+}
+
+// UpdateTagWithBodyWithResponse Rename a tag or change its colour.
+//
+// Fields left out keep their value.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v0/tags/{tagId} (the `UpdateTag` operationId).
+func (c *ClientWithResponses) UpdateTagWithBodyWithResponse(ctx context.Context, tagId TagId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateTagResponse, error) {
+	rsp, err := c.UpdateTagWithBody(ctx, tagId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateTagResponse(rsp)
+}
+
+// UpdateTagWithResponse Rename a tag or change its colour.
+//
+// Fields left out keep their value.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v0/tags/{tagId} (the `UpdateTag` operationId).
+func (c *ClientWithResponses) UpdateTagWithResponse(ctx context.Context, tagId TagId, body UpdateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTagResponse, error) {
+	rsp, err := c.UpdateTag(ctx, tagId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateTagResponse(rsp)
 }
 
 // ListApiTokensWithResponse List the signed-in owner's API tokens.
@@ -11293,6 +13764,239 @@ func ParsePollCliLoginResponse(rsp *http.Response) (*PollCliLoginResponse, error
 	return response, nil
 }
 
+// ParseListGroupsResponse parses an HTTP response from a ListGroupsWithResponse call
+func ParseListGroupsResponse(rsp *http.Response) (*ListGroupsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListGroupsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GroupList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateGroupResponse parses an HTTP response from a CreateGroupWithResponse call
+func ParseCreateGroupResponse(rsp *http.Response) (*CreateGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Group
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest TooLarge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON413 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteGroupResponse parses an HTTP response from a DeleteGroupWithResponse call
+func ParseDeleteGroupResponse(rsp *http.Response) (*DeleteGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateGroupResponse parses an HTTP response from a UpdateGroupWithResponse call
+func ParseUpdateGroupResponse(rsp *http.Response) (*UpdateGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Group
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetHealthResponse parses an HTTP response from a GetHealthWithResponse call
 func ParseGetHealthResponse(rsp *http.Response) (*GetHealthResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -11353,6 +14057,74 @@ func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseOrganiseSitesResponse parses an HTTP response from a OrganiseSitesWithResponse call
+func ParseOrganiseSitesResponse(rsp *http.Response) (*OrganiseSitesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &OrganiseSitesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OrganiseSitesResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest TooLarge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON413 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
@@ -13174,6 +15946,182 @@ func ParseRotateShareLinkResponse(rsp *http.Response) (*RotateShareLinkResponse,
 	return response, nil
 }
 
+// ParseSetSiteOrganisationResponse parses an HTTP response from a SetSiteOrganisationWithResponse call
+func ParseSetSiteOrganisationResponse(rsp *http.Response) (*SetSiteOrganisationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetSiteOrganisationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Site
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest TooLarge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON413 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUnpinSiteResponse parses an HTTP response from a UnpinSiteWithResponse call
+func ParseUnpinSiteResponse(rsp *http.Response) (*UnpinSiteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UnpinSiteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Site
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePinSiteResponse parses an HTTP response from a PinSiteWithResponse call
+func ParsePinSiteResponse(rsp *http.Response) (*PinSiteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PinSiteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Site
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListPoliciesResponse parses an HTTP response from a ListPoliciesWithResponse call
 func ParseListPoliciesResponse(rsp *http.Response) (*ListPoliciesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -13369,6 +16317,239 @@ func ParseRollbackSiteResponse(rsp *http.Response) (*RollbackSiteResponse, error
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Activation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListTagsResponse parses an HTTP response from a ListTagsWithResponse call
+func ParseListTagsResponse(rsp *http.Response) (*ListTagsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListTagsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TagList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateTagResponse parses an HTTP response from a CreateTagWithResponse call
+func ParseCreateTagResponse(rsp *http.Response) (*CreateTagResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateTagResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Tag
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest TooLarge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON413 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteTagResponse parses an HTTP response from a DeleteTagWithResponse call
+func ParseDeleteTagResponse(rsp *http.Response) (*DeleteTagResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteTagResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateTagResponse parses an HTTP response from a UpdateTagWithResponse call
+func ParseUpdateTagResponse(rsp *http.Response) (*UpdateTagResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateTagResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Tag
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

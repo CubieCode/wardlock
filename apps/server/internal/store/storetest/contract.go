@@ -29,6 +29,8 @@ type Repos struct {
 	EmailCodes store.EmailCodes
 	// Moderation stores content screening's queue and verdicts (A2.15).
 	Moderation store.Moderation
+	// Organisation stores groups, tags and pins (V5.3).
+	Organisation store.Organisation
 }
 
 // Opener returns repositories over a fresh, empty, migrated database that
@@ -57,6 +59,7 @@ func ReposOf(db *store.DB) Repos {
 		PasswordSessions: db.PasswordSessions(),
 		EmailCodes:       db.EmailCodes(),
 		Moderation:       db.Moderation(),
+		Organisation:     db.Organisation(),
 	}
 }
 
@@ -85,6 +88,7 @@ func suites() []suite {
 		{"EmailCodes", emailCodesContract},
 		{"Quotas", quotasContract},
 		{"Moderation", moderationContract},
+		{"Organisation", organisationContract},
 	}
 }
 

@@ -36,6 +36,8 @@ const docs: Site = {
   url: 'https://docs.sites.example.test/',
   createdAt: now - 48 * hour,
   unavailable: false,
+  tagIds: [],
+  pinned: false,
 };
 
 function link(publicId: string, extra: Partial<ShareLink> = {}): ShareLink {

@@ -179,6 +179,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 
 	sitesCfg := sites.Config{
 		Sites:         db.Sites(),
+		Organisation:  db.Organisation(),
 		Domains:       db.Domains(),
 		Notifier:      notifier,
 		Resolver:      sites.NewNetResolver(cfg.DNSResolvers),

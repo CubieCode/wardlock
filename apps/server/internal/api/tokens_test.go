@@ -32,7 +32,7 @@ func newTokenHarness(t testing.TB, limits owners.TokenLimits) *ownerHarness {
 	h = newOwnerHarnessWith(t, db, owners.Limits{}, func(s *api.Server) {
 		notifier := deploys.NewLocalNotifier()
 		s.Sites = sites.NewService(sites.Config{
-			Sites: db.Sites(), Notifier: notifier, BaseDomain: "sites.example.test", DashboardHost: dashHost, Now: time.Now,
+			Sites: db.Sites(), Organisation: db.Organisation(), Notifier: notifier, BaseDomain: "sites.example.test", DashboardHost: dashHost, Now: time.Now,
 		})
 		s.Deploys = deploys.NewService(deploys.Config{
 			Sites: db.Sites(), Deploys: db.Deploys(), Blobs: deploys.NewFSBlobStore(t.TempDir()), Notifier: notifier,

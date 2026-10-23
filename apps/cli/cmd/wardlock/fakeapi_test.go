@@ -230,7 +230,7 @@ func (f *fakeAPI) addSite(name string, policy apiclient.PolicyVisibility) *fakeS
 func (f *fakeAPI) newSite(name string, policy apiclient.PolicyVisibility) *fakeSite {
 	s := &fakeSite{policy: policy, site: apiclient.Site{
 		Id: f.id(), Name: name, Hostname: name + "." + fakeBase,
-		Url: "https://" + name + "." + fakeBase + "/", CreatedAt: 1_800_000_000_000,
+		Url: "https://" + name + "." + fakeBase + "/", CreatedAt: 1_800_000_000_000, TagIds: []string{},
 	}}
 	f.sites[name] = s
 	return s

@@ -320,9 +320,9 @@ Every table is in the diagram below, and `internal/store/schema_test.go` checks 
 <details>
 <summary>Migrations and conventions</summary>
 
-Migration `0002_core_schema.sql` creates every table below; `0003_deploy_spa_and_owner_blobs.sql` (C1.2) moves the SPA fallback flag from sites to deploys, adds `owner_blobs` and the optional columns the API contract exposes (`owner_sessions.user_agent`, `domains.verified_at` and `failure_detail`, `cli_login_requests.client_name`); `0004_owner_passkeys.sql` (C1.6) adds `owner_passkeys`; `0005_deploy_renditions.sql` (A2.6) adds `deploy_renditions`; `0006_policy_allowlist_and_email_codes.sql` (A2.4) adds `policy_allowlist` and `visitor_email_codes`; `0007_deploy_immutable_assets.sql` (C1.10) adds `deploys.immutable_assets`, the long-term caching opt-in. `0008_operator_controls.sql` (A2.13) adds the nullable `owners.suspended_at` and `sites.taken_down_at` (UTC Unix milliseconds) that operator commands set. `0009_owner_quotas.sql` (A2.14) adds the per-owner quota overrides (`owners.max_storage_bytes`, `max_sites`, `max_deploys_per_day`; NULL follows the instance default, 0 is unlimited), the running total `owners.stored_bytes`, `owner_blob_refs` (each distinct blob the owner's deploys list, with how many deploys list it) and `owner_deploy_log` (when each deploy was created, kept 24 hours for the daily quota), and fills all three from the existing deploys. `0010_content_screening.sql` (A2.15) adds `owners.moderation_exempt` and `moderation_results`, one row per content hash ever queued for screening: the persistent queue while `next_attempt_at` is set, and the verdict and the operator's decisions on it (see [Content screening](#content-screening)). `0011_deploy_path_prefix.sql` (C1.13) adds `deploys.path_prefix`, the prefix a path deploy replaced (NULL for a full deploy), and `deploys.base_deploy_id`, the active deploy it was built on, which activation requires still to be active (`ON DELETE SET NULL`). Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
+Migration `0002_core_schema.sql` creates every table below; `0003_deploy_spa_and_owner_blobs.sql` (C1.2) moves the SPA fallback flag from sites to deploys, adds `owner_blobs` and the optional columns the API contract exposes (`owner_sessions.user_agent`, `domains.verified_at` and `failure_detail`, `cli_login_requests.client_name`); `0004_owner_passkeys.sql` (C1.6) adds `owner_passkeys`; `0005_deploy_renditions.sql` (A2.6) adds `deploy_renditions`; `0006_policy_allowlist_and_email_codes.sql` (A2.4) adds `policy_allowlist` and `visitor_email_codes`; `0007_deploy_immutable_assets.sql` (C1.10) adds `deploys.immutable_assets`, the long-term caching opt-in. `0008_operator_controls.sql` (A2.13) adds the nullable `owners.suspended_at` and `sites.taken_down_at` (UTC Unix milliseconds) that operator commands set. `0009_owner_quotas.sql` (A2.14) adds the per-owner quota overrides (`owners.max_storage_bytes`, `max_sites`, `max_deploys_per_day`; NULL follows the instance default, 0 is unlimited), the running total `owners.stored_bytes`, `owner_blob_refs` (each distinct blob the owner's deploys list, with how many deploys list it) and `owner_deploy_log` (when each deploy was created, kept 24 hours for the daily quota), and fills all three from the existing deploys. `0010_content_screening.sql` (A2.15) adds `owners.moderation_exempt` and `moderation_results`, one row per content hash ever queued for screening: the persistent queue while `next_attempt_at` is set, and the verdict and the operator's decisions on it (see [Content screening](#content-screening)). `0011_deploy_path_prefix.sql` (C1.13) adds `deploys.path_prefix`, the prefix a path deploy replaced (NULL for a full deploy), and `deploys.base_deploy_id`, the active deploy it was built on, which activation requires still to be active (`ON DELETE SET NULL`). `0012_groups_tags_pins.sql` (V5.3) adds `site_groups` (name unique per owner, optional note), `tags` (name unique per owner, colour slot 0–8) and `site_tags`, and the nullable `sites.group_id` (`ON DELETE SET NULL`, so deleting a group ungroups its sites) and `sites.pinned_at`; `store.Organisation` reads and writes them, and its queries set a site's group or add a tag row only when the group or tag has the site's owner. Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
 
-Columns follow the portable-SQL rules: text IDs (UUIDv7, `store.NewID`) generated in Go, timestamps as UTC Unix milliseconds in `INTEGER` (Postgres `BIGINT`), booleans as `INTEGER` with `CHECK (x IN (0, 1))`, upserts with `ON CONFLICT … DO UPDATE` (or `DO NOTHING`). Token, session and code columns hold only HMAC hashes (a visitor email code's address too), and the policy password only an Argon2id hash; the domain verification token is stored as is because it is published in DNS. `access_log` has no foreign keys, so it can later move to a separate store and outlive the sites it mentions. A site session's link and policy are composite foreign keys `(site_id, share_link_id)` and `(site_id, policy_id)` onto `UNIQUE (site_id, id)` in `share_links` and `policies`, so a session can never name another site's link or policy. A policy's allowlist entries and visitor email codes (A2.4) use the same `(site_id, policy_id)` key and go with the policy. Deleting a site cascades to its domains, deploys and their manifests, policies (with their allowlists and email codes), share links and site sessions; the active deploy cannot be deleted on its own.
+Columns follow the portable-SQL rules: text IDs (UUIDv7, `store.NewID`) generated in Go, timestamps as UTC Unix milliseconds in `INTEGER` (Postgres `BIGINT`), booleans as `INTEGER` with `CHECK (x IN (0, 1))`, upserts with `ON CONFLICT … DO UPDATE` (or `DO NOTHING`). Token, session and code columns hold only HMAC hashes (a visitor email code's address too), and the policy password only an Argon2id hash; the domain verification token is stored as is because it is published in DNS. `access_log` has no foreign keys, so it can later move to a separate store and outlive the sites it mentions. A site session's link and policy are composite foreign keys `(site_id, share_link_id)` and `(site_id, policy_id)` onto `UNIQUE (site_id, id)` in `share_links` and `policies`, so a session can never name another site's link or policy. A policy's allowlist entries and visitor email codes (A2.4) use the same `(site_id, policy_id)` key and go with the policy. Deleting a site cascades to its domains, deploys and their manifests, policies (with their allowlists and email codes), share links, site sessions and `site_tags` rows; the active deploy cannot be deleted on its own.
 
 Names chosen for C1.1: one-time owner credentials live in `owner_login_codes` (`purpose` is `setup` for the first-start setup URL with no owner, `signin_url` for the `admin create` or invite sign-in URL, `email_code` for the 6-digit code). An invite is an `owners` row with `invited_by` set and `accepted_at` NULL plus a `signin_url` code; `accepted_at` is set on first sign-in. CLI login (C1.7) is `cli_login_requests`: the CLI polls with a hashed device code and the API token is minted only when an approved request is redeemed. `client_name` holds what the CLI called itself until approval, then the name of the token it will receive. Poll intervals and API-token failure limits are kept in memory (`internal/owners`), like the sign-in limits; a restart only resets them early.
 
@@ -346,6 +346,11 @@ erDiagram
   owners ||--o{ owner_deploy_log : "owner_id"
   api_tokens |o--o| cli_login_requests : "api_token_id"
   owners ||--o{ sites : "owner_id"
+  owners ||--o{ site_groups : "owner_id"
+  owners ||--o{ tags : "owner_id"
+  site_groups |o--o{ sites : "group_id"
+  sites ||--o{ site_tags : "site_id"
+  tags ||--o{ site_tags : "tag_id"
   sites ||--o{ domains : "site_id"
   sites ||--o{ deploys : "site_id"
   sites |o--o| deploys : "active_deploy_id"
@@ -441,6 +446,26 @@ erDiagram
     INTEGER created_at
     TEXT active_deploy_id FK
     INTEGER taken_down_at "operator takedown"
+    TEXT group_id FK "null: ungrouped"
+    INTEGER pinned_at "null: not pinned"
+  }
+  site_groups {
+    TEXT id PK
+    TEXT owner_id FK
+    TEXT name "unique per owner"
+    TEXT note
+    INTEGER created_at
+  }
+  tags {
+    TEXT id PK
+    TEXT owner_id FK
+    TEXT name "unique per owner"
+    INTEGER colour "slot 0-8"
+    INTEGER created_at
+  }
+  site_tags {
+    TEXT site_id PK, FK
+    TEXT tag_id PK, FK
   }
   domains {
     TEXT id PK
