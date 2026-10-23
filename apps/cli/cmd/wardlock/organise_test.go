@@ -390,19 +390,29 @@ func TestPinUnpin(t *testing.T) {
 		t.Fatal("blog still pinned")
 	}
 
-	// Every site is looked up first, so a missing one pins none.
-	errOut.Reset()
-	err := run(t.Context(), a, []string{"pin", "blog", "ghost"})
-	if code := exitCode(errOut, err); code != 1 || !strings.Contains(errOut.String(), "no site ghost") {
-		t.Fatalf("exit %d, stderr %q", code, errOut)
+	// One all-or-nothing request: a missing site among several pins none,
+	// and unpins none.
+	if n := len(srv.organised); n != 2 || !slices.Equal(srv.organised[0].Sites, []string{"docs", "blog"}) || !*srv.organised[0].Pinned || *srv.organised[1].Pinned {
+		t.Fatalf("organise requests %+v", srv.organised)
 	}
-	if _, _, pinned := srv.organisationOf("blog"); pinned {
-		t.Fatal("blog pinned although ghost is missing")
+	for _, cmd := range []string{"pin", "unpin"} {
+		out.Reset()
+		errOut.Reset()
+		err := run(t.Context(), a, []string{cmd, "blog", "ghost", "docs", "--json"})
+		if code := exitCode(errOut, err); code != 1 || !strings.Contains(errOut.String(), "nothing was changed") || out.Len() != 0 {
+			t.Fatalf("%s: exit %d, stderr %q", cmd, code, errOut)
+		}
+		if _, _, pinned := srv.organisationOf("blog"); pinned {
+			t.Fatalf("%s: blog pinned although ghost is missing", cmd)
+		}
+		if _, _, pinned := srv.organisationOf("docs"); !pinned {
+			t.Fatalf("%s: docs unpinned although ghost is missing", cmd)
+		}
 	}
 
 	srv.scopes = []string{"deploy"}
 	errOut.Reset()
-	err = run(t.Context(), a, []string{"pin", "blog"})
+	err := run(t.Context(), a, []string{"pin", "blog"})
 	if code := exitCode(errOut, err); code != 1 || !strings.Contains(errOut.String(), "scope") {
 		t.Fatalf("exit %d, stderr %q", code, errOut)
 	}

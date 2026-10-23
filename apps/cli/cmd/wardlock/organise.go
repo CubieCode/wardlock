@@ -456,7 +456,7 @@ func pinSites(ctx context.Context, a *app, args []string, pin bool) error {
 	if !pin {
 		name, verb, does = "unpin", "Unpinned", "Unpins each SITE. Unpinning a site that is not pinned changes\nnothing."
 	}
-	fs := newFlagSet(a, name, "Usage: wardlock "+name+" SITE... [flags]\n\n"+does+" Every SITE is looked up\nfirst, so a missing one changes nothing. Needs a token with the manage\nscope.")
+	fs := newFlagSet(a, name, "Usage: wardlock "+name+" SITE... [flags]\n\n"+does+" Every SITE changes\nat once, all or nothing, so a missing one changes none. Needs a token\nwith the manage scope.")
 	g := addGlobalFlags(fs)
 	pos, err := parseArgs(fs, args)
 	if errors.Is(err, flag.ErrHelp) {
@@ -481,41 +481,26 @@ func pinSites(ctx context.Context, a *app, args []string, pin bool) error {
 	if err != nil {
 		return err
 	}
-	var names []string
-	for _, t := range targets {
-		site, err := c.mustFindSite(ctx, t)
-		if err != nil {
-			return err
-		}
-		if !slices.Contains(names, site.Name) {
-			names = append(names, site.Name)
-		}
+	names, err := c.siteNames(ctx, targets)
+	if err != nil {
+		return err
 	}
-	out := pinResult{Sites: make([]apiclient.Site, len(names))}
-	for i, n := range names {
-		var site *apiclient.Site
-		var res *http.Response
-		var body []byte
-		if pin {
-			r, err := c.api.PinSiteWithResponse(ctx, n, c.auth)
-			if err != nil {
-				return c.unreachable(ctx, err)
-			}
-			site, res, body = r.JSON200, r.HTTPResponse, r.Body
-		} else {
-			r, err := c.api.UnpinSiteWithResponse(ctx, n, c.auth)
-			if err != nil {
-				return c.unreachable(ctx, err)
-			}
-			site, res, body = r.JSON200, r.HTTPResponse, r.Body
+	res, err := c.api.OrganiseSitesWithResponse(ctx, apiclient.OrganiseSitesRequest{Sites: names, Pinned: &pin}, c.auth)
+	if err != nil {
+		return c.unreachable(ctx, err)
+	}
+	if res.JSON200 == nil {
+		if res.StatusCode() == http.StatusNotFound {
+			return fmt.Errorf("%w; nothing was changed", c.failed(res.HTTPResponse, res.Body))
 		}
-		if site == nil {
-			return fmt.Errorf("%s %s: %w", name, n, c.failed(res, body))
-		}
-		out.Sites[i] = *site
+		return c.failed(res.HTTPResponse, res.Body)
+	}
+	sites, err := c.sitesNamed(ctx, names)
+	if err != nil {
+		return err
 	}
 	if g.json {
-		return writeJSON(a.stdout, out)
+		return writeJSON(a.stdout, pinResult{Sites: sites})
 	}
 	fmt.Fprintf(a.stdout, "%s %s.\n", verb, strings.Join(names, ", "))
 	return nil

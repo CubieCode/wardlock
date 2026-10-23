@@ -77,8 +77,8 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 	immutable := fs.Bool("immutable-assets", false, "cache hashed files under /assets/, such as index-BdK3j2Lp.js, for a year without revalidating (default \"immutableAssets\" from wardlock.json)")
 	pathFlag := fs.String("path", "", "deploy DIR into this part of the site, such as /mockup-x/, keeping the rest (default \"path\" from wardlock.json; '' for the whole site)")
 	yes := fs.Bool("yes", false, "with --path and an empty DIR, remove the path without asking")
-	groupFlag := fs.String("group", "", "after the deploy goes live, put the site in this existing group (default \"group\" from wardlock.json; '' for none)")
-	tagFlags := stringsFlag(fs, "tag", "after the deploy goes live, add this existing tag to the site (repeatable; default \"tags\" from wardlock.json)")
+	groupFlag := fs.String("group", "", "after the deploy goes live, put the site in this existing group (default \"group\" from wardlock.json; '' to leave the site's group as it is: a deploy never removes a site's group or tags)")
+	tagFlags := stringsFlag(fs, "tag", "after the deploy goes live, add this existing tag to the site, keeping its other tags (repeatable; default \"tags\" from wardlock.json)")
 	pos, err := parseArgs(fs, args)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
