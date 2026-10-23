@@ -39,8 +39,7 @@ import './shell.css';
  * The signed-in frame: the rail (a bottom bar below 48rem) with each built
  * screen, Jump to and the account menu; the sites navigator beside the sites
  * list; and the jump-to palette on ⌘K (Apple) or Ctrl+K. Below 48rem the
- * navigator opens in a drawer, but only once it has filters to offer: until
- * then All sites is just the Sites tab, and Jump to finds the rest.
+ * navigator opens in a drawer from the Browse sites button.
  */
 export function Shell({
   api,

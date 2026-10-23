@@ -19,7 +19,8 @@ function moveAlong(event: KeyboardEvent<HTMLDivElement>) {
 
 /**
  * A toolbar fixed to the foot of the screen while things are selected: how
- * many, the actions that apply to all of them, and Clear selection. Renders
+ * many (with an optional `note`), the actions that apply to all of them,
+ * and Clear selection. Renders
  * nothing when `count` is 0. Left and right arrows move between its
  * buttons. Leave room at the foot of the page so it never covers the last
  * row.
@@ -27,12 +28,15 @@ function moveAlong(event: KeyboardEvent<HTMLDivElement>) {
 export function BulkBar({
   label,
   count,
+  note,
   onClear,
   children,
 }: {
   /** Names the toolbar, such as "Bulk actions". */
   label: string;
   count: number;
+  /** A word on the selection after the count, such as a limit reached. */
+  note?: ReactNode;
   onClear: () => void;
   /** Buttons, or `Popover`s whose triggers are buttons. */
   children: ReactNode;
@@ -47,6 +51,7 @@ export function BulkBar({
     >
       <span className="wl-bulk-count" aria-live="polite">
         {count} selected
+        {note ? <span className="wl-bulk-note">{note}</span> : null}
       </span>
       <div className="wl-bulk-actions">
         {children}

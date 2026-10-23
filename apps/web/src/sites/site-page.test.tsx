@@ -156,8 +156,7 @@ describe('site header', () => {
     render(<App api={api} />);
     await screen.findByRole('group', { name: 'Group and tags' });
     expect(chips().textContent).toContain('Group: Client work');
-    const tag = within(chips()).getByText('preview');
-    expect(tag.className).toContain('wl-tag-chip');
+    const tag = within(chips()).getByText('preview').closest('.wl-tag-chip')!;
     expect(tag.querySelector('.wl-tag-dot')?.getAttribute('style')).toContain(
       'var(--color-tag-2)',
     );

@@ -18,6 +18,7 @@ export {
   SelectField,
   TextAreaField,
   TextField,
+  type CheckboxProps,
   type ChoiceProps,
   type SelectFieldProps,
   type TextAreaFieldProps,
@@ -52,7 +53,7 @@ export {
   type PopoverTriggerProps,
 } from './popover.js';
 export { BulkBar } from './bulk-bar.js';
-export { Toast } from './toast.js';
+export { Toast, type ToastTone } from './toast.js';
 export {
   BarList,
   Sparkline,

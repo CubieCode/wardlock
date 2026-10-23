@@ -53,15 +53,19 @@ for (const scheme of schemes) {
       ).toHaveCount(0);
     });
 
-    await test.step('the navigator shows All sites with its count, on wide screens', async () => {
+    await test.step('the navigator shows All sites with its count, in a drawer on narrow screens', async () => {
       if (mobile) {
-        // Until the navigator has filters, the Sites tab is All sites and
-        // Jump to finds the rest: no navigator, Browse sites or drawer.
+        // No navigator column: Browse sites opens it in a drawer.
         await expect(page.getByRole('complementary')).toHaveCount(0);
-        await expect(
-          page.getByRole('button', { name: 'Browse sites' }),
-        ).toHaveCount(0);
         await shot('bottom-bar');
+        await page.getByRole('button', { name: 'Browse sites' }).click();
+        const drawer = page.getByRole('dialog', { name: 'Browse sites' });
+        await expect(
+          drawer.getByRole('link', { name: /^All sites \d+$/ }),
+        ).toHaveAttribute('aria-current', 'page');
+        await shot('drawer');
+        await drawer.getByRole('button', { name: 'Close' }).click();
+        await expect(drawer).toBeHidden();
       } else {
         const navigator = page.getByRole('complementary', {
           name: 'Sites navigator',
@@ -78,7 +82,9 @@ for (const scheme of schemes) {
       const input = page.getByRole('combobox', { name: 'Jump to' });
       await expect(input).toBeFocused();
       await input.fill(name);
-      const options = page.getByRole('option');
+      const options = page
+        .getByRole('listbox', { name: 'Jump to' })
+        .getByRole('option');
       await expect(options.first()).toHaveText(new RegExp(`^${name}-alpha`));
       await expect(options.nth(1)).toHaveText(new RegExp(`^${name}-beta`));
       await page.keyboard.press('ArrowDown');

@@ -11,6 +11,7 @@ import {
   within,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { niceScale } from './charts.js';
 import { BarList, Sparkline, StackedBars } from './index.js';
 
 afterEach(cleanup);
@@ -81,6 +82,18 @@ describe('Sparkline', () => {
   it('draws nothing for fewer than two values', () => {
     const { container } = render(<Sparkline values={[3]} />);
     expect(container.querySelector('svg')).toBeNull();
+  });
+});
+
+describe('axis scale', () => {
+  it('keeps whole steps for small counts', () => {
+    expect(niceScale(5).ticks).toEqual([0, 2, 4, 6, 8]);
+    expect(niceScale(1).ticks).toEqual([0, 1, 2, 3, 4]);
+    expect(niceScale(0).ticks).toEqual([0, 1, 2, 3, 4]);
+    expect(niceScale(18).ticks).toEqual([0, 5, 10, 15, 20]);
+    expect(niceScale(130).ticks).toEqual([0, 40, 80, 120, 160]);
+    for (const max of [2, 3, 5, 7, 9, 11, 14])
+      expect(niceScale(max).ticks.every(Number.isInteger)).toBe(true);
   });
 });
 

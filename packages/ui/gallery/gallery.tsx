@@ -17,6 +17,7 @@ import {
   BulkBar,
   Button,
   Card,
+  Checkbox,
   CommandPalette,
   Dialog,
   Drawer,
@@ -285,6 +286,14 @@ function Gallery() {
             { value: '90', label: '90 days' },
           ]}
         />
+      </Card>
+
+      <Card title="Tri-state checkbox">
+        <div className="gallery-row">
+          <Checkbox label="Select all" indeterminate />
+          <Checkbox label="Select alpha" hideLabel defaultChecked />
+          <Checkbox label="Select beta" hideLabel />
+        </div>
       </Card>
 
       <Card title="Popover, bulk bar and toast">

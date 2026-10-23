@@ -107,6 +107,8 @@ try {
       'test',
       '-c',
       'test/playwright.config.ts',
+      // Extra arguments pick specs or tests: `pnpm browser:test sites-list`.
+      ...process.argv.slice(2),
     ],
     {
       stdio: 'inherit',

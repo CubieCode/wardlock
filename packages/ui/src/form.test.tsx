@@ -227,4 +227,26 @@ describe('Fieldset, Radio and Checkbox', () => {
     fireEvent.click(screen.getByText('Password'));
     expect((box as HTMLInputElement).checked).toBe(true);
   });
+
+  it('shows a partly chosen box as mixed and can hide its label', () => {
+    const { rerender } = render(
+      <Checkbox label="Select all in Docs" indeterminate hideLabel />,
+    );
+    const box = screen.getByRole('checkbox', { name: 'Select all in Docs' });
+    expect((box as HTMLInputElement).indeterminate).toBe(true);
+    expect(screen.getByText('Select all in Docs').className).toBe(
+      'wl-visually-hidden',
+    );
+    // The label wraps the box, so clicking the 44px target toggles it.
+    fireEvent.click(box.closest('label')!);
+    expect((box as HTMLInputElement).checked).toBe(true);
+    rerender(<Checkbox label="Select all in Docs" checked readOnly />);
+    expect(
+      (
+        screen.getByRole('checkbox', {
+          name: 'Select all in Docs',
+        }) as HTMLInputElement
+      ).indeterminate,
+    ).toBe(false);
+  });
 });

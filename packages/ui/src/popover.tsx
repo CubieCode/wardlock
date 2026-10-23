@@ -28,7 +28,22 @@ const menuItemSelector =
 const gap = 6;
 const edge = 8;
 
-/** Where the panel goes: under or over the trigger, kept on screen. */
+/**
+ * The lowest point a panel may reach: the top of a fixed bar at the foot of
+ * the screen (a `BottomBar`) when one is showing, else the viewport's foot.
+ */
+function floor() {
+  const bar = document.querySelector('.wl-bottom-bar');
+  const top = bar?.getBoundingClientRect();
+  return top && top.height > 0
+    ? Math.min(window.innerHeight, top.top)
+    : window.innerHeight;
+}
+
+/**
+ * Where the panel goes: under or over the trigger, kept on screen and clear
+ * of a bottom bar, and no taller than the room on that side.
+ */
 function place(
   trigger: HTMLElement,
   panel: HTMLElement,
@@ -36,20 +51,29 @@ function place(
 ): CSSProperties {
   const rect = trigger.getBoundingClientRect();
   const width = panel.offsetWidth;
+  // The panel's natural height, not the height a previous fit gave it.
+  const fitted = panel.style.maxHeight;
+  panel.style.maxHeight = '';
   const height = panel.offsetHeight;
+  panel.style.maxHeight = fitted;
+  const bottom = floor();
   const left = Math.max(
     edge,
     Math.min(window.innerWidth - width - edge, rect.left),
   );
-  const roomBelow = window.innerHeight - rect.bottom - gap - edge;
+  const roomBelow = bottom - rect.bottom - gap - edge;
   const roomAbove = rect.top - gap - edge;
   const above =
     placement === 'above'
       ? roomAbove >= height || roomAbove > roomBelow
       : roomBelow < height && roomAbove > roomBelow;
   return above
-    ? { left, bottom: window.innerHeight - rect.top + gap }
-    : { left, top: rect.bottom + gap };
+    ? {
+        left,
+        bottom: window.innerHeight - rect.top + gap,
+        maxHeight: Math.max(0, roomAbove),
+      }
+    : { left, top: rect.bottom + gap, maxHeight: Math.max(0, roomBelow) };
 }
 
 /**
@@ -59,8 +83,9 @@ function place(
  * wire up `aria-expanded`, `aria-controls` and toggling. Opening moves focus
  * to the first field or item inside; Escape closes it and returns focus to
  * the trigger; a click outside or Tab past the panel closes it. The panel
- * stays on screen, flipping above the trigger when there is no room below
- * (`placement="above"` prefers above, for a bar at the foot of the screen).
+ * stays on screen and clear of a `BottomBar`, flipping above the trigger
+ * when there is no room below (`placement="above"` prefers above, for a bar
+ * at the foot of the screen), and is never taller than the room it has.
  */
 export function Popover({
   label,

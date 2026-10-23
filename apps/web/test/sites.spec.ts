@@ -90,17 +90,18 @@ for (const scheme of schemes) {
       await createSite(page.request, locked);
       await protect(page.request, locked);
       await page.reload();
-      const list = page.getByRole('list', { name: 'Sites' });
+      // No groups yet, so one section: the deployed site first (sorted by
+      // last deploy), then the one with nothing live.
+      const list = page.getByRole('list', { name: 'Sites in No group' });
       const rows = list.getByRole('listitem');
       await expect(rows).toHaveCount(2);
-      await expect(rows.nth(0)).toContainText(locked);
-      await expect(rows.nth(0)).toContainText('Protected');
-      await expect(rows.nth(0)).toContainText('Not deployed yet');
-      await expect(rows.nth(1)).toContainText(`${name}.wardlock.localhost`);
-      await expect(rows.nth(1)).toContainText('Public');
-      await expect(rows.nth(1)).toContainText(
-        /Deployed (just now|now|\d+ minutes? ago)/,
-      );
+      await expect(rows.nth(0)).toContainText(`${name}.wardlock.localhost`);
+      await expect(rows.nth(0)).toContainText('Public');
+      await expect(rows.nth(0)).toContainText('Second version');
+      await expect(rows.nth(0)).toContainText(/just now|now|\d+ minutes? ago/);
+      await expect(rows.nth(1)).toContainText(locked);
+      await expect(rows.nth(1)).toContainText('Protected');
+      await expect(rows.nth(1)).toContainText('Not deployed yet');
       await shot('list');
     });
 
@@ -212,7 +213,9 @@ for (const scheme of schemes) {
         page.getByText(`${name} was torn down. Its name is free to use again.`),
       ).toBeVisible();
       await expect(
-        page.getByRole('list', { name: 'Sites' }).getByRole('listitem'),
+        page
+          .getByRole('list', { name: 'Sites in No group' })
+          .getByRole('listitem'),
       ).toHaveCount(1);
       await shot('torn-down');
       expect((await served(page, name)).status).toBe(404);
