@@ -354,6 +354,110 @@ describe('site header', () => {
   });
 });
 
+describe('7-day requests in the header', () => {
+  /** An analytics answer with these totals and nothing broken down. */
+  const analytics = (allowed: number, refused: number) => () =>
+    Response.json({
+      days: 7,
+      from: now - 7 * 24 * 3600_000,
+      to: now,
+      total: { allowed, refused },
+      hours: [],
+      via: [],
+      sites: [],
+      groups: [],
+      tags: [],
+      links: [],
+      paths: [],
+      otherPaths: { allowed: 0, refused: 0 },
+      browsers: [],
+    });
+  // The header's line under the address, beside Open site.
+  const meta = () => document.querySelector('.site-header-meta')!.textContent;
+
+  it('counts allowed and refused requests for this site', async () => {
+    let query = '';
+    const { api } = fakeServer(
+      { activatedAt: now - 3 * 3600_000 },
+      {
+        'GET /api/v0/analytics': (request) => {
+          query = new URL(request.url).search;
+          return analytics(1200, 4)();
+        },
+      },
+    );
+    render(<App api={api} />);
+    expect(
+      await screen.findByText('1,204 requests in 7 days (4 refused)'),
+    ).toBeTruthy();
+    expect(meta()).toBe(
+      '1,204 requests in 7 days (4 refused) · Live since 3 hours ago',
+    );
+    expect(new URLSearchParams(query).get('site')).toBe('docs');
+    expect(new URLSearchParams(query).get('days')).toBe('7');
+    // Requests, never visits.
+    expect(meta()).not.toMatch(/visit/i);
+  });
+
+  it('says so when nobody has requested the site', async () => {
+    const { api } = fakeServer(
+      {},
+      { 'GET /api/v0/analytics': analytics(0, 0) },
+    );
+    render(<App api={api} />);
+    expect(await screen.findByText('0 requests in 7 days')).toBeTruthy();
+  });
+
+  it('names one request in the singular', async () => {
+    const { api } = fakeServer(
+      {},
+      { 'GET /api/v0/analytics': analytics(1, 0) },
+    );
+    render(<App api={api} />);
+    expect(await screen.findByText('1 request in 7 days')).toBeTruthy();
+  });
+
+  it('shows nothing in its place while the count loads', async () => {
+    const { api } = fakeServer(
+      {},
+      {
+        'GET /api/v0/analytics': () =>
+          new Promise<Response>(() => {}) as unknown as Response,
+      },
+    );
+    render(<App api={api} />);
+    await screen.findByRole('heading', { level: 1, name: 'docs' });
+    expect(meta()).toBe('Not deployed yet');
+    expect(screen.queryByText(/requests? in 7 days/)).toBeNull();
+  });
+
+  it('leaves the count out quietly when it cannot be read', async () => {
+    let reads = 0;
+    const { api } = fakeServer(
+      {},
+      {
+        'GET /api/v0/analytics': () => {
+          reads += 1;
+          return Response.json(
+            { code: 'internal', message: 'x' },
+            { status: 500 },
+          );
+        },
+      },
+    );
+    render(<App api={api} />);
+    await screen.findByRole('heading', { level: 1, name: 'docs' });
+    await waitFor(() => expect(reads).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(meta()).toBe('Not deployed yet');
+    expect(screen.queryByRole('alert')).toBeNull();
+    // The rest of the page still works.
+    expect(
+      screen.getByRole('region', { name: 'Who can open it' }),
+    ).toBeTruthy();
+  });
+});
+
 describe('site tabs', () => {
   it('reads the site once while the owner moves between tabs', async () => {
     const { api, calls } = fakeServer();

@@ -3,6 +3,7 @@
 
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import { CopyField, Notice, StatusTag } from '@wardlock/ui';
+import { useEffect, useState } from 'react';
 import { AccessWord, Time, type Policy, type Site } from './format.js';
 import { OpenSiteButton } from './open-site.js';
 import { Organisation, type Organise } from './site-page-organise.js';
@@ -53,6 +54,7 @@ export function SiteHeader({
         <div className="site-header-side">
           <Organisation site={site} organise={organise} />
           <p className="site-header-meta">
+            <WeekRequests api={api} name={site.name} />
             {site.activatedAt !== undefined ? (
               <>
                 Live since <Time at={site.activatedAt} />
@@ -83,6 +85,48 @@ export function SiteHeader({
           delete a policy or tear it down until the operator restores it.
         </Notice>
       )}
+    </>
+  );
+}
+
+const count = new Intl.NumberFormat('en-NZ');
+
+/** "1,204 requests in 7 days", with the refused ones named when there are any. */
+export function weekRequestsText(allowed: number, refused: number) {
+  const total = allowed + refused;
+  const words = `${count.format(total)} ${total === 1 ? 'request' : 'requests'} in 7 days`;
+  return refused > 0 ? `${words} (${count.format(refused)} refused)` : words;
+}
+
+/**
+ * The site's requests over the last 7 days, allowed and refused, followed by
+ * a separator. Nothing shows while it loads or if it cannot be read: the
+ * count is a detail, never a reason for the page to fail.
+ */
+function WeekRequests({ api, name }: { api: ApiClient; name: string }) {
+  const [total, setTotal] = useState<{
+    allowed: number;
+    refused: number;
+  } | null>(null);
+  useEffect(() => {
+    let live = true;
+    api
+      .GET('/api/v0/analytics', { params: { query: { site: name, days: 7 } } })
+      .then(
+        ({ data }) => live && data && setTotal(data.total),
+        () => undefined,
+      );
+    return () => {
+      live = false;
+    };
+  }, [api, name]);
+  if (!total) return null;
+  return (
+    <>
+      <span className="site-header-requests">
+        {weekRequestsText(total.allowed, total.refused)}
+      </span>
+      {' · '}
     </>
   );
 }

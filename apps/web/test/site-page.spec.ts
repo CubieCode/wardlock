@@ -64,6 +64,13 @@ for (const scheme of schemes) {
         page.getByRole('textbox', { name: 'Site address' }),
       ).toHaveValue(new RegExp(`^http://${site}\\.wardlock\\.localhost:`));
       await expect(page.getByText(/^Live since/).first()).toBeVisible();
+      // Requests over the last 7 days, once the count is read.
+      await expect(page.locator('.site-header-meta')).toContainText(
+        /^\d[\d,]* requests? in 7 days/,
+      );
+      await expect(page.locator('.site-header-meta')).not.toContainText(
+        /visit/i,
+      );
       await expect(chips.getByText('No group')).toBeVisible();
       await expect(
         page
