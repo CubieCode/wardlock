@@ -1,0 +1,192 @@
+/* SPDX-FileCopyrightText: 2026 CubieCode */
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* Overview layout. Visual language comes from @wardlock/ui. */
+
+.overview-error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+/* One column on small screens; attention and groups beside pins and
+   deploys from 64rem. */
+.overview-grid,
+.overview-column {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  min-width: 0;
+}
+
+@media (min-width: 64rem) {
+  .overview-grid {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--space-6);
+  }
+
+  .overview-column {
+    gap: var(--space-6);
+  }
+}
+
+.overview-sub,
+.overview-quiet {
+  color: var(--color-text-muted);
+}
+
+.overview-sub {
+  margin-top: calc(-1 * var(--space-2));
+  font-size: var(--text-sm);
+}
+
+.overview-list,
+.attention-list,
+.attention-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.overview-list > li + li,
+.attention-list > li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.overview-name {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target);
+  font-weight: var(--font-weight-bold);
+  overflow-wrap: anywhere;
+}
+
+.overview-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-target);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+/* Needs attention: icon, words, action; expiring links indented below. */
+.attention-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) 0;
+}
+
+.attention-icon {
+  display: inline-flex;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--color-text-muted);
+}
+
+.attention-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.attention-text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.attention-text small {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.attention-links {
+  grid-column: 2 / -1;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.attention-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-control);
+}
+
+/* Pinned: name and access, then requests and sparkline. */
+.pinned-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.pinned-main,
+.overview-access {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+.pinned-main .overview-name {
+  margin-right: var(--space-1);
+}
+
+.pinned-requests {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.group-row,
+.deploy-feed-row {
+  display: grid;
+  gap: 0 var(--space-3);
+  padding: var(--space-1) 0 var(--space-3);
+}
+
+.group-stats,
+.deploy-feed-row small {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.deploy-feed-message {
+  margin-left: var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 47.99rem) {
+  .pinned-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .pinned-main {
+    grid-column: 1 / -1;
+  }
+
+  .attention-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .attention-item > .overview-action {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .attention-links {
+    grid-column: 1 / -1;
+  }
+}

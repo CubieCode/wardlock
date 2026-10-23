@@ -74,6 +74,11 @@ func (Unimplemented) PollCliLogin(context.Context, PollCliLoginRequestObject) (P
 	return nil, ErrNotImplemented
 }
 
+// ListExpiringLinks is not implemented yet.
+func (Unimplemented) ListExpiringLinks(context.Context, ListExpiringLinksRequestObject) (ListExpiringLinksResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // ListGroups is not implemented yet.
 func (Unimplemented) ListGroups(context.Context, ListGroupsRequestObject) (ListGroupsResponseObject, error) {
 	return nil, ErrNotImplemented

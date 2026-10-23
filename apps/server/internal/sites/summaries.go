@@ -121,19 +121,24 @@ type summarySet struct {
 	tagName  map[string]string
 }
 
-// summaries reads the owner's sites, groups and tags: three repository
-// calls, whatever the number of sites.
-func (s *Service) summaries(ctx context.Context, ownerID string) (summarySet, error) {
+// summaryWindow is the window SPEC "Site summaries" sets, from now.
+func (s *Service) summaryWindow() store.SummaryWindow {
 	now := s.now()
 	today := now.Truncate(24 * time.Hour)
-	list, err := s.c.Sites.Summaries(ctx, ownerID, store.SummaryWindow{
+	return store.SummaryWindow{
 		Now:         now,
 		ExpiringBy:  now.Add(ExpiringWithin),
 		MinLifetime: ShortLinkLifetime,
 		DaysFrom:    today.AddDate(0, 0, 1-SummaryDays),
 		Days:        SummaryDays,
 		ActiveFrom:  today.AddDate(0, 0, 1-QuietDays),
-	})
+	}
+}
+
+// summaries reads the owner's sites, groups and tags: three repository
+// calls, whatever the number of sites.
+func (s *Service) summaries(ctx context.Context, ownerID string) (summarySet, error) {
+	list, err := s.c.Sites.Summaries(ctx, ownerID, s.summaryWindow())
 	if err != nil {
 		return summarySet{}, fmt.Errorf("list site summaries: %w", err)
 	}
@@ -195,6 +200,16 @@ func (s *Service) SiteSummaries(ctx context.Context, ownerID string, f SummaryFi
 		page.Next = &SummaryCursor{Key: sortKey(sort, last), Name: last.Name}
 	}
 	return page, nil
+}
+
+// ExpiringLinks returns up to limit of the owner's expiring links, soonest
+// first: exactly the links each summary's ExpiringLinks counts.
+func (s *Service) ExpiringLinks(ctx context.Context, ownerID string, limit int) ([]store.ExpiringLink, error) {
+	links, err := s.c.Sites.ExpiringLinks(ctx, ownerID, s.summaryWindow(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list expiring links: %w", err)
+	}
+	return links, nil
 }
 
 // SiteCounts counts the owner's sites in each saved view, group and tag,

@@ -124,3 +124,37 @@ func (r sitesRepo) Summaries(ctx context.Context, ownerID string, w SummaryWindo
 	}
 	return out, nil
 }
+
+// ExpiringLink is a working link that expires soon, as SummaryWindow
+// says, with what the overview shows of it.
+type ExpiringLink struct {
+	ID       string
+	SiteName string
+	Label    string
+	// ExpiresAt is always set: a link that never expires never expires
+	// soon.
+	ExpiresAt time.Time
+	// MaxUses is 0 for a link without a use limit.
+	MaxUses  int
+	UseCount int
+}
+
+// ExpiringLinks returns up to limit of ownerID's expiring links, soonest
+// first, by the same rule Summaries counts them with.
+func (r sitesRepo) ExpiringLinks(ctx context.Context, ownerID string, w SummaryWindow, limit int) ([]ExpiringLink, error) {
+	rows, err := r.db.q.ListExpiringLinks(ctx, sqlcgen.ListExpiringLinksParams{
+		OwnerID: ownerID, Now: ms(w.Now), ExpiringBy: ms(w.ExpiringBy),
+		MinLifetime: w.MinLifetime.Milliseconds(), RowLimit: int64(limit),
+	})
+	if err != nil {
+		return nil, mapErr("list expiring links", err)
+	}
+	out := make([]ExpiringLink, len(rows))
+	for i, row := range rows {
+		out[i] = ExpiringLink{
+			ID: row.ID, SiteName: row.SiteName, Label: row.Label.String,
+			ExpiresAt: fromNullMs(row.ExpiresAt), MaxUses: int(row.MaxUses.Int64), UseCount: int(row.UseCount),
+		}
+	}
+	return out, nil
+}

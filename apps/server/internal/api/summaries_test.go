@@ -380,11 +380,79 @@ func TestSiteSummariesTokenScopes(t *testing.T) {
 	session := h.owner("owner@example.test")
 	for _, scope := range []api.Scope{api.ScopeDeploy, api.ScopeManage} {
 		tok := createToken(t, h, session, string(scope), scope).Token
-		for _, path := range []string{"/api/v0/site-summaries", "/api/v0/site-counts", "/api/v0/sign-in-providers"} {
+		for _, path := range []string{"/api/v0/site-summaries", "/api/v0/site-counts", "/api/v0/sign-in-providers", "/api/v0/expiring-links"} {
 			wantStatus(t, h.bearer(tok, req{method: http.MethodGet, path: path}), http.StatusOK)
 		}
 	}
-	for _, path := range []string{"/api/v0/site-summaries", "/api/v0/site-counts", "/api/v0/sign-in-providers"} {
+	for _, path := range []string{"/api/v0/site-summaries", "/api/v0/site-counts", "/api/v0/sign-in-providers", "/api/v0/expiring-links"} {
 		wantError(t, h.bearer("wl_aaaaaaaaaa_"+strings.Repeat("A", 43), req{method: http.MethodGet, path: path}), http.StatusUnauthorized, "unauthenticated")
+	}
+}
+
+func (hs *harness) expiringLinks(owner, query string) []api.ExpiringLink {
+	hs.t.Helper()
+	res := hs.do(owner, http.MethodGet, "/expiring-links"+query, nil)
+	res.want(hs.t, http.StatusOK, "")
+	var list api.ExpiringLinkList
+	res.decode(hs.t, &list)
+	return list.Items
+}
+
+func TestExpiringLinksMatchTheCounts(t *testing.T) {
+	hs := newHarness(t, deploys.DefaultLimits())
+	newSummaryFixture(t, hs)
+	a := hs.ownerA
+	now := time.Now()
+	limited := hs.createLink(a, "bravo", api.CreateShareLinkRequest{
+		Label: ptr("Board pack"), MaxUses: ptr(int32(3)), ExpiresAt: ptr(now.Add(2 * time.Hour).UnixMilli()),
+	})
+	// A link on a taken-down site counts and lists like any other.
+	hs.createLink(a, "charlie", api.CreateShareLinkRequest{ExpiresAt: ptr(now.Add(30 * time.Hour).UnixMilli())})
+	hs.createLink(hs.ownerB, "theirs", api.CreateShareLinkRequest{ExpiresAt: ptr(now.Add(3 * time.Hour).UnixMilli())})
+
+	items := hs.expiringLinks(a, "")
+	var counted int32
+	for _, s := range hs.summaries(a, "?limit=100").Items {
+		counted += s.ExpiringLinks
+	}
+	if int32(len(items)) != counted || counted != 3 {
+		t.Fatalf("lists %d links, summaries count %d; want 3", len(items), counted)
+	}
+	first, second, third := items[0], items[1], items[2]
+	if first.Id != limited.ShareLink.Id || first.Site != "bravo" || first.Label == nil || *first.Label != "Board pack" ||
+		first.UsesLeft == nil || *first.UsesLeft != 3 || first.ExpiresAt != now.Add(2*time.Hour).UnixMilli() {
+		t.Errorf("first = %+v; want bravo's Board pack, 3 uses left, in two hours", first)
+	}
+	if second.Site != "bravo" || second.Label != nil || second.UsesLeft != nil || third.Site != "charlie" {
+		t.Errorf("then %+v and %+v; want bravo's unlabelled unlimited link, then charlie's", second, third)
+	}
+	if got := hs.expiringLinks(a, "?limit=1"); len(got) != 1 || got[0].Id != first.Id {
+		t.Errorf("limit 1 = %+v; want the soonest", got)
+	}
+	for _, q := range []string{"?limit=0", "?limit=101"} {
+		hs.do(a, http.MethodGet, "/expiring-links"+q, nil).want(t, http.StatusBadRequest, "invalid_request")
+	}
+
+	// Only what the Links tab shows after creation: no token, URL or hash.
+	res := hs.do(a, http.MethodGet, "/expiring-links", nil)
+	res.want(t, http.StatusOK, "")
+	for _, secret := range []string{limited.Token, limited.Url, "token", "url", "hash"} {
+		if strings.Contains(string(res.body), secret) {
+			t.Errorf("body carries %q: %s", secret, res.body)
+		}
+	}
+}
+
+func TestExpiringLinksOwnerIsolation(t *testing.T) {
+	hs := newHarness(t, deploys.DefaultLimits())
+	newSummaryFixture(t, hs)
+	theirs := hs.createLink(hs.ownerB, "theirs", api.CreateShareLinkRequest{ExpiresAt: ptr(time.Now().Add(2 * time.Hour).UnixMilli())})
+	if got := hs.expiringLinks(hs.ownerB, ""); len(got) != 1 || got[0].Id != theirs.ShareLink.Id || got[0].Site != "theirs" {
+		t.Fatalf("B lists %+v; want only their own link", got)
+	}
+	for _, l := range hs.expiringLinks(hs.ownerA, "") {
+		if l.Id == theirs.ShareLink.Id || l.Site == "theirs" {
+			t.Fatalf("A lists B's link %+v", l)
+		}
 	}
 }

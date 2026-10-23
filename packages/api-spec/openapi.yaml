@@ -2852,6 +2852,48 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v0/expiring-links:
+    get:
+      operationId: listExpiringLinks
+      summary: List the owner's share links that expire soon.
+      description: >-
+        The links that listSiteSummaries counts in each site's
+        `expiringLinks`, across all the owner's sites, soonest expiry
+        first (ties by ID): working links (not revoked, not expired and
+        not used up) that expire within the next 48 hours, leaving out
+        links whose whole lifetime is an hour or less. Answers the first
+        `limit`; the sum of `expiringLinks` says how many there are in
+        all. Tokens and link URLs are never returned. Not paged.
+      tags: [links]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: The soonest-expiring links.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpiringLinkList'
+              example:
+                items:
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e50
+                    site: docs
+                    label: Linear ENG-123
+                    expiresAt: 1767312000000
+                    usesLeft: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
   /api/v0/sign-in-providers:
     get:
       operationId: listSignInProviders
@@ -5032,6 +5074,40 @@ components:
             $ref: '#/components/schemas/SiteSummary'
         nextCursor:
           $ref: '#/components/schemas/Cursor'
+    ExpiringLink:
+      type: object
+      additionalProperties: false
+      description: A share link that expires soon, as listExpiringLinks finds them.
+      required: [id, site, expiresAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        site:
+          description: The name of the site the link opens.
+          $ref: '#/components/schemas/SiteName'
+        label:
+          type: string
+          description: The link's label; absent when it has none.
+          maxLength: 200
+        expiresAt:
+          $ref: '#/components/schemas/Timestamp'
+        usesLeft:
+          type: integer
+          format: int32
+          minimum: 1
+          description: >-
+            Uses the link has left (`maxUses` less uses spent); absent when
+            the link has no use limit.
+    ExpiringLinkList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ExpiringLink'
     SiteCount:
       type: integer
       format: int32
