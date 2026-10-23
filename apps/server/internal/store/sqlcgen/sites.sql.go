@@ -54,7 +54,7 @@ func (q *Queries) DeleteSite(ctx context.Context, arg DeleteSiteParams) (int64, 
 }
 
 const getSite = `-- name: GetSite :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.id = ?1 AND sites.owner_id = ?2
 `
@@ -72,6 +72,8 @@ type GetSiteRow struct {
 	CreatedAt      int64
 	ActivatedAt    sql.NullInt64
 	TakenDownAt    sql.NullInt64
+	GroupID        sql.NullString
+	PinnedAt       sql.NullInt64
 }
 
 func (q *Queries) GetSite(ctx context.Context, arg GetSiteParams) (GetSiteRow, error) {
@@ -85,12 +87,14 @@ func (q *Queries) GetSite(ctx context.Context, arg GetSiteParams) (GetSiteRow, e
 		&i.CreatedAt,
 		&i.ActivatedAt,
 		&i.TakenDownAt,
+		&i.GroupID,
+		&i.PinnedAt,
 	)
 	return i, err
 }
 
 const getSiteByID = `-- name: GetSiteByID :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.id = ?1
 `
@@ -103,6 +107,8 @@ type GetSiteByIDRow struct {
 	CreatedAt      int64
 	ActivatedAt    sql.NullInt64
 	TakenDownAt    sql.NullInt64
+	GroupID        sql.NullString
+	PinnedAt       sql.NullInt64
 }
 
 // Instance-wide: edge routing only, never owner API handlers.
@@ -117,12 +123,14 @@ func (q *Queries) GetSiteByID(ctx context.Context, id string) (GetSiteByIDRow, e
 		&i.CreatedAt,
 		&i.ActivatedAt,
 		&i.TakenDownAt,
+		&i.GroupID,
+		&i.PinnedAt,
 	)
 	return i, err
 }
 
 const getSiteByName = `-- name: GetSiteByName :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.name = ?1
 `
@@ -135,6 +143,8 @@ type GetSiteByNameRow struct {
 	CreatedAt      int64
 	ActivatedAt    sql.NullInt64
 	TakenDownAt    sql.NullInt64
+	GroupID        sql.NullString
+	PinnedAt       sql.NullInt64
 }
 
 // Instance-wide: edge routing only, never owner API handlers.
@@ -149,12 +159,14 @@ func (q *Queries) GetSiteByName(ctx context.Context, name string) (GetSiteByName
 		&i.CreatedAt,
 		&i.ActivatedAt,
 		&i.TakenDownAt,
+		&i.GroupID,
+		&i.PinnedAt,
 	)
 	return i, err
 }
 
 const getSiteByOwnerDomain = `-- name: GetSiteByOwnerDomain :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
 FROM sites
 JOIN domains ON domains.site_id = sites.id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
@@ -174,6 +186,8 @@ type GetSiteByOwnerDomainRow struct {
 	CreatedAt      int64
 	ActivatedAt    sql.NullInt64
 	TakenDownAt    sql.NullInt64
+	GroupID        sql.NullString
+	PinnedAt       sql.NullInt64
 }
 
 // Any status: the owner API resolves pending and lapsed hostnames too.
@@ -188,12 +202,14 @@ func (q *Queries) GetSiteByOwnerDomain(ctx context.Context, arg GetSiteByOwnerDo
 		&i.CreatedAt,
 		&i.ActivatedAt,
 		&i.TakenDownAt,
+		&i.GroupID,
+		&i.PinnedAt,
 	)
 	return i, err
 }
 
 const getSiteByOwnerName = `-- name: GetSiteByOwnerName :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.name = ?1 AND sites.owner_id = ?2
 `
@@ -211,6 +227,8 @@ type GetSiteByOwnerNameRow struct {
 	CreatedAt      int64
 	ActivatedAt    sql.NullInt64
 	TakenDownAt    sql.NullInt64
+	GroupID        sql.NullString
+	PinnedAt       sql.NullInt64
 }
 
 func (q *Queries) GetSiteByOwnerName(ctx context.Context, arg GetSiteByOwnerNameParams) (GetSiteByOwnerNameRow, error) {
@@ -224,12 +242,14 @@ func (q *Queries) GetSiteByOwnerName(ctx context.Context, arg GetSiteByOwnerName
 		&i.CreatedAt,
 		&i.ActivatedAt,
 		&i.TakenDownAt,
+		&i.GroupID,
+		&i.PinnedAt,
 	)
 	return i, err
 }
 
 const listAllSites = `-- name: ListAllSites :many
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at,
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
   owners.email AS owner_email, owners.suspended_at AS owner_suspended_at
 FROM sites
 JOIN owners ON owners.id = sites.owner_id
@@ -252,6 +272,8 @@ type ListAllSitesRow struct {
 	CreatedAt        int64
 	ActivatedAt      sql.NullInt64
 	TakenDownAt      sql.NullInt64
+	GroupID          sql.NullString
+	PinnedAt         sql.NullInt64
 	OwnerEmail       string
 	OwnerSuspendedAt sql.NullInt64
 }
@@ -273,6 +295,8 @@ func (q *Queries) ListAllSites(ctx context.Context, arg ListAllSitesParams) ([]L
 			&i.CreatedAt,
 			&i.ActivatedAt,
 			&i.TakenDownAt,
+			&i.GroupID,
+			&i.PinnedAt,
 			&i.OwnerEmail,
 			&i.OwnerSuspendedAt,
 		); err != nil {
@@ -290,7 +314,7 @@ func (q *Queries) ListAllSites(ctx context.Context, arg ListAllSitesParams) ([]L
 }
 
 const listSites = `-- name: ListSites :many
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 WHERE sites.owner_id = ?1 AND sites.name > ?2
 ORDER BY sites.name
@@ -311,6 +335,8 @@ type ListSitesRow struct {
 	CreatedAt      int64
 	ActivatedAt    sql.NullInt64
 	TakenDownAt    sql.NullInt64
+	GroupID        sql.NullString
+	PinnedAt       sql.NullInt64
 }
 
 func (q *Queries) ListSites(ctx context.Context, arg ListSitesParams) ([]ListSitesRow, error) {
@@ -330,6 +356,8 @@ func (q *Queries) ListSites(ctx context.Context, arg ListSitesParams) ([]ListSit
 			&i.CreatedAt,
 			&i.ActivatedAt,
 			&i.TakenDownAt,
+			&i.GroupID,
+			&i.PinnedAt,
 		); err != nil {
 			return nil, err
 		}

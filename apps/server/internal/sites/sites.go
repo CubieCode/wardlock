@@ -64,6 +64,8 @@ type notifier interface {
 type Config struct {
 	Sites    store.Sites
 	Notifier notifier
+	// Organisation backs groups, tags and pins (V5.3).
+	Organisation store.Organisation
 	// Domains, Resolver and Certs back custom domains (C1.9). Certs may be
 	// nil when Wardlock holds no certificates (local and proxy TLS modes).
 	Domains  store.Domains

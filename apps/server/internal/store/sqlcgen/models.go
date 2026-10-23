@@ -235,6 +235,17 @@ type Site struct {
 	CreatedAt      int64
 	ActiveDeployID sql.NullString
 	TakenDownAt    sql.NullInt64
+	GroupID        sql.NullString
+	PinnedAt       sql.NullInt64
+}
+
+type SiteGroup struct {
+	ID        string
+	OwnerID   string
+	Name      string
+	NameKey   string
+	Note      sql.NullString
+	CreatedAt int64
 }
 
 type SiteSession struct {
@@ -249,6 +260,19 @@ type SiteSession struct {
 	CreatedAt     int64
 	ExpiresAt     int64
 	RevokedAt     sql.NullInt64
+}
+
+type SiteTag struct {
+	SiteID string
+	TagID  string
+}
+
+type Tag struct {
+	ID        string
+	OwnerID   string
+	Name      string
+	Colour    int64
+	CreatedAt int64
 }
 
 type VisitorEmailCode struct {

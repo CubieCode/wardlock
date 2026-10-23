@@ -462,6 +462,19 @@ type CreateDeployRequest struct {
 	Spa *bool `json:"spa,omitempty"`
 }
 
+// CreateGroupRequest defines model for CreateGroupRequest.
+type CreateGroupRequest struct {
+	// Name 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
+	//
+	// Examples: Client work
+	Name GroupName `json:"name"`
+
+	// Note Up to 200 characters with no control characters. Surrounding spaces are trimmed; an empty note is no note.
+	//
+	// Examples: Previews for clients
+	Note *GroupNote `json:"note,omitempty"`
+}
+
 // CreatePasskeyRequest defines model for CreatePasskeyRequest.
 type CreatePasskeyRequest struct {
 	CeremonyId string `json:"ceremonyId"`
@@ -498,6 +511,19 @@ type CreateSiteRequest struct {
 	//
 	// Examples: docs
 	Name SiteName `json:"name"`
+}
+
+// CreateTagRequest defines model for CreateTagRequest.
+type CreateTagRequest struct {
+	// Colour Absent for the lowest free slot 1-8, else 0.
+	//
+	// Examples: 1
+	Colour *TagColour `json:"colour,omitempty"`
+
+	// Name 1 to 30 characters of a-z, 0-9 and '-', unique among the owner's tags.
+	//
+	// Examples: preview
+	Name TagName `json:"name"`
 }
 
 // CreatedApiToken defines model for CreatedApiToken.
@@ -741,6 +767,44 @@ type Error struct {
 	Target *string `json:"target,omitempty"`
 }
 
+// Group defines model for Group.
+type Group struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Name 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
+	//
+	// Examples: Client work
+	Name GroupName `json:"name"`
+
+	// Note Absent when the group has no note.
+	//
+	// Examples: Previews for clients
+	Note *GroupNote `json:"note,omitempty"`
+}
+
+// GroupList defines model for GroupList.
+type GroupList struct {
+	Items []Group `json:"items"`
+}
+
+// GroupName 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
+//
+// Examples: Client work
+type GroupName = string
+
+// GroupNote Up to 200 characters with no control characters. Surrounding spaces are trimmed; an empty note is no note.
+//
+// Examples: Previews for clients
+type GroupNote = string
+
 // Health defines model for Health.
 type Health struct {
 	Status HealthStatus `json:"status"`
@@ -805,6 +869,35 @@ type Me struct {
 
 // MeCredential How this request was authenticated.
 type MeCredential string
+
+// OrganiseSitesRequest At least one of `addTagIds`, `removeTagIds`, `groupId`, `ungroup` and `pinned` must change something.
+type OrganiseSitesRequest struct {
+	// AddTagIds Tags to add to every site; tags a site has are kept.
+	AddTagIds *[]Id `json:"addTagIds,omitempty"`
+
+	// GroupId Put every site in this group.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId *Id `json:"groupId,omitempty"`
+
+	// Pinned Pin (true) or unpin (false) every site; a pinned site stays pinned since it was first pinned.
+	Pinned *bool `json:"pinned,omitempty"`
+
+	// RemoveTagIds Tags to remove from every site that has them.
+	RemoveTagIds *[]Id `json:"removeTagIds,omitempty"`
+
+	// Sites The sites to change, by name, each at most once.
+	Sites []SiteName `json:"sites"`
+
+	// Ungroup True takes every site out of its group. Not with `groupId`.
+	Ungroup *bool `json:"ungroup,omitempty"`
+}
+
+// OrganiseSitesResult defines model for OrganiseSitesResult.
+type OrganiseSitesResult struct {
+	// Prior Each site's group, tags and pin before the change, in the order named.
+	Prior []SiteOrganisation `json:"prior"`
+}
 
 // Owner defines model for Owner.
 type Owner struct {
@@ -1027,6 +1120,17 @@ type SetPolicyRequest struct {
 	Visibility PolicyVisibility `json:"visibility"`
 }
 
+// SetSiteOrganisationRequest defines model for SetSiteOrganisationRequest.
+type SetSiteOrganisationRequest struct {
+	// GroupId The site's group; absent for no group.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId *Id `json:"groupId,omitempty"`
+
+	// TagIds Every tag the site should have, at most 20; empty for none.
+	TagIds []Id `json:"tagIds"`
+}
+
 // SetupRequest defines model for SetupRequest.
 type SetupRequest struct {
 	// Code The `code` query parameter of the setup URL.
@@ -1127,6 +1231,11 @@ type Site struct {
 	// Examples: 1767225600000
 	CreatedAt Timestamp `json:"createdAt"`
 
+	// GroupId The owner's group the site is in; absent when ungrouped. Read only: set with setSiteOrganisation or organiseSites.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId *Id `json:"groupId,omitempty"`
+
 	// Hostname `<name>.<base domain>`.
 	//
 	// Examples: docs.example.com
@@ -1142,6 +1251,12 @@ type Site struct {
 	// Examples: docs
 	Name SiteName `json:"name"`
 
+	// Pinned True while the owner has the site pinned. Read only: set with pinSite, unpinSite or organiseSites.
+	Pinned bool `json:"pinned"`
+
+	// TagIds The site's tags in tag-name order; empty when it has none. Read only, like `groupId`.
+	TagIds []Id `json:"tagIds"`
+
 	// Unavailable True while the instance's operator has taken the site down: visitors see an unavailable page on every hostname, and deploys, activations, rollbacks and deletion answer `409 site_unavailable`. Only the operator can restore it.
 	Unavailable bool `json:"unavailable"`
 
@@ -1153,6 +1268,23 @@ type Site struct {
 //
 // Examples: docs
 type SiteName = string
+
+// SiteOrganisation defines model for SiteOrganisation.
+type SiteOrganisation struct {
+	// GroupId Absent when the site was in no group.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId *Id  `json:"groupId,omitempty"`
+	Pinned  bool `json:"pinned"`
+
+	// Site A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Site SiteName `json:"site"`
+
+	// TagIds In tag-name order.
+	TagIds []Id `json:"tagIds"`
+}
 
 // SitePage defines model for SitePage.
 type SitePage struct {
@@ -1170,10 +1302,74 @@ type StartCliLoginRequest struct {
 	ClientName *string `json:"clientName,omitempty"`
 }
 
+// Tag defines model for Tag.
+type Tag struct {
+	// Colour A slot in the dashboard's tag palette: 0 is neutral, 1 to 8 the categorical colours. The dashboard always shows a tag's name beside its colour.
+	//
+	// Examples: 1
+	Colour TagColour `json:"colour"`
+
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Name 1 to 30 characters of a-z, 0-9 and '-', unique among the owner's tags.
+	//
+	// Examples: preview
+	Name TagName `json:"name"`
+}
+
+// TagColour A slot in the dashboard's tag palette: 0 is neutral, 1 to 8 the categorical colours. The dashboard always shows a tag's name beside its colour.
+//
+// Examples: 1
+type TagColour = int32
+
+// TagList defines model for TagList.
+type TagList struct {
+	Items []Tag `json:"items"`
+}
+
+// TagName 1 to 30 characters of a-z, 0-9 and '-', unique among the owner's tags.
+//
+// Examples: preview
+type TagName = string
+
 // Timestamp UTC milliseconds since the Unix epoch.
 //
 // Examples: 1767225600000
 type Timestamp = int64
+
+// UpdateGroupRequest defines model for UpdateGroupRequest.
+type UpdateGroupRequest struct {
+	// Name 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
+	//
+	// Examples: Client work
+	Name *GroupName `json:"name,omitempty"`
+
+	// Note Up to 200 characters with no control characters. Surrounding spaces are trimmed; an empty note is no note.
+	//
+	// Examples: Previews for clients
+	Note *GroupNote `json:"note,omitempty"`
+}
+
+// UpdateTagRequest defines model for UpdateTagRequest.
+type UpdateTagRequest struct {
+	// Colour A slot in the dashboard's tag palette: 0 is neutral, 1 to 8 the categorical colours. The dashboard always shows a tag's name beside its colour.
+	//
+	// Examples: 1
+	Colour *TagColour `json:"colour,omitempty"`
+
+	// Name 1 to 30 characters of a-z, 0-9 and '-', unique among the owner's tags.
+	//
+	// Examples: preview
+	Name *TagName `json:"name,omitempty"`
+}
 
 // UserCode Eight letters from an alphabet without vowels or look-alikes, in two groups of four.
 //
@@ -1189,6 +1385,11 @@ type DeployId = Id
 //
 // Examples: docs.example.com
 type DomainHostname = Hostname
+
+// GroupId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type GroupId = Id
 
 // Limit defines model for Limit.
 type Limit = int32
@@ -1212,6 +1413,11 @@ type PolicyId = Id
 //
 // Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
 type SessionId = Id
+
+// TagId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type TagId = Id
 
 // TokenId A lowercase, hyphenated UUIDv7.
 //
@@ -1377,6 +1583,15 @@ type DenyCliLoginJSONRequestBody = DenyCliLoginRequest
 // PollCliLoginJSONRequestBody defines body for PollCliLogin for application/json ContentType.
 type PollCliLoginJSONRequestBody = PollCliLoginRequest
 
+// CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
+type CreateGroupJSONRequestBody = CreateGroupRequest
+
+// UpdateGroupJSONRequestBody defines body for UpdateGroup for application/json ContentType.
+type UpdateGroupJSONRequestBody = UpdateGroupRequest
+
+// OrganiseSitesJSONRequestBody defines body for OrganiseSites for application/json ContentType.
+type OrganiseSitesJSONRequestBody = OrganiseSitesRequest
+
 // InviteOwnerJSONRequestBody defines body for InviteOwner for application/json ContentType.
 type InviteOwnerJSONRequestBody = InviteOwnerRequest
 
@@ -1398,11 +1613,20 @@ type AddDomainJSONRequestBody = AddDomainRequest
 // CreateShareLinkJSONRequestBody defines body for CreateShareLink for application/json ContentType.
 type CreateShareLinkJSONRequestBody = CreateShareLinkRequest
 
+// SetSiteOrganisationJSONRequestBody defines body for SetSiteOrganisation for application/json ContentType.
+type SetSiteOrganisationJSONRequestBody = SetSiteOrganisationRequest
+
 // SetPolicyJSONRequestBody defines body for SetPolicy for application/json ContentType.
 type SetPolicyJSONRequestBody = SetPolicyRequest
 
 // RollbackSiteJSONRequestBody defines body for RollbackSite for application/json ContentType.
 type RollbackSiteJSONRequestBody = RollbackRequest
+
+// CreateTagJSONRequestBody defines body for CreateTag for application/json ContentType.
+type CreateTagJSONRequestBody = CreateTagRequest
+
+// UpdateTagJSONRequestBody defines body for UpdateTag for application/json ContentType.
+type UpdateTagJSONRequestBody = UpdateTagRequest
 
 // CreateApiTokenJSONRequestBody defines body for CreateApiToken for application/json ContentType.
 type CreateApiTokenJSONRequestBody = CreateApiTokenRequest
@@ -1546,12 +1770,27 @@ type ServerInterface interface {
 	// PollCliLogin Poll a CLI device login for its token.
 	// (POST /api/v0/cli-login/poll)
 	PollCliLogin(w http.ResponseWriter, r *http.Request)
+	// ListGroups List the owner's groups.
+	// (GET /api/v0/groups)
+	ListGroups(w http.ResponseWriter, r *http.Request)
+	// CreateGroup Create a group.
+	// (POST /api/v0/groups)
+	CreateGroup(w http.ResponseWriter, r *http.Request)
+	// DeleteGroup Delete a group.
+	// (DELETE /api/v0/groups/{groupId})
+	DeleteGroup(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// UpdateGroup Rename a group or change its note.
+	// (PATCH /api/v0/groups/{groupId})
+	UpdateGroup(w http.ResponseWriter, r *http.Request, groupId GroupId)
 	// GetHealth Report that the API is serving requests.
 	// (GET /api/v0/health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
 	// GetMe Describe the signed-in owner and the credential used.
 	// (GET /api/v0/me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// OrganiseSites Change the group, tags or pin of many sites at once.
+	// (POST /api/v0/organise)
+	OrganiseSites(w http.ResponseWriter, r *http.Request)
 	// InviteOwner Invite another owner by email.
 	// (POST /api/v0/owners)
 	InviteOwner(w http.ResponseWriter, r *http.Request)
@@ -1639,6 +1878,15 @@ type ServerInterface interface {
 	// RotateShareLink Rotate a share link's token.
 	// (POST /api/v0/sites/{site}/links/{linkId}/rotate)
 	RotateShareLink(w http.ResponseWriter, r *http.Request, site SiteName, linkId LinkId)
+	// SetSiteOrganisation Set a site's group and tags.
+	// (PUT /api/v0/sites/{site}/organisation)
+	SetSiteOrganisation(w http.ResponseWriter, r *http.Request, site SiteName)
+	// UnpinSite Unpin a site.
+	// (DELETE /api/v0/sites/{site}/pin)
+	UnpinSite(w http.ResponseWriter, r *http.Request, site SiteName)
+	// PinSite Pin a site.
+	// (PUT /api/v0/sites/{site}/pin)
+	PinSite(w http.ResponseWriter, r *http.Request, site SiteName)
 	// ListPolicies List a site's access policies.
 	// (GET /api/v0/sites/{site}/policies)
 	ListPolicies(w http.ResponseWriter, r *http.Request, site SiteName, params ListPoliciesParams)
@@ -1651,6 +1899,18 @@ type ServerInterface interface {
 	// RollbackSite Reactivate an earlier deploy.
 	// (POST /api/v0/sites/{site}/rollback)
 	RollbackSite(w http.ResponseWriter, r *http.Request, site SiteName)
+	// ListTags List the owner's tags.
+	// (GET /api/v0/tags)
+	ListTags(w http.ResponseWriter, r *http.Request)
+	// CreateTag Create a tag.
+	// (POST /api/v0/tags)
+	CreateTag(w http.ResponseWriter, r *http.Request)
+	// DeleteTag Delete a tag.
+	// (DELETE /api/v0/tags/{tagId})
+	DeleteTag(w http.ResponseWriter, r *http.Request, tagId TagId)
+	// UpdateTag Rename a tag or change its colour.
+	// (PATCH /api/v0/tags/{tagId})
+	UpdateTag(w http.ResponseWriter, r *http.Request, tagId TagId)
 	// ListApiTokens List the signed-in owner's API tokens.
 	// (GET /api/v0/tokens)
 	ListApiTokens(w http.ResponseWriter, r *http.Request, params ListApiTokensParams)
@@ -1811,6 +2071,86 @@ func (siw *ServerInterfaceWrapper) PollCliLogin(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListGroups operation middleware
+func (siw *ServerInterfaceWrapper) ListGroups(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListGroups(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateGroup operation middleware
+func (siw *ServerInterfaceWrapper) CreateGroup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateGroup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteGroup operation middleware
+func (siw *ServerInterfaceWrapper) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteGroup(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateGroup operation middleware
+func (siw *ServerInterfaceWrapper) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateGroup(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
@@ -1830,6 +2170,20 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// OrganiseSites operation middleware
+func (siw *ServerInterfaceWrapper) OrganiseSites(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.OrganiseSites(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2880,6 +3234,84 @@ func (siw *ServerInterfaceWrapper) RotateShareLink(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// SetSiteOrganisation operation middleware
+func (siw *ServerInterfaceWrapper) SetSiteOrganisation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetSiteOrganisation(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnpinSite operation middleware
+func (siw *ServerInterfaceWrapper) UnpinSite(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnpinSite(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PinSite operation middleware
+func (siw *ServerInterfaceWrapper) PinSite(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PinSite(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListPolicies operation middleware
 func (siw *ServerInterfaceWrapper) ListPolicies(w http.ResponseWriter, r *http.Request) {
 
@@ -3013,6 +3445,86 @@ func (siw *ServerInterfaceWrapper) RollbackSite(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RollbackSite(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTags operation middleware
+func (siw *ServerInterfaceWrapper) ListTags(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTags(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateTag operation middleware
+func (siw *ServerInterfaceWrapper) CreateTag(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateTag(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteTag operation middleware
+func (siw *ServerInterfaceWrapper) DeleteTag(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tagId" -------------
+	var tagId TagId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tagId", r.PathValue("tagId"), &tagId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tagId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteTag(w, r, tagId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateTag operation middleware
+func (siw *ServerInterfaceWrapper) UpdateTag(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tagId" -------------
+	var tagId TagId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tagId", r.PathValue("tagId"), &tagId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tagId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateTag(w, r, tagId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3255,6 +3767,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites", wrapper.CreateSite)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}", wrapper.DeleteSite)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}", wrapper.GetSite)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v0/sites/{site}/organisation", wrapper.SetSiteOrganisation)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/pin", wrapper.UnpinSite)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v0/sites/{site}/pin", wrapper.PinSite)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/deploys", wrapper.ListDeploys)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/deploys", wrapper.CreateDeploy)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/deploys/{deployId}/files", wrapper.ListDeployFiles)
@@ -3276,6 +3791,15 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/links/{linkId}/rotate", wrapper.RotateShareLink)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/links/{linkId}/access-log", wrapper.ListShareLinkAccessLog)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/access-log", wrapper.ListSiteAccessLog)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/groups", wrapper.ListGroups)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/groups", wrapper.CreateGroup)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/groups/{groupId}", wrapper.DeleteGroup)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v0/groups/{groupId}", wrapper.UpdateGroup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/tags", wrapper.ListTags)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/tags", wrapper.CreateTag)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/tags/{tagId}", wrapper.DeleteTag)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v0/tags/{tagId}", wrapper.UpdateTag)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/organise", wrapper.OrganiseSites)
 
 	return m
 }
@@ -4099,6 +4623,366 @@ func (response PollCliLogindefaultJSONResponse) VisitPollCliLoginResponse(w http
 	return err
 }
 
+type ListGroupsRequestObject struct {
+}
+
+type ListGroupsResponseObject interface {
+	VisitListGroupsResponse(w http.ResponseWriter) error
+}
+
+type ListGroups200JSONResponse GroupList
+
+func (response ListGroups200JSONResponse) VisitListGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListGroups401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListGroups401JSONResponse) VisitListGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListGroups403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListGroups403JSONResponse) VisitListGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListGroupsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListGroupsdefaultJSONResponse) VisitListGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGroupRequestObject struct {
+	Body *CreateGroupJSONRequestBody
+}
+
+type CreateGroupResponseObject interface {
+	VisitCreateGroupResponse(w http.ResponseWriter) error
+}
+
+type CreateGroup201JSONResponse Group
+
+func (response CreateGroup201JSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGroup400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateGroup400JSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGroup401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateGroup401JSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateGroup403JSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGroup409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateGroup409JSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGroup413JSONResponse struct{ TooLargeJSONResponse }
+
+func (response CreateGroup413JSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateGroupdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateGroupdefaultJSONResponse) VisitCreateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteGroupRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+}
+
+type DeleteGroupResponseObject interface {
+	VisitDeleteGroupResponse(w http.ResponseWriter) error
+}
+
+type DeleteGroup204Response struct {
+}
+
+func (response DeleteGroup204Response) VisitDeleteGroupResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteGroup401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteGroup401JSONResponse) VisitDeleteGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteGroup403JSONResponse) VisitDeleteGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteGroup404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteGroup404JSONResponse) VisitDeleteGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteGroupdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteGroupdefaultJSONResponse) VisitDeleteGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroupRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+	Body    *UpdateGroupJSONRequestBody
+}
+
+type UpdateGroupResponseObject interface {
+	VisitUpdateGroupResponse(w http.ResponseWriter) error
+}
+
+type UpdateGroup200JSONResponse Group
+
+func (response UpdateGroup200JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroup400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateGroup400JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroup401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateGroup401JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroup403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateGroup403JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroup404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateGroup404JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroup409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UpdateGroup409JSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateGroupdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateGroupdefaultJSONResponse) VisitUpdateGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetHealthRequestObject struct {
 }
 
@@ -4178,6 +5062,115 @@ type GetMedefaultJSONResponse struct {
 }
 
 func (response GetMedefaultJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganiseSitesRequestObject struct {
+	Body *OrganiseSitesJSONRequestBody
+}
+
+type OrganiseSitesResponseObject interface {
+	VisitOrganiseSitesResponse(w http.ResponseWriter) error
+}
+
+type OrganiseSites200JSONResponse OrganiseSitesResult
+
+func (response OrganiseSites200JSONResponse) VisitOrganiseSitesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganiseSites400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response OrganiseSites400JSONResponse) VisitOrganiseSitesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganiseSites401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response OrganiseSites401JSONResponse) VisitOrganiseSitesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganiseSites403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response OrganiseSites403JSONResponse) VisitOrganiseSitesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganiseSites404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response OrganiseSites404JSONResponse) VisitOrganiseSitesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganiseSites413JSONResponse struct{ TooLargeJSONResponse }
+
+func (response OrganiseSites413JSONResponse) VisitOrganiseSitesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OrganiseSitesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response OrganiseSitesdefaultJSONResponse) VisitOrganiseSitesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -6958,6 +7951,278 @@ func (response RotateShareLinkdefaultJSONResponse) VisitRotateShareLinkResponse(
 	return err
 }
 
+type SetSiteOrganisationRequestObject struct {
+	Site SiteName `json:"site"`
+	Body *SetSiteOrganisationJSONRequestBody
+}
+
+type SetSiteOrganisationResponseObject interface {
+	VisitSetSiteOrganisationResponse(w http.ResponseWriter) error
+}
+
+type SetSiteOrganisation200JSONResponse Site
+
+func (response SetSiteOrganisation200JSONResponse) VisitSetSiteOrganisationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetSiteOrganisation400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response SetSiteOrganisation400JSONResponse) VisitSetSiteOrganisationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetSiteOrganisation401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetSiteOrganisation401JSONResponse) VisitSetSiteOrganisationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetSiteOrganisation403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetSiteOrganisation403JSONResponse) VisitSetSiteOrganisationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetSiteOrganisation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response SetSiteOrganisation404JSONResponse) VisitSetSiteOrganisationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetSiteOrganisation413JSONResponse struct{ TooLargeJSONResponse }
+
+func (response SetSiteOrganisation413JSONResponse) VisitSetSiteOrganisationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetSiteOrganisationdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SetSiteOrganisationdefaultJSONResponse) VisitSetSiteOrganisationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnpinSiteRequestObject struct {
+	Site SiteName `json:"site"`
+}
+
+type UnpinSiteResponseObject interface {
+	VisitUnpinSiteResponse(w http.ResponseWriter) error
+}
+
+type UnpinSite200JSONResponse Site
+
+func (response UnpinSite200JSONResponse) VisitUnpinSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnpinSite401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UnpinSite401JSONResponse) VisitUnpinSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnpinSite403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UnpinSite403JSONResponse) VisitUnpinSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnpinSite404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UnpinSite404JSONResponse) VisitUnpinSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnpinSitedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UnpinSitedefaultJSONResponse) VisitUnpinSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PinSiteRequestObject struct {
+	Site SiteName `json:"site"`
+}
+
+type PinSiteResponseObject interface {
+	VisitPinSiteResponse(w http.ResponseWriter) error
+}
+
+type PinSite200JSONResponse Site
+
+func (response PinSite200JSONResponse) VisitPinSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PinSite401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response PinSite401JSONResponse) VisitPinSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PinSite403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response PinSite403JSONResponse) VisitPinSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PinSite404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response PinSite404JSONResponse) VisitPinSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PinSitedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response PinSitedefaultJSONResponse) VisitPinSiteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListPoliciesRequestObject struct {
 	Site   SiteName `json:"site"`
 	Params ListPoliciesParams
@@ -7350,6 +8615,366 @@ func (response RollbackSitedefaultJSONResponse) VisitRollbackSiteResponse(w http
 	return err
 }
 
+type ListTagsRequestObject struct {
+}
+
+type ListTagsResponseObject interface {
+	VisitListTagsResponse(w http.ResponseWriter) error
+}
+
+type ListTags200JSONResponse TagList
+
+func (response ListTags200JSONResponse) VisitListTagsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTags401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListTags401JSONResponse) VisitListTagsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTags403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListTags403JSONResponse) VisitListTagsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTagsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListTagsdefaultJSONResponse) VisitListTagsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTagRequestObject struct {
+	Body *CreateTagJSONRequestBody
+}
+
+type CreateTagResponseObject interface {
+	VisitCreateTagResponse(w http.ResponseWriter) error
+}
+
+type CreateTag201JSONResponse Tag
+
+func (response CreateTag201JSONResponse) VisitCreateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTag400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateTag400JSONResponse) VisitCreateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTag401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateTag401JSONResponse) VisitCreateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTag403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response CreateTag403JSONResponse) VisitCreateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTag409JSONResponse struct{ ConflictJSONResponse }
+
+func (response CreateTag409JSONResponse) VisitCreateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTag413JSONResponse struct{ TooLargeJSONResponse }
+
+func (response CreateTag413JSONResponse) VisitCreateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTagdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateTagdefaultJSONResponse) VisitCreateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTagRequestObject struct {
+	TagId TagId `json:"tagId"`
+}
+
+type DeleteTagResponseObject interface {
+	VisitDeleteTagResponse(w http.ResponseWriter) error
+}
+
+type DeleteTag204Response struct {
+}
+
+func (response DeleteTag204Response) VisitDeleteTagResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteTag401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteTag401JSONResponse) VisitDeleteTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTag403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeleteTag403JSONResponse) VisitDeleteTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTag404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeleteTag404JSONResponse) VisitDeleteTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTagdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteTagdefaultJSONResponse) VisitDeleteTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTagRequestObject struct {
+	TagId TagId `json:"tagId"`
+	Body  *UpdateTagJSONRequestBody
+}
+
+type UpdateTagResponseObject interface {
+	VisitUpdateTagResponse(w http.ResponseWriter) error
+}
+
+type UpdateTag200JSONResponse Tag
+
+func (response UpdateTag200JSONResponse) VisitUpdateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTag400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateTag400JSONResponse) VisitUpdateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTag401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateTag401JSONResponse) VisitUpdateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTag403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response UpdateTag403JSONResponse) VisitUpdateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTag404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateTag404JSONResponse) VisitUpdateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTag409JSONResponse struct{ ConflictJSONResponse }
+
+func (response UpdateTag409JSONResponse) VisitUpdateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTagdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response UpdateTagdefaultJSONResponse) VisitUpdateTagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListApiTokensRequestObject struct {
 	Params ListApiTokensParams
 }
@@ -7605,12 +9230,27 @@ type StrictServerInterface interface {
 	// PollCliLogin Poll a CLI device login for its token.
 	// (POST /api/v0/cli-login/poll)
 	PollCliLogin(ctx context.Context, request PollCliLoginRequestObject) (PollCliLoginResponseObject, error)
+	// ListGroups List the owner's groups.
+	// (GET /api/v0/groups)
+	ListGroups(ctx context.Context, request ListGroupsRequestObject) (ListGroupsResponseObject, error)
+	// CreateGroup Create a group.
+	// (POST /api/v0/groups)
+	CreateGroup(ctx context.Context, request CreateGroupRequestObject) (CreateGroupResponseObject, error)
+	// DeleteGroup Delete a group.
+	// (DELETE /api/v0/groups/{groupId})
+	DeleteGroup(ctx context.Context, request DeleteGroupRequestObject) (DeleteGroupResponseObject, error)
+	// UpdateGroup Rename a group or change its note.
+	// (PATCH /api/v0/groups/{groupId})
+	UpdateGroup(ctx context.Context, request UpdateGroupRequestObject) (UpdateGroupResponseObject, error)
 	// GetHealth Report that the API is serving requests.
 	// (GET /api/v0/health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
 	// GetMe Describe the signed-in owner and the credential used.
 	// (GET /api/v0/me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// OrganiseSites Change the group, tags or pin of many sites at once.
+	// (POST /api/v0/organise)
+	OrganiseSites(ctx context.Context, request OrganiseSitesRequestObject) (OrganiseSitesResponseObject, error)
 	// InviteOwner Invite another owner by email.
 	// (POST /api/v0/owners)
 	InviteOwner(ctx context.Context, request InviteOwnerRequestObject) (InviteOwnerResponseObject, error)
@@ -7698,6 +9338,15 @@ type StrictServerInterface interface {
 	// RotateShareLink Rotate a share link's token.
 	// (POST /api/v0/sites/{site}/links/{linkId}/rotate)
 	RotateShareLink(ctx context.Context, request RotateShareLinkRequestObject) (RotateShareLinkResponseObject, error)
+	// SetSiteOrganisation Set a site's group and tags.
+	// (PUT /api/v0/sites/{site}/organisation)
+	SetSiteOrganisation(ctx context.Context, request SetSiteOrganisationRequestObject) (SetSiteOrganisationResponseObject, error)
+	// UnpinSite Unpin a site.
+	// (DELETE /api/v0/sites/{site}/pin)
+	UnpinSite(ctx context.Context, request UnpinSiteRequestObject) (UnpinSiteResponseObject, error)
+	// PinSite Pin a site.
+	// (PUT /api/v0/sites/{site}/pin)
+	PinSite(ctx context.Context, request PinSiteRequestObject) (PinSiteResponseObject, error)
 	// ListPolicies List a site's access policies.
 	// (GET /api/v0/sites/{site}/policies)
 	ListPolicies(ctx context.Context, request ListPoliciesRequestObject) (ListPoliciesResponseObject, error)
@@ -7710,6 +9359,18 @@ type StrictServerInterface interface {
 	// RollbackSite Reactivate an earlier deploy.
 	// (POST /api/v0/sites/{site}/rollback)
 	RollbackSite(ctx context.Context, request RollbackSiteRequestObject) (RollbackSiteResponseObject, error)
+	// ListTags List the owner's tags.
+	// (GET /api/v0/tags)
+	ListTags(ctx context.Context, request ListTagsRequestObject) (ListTagsResponseObject, error)
+	// CreateTag Create a tag.
+	// (POST /api/v0/tags)
+	CreateTag(ctx context.Context, request CreateTagRequestObject) (CreateTagResponseObject, error)
+	// DeleteTag Delete a tag.
+	// (DELETE /api/v0/tags/{tagId})
+	DeleteTag(ctx context.Context, request DeleteTagRequestObject) (DeleteTagResponseObject, error)
+	// UpdateTag Rename a tag or change its colour.
+	// (PATCH /api/v0/tags/{tagId})
+	UpdateTag(ctx context.Context, request UpdateTagRequestObject) (UpdateTagResponseObject, error)
 	// ListApiTokens List the signed-in owner's API tokens.
 	// (GET /api/v0/tokens)
 	ListApiTokens(ctx context.Context, request ListApiTokensRequestObject) (ListApiTokensResponseObject, error)
@@ -8056,6 +9717,120 @@ func (sh *strictHandler) PollCliLogin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListGroups operation middleware
+func (sh *strictHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
+	var request ListGroupsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListGroups(ctx, request.(ListGroupsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListGroups")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListGroupsResponseObject); ok {
+		if err := validResponse.VisitListGroupsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateGroup operation middleware
+func (sh *strictHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
+	var request CreateGroupRequestObject
+
+	var body CreateGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateGroup(ctx, request.(CreateGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateGroupResponseObject); ok {
+		if err := validResponse.VisitCreateGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteGroup operation middleware
+func (sh *strictHandler) DeleteGroup(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request DeleteGroupRequestObject
+
+	request.GroupId = groupId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteGroup(ctx, request.(DeleteGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteGroupResponseObject); ok {
+		if err := validResponse.VisitDeleteGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateGroup operation middleware
+func (sh *strictHandler) UpdateGroup(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request UpdateGroupRequestObject
+
+	request.GroupId = groupId
+
+	var body UpdateGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateGroup(ctx, request.(UpdateGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateGroupResponseObject); ok {
+		if err := validResponse.VisitUpdateGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetHealth operation middleware
 func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	var request GetHealthRequestObject
@@ -8097,6 +9872,37 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// OrganiseSites operation middleware
+func (sh *strictHandler) OrganiseSites(w http.ResponseWriter, r *http.Request) {
+	var request OrganiseSitesRequestObject
+
+	var body OrganiseSitesJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.OrganiseSites(ctx, request.(OrganiseSitesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "OrganiseSites")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(OrganiseSitesResponseObject); ok {
+		if err := validResponse.VisitOrganiseSitesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -8916,6 +10722,91 @@ func (sh *strictHandler) RotateShareLink(w http.ResponseWriter, r *http.Request,
 	}
 }
 
+// SetSiteOrganisation operation middleware
+func (sh *strictHandler) SetSiteOrganisation(w http.ResponseWriter, r *http.Request, site SiteName) {
+	var request SetSiteOrganisationRequestObject
+
+	request.Site = site
+
+	var body SetSiteOrganisationJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetSiteOrganisation(ctx, request.(SetSiteOrganisationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetSiteOrganisation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetSiteOrganisationResponseObject); ok {
+		if err := validResponse.VisitSetSiteOrganisationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UnpinSite operation middleware
+func (sh *strictHandler) UnpinSite(w http.ResponseWriter, r *http.Request, site SiteName) {
+	var request UnpinSiteRequestObject
+
+	request.Site = site
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UnpinSite(ctx, request.(UnpinSiteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UnpinSite")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UnpinSiteResponseObject); ok {
+		if err := validResponse.VisitUnpinSiteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PinSite operation middleware
+func (sh *strictHandler) PinSite(w http.ResponseWriter, r *http.Request, site SiteName) {
+	var request PinSiteRequestObject
+
+	request.Site = site
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PinSite(ctx, request.(PinSiteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PinSite")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PinSiteResponseObject); ok {
+		if err := validResponse.VisitPinSiteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListPolicies operation middleware
 func (sh *strictHandler) ListPolicies(w http.ResponseWriter, r *http.Request, site SiteName, params ListPoliciesParams) {
 	var request ListPoliciesRequestObject
@@ -9032,6 +10923,120 @@ func (sh *strictHandler) RollbackSite(w http.ResponseWriter, r *http.Request, si
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RollbackSiteResponseObject); ok {
 		if err := validResponse.VisitRollbackSiteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTags operation middleware
+func (sh *strictHandler) ListTags(w http.ResponseWriter, r *http.Request) {
+	var request ListTagsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTags(ctx, request.(ListTagsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTags")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTagsResponseObject); ok {
+		if err := validResponse.VisitListTagsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateTag operation middleware
+func (sh *strictHandler) CreateTag(w http.ResponseWriter, r *http.Request) {
+	var request CreateTagRequestObject
+
+	var body CreateTagJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateTag(ctx, request.(CreateTagRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateTag")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateTagResponseObject); ok {
+		if err := validResponse.VisitCreateTagResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteTag operation middleware
+func (sh *strictHandler) DeleteTag(w http.ResponseWriter, r *http.Request, tagId TagId) {
+	var request DeleteTagRequestObject
+
+	request.TagId = tagId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteTag(ctx, request.(DeleteTagRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteTag")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteTagResponseObject); ok {
+		if err := validResponse.VisitDeleteTagResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateTag operation middleware
+func (sh *strictHandler) UpdateTag(w http.ResponseWriter, r *http.Request, tagId TagId) {
+	var request UpdateTagRequestObject
+
+	request.TagId = tagId
+
+	var body UpdateTagJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateTag(ctx, request.(UpdateTagRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateTag")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateTagResponseObject); ok {
+		if err := validResponse.VisitUpdateTagResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -94,6 +94,20 @@ var implemented = map[string]bool{
 	"PollCliLogin":    true,
 	"ApproveCliLogin": true,
 	"DenyCliLogin":    true,
+
+	// V5.3 groups, tags and pins.
+	"ListGroups":          true,
+	"CreateGroup":         true,
+	"UpdateGroup":         true,
+	"DeleteGroup":         true,
+	"ListTags":            true,
+	"CreateTag":           true,
+	"UpdateTag":           true,
+	"DeleteTag":           true,
+	"SetSiteOrganisation": true,
+	"PinSite":             true,
+	"UnpinSite":           true,
+	"OrganiseSites":       true,
 }
 
 // pathValues are valid values for every path parameter in the contract.
@@ -107,6 +121,8 @@ var pathValues = map[string]string{
 	"policyId":  "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41",
 	"passkeyId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40",
 	"linkId":    "q4v7m2xkpa",
+	"groupId":   "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70",
+	"tagId":     "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80",
 }
 
 var pathParam = regexp.MustCompile(`\{(\w+)\}`)

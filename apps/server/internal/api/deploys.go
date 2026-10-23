@@ -46,6 +46,12 @@ func failed(err error) (*failure, error) {
 	if errors.As(err, &te) {
 		target, message = te.Target, te.Message
 	}
+	if ie := (*sites.InvalidError)(nil); errors.As(err, &ie) {
+		target, message = ie.Target, ie.Message
+	}
+	if tm := (*sites.TooManyError)(nil); errors.As(err, &tm) {
+		target, message = tm.Target, tm.Message
+	}
 	siteLimit := ""
 	if le := (*sites.LimitError)(nil); errors.As(err, &le) {
 		siteLimit = le.Message()
@@ -58,6 +64,10 @@ func failed(err error) (*failure, error) {
 		target  string
 	}{
 		{sites.ErrNotFound, http.StatusNotFound, "not_found", "Not found.", ""},
+		{sites.ErrInvalid, http.StatusBadRequest, "invalid_request", message, target},
+		{sites.ErrGroupNameTaken, http.StatusConflict, "group_name_taken", "You already have a group with this name.", "name"},
+		{sites.ErrTagNameTaken, http.StatusConflict, "tag_name_taken", "You already have a tag with this name.", "name"},
+		{sites.ErrTooMany, http.StatusRequestEntityTooLarge, "limit_exceeded", message, target},
 		{deploys.ErrNotFound, http.StatusNotFound, "not_found", "Not found.", ""},
 		{sites.ErrInvalidName, http.StatusBadRequest, "invalid_site_name", "name must be 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.", "name"},
 		{sites.ErrReservedName, http.StatusBadRequest, "reserved_site_name", "This site name is reserved.", "name"},
@@ -118,8 +128,12 @@ func decodeCursor(c *Cursor) (string, bool) {
 	return string(raw), err == nil && len(raw) > 0
 }
 
-func (s *Server) siteBody(site store.Site) Site {
+// siteBody answers site with tagIDs, its tags in tag-name order.
+func (s *Server) siteBody(site store.Site, tagIDs []string) Site {
 	host := s.Sites.Hostname(site.Name)
+	if tagIDs == nil {
+		tagIDs = []string{}
+	}
 	out := Site{
 		Id:        site.ID,
 		Name:      site.Name,
@@ -128,6 +142,11 @@ func (s *Server) siteBody(site store.Site) Site {
 		CreatedAt: site.CreatedAt.UnixMilli(),
 		// Owners see that their site is down, never why (A2.13).
 		Unavailable: !site.TakenDownAt.IsZero(),
+		TagIds:      tagIDs,
+		Pinned:      !site.PinnedAt.IsZero(),
+	}
+	if site.GroupID != "" {
+		out.GroupId = &site.GroupID
 	}
 	if site.ActiveDeployID != "" {
 		out.ActiveDeployId = &site.ActiveDeployID
@@ -187,7 +206,11 @@ func (s *Server) ListSites(ctx context.Context, req ListSitesRequestObject) (Lis
 		if err != nil {
 			return nil, err
 		}
-		return ListSites200JSONResponse{Items: []Site{s.siteBody(site)}}, nil
+		body, err := s.siteBodyWithTags(ctx, owner, site)
+		if err != nil {
+			return nil, err
+		}
+		return ListSites200JSONResponse{Items: []Site{body}}, nil
 	}
 	limit, f := pageLimit(req.Params.Limit)
 	if f != nil {
@@ -206,8 +229,12 @@ func (s *Server) ListSites(ctx context.Context, req ListSitesRequestObject) (Lis
 		list = list[:limit]
 		page.NextCursor = encodeCursor(list[limit-1].Name)
 	}
+	tags, err := s.Sites.TagIDs(ctx, owner, list...)
+	if err != nil {
+		return nil, err
+	}
 	for _, site := range list {
-		page.Items = append(page.Items, s.siteBody(site))
+		page.Items = append(page.Items, s.siteBody(site, tags[site.ID]))
 	}
 	return page, nil
 }
@@ -229,7 +256,7 @@ func (s *Server) CreateSite(ctx context.Context, req CreateSiteRequestObject) (C
 		}
 		return CreateSitedefaultJSONResponse(*f), nil
 	}
-	return CreateSite201JSONResponse(s.siteBody(site)), nil
+	return CreateSite201JSONResponse(s.siteBody(site, nil)), nil
 }
 
 // GetSite returns one of the owner's sites.
@@ -246,7 +273,11 @@ func (s *Server) GetSite(ctx context.Context, req GetSiteRequestObject) (GetSite
 		}
 		return GetSitedefaultJSONResponse(*f), nil
 	}
-	return GetSite200JSONResponse(s.siteBody(site)), nil
+	body, err := s.siteBodyWithTags(ctx, owner, site)
+	if err != nil {
+		return nil, err
+	}
+	return GetSite200JSONResponse(body), nil
 }
 
 // DeleteSite tears a site down.
@@ -380,7 +411,11 @@ func (s *Server) ActivateDeploy(ctx context.Context, req ActivateDeployRequestOb
 		}
 		return ActivateDeploydefaultJSONResponse(*f), nil
 	}
-	return ActivateDeploy200JSONResponse{Site: s.siteBody(site), Deploy: deployBody(site, d)}, nil
+	body, err := s.siteBodyWithTags(ctx, owner, site)
+	if err != nil {
+		return nil, err
+	}
+	return ActivateDeploy200JSONResponse{Site: body, Deploy: deployBody(site, d)}, nil
 }
 
 // RollbackSite reactivates an earlier deploy.
@@ -401,5 +436,9 @@ func (s *Server) RollbackSite(ctx context.Context, req RollbackSiteRequestObject
 		}
 		return RollbackSitedefaultJSONResponse(*f), nil
 	}
-	return RollbackSite200JSONResponse{Site: s.siteBody(site), Deploy: deployBody(site, d)}, nil
+	body, err := s.siteBodyWithTags(ctx, owner, site)
+	if err != nil {
+		return nil, err
+	}
+	return RollbackSite200JSONResponse{Site: body, Deploy: deployBody(site, d)}, nil
 }

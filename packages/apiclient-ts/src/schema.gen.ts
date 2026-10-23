@@ -501,6 +501,62 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/sites/{site}/organisation': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Set a site's group and tags.
+     * @description Puts the site in `groupId` (no group when absent) and replaces its tags with `tagIds` (none when empty), naming only the owner's existing groups and tags: this never creates one. A missing or another owner's site, group or tag answers `404 not_found` and changes nothing. More than 20 tags answers `413 limit_exceeded` with target `tagIds`. The pin is unchanged. Besides `manage`, a `deploy`-scoped token may call this, so a deploy can file the site it publishes (V5.15); creating groups and tags still needs `manage`.
+     */
+    put: operations['setSiteOrganisation'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/pin': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Pin a site.
+     * @description Pinning a pinned site changes nothing.
+     */
+    put: operations['pinSite'];
+    post?: never;
+    /**
+     * Unpin a site.
+     * @description Unpinning a site that is not pinned changes nothing.
+     */
+    delete: operations['unpinSite'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v0/sites/{site}/deploys': {
     parameters: {
       query?: never;
@@ -963,6 +1019,134 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/groups': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the owner's groups.
+     * @description Every group, by name ignoring case. Not paged: an owner has at most 100.
+     */
+    get: operations['listGroups'];
+    put?: never;
+    /**
+     * Create a group.
+     * @description A name the owner already gives a group, in any case, answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+     */
+    post: operations['createGroup'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/groups/{groupId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The group's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70
+         */
+        groupId: components['parameters']['GroupId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete a group.
+     * @description Its sites are kept and become ungrouped.
+     */
+    delete: operations['deleteGroup'];
+    options?: never;
+    head?: never;
+    /**
+     * Rename a group or change its note.
+     * @description Fields left out keep their value; an empty `note` removes it. Renaming to another group's name in any case answers `409 group_name_taken`; renaming to another case of the group's own name is allowed.
+     */
+    patch: operations['updateGroup'];
+    trace?: never;
+  };
+  '/api/v0/tags': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the owner's tags.
+     * @description Every tag, by name. Not paged: an owner has at most 200.
+     */
+    get: operations['listTags'];
+    put?: never;
+    /**
+     * Create a tag.
+     * @description Without `colour`, the tag takes the lowest slot from 1 to 8 that none of the owner's tags has, or 0 (neutral) when all eight are taken. A name the owner already gives a tag answers `409 tag_name_taken`; an owner with 200 tags gets `413 limit_exceeded` with target `name`.
+     */
+    post: operations['createTag'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/tags/{tagId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The tag's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80
+         */
+        tagId: components['parameters']['TagId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete a tag.
+     * @description It is removed from every site that has it.
+     */
+    delete: operations['deleteTag'];
+    options?: never;
+    head?: never;
+    /**
+     * Rename a tag or change its colour.
+     * @description Fields left out keep their value.
+     */
+    patch: operations['updateTag'];
+    trace?: never;
+  };
+  '/api/v0/organise': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Change the group, tags or pin of many sites at once.
+     * @description Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+     */
+    post: operations['organiseSites'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1225,6 +1409,12 @@ export interface components {
       activeDeployId?: components['schemas']['Id'];
       /** @description When the active deploy was last activated. */
       activatedAt?: components['schemas']['Timestamp'];
+      /** @description The owner's group the site is in; absent when ungrouped. Read only: set with setSiteOrganisation or organiseSites. */
+      groupId?: components['schemas']['Id'];
+      /** @description The site's tags in tag-name order; empty when it has none. Read only, like `groupId`. */
+      tagIds: components['schemas']['Id'][];
+      /** @description True while the owner has the site pinned. Read only: set with pinSite, unpinSite or organiseSites. */
+      pinned: boolean;
     };
     SitePage: {
       items: components['schemas']['Site'][];
@@ -1232,6 +1422,96 @@ export interface components {
     };
     CreateSiteRequest: {
       name: components['schemas']['SiteName'];
+    };
+    /**
+     * @description 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
+     * @example Client work
+     */
+    GroupName: string;
+    /**
+     * @description Up to 200 characters with no control characters. Surrounding spaces are trimmed; an empty note is no note.
+     * @example Previews for clients
+     */
+    GroupNote: string;
+    Group: {
+      id: components['schemas']['Id'];
+      name: components['schemas']['GroupName'];
+      /** @description Absent when the group has no note. */
+      note?: components['schemas']['GroupNote'];
+      createdAt: components['schemas']['Timestamp'];
+    };
+    GroupList: {
+      items: components['schemas']['Group'][];
+    };
+    CreateGroupRequest: {
+      name: components['schemas']['GroupName'];
+      note?: components['schemas']['GroupNote'];
+    };
+    UpdateGroupRequest: {
+      name?: components['schemas']['GroupName'];
+      note?: components['schemas']['GroupNote'];
+    };
+    /**
+     * @description 1 to 30 characters of a-z, 0-9 and '-', unique among the owner's tags.
+     * @example preview
+     */
+    TagName: string;
+    /**
+     * Format: int32
+     * @description A slot in the dashboard's tag palette: 0 is neutral, 1 to 8 the categorical colours. The dashboard always shows a tag's name beside its colour.
+     * @example 1
+     */
+    TagColour: number;
+    Tag: {
+      id: components['schemas']['Id'];
+      name: components['schemas']['TagName'];
+      colour: components['schemas']['TagColour'];
+      createdAt: components['schemas']['Timestamp'];
+    };
+    TagList: {
+      items: components['schemas']['Tag'][];
+    };
+    CreateTagRequest: {
+      name: components['schemas']['TagName'];
+      /** @description Absent for the lowest free slot 1-8, else 0. */
+      colour?: components['schemas']['TagColour'];
+    };
+    UpdateTagRequest: {
+      name?: components['schemas']['TagName'];
+      colour?: components['schemas']['TagColour'];
+    };
+    SetSiteOrganisationRequest: {
+      /** @description The site's group; absent for no group. */
+      groupId?: components['schemas']['Id'];
+      /** @description Every tag the site should have, at most 20; empty for none. */
+      tagIds: components['schemas']['Id'][];
+    };
+    /** @description At least one of `addTagIds`, `removeTagIds`, `groupId`, `ungroup` and `pinned` must change something. */
+    OrganiseSitesRequest: {
+      /** @description The sites to change, by name, each at most once. */
+      sites: components['schemas']['SiteName'][];
+      /** @description Tags to add to every site; tags a site has are kept. */
+      addTagIds?: components['schemas']['Id'][];
+      /** @description Tags to remove from every site that has them. */
+      removeTagIds?: components['schemas']['Id'][];
+      /** @description Put every site in this group. */
+      groupId?: components['schemas']['Id'];
+      /** @description True takes every site out of its group. Not with `groupId`. */
+      ungroup?: boolean;
+      /** @description Pin (true) or unpin (false) every site; a pinned site stays pinned since it was first pinned. */
+      pinned?: boolean;
+    };
+    SiteOrganisation: {
+      site: components['schemas']['SiteName'];
+      /** @description Absent when the site was in no group. */
+      groupId?: components['schemas']['Id'];
+      /** @description In tag-name order. */
+      tagIds: components['schemas']['Id'][];
+      pinned: boolean;
+    };
+    OrganiseSitesResult: {
+      /** @description Each site's group, tags and pin before the change, in the order named. */
+      prior: components['schemas']['SiteOrganisation'][];
     };
     Deploy: {
       id: components['schemas']['Id'];
@@ -1786,6 +2066,16 @@ export interface components {
      * @example docs.example.com
      */
     DomainHostname: components['schemas']['Hostname'];
+    /**
+     * @description The group's ID.
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70
+     */
+    GroupId: components['schemas']['Id'];
+    /**
+     * @description The tag's ID.
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80
+     */
+    TagId: components['schemas']['Id'];
   };
   requestBodies: never;
   headers: {
@@ -2695,6 +2985,8 @@ export interface operations {
            *           "url": "https://docs.wardlock.example.net/",
            *           "createdAt": 1767225600000,
            *           "unavailable": false,
+           *           "tagIds": [],
+           *           "pinned": false,
            *           "activeDeployId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10",
            *           "activatedAt": 1767225660000
            *         }
@@ -2742,7 +3034,9 @@ export interface operations {
            *       "hostname": "docs.wardlock.example.net",
            *       "url": "https://docs.wardlock.example.net/",
            *       "createdAt": 1767225600000,
-           *       "unavailable": false
+           *       "unavailable": false,
+           *       "tagIds": [],
+           *       "pinned": false
            *     }
            */
           'application/json': components['schemas']['Site'];
@@ -2812,6 +3106,110 @@ export interface operations {
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
       409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  setSiteOrganisation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "groupId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70",
+         *       "tagIds": [
+         *         "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80"
+         *       ]
+         *     }
+         */
+        'application/json': components['schemas']['SetSiteOrganisationRequest'];
+      };
+    };
+    responses: {
+      /** @description The site as it is now. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Site'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      413: components['responses']['TooLarge'];
+      default: components['responses']['Error'];
+    };
+  };
+  pinSite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The site as it is now. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Site'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  unpinSite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The site as it is now. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Site'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
       default: components['responses']['Error'];
     };
   };
@@ -3927,6 +4325,346 @@ export interface operations {
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  listGroups: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Every group. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70",
+           *           "name": "Client work",
+           *           "note": "Previews for clients",
+           *           "createdAt": 1767225600000
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['GroupList'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      default: components['responses']['Error'];
+    };
+  };
+  createGroup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "name": "Client work",
+         *       "note": "Previews for clients"
+         *     }
+         */
+        'application/json': components['schemas']['CreateGroupRequest'];
+      };
+    };
+    responses: {
+      /** @description Created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Group'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      409: components['responses']['Conflict'];
+      413: components['responses']['TooLarge'];
+      default: components['responses']['Error'];
+    };
+  };
+  deleteGroup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The group's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70
+         */
+        groupId: components['parameters']['GroupId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  updateGroup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The group's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70
+         */
+        groupId: components['parameters']['GroupId'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "name": "Clients"
+         *     }
+         */
+        'application/json': components['schemas']['UpdateGroupRequest'];
+      };
+    };
+    responses: {
+      /** @description The group as it is now. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Group'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  listTags: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Every tag. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80",
+           *           "name": "preview",
+           *           "colour": 1,
+           *           "createdAt": 1767225600000
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['TagList'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      default: components['responses']['Error'];
+    };
+  };
+  createTag: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "name": "preview"
+         *     }
+         */
+        'application/json': components['schemas']['CreateTagRequest'];
+      };
+    };
+    responses: {
+      /** @description Created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Tag'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      409: components['responses']['Conflict'];
+      413: components['responses']['TooLarge'];
+      default: components['responses']['Error'];
+    };
+  };
+  deleteTag: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The tag's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80
+         */
+        tagId: components['parameters']['TagId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  updateTag: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The tag's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80
+         */
+        tagId: components['parameters']['TagId'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "colour": 4
+         *     }
+         */
+        'application/json': components['schemas']['UpdateTagRequest'];
+      };
+    };
+    responses: {
+      /** @description The tag as it is now. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Tag'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  organiseSites: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "sites": [
+         *         "docs",
+         *         "handbook"
+         *       ],
+         *       "addTagIds": [
+         *         "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80"
+         *       ],
+         *       "groupId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70"
+         *     }
+         */
+        'application/json': components['schemas']['OrganiseSitesRequest'];
+      };
+    };
+    responses: {
+      /** @description Changed. Each site's organisation from before. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "prior": [
+           *         {
+           *           "site": "docs",
+           *           "tagIds": [],
+           *           "pinned": false
+           *         },
+           *         {
+           *           "site": "handbook",
+           *           "groupId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e71",
+           *           "tagIds": [
+           *             "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e81"
+           *           ],
+           *           "pinned": true
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['OrganiseSitesResult'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      413: components['responses']['TooLarge'];
       default: components['responses']['Error'];
     };
   };

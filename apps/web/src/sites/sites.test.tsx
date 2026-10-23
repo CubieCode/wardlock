@@ -36,6 +36,8 @@ function site(name: string, extra: Partial<Site> = {}): Site {
     url: `https://${name}.sites.example.test/`,
     createdAt: now - 48 * hour,
     unavailable: false,
+    tagIds: [],
+    pinned: false,
     ...extra,
   };
 }

@@ -26,6 +26,12 @@ type Site struct {
 	// TakenDownAt is when the operator took the site down (A2.13, read
 	// only; zero while it is not).
 	TakenDownAt time.Time
+	// GroupID is the owner's group the site is in (V5.3, read only; empty
+	// when ungrouped). See Organisation.
+	GroupID string
+	// PinnedAt is when the owner pinned the site (V5.3, read only; zero
+	// while it is not pinned).
+	PinnedAt time.Time
 }
 
 // OperatorSite is a site as `wardlockd admin list-sites` shows it.
@@ -38,8 +44,8 @@ type OperatorSite struct {
 // Sites stores sites. Every method that takes ownerID matches only that
 // owner's sites; another owner's site is ErrNotFound.
 type Sites interface {
-	// Create inserts s; ActiveDeployID and ActivatedAt are ignored (see
-	// Deploys.Activate). A name held by any site is ErrConflict. An owner
+	// Create inserts s; ActiveDeployID, ActivatedAt, GroupID and PinnedAt
+	// are ignored (see Deploys.Activate and Organisation). A name held by any site is ErrConflict. An owner
 	// who already has as many sites as quotas.Sites, after their own
 	// override (A2.14), gets a *QuotaError (ErrQuotaExceeded); concurrent
 	// creates by one owner are serialised so they cannot both take the
@@ -61,6 +67,10 @@ type Sites interface {
 	// List returns up to limit of ownerID's sites ordered by name, starting
 	// after afterName ("" for the first page).
 	List(ctx context.Context, ownerID, afterName string, limit int) ([]Site, error)
+	// TagIDs returns the tag IDs of each of ownerID's sites in siteIDs,
+	// in tag-name order. A site with no tags, another owner's site and an
+	// unknown ID have no entry.
+	TagIDs(ctx context.Context, ownerID string, siteIDs ...string) (map[string][]string, error)
 	// SetActiveDeploy points the site at one of its own deploys. A
 	// taken-down site is ErrNotFound.
 	SetActiveDeploy(ctx context.Context, ownerID, siteID, deployID string) error
@@ -159,6 +169,20 @@ func (r sitesRepo) List(ctx context.Context, ownerID, afterName string, limit in
 	return sites, nil
 }
 
+func (r sitesRepo) TagIDs(ctx context.Context, ownerID string, siteIDs ...string) (map[string][]string, error) {
+	out := map[string][]string{}
+	for _, id := range siteIDs {
+		ids, err := r.db.q.ListSiteTagIDs(ctx, sqlcgen.ListSiteTagIDsParams{SiteID: id, OwnerID: ownerID})
+		if err != nil {
+			return nil, mapErr("list site tags", err)
+		}
+		if len(ids) > 0 {
+			out[id] = ids
+		}
+	}
+	return out, nil
+}
+
 func (r sitesRepo) SetActiveDeploy(ctx context.Context, ownerID, siteID, deployID string) error {
 	n, err := r.db.q.SetActiveDeploy(ctx, sqlcgen.SetActiveDeployParams{
 		DeployID: nullString(deployID),
@@ -217,6 +241,7 @@ func (r sitesRepo) ListAll(ctx context.Context, afterName string, limit int) ([]
 		s, _ := siteFrom("", sqlcgen.GetSiteRow{
 			ID: row.ID, OwnerID: row.OwnerID, Name: row.Name, ActiveDeployID: row.ActiveDeployID,
 			CreatedAt: row.CreatedAt, ActivatedAt: row.ActivatedAt, TakenDownAt: row.TakenDownAt,
+			GroupID: row.GroupID, PinnedAt: row.PinnedAt,
 		}, nil)
 		out[i] = OperatorSite{Site: s, OwnerEmail: row.OwnerEmail, OwnerSuspendedAt: fromNullMs(row.OwnerSuspendedAt)}
 	}
@@ -243,6 +268,8 @@ func siteFrom(what string, row sqlcgen.GetSiteRow, err error) (Site, error) {
 		CreatedAt:      fromMs(row.CreatedAt),
 		ActivatedAt:    fromNullMs(row.ActivatedAt),
 		TakenDownAt:    fromNullMs(row.TakenDownAt),
+		GroupID:        row.GroupID.String,
+		PinnedAt:       fromNullMs(row.PinnedAt),
 	}, nil
 }
 

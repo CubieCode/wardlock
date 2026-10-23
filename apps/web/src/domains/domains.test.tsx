@@ -38,6 +38,8 @@ const docs: Site = {
   url: 'https://docs.sites.example.test/',
   createdAt: now - 48 * 60 * minute,
   unavailable: false,
+  tagIds: [],
+  pinned: false,
 };
 
 function domain(
