@@ -5,6 +5,7 @@ import type { ApiClient } from '@wardlock/apiclient-ts';
 import { Button, Notice, type TableColumn } from '@wardlock/ui';
 import { useEffect, useState } from 'react';
 import {
+  countryColumns,
   useOlderVisits,
   visitColumns,
   VisitsCard,
@@ -123,6 +124,7 @@ function SiteVisits({
     visitColumns.result,
     { header: 'Got in with', cell: (e) => <Via site={name} entry={e} /> },
     visitColumns.ip,
+    ...countryColumns(entries),
   ];
   return (
     <VisitsCard

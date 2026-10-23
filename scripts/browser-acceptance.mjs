@@ -63,6 +63,15 @@ const server = spawn(wardlockd, ['serve'], {
     WARDLOCK_GITHUB_CLIENT_SECRET: randomBytes(16).toString('hex'),
     WARDLOCK_GOOGLE_CLIENT_ID: 'acceptance-google-client',
     WARDLOCK_GOOGLE_CLIENT_SECRET: randomBytes(16).toString('hex'),
+    // Country lookup (V5.13) from a synthetic database that places
+    // 127.0.0.0/24, where every spec's request comes from, in NZ; never real
+    // geo data. The server is drawn in NZ too.
+    WARDLOCK_COUNTRY_DB: resolve(
+      'apps/server/internal/country/countrytest/testdata/acceptance.mmdb',
+    ),
+    WARDLOCK_COUNTRY_DB_ATTRIBUTION:
+      'Synthetic country data for tests (https://example.test/countries)',
+    WARDLOCK_SERVER_COUNTRY: 'NZ',
     WARDLOCK_OIDC_ISSUER: '',
     WARDLOCK_OIDC_CLIENT_ID: '',
     WARDLOCK_OIDC_CLIENT_SECRET: '',

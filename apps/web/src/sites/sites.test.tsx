@@ -768,4 +768,54 @@ describe('site access log', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('table')).toBeTruthy();
   });
+
+  it('shows each visit’s country while the server looks them up', async () => {
+    const { api } = fakeServer({
+      ...oneSite(site('docs'), []),
+      [`GET ${base}`]: () =>
+        Response.json({
+          items: [
+            entry(1, { country: 'NZ' }),
+            entry(2, { country: 'unknown' }),
+            // Logged while the lookup was off.
+            entry(3),
+          ],
+        }),
+    });
+    render(<App api={api} />);
+    const table = await screen.findByRole('table', { name: 'Visits to docs' });
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent),
+    ).toEqual([
+      'Time',
+      'Path',
+      'Result',
+      'Got in with',
+      'IP address',
+      'Country',
+    ]);
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows.map((row) => row.lastElementChild?.textContent)).toEqual([
+      'NZNew Zealand',
+      'Unknown',
+      'Not recorded',
+    ]);
+  });
+
+  it('mentions no country while the lookup is off', async () => {
+    const { api } = fakeServer({
+      ...oneSite(site('docs'), []),
+      [`GET ${base}`]: () => Response.json({ items: [entry(1), entry(2)] }),
+    });
+    render(<App api={api} />);
+    const table = await screen.findByRole('table', { name: 'Visits to docs' });
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent),
+    ).not.toContain('Country');
+    expect(document.body.textContent).not.toMatch(/countr/i);
+  });
 });

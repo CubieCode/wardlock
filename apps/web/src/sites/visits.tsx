@@ -12,6 +12,7 @@ import {
   type TableColumn,
 } from '@wardlock/ui';
 import { useState, type ReactNode } from 'react';
+import { CountryCell } from '../analytics/country.js';
 import './sites.css';
 
 export type AccessLogEntry = components['schemas']['AccessLogEntry'];
@@ -49,11 +50,28 @@ export const visitColumns = {
     mono: true,
     nowrap: true,
   },
+  country: {
+    header: 'Country',
+    nowrap: true,
+    cell: (e) =>
+      e.country ? (
+        <CountryCell country={e.country} />
+      ) : (
+        <span className="visit-muted">Not recorded</span>
+      ),
+  },
   browser: {
     header: 'Browser or client',
     cell: (e) => e.userAgent ?? <span className="visit-muted">None sent</span>,
   },
 } satisfies Record<string, TableColumn<AccessLogEntry>>;
+
+/**
+ * The Country column, only when an entry has a country: the server sends
+ * none while its country lookup is off, so then nothing mentions countries.
+ */
+export const countryColumns = (entries: AccessLogEntry[]) =>
+  entries.some((e) => e.country) ? [visitColumns.country] : [];
 
 /**
  * One page of entries and the cursor of the next, with a loader for older

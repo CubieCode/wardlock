@@ -15,6 +15,7 @@ import {
   type ShareLink,
 } from './format.js';
 import {
+  countryColumns,
   useOlderVisits,
   visitColumns,
   VisitsCard,
@@ -71,14 +72,6 @@ async function load(
   if (!log.data) throw new Error('could not load the access log');
   return { link, first: log.data };
 }
-
-const columns = [
-  visitColumns.time,
-  visitColumns.path,
-  visitColumns.result,
-  visitColumns.ip,
-  visitColumns.browser,
-];
 
 /**
  * The Links tab at `/sites/:name/links/:linkId`: one share link, what it
@@ -205,6 +198,14 @@ function LinkVisits({
         })
       ).data,
   );
+  const columns = [
+    visitColumns.time,
+    visitColumns.path,
+    visitColumns.result,
+    visitColumns.ip,
+    ...countryColumns(entries),
+    visitColumns.browser,
+  ];
   return (
     <VisitsCard
       caption={`Visits through link ${publicId}`}

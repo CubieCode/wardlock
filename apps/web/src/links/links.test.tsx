@@ -442,6 +442,40 @@ describe('link access log', () => {
 
   beforeEach(() => at('/sites/docs/links/q4v7m2xkpa'));
 
+  it('shows each visit’s country only while the server looks them up', async () => {
+    for (const country of ['AU', undefined] as const) {
+      const { api } = fakeServer({
+        ...sitePage([]),
+        [`GET ${base}/links`]: () =>
+          Response.json({ items: [link('q4v7m2xkpa')] }),
+        [`GET ${base}/links/q4v7m2xkpa/access-log`]: () =>
+          Response.json({ items: [entry(1, country ? { country } : {})] }),
+      });
+      render(<App api={api} />);
+      const table = await screen.findByRole('table', {
+        name: 'Visits through link q4v7m2xkpa',
+      });
+      const headers = within(table)
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent);
+      if (country) {
+        expect(headers).toEqual([
+          'Time',
+          'Path',
+          'Result',
+          'IP address',
+          'Country',
+          'Browser or client',
+        ]);
+        expect(within(table).getByText('Australia')).toBeTruthy();
+      } else {
+        expect(headers).not.toContain('Country');
+        expect(document.body.textContent).not.toMatch(/countr/i);
+      }
+      cleanup();
+    }
+  });
+
   it('shows the visits newest first and loads older ones', async () => {
     // A refused request with no IP recorded and no User-Agent sent.
     const refused = entry(2, { status: 401 });

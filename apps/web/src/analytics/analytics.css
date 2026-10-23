@@ -92,3 +92,116 @@
 .analytics .wl-bar-name {
   overflow-wrap: anywhere;
 }
+
+/* Where requests come from: a bubble map beside a bar list, stacked on
+   narrow screens */
+.country-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (min-width: 64rem) {
+  .country-grid {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+.country-map {
+  position: relative;
+  aspect-ratio: 720 / 262;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-muted);
+}
+
+.country-map svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.country-land {
+  fill: var(--color-border);
+}
+
+.country-lines line {
+  stroke: var(--color-ward);
+  stroke-width: 0.75;
+  stroke-dasharray: 3 3;
+  opacity: 0.5;
+}
+
+.country-bubble {
+  fill: var(--color-chart-allowed);
+  fill-opacity: 0.45;
+  stroke: var(--color-chart-allowed);
+  stroke-width: 1.5;
+}
+
+.country-bubble:hover,
+.country-bubble:focus-visible {
+  fill-opacity: 0.8;
+  stroke: var(--color-text);
+  outline: none;
+}
+
+.country-hub,
+.country-key-hub {
+  fill: var(--color-surface);
+  stroke: var(--color-ward);
+  stroke-width: 2.5;
+}
+
+.country-labels text {
+  fill: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: var(--font-weight-bold);
+  paint-order: stroke;
+  stroke: var(--color-surface-muted);
+  stroke-width: 3px;
+}
+
+.country-map .country-tip {
+  bottom: auto;
+  transform: translate(-50%, calc(-100% - var(--space-1)));
+  pointer-events: none;
+}
+
+.country-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.country-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.country-legend i {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+}
+
+.country-key-bubble {
+  background: var(--color-chart-allowed);
+  opacity: 0.7;
+}
+
+.country-key-hub {
+  background: var(--color-surface);
+  border: 2.5px solid var(--color-ward);
+}
+
+.country-list {
+  display: grid;
+  gap: var(--space-2);
+}
