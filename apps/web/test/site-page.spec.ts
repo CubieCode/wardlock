@@ -95,6 +95,32 @@ for (const scheme of schemes) {
       await page.keyboard.press('Escape');
       expect((await read()).tagIds).toHaveLength(1);
       await shot('tagged');
+      if (info.project.name === 'mobile') {
+        // On a touch screen the small remove button takes taps across a
+        // 44px square centred on it.
+        const remove = chips.getByRole('button', { name: `Remove ${tag}` });
+        const hits = await remove.evaluate((button) => {
+          const box = button.getBoundingClientRect();
+          const x = box.left + box.width / 2;
+          const y = box.top + box.height / 2;
+          return {
+            coarse: matchMedia('(pointer: coarse)').matches,
+            drawn: Math.max(box.width, box.height),
+            hit: [
+              [x - 21, y],
+              [x + 21, y],
+              [x, y - 21],
+              [x, y + 21],
+            ].every(
+              ([px, py]) =>
+                document.elementFromPoint(px!, py!)?.closest('button') ===
+                button,
+            ),
+          };
+        });
+        expect(hits).toEqual({ coarse: true, drawn: hits.drawn, hit: true });
+        expect(hits.drawn).toBeLessThan(44);
+      }
     });
 
     await test.step('every tab has its own address and keeps the header', async () => {
