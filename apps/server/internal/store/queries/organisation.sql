@@ -1,21 +1,21 @@
 -- name: ListGroups :many
-SELECT id, owner_id, name, note, created_at FROM site_groups
+SELECT id, owner_id, name, name_key, note, created_at FROM site_groups
 WHERE owner_id = sqlc.arg(owner_id)
-ORDER BY name, id;
+ORDER BY name_key, id;
 
 -- name: GetGroup :one
-SELECT id, owner_id, name, note, created_at FROM site_groups
+SELECT id, owner_id, name, name_key, note, created_at FROM site_groups
 WHERE id = sqlc.arg(id) AND owner_id = sqlc.arg(owner_id);
 
 -- name: CountGroups :one
 SELECT COUNT(*) FROM site_groups WHERE owner_id = sqlc.arg(owner_id);
 
 -- name: CreateGroup :exec
-INSERT INTO site_groups (id, owner_id, name, note, created_at)
-VALUES (sqlc.arg(id), sqlc.arg(owner_id), sqlc.arg(name), sqlc.arg(note), sqlc.arg(created_at));
+INSERT INTO site_groups (id, owner_id, name, name_key, note, created_at)
+VALUES (sqlc.arg(id), sqlc.arg(owner_id), sqlc.arg(name), sqlc.arg(name_key), sqlc.arg(note), sqlc.arg(created_at));
 
 -- name: UpdateGroup :execrows
-UPDATE site_groups SET name = sqlc.arg(name), note = sqlc.arg(note)
+UPDATE site_groups SET name = sqlc.arg(name), name_key = sqlc.arg(name_key), note = sqlc.arg(note)
 WHERE id = sqlc.arg(id) AND owner_id = sqlc.arg(owner_id);
 
 -- Its sites become ungrouped (ON DELETE SET NULL).

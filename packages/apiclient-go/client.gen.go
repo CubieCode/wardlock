@@ -463,7 +463,7 @@ type CreateDeployRequest struct {
 
 // CreateGroupRequest defines model for CreateGroupRequest.
 type CreateGroupRequest struct {
-	// Name 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+	// Name 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
 	//
 	// Examples: Client work
 	Name GroupName `json:"name"`
@@ -778,7 +778,7 @@ type Group struct {
 	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
 	Id Id `json:"id"`
 
-	// Name 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+	// Name 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
 	//
 	// Examples: Client work
 	Name GroupName `json:"name"`
@@ -794,7 +794,7 @@ type GroupList struct {
 	Items []Group `json:"items"`
 }
 
-// GroupName 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+// GroupName 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
 //
 // Examples: Client work
 type GroupName = string
@@ -1346,7 +1346,7 @@ type Timestamp = int64
 
 // UpdateGroupRequest defines model for UpdateGroupRequest.
 type UpdateGroupRequest struct {
-	// Name 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+	// Name 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
 	//
 	// Examples: Client work
 	Name *GroupName `json:"name,omitempty"`
@@ -1971,14 +1971,14 @@ type ClientInterface interface {
 
 	// ListGroups List the owner's groups.
 	//
-	// Every group, by name. Not paged: an owner has at most 100.
+	// Every group, by name ignoring case. Not paged: an owner has at most 100.
 	//
 	// Corresponds with GET /api/v0/groups (the `ListGroups` operationId).
 	ListGroups(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateGroupWithBody Create a group.
 	//
-	// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+	// A name the owner already gives a group, in any case, answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1987,7 +1987,7 @@ type ClientInterface interface {
 
 	// CreateGroup Create a group.
 	//
-	// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+	// A name the owner already gives a group, in any case, answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2003,7 +2003,7 @@ type ClientInterface interface {
 
 	// UpdateGroupWithBody Rename a group or change its note.
 	//
-	// Fields left out keep their value; an empty `note` removes it.
+	// Fields left out keep their value; an empty `note` removes it. Renaming to another group's name in any case answers `409 group_name_taken`; renaming to another case of the group's own name is allowed.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -2012,7 +2012,7 @@ type ClientInterface interface {
 
 	// UpdateGroup Rename a group or change its note.
 	//
-	// Fields left out keep their value; an empty `note` removes it.
+	// Fields left out keep their value; an empty `note` removes it. Renaming to another group's name in any case answers `409 group_name_taken`; renaming to another case of the group's own name is allowed.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2834,7 +2834,7 @@ func (c *Client) PollCliLogin(ctx context.Context, body PollCliLoginJSONRequestB
 
 // ListGroups List the owner's groups.
 //
-// Every group, by name. Not paged: an owner has at most 100.
+// Every group, by name ignoring case. Not paged: an owner has at most 100.
 //
 // Corresponds with GET /api/v0/groups (the `ListGroups` operationId).
 func (c *Client) ListGroups(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2851,7 +2851,7 @@ func (c *Client) ListGroups(ctx context.Context, reqEditors ...RequestEditorFn) 
 
 // CreateGroupWithBody Create a group.
 //
-// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+// A name the owner already gives a group, in any case, answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2870,7 +2870,7 @@ func (c *Client) CreateGroupWithBody(ctx context.Context, contentType string, bo
 
 // CreateGroup Create a group.
 //
-// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+// A name the owner already gives a group, in any case, answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2906,7 +2906,7 @@ func (c *Client) DeleteGroup(ctx context.Context, groupId GroupId, reqEditors ..
 
 // UpdateGroupWithBody Rename a group or change its note.
 //
-// Fields left out keep their value; an empty `note` removes it.
+// Fields left out keep their value; an empty `note` removes it. Renaming to another group's name in any case answers `409 group_name_taken`; renaming to another case of the group's own name is allowed.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2925,7 +2925,7 @@ func (c *Client) UpdateGroupWithBody(ctx context.Context, groupId GroupId, conte
 
 // UpdateGroup Rename a group or change its note.
 //
-// Fields left out keep their value; an empty `note` removes it.
+// Fields left out keep their value; an empty `note` removes it. Renaming to another group's name in any case answers `409 group_name_taken`; renaming to another case of the group's own name is allowed.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -6897,7 +6897,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListGroupsWithResponse List the owner's groups.
 	//
-	// Every group, by name. Not paged: an owner has at most 100.
+	// Every group, by name ignoring case. Not paged: an owner has at most 100.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -6906,7 +6906,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateGroupWithBodyWithResponse Create a group.
 	//
-	// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+	// A name the owner already gives a group, in any case, answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6915,7 +6915,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateGroupWithResponse Create a group.
 	//
-	// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+	// A name the owner already gives a group, in any case, answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6933,7 +6933,7 @@ type ClientWithResponsesInterface interface {
 
 	// UpdateGroupWithBodyWithResponse Rename a group or change its note.
 	//
-	// Fields left out keep their value; an empty `note` removes it.
+	// Fields left out keep their value; an empty `note` removes it. Renaming to another group's name in any case answers `409 group_name_taken`; renaming to another case of the group's own name is allowed.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6942,7 +6942,7 @@ type ClientWithResponsesInterface interface {
 
 	// UpdateGroupWithResponse Rename a group or change its note.
 	//
-	// Fields left out keep their value; an empty `note` removes it.
+	// Fields left out keep their value; an empty `note` removes it. Renaming to another group's name in any case answers `409 group_name_taken`; renaming to another case of the group's own name is allowed.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -12131,7 +12131,7 @@ func (c *ClientWithResponses) PollCliLoginWithResponse(ctx context.Context, body
 
 // ListGroupsWithResponse List the owner's groups.
 //
-// Every group, by name. Not paged: an owner has at most 100.
+// Every group, by name ignoring case. Not paged: an owner has at most 100.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -12146,7 +12146,7 @@ func (c *ClientWithResponses) ListGroupsWithResponse(ctx context.Context, reqEdi
 
 // CreateGroupWithBodyWithResponse Create a group.
 //
-// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+// A name the owner already gives a group, in any case, answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -12161,7 +12161,7 @@ func (c *ClientWithResponses) CreateGroupWithBodyWithResponse(ctx context.Contex
 
 // CreateGroupWithResponse Create a group.
 //
-// A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+// A name the owner already gives a group, in any case, answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -12191,7 +12191,7 @@ func (c *ClientWithResponses) DeleteGroupWithResponse(ctx context.Context, group
 
 // UpdateGroupWithBodyWithResponse Rename a group or change its note.
 //
-// Fields left out keep their value; an empty `note` removes it.
+// Fields left out keep their value; an empty `note` removes it. Renaming to another group's name in any case answers `409 group_name_taken`; renaming to another case of the group's own name is allowed.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -12206,7 +12206,7 @@ func (c *ClientWithResponses) UpdateGroupWithBodyWithResponse(ctx context.Contex
 
 // UpdateGroupWithResponse Rename a group or change its note.
 //
-// Fields left out keep their value; an empty `note` removes it.
+// Fields left out keep their value; an empty `note` removes it. Renaming to another group's name in any case answers `409 group_name_taken`; renaming to another case of the group's own name is allowed.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //

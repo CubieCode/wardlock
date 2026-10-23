@@ -76,14 +76,15 @@ func (q *Queries) CountTags(ctx context.Context, ownerID string) (int64, error) 
 }
 
 const createGroup = `-- name: CreateGroup :exec
-INSERT INTO site_groups (id, owner_id, name, note, created_at)
-VALUES (?1, ?2, ?3, ?4, ?5)
+INSERT INTO site_groups (id, owner_id, name, name_key, note, created_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6)
 `
 
 type CreateGroupParams struct {
 	ID        string
 	OwnerID   string
 	Name      string
+	NameKey   string
 	Note      sql.NullString
 	CreatedAt int64
 }
@@ -93,6 +94,7 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) error 
 		arg.ID,
 		arg.OwnerID,
 		arg.Name,
+		arg.NameKey,
 		arg.Note,
 		arg.CreatedAt,
 	)
@@ -160,7 +162,7 @@ func (q *Queries) DeleteTag(ctx context.Context, arg DeleteTagParams) (int64, er
 }
 
 const getGroup = `-- name: GetGroup :one
-SELECT id, owner_id, name, note, created_at FROM site_groups
+SELECT id, owner_id, name, name_key, note, created_at FROM site_groups
 WHERE id = ?1 AND owner_id = ?2
 `
 
@@ -176,6 +178,7 @@ func (q *Queries) GetGroup(ctx context.Context, arg GetGroupParams) (SiteGroup, 
 		&i.ID,
 		&i.OwnerID,
 		&i.Name,
+		&i.NameKey,
 		&i.Note,
 		&i.CreatedAt,
 	)
@@ -229,9 +232,9 @@ func (q *Queries) GetTag(ctx context.Context, arg GetTagParams) (Tag, error) {
 }
 
 const listGroups = `-- name: ListGroups :many
-SELECT id, owner_id, name, note, created_at FROM site_groups
+SELECT id, owner_id, name, name_key, note, created_at FROM site_groups
 WHERE owner_id = ?1
-ORDER BY name, id
+ORDER BY name_key, id
 `
 
 func (q *Queries) ListGroups(ctx context.Context, ownerID string) ([]SiteGroup, error) {
@@ -247,6 +250,7 @@ func (q *Queries) ListGroups(ctx context.Context, ownerID string) ([]SiteGroup, 
 			&i.ID,
 			&i.OwnerID,
 			&i.Name,
+			&i.NameKey,
 			&i.Note,
 			&i.CreatedAt,
 		); err != nil {
@@ -438,12 +442,13 @@ func (q *Queries) UnpinSite(ctx context.Context, arg UnpinSiteParams) (int64, er
 }
 
 const updateGroup = `-- name: UpdateGroup :execrows
-UPDATE site_groups SET name = ?1, note = ?2
-WHERE id = ?3 AND owner_id = ?4
+UPDATE site_groups SET name = ?1, name_key = ?2, note = ?3
+WHERE id = ?4 AND owner_id = ?5
 `
 
 type UpdateGroupParams struct {
 	Name    string
+	NameKey string
 	Note    sql.NullString
 	ID      string
 	OwnerID string
@@ -452,6 +457,7 @@ type UpdateGroupParams struct {
 func (q *Queries) UpdateGroup(ctx context.Context, arg UpdateGroupParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, updateGroup,
 		arg.Name,
+		arg.NameKey,
 		arg.Note,
 		arg.ID,
 		arg.OwnerID,

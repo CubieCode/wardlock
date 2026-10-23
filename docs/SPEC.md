@@ -111,13 +111,13 @@ An owner can organise their sites so that 50 or more stay easy to find. All thre
 - **Pins.** A pinned site is one the owner wants at hand. Pinning a pinned site changes nothing.
 - **Bulk changes.** One request can add tags, remove tags, set or clear the group, or pin or unpin up to 500 named sites at once, all or nothing, and answers each site's group, tags and pin from before so the dashboard can undo it.
 
-| Rule           | Groups                                                              | Tags                                    |
-| -------------- | ------------------------------------------------------------------- | --------------------------------------- |
-| Name           | 1–40 characters, no control characters (surrounding spaces trimmed) | 1–30 characters of `a-z`, `0-9` and `-` |
-| Extra          | An optional note of up to 200 characters                            | A colour slot, 0–8                      |
-| Most per owner | 100                                                                 | 200 (and 20 per site)                   |
-| Unique         | Per owner, compared exactly                                         | Per owner                               |
-| Listed         | By name                                                             | By name                                 |
+| Rule           | Groups                                                                                           | Tags                                    |
+| -------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| Name           | 1–40 characters, no control characters (surrounding spaces trimmed)                              | 1–30 characters of `a-z`, `0-9` and `-` |
+| Extra          | An optional note of up to 200 characters                                                         | A colour slot, 0–8                      |
+| Most per owner | 100                                                                                              | 200 (and 20 per site)                   |
+| Unique         | Per owner, ignoring case ("Board" and "board", or "Kōwhai" and "KŌWHAI", collide); kept as typed | Per owner                               |
+| Listed         | By name, ignoring case                                                                           | By name                                 |
 
 <details>
 <summary>API, errors and edge cases</summary>
@@ -126,6 +126,7 @@ An owner can organise their sites so that 50 or more stay easy to find. All thre
 - **Token scopes.** Reads take either scope; every write needs `manage`, except that `setSiteOrganisation` also takes a `deploy` token, so a deploy can file the site it publishes (see API token rules).
 - **Owner isolation.** A group, tag or site that is missing and one that is another owner's answer the same `404 not_found`, whether it is addressed in the path or named in a body. A body never creates a group or tag: it can only name existing ones.
 - **Errors.** A field breaking a rule answers `400 invalid_request` with the field as `target`. A name the owner already uses answers `409 group_name_taken` or `409 tag_name_taken`. Passing a limit answers `413 limit_exceeded`: target `name` for the 101st group or 201st tag, `tagIds` or `addTagIds` for a site that would have more than 20 tags.
+- **Group name comparison.** Uniqueness compares names after Unicode NFC normalisation and lowercasing, so case and the encoding of an accented letter never make two names distinct. The name is stored and shown as typed (trimmed), and groups list in that case-insensitive order. Renaming a group to another case of its own name is allowed.
 - **Updates.** `updateGroup` and `updateTag` change only the fields sent; an empty group note removes it. Recolouring a tag frees its old slot for the next new tag.
 - **Bulk rules.** `sites` names 1–500 sites, each once; at least one change must be given. A tag cannot be both added and removed, and `groupId` cannot be sent with `ungroup`. Adding a tag a site has, or removing one it lacks, changes nothing for that site. If any named site, group or tag is missing or another owner's, or any site would pass 20 tags, nothing changes. `prior` lists the sites in the order named; undoing sends the inverse (for example, one request per distinct prior group).
 - **Teardown and takedown.** Deleting or tearing down a site deletes its tag rows; the tags stay. An owner can still organise a site the operator has taken down, since it changes nothing visitors see.

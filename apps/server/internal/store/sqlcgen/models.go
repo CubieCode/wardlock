@@ -243,6 +243,7 @@ type SiteGroup struct {
 	ID        string
 	OwnerID   string
 	Name      string
+	NameKey   string
 	Note      sql.NullString
 	CreatedAt int64
 }

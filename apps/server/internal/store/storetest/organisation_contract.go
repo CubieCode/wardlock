@@ -13,9 +13,15 @@ import (
 	"wardlock.nz/server/internal/store"
 )
 
+// newGroup returns a valid group; its key folds ASCII case, as the
+// domain's key does for these names.
+func newGroup(ownerID, name string) store.Group {
+	return store.Group{ID: store.NewID(), OwnerID: ownerID, Name: name, NameKey: strings.ToLower(name), CreatedAt: now}
+}
+
 func (f *fixture) group(ownerID, name string) store.Group {
 	f.t.Helper()
-	g := store.Group{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: now}
+	g := newGroup(ownerID, name)
 	f.must(f.r.Organisation.CreateGroup(f.t.Context(), g, 0))
 	return g
 }
@@ -43,25 +49,32 @@ func organisationContract(t *testing.T, open Opener) {
 		f := newFixture(t, open)
 		o, other := f.owner(), f.owner()
 		b := f.group(o.ID, "Board")
-		a := store.Group{ID: store.NewID(), OwnerID: o.ID, Name: "Archive", Note: "Old work", CreatedAt: now}
+		a := newGroup(o.ID, "archive")
+		a.Note = "Old work"
 		f.must(f.r.Organisation.CreateGroup(t.Context(), a, 0))
-		f.group(other.ID, "Archive") // names are unique per owner only
+		f.group(other.ID, "Archive") // keys are unique per owner only
 
+		// Listed by key, so case does not decide the order.
 		got, err := f.r.Organisation.ListGroups(t.Context(), o.ID)
 		f.must(err)
 		if !slices.Equal(got, []store.Group{a, b}) {
-			t.Fatalf("ListGroups() = %+v, want Archive then Board", got)
+			t.Fatalf("ListGroups() = %+v, want archive then Board", got)
 		}
-		dup := store.Group{ID: store.NewID(), OwnerID: o.ID, Name: "Board", CreatedAt: now}
-		wantErr(t, f.r.Organisation.CreateGroup(t.Context(), dup, 0), store.ErrConflict)
+		// The key decides uniqueness, not the name as typed.
+		wantErr(t, f.r.Organisation.CreateGroup(t.Context(), newGroup(o.ID, "Board"), 0), store.ErrConflict)
+		wantErr(t, f.r.Organisation.CreateGroup(t.Context(), newGroup(o.ID, "BOARD"), 0), store.ErrConflict)
 
-		a.Name, a.Note = "Archived", ""
+		// Renaming to another case of its own name keeps the key.
+		a.Name, a.Note = "ARCHIVE", ""
 		f.must(f.r.Organisation.UpdateGroup(t.Context(), a))
 		if g, err := f.r.Organisation.GetGroup(t.Context(), o.ID, a.ID); err != nil || g != a {
 			t.Fatalf("GetGroup() = %+v, %v; want %+v", g, err, a)
 		}
-		a.Name = "Board"
+		a.Name, a.NameKey = "Archived", "archived"
+		f.must(f.r.Organisation.UpdateGroup(t.Context(), a))
+		a.Name, a.NameKey = "board", "board"
 		wantErr(t, f.r.Organisation.UpdateGroup(t.Context(), a), store.ErrConflict)
+		a.Name, a.NameKey = "Archived", "archived"
 
 		// Another owner's group is missing for every method.
 		_, err = f.r.Organisation.GetGroup(t.Context(), other.ID, b.ID)
@@ -81,12 +94,15 @@ func organisationContract(t *testing.T, open Opener) {
 		f := newFixture(t, open)
 		o := f.owner()
 		for i := range 2 {
-			f.must(f.r.Organisation.CreateGroup(t.Context(), store.Group{ID: store.NewID(), OwnerID: o.ID, Name: fmt.Sprint(i), CreatedAt: now}, 2))
+			f.must(f.r.Organisation.CreateGroup(t.Context(), newGroup(o.ID, fmt.Sprint(i)), 2))
 		}
-		wantErr(t, f.r.Organisation.CreateGroup(t.Context(), store.Group{ID: store.NewID(), OwnerID: o.ID, Name: "x", CreatedAt: now}, 2), store.ErrLimitReached)
+		wantErr(t, f.r.Organisation.CreateGroup(t.Context(), newGroup(o.ID, "x"), 2), store.ErrLimitReached)
 		// Another owner's groups do not count.
-		f.must(f.r.Organisation.CreateGroup(t.Context(), store.Group{ID: store.NewID(), OwnerID: f.owner().ID, Name: "x", CreatedAt: now}, 2))
-		wantErr(t, f.r.Organisation.CreateGroup(t.Context(), store.Group{ID: store.NewID(), OwnerID: store.NewID(), Name: "x", CreatedAt: now}, 2), store.ErrConstraint)
+		f.must(f.r.Organisation.CreateGroup(t.Context(), newGroup(f.owner().ID, "x"), 2))
+		wantErr(t, f.r.Organisation.CreateGroup(t.Context(), newGroup(store.NewID(), "x"), 2), store.ErrConstraint)
+		noKey := newGroup(o.ID, "y")
+		noKey.NameKey = ""
+		wantErr(t, f.r.Organisation.CreateGroup(t.Context(), noKey, 0), store.ErrConstraint)
 	})
 	t.Run("Tags", func(t *testing.T) {
 		t.Parallel()

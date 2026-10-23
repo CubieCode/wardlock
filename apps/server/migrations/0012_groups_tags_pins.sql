@@ -3,20 +3,24 @@
 
 -- Groups, tags and pins (V5.3): how an owner organises their sites in the
 -- dashboard and CLI. None of it is ever shown to visitors. Names are unique
--- per owner, compared exactly. internal/sites checks every rule before
--- anything is stored; the checks here (lengths in characters) are a
--- backstop.
+-- per owner: a group's ignoring case, a tag's (always lowercase) exactly.
+-- internal/sites checks every rule before anything is stored; the checks
+-- here (lengths in characters) are a backstop.
 
 -- At most one group per site. Deleting a group keeps its sites: they become
 -- ungrouped.
 CREATE TABLE site_groups (
   id TEXT NOT NULL PRIMARY KEY,
   owner_id TEXT NOT NULL REFERENCES owners (id) ON DELETE CASCADE,
+  -- As the owner typed it, for display.
   name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 40),
+  -- The name for uniqueness: Unicode NFC then case-folded in Go, so
+  -- "Kōwhai" and "KŌWHAI" collide where SQLite's lower() would not.
+  name_key TEXT NOT NULL CHECK (length(name_key) >= 1),
   -- NULL for no note.
   note TEXT CHECK (note IS NULL OR length(note) BETWEEN 1 AND 200),
   created_at INTEGER NOT NULL,
-  UNIQUE (owner_id, name)
+  UNIQUE (owner_id, name_key)
 );
 
 -- colour is a slot in the dashboard's tag palette: 0 is neutral, 1 to 8

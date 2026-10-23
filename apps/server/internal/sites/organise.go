@@ -12,6 +12,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"golang.org/x/text/unicode/norm"
+
 	"wardlock.nz/server/internal/store"
 )
 
@@ -76,6 +78,11 @@ func checkGroupName(name string) (string, error) {
 	return checkText("name", "A group name", name, MaxGroupName)
 }
 
+// GroupNameKey is what makes a group name unique per owner: NFC, then
+// lowercase, so names differing only in case or in how an accented letter
+// is encoded collide. The name itself is kept as typed.
+func GroupNameKey(name string) string { return strings.ToLower(norm.NFC.String(name)) }
+
 // checkNote returns the trimmed note; an empty one is no note.
 func checkNote(note string) (string, error) {
 	if strings.TrimSpace(note) == "" {
@@ -111,7 +118,7 @@ func checkColour(c int) error {
 	return nil
 }
 
-// ListGroups returns the owner's groups by name.
+// ListGroups returns the owner's groups by name, ignoring case.
 func (s *Service) ListGroups(ctx context.Context, ownerID string) ([]store.Group, error) {
 	groups, err := s.c.Organisation.ListGroups(ctx, ownerID)
 	if err != nil {
@@ -129,7 +136,7 @@ func (s *Service) CreateGroup(ctx context.Context, ownerID, name, note string) (
 	if note, err = checkNote(note); err != nil {
 		return store.Group{}, err
 	}
-	g := store.Group{ID: store.NewID(), OwnerID: ownerID, Name: name, Note: note, CreatedAt: s.now()}
+	g := store.Group{ID: store.NewID(), OwnerID: ownerID, Name: name, NameKey: GroupNameKey(name), Note: note, CreatedAt: s.now()}
 	err = s.c.Organisation.CreateGroup(ctx, g, MaxGroups)
 	switch {
 	case errors.Is(err, store.ErrConflict):
@@ -153,6 +160,7 @@ func (s *Service) UpdateGroup(ctx context.Context, ownerID, id string, name, not
 		if g.Name, err = checkGroupName(*name); err != nil {
 			return store.Group{}, err
 		}
+		g.NameKey = GroupNameKey(g.Name)
 	}
 	if note != nil {
 		if g.Note, err = checkNote(*note); err != nil {

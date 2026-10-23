@@ -82,6 +82,27 @@ func TestGroupsCRUD(t *testing.T) {
 	}
 	hs.do(a, http.MethodPatch, "/groups/"+k.Id, api.UpdateGroupRequest{Name: ptr("Board")}).want(t, http.StatusConflict, "group_name_taken")
 	hs.do(a, http.MethodPost, "/groups", api.CreateGroupRequest{Name: "Board"}).want(t, http.StatusConflict, "group_name_taken")
+	// Names are unique ignoring case, beyond ASCII and however an accented
+	// letter is encoded.
+	for _, variant := range []string{"board", "BOARD", "KŌWHAI", "kōwhai", "Ko\u0304whai"} {
+		hs.do(a, http.MethodPost, "/groups", api.CreateGroupRequest{Name: variant}).want(t, http.StatusConflict, "group_name_taken")
+	}
+	hs.do(a, http.MethodPatch, "/groups/"+k.Id, api.UpdateGroupRequest{Name: ptr("bOARD")}).want(t, http.StatusConflict, "group_name_taken")
+	// Renaming to another case of its own name is allowed, and kept as typed.
+	res = hs.do(a, http.MethodPatch, "/groups/"+k.Id, api.UpdateGroupRequest{Name: ptr("KŌWHAI")})
+	res.want(t, http.StatusOK, "")
+	res.decode(t, &k)
+	if k.Name != "KŌWHAI" {
+		t.Fatalf("recased %+v", k)
+	}
+	// Listing ignores case too: "aardvark" comes before "Board".
+	hs.createGroup(a, "aardvark")
+	res = hs.do(a, http.MethodGet, "/groups", nil)
+	list = api.GroupList{}
+	res.decode(t, &list)
+	if len(list.Items) != 3 || list.Items[0].Name != "aardvark" || list.Items[1].Name != "Board" || list.Items[2].Name != "KŌWHAI" {
+		t.Fatalf("list = %+v, want aardvark, Board, KŌWHAI", list.Items)
+	}
 	// Another owner may use the same name.
 	hs.createGroup(hs.ownerB, "Board")
 

@@ -1028,13 +1028,13 @@ export interface paths {
     };
     /**
      * List the owner's groups.
-     * @description Every group, by name. Not paged: an owner has at most 100.
+     * @description Every group, by name ignoring case. Not paged: an owner has at most 100.
      */
     get: operations['listGroups'];
     put?: never;
     /**
      * Create a group.
-     * @description A name the owner already gives a group answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
+     * @description A name the owner already gives a group, in any case, answers `409 group_name_taken`; an owner with 100 groups gets `413 limit_exceeded` with target `name`.
      */
     post: operations['createGroup'];
     delete?: never;
@@ -1068,7 +1068,7 @@ export interface paths {
     head?: never;
     /**
      * Rename a group or change its note.
-     * @description Fields left out keep their value; an empty `note` removes it.
+     * @description Fields left out keep their value; an empty `note` removes it. Renaming to another group's name in any case answers `409 group_name_taken`; renaming to another case of the group's own name is allowed.
      */
     patch: operations['updateGroup'];
     trace?: never;
@@ -1424,7 +1424,7 @@ export interface components {
       name: components['schemas']['SiteName'];
     };
     /**
-     * @description 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+     * @description 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
      * @example Client work
      */
     GroupName: string;

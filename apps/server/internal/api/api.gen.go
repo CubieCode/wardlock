@@ -464,7 +464,7 @@ type CreateDeployRequest struct {
 
 // CreateGroupRequest defines model for CreateGroupRequest.
 type CreateGroupRequest struct {
-	// Name 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+	// Name 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
 	//
 	// Examples: Client work
 	Name GroupName `json:"name"`
@@ -779,7 +779,7 @@ type Group struct {
 	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
 	Id Id `json:"id"`
 
-	// Name 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+	// Name 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
 	//
 	// Examples: Client work
 	Name GroupName `json:"name"`
@@ -795,7 +795,7 @@ type GroupList struct {
 	Items []Group `json:"items"`
 }
 
-// GroupName 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+// GroupName 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
 //
 // Examples: Client work
 type GroupName = string
@@ -1347,7 +1347,7 @@ type Timestamp = int64
 
 // UpdateGroupRequest defines model for UpdateGroupRequest.
 type UpdateGroupRequest struct {
-	// Name 1 to 40 characters with no control characters, unique among the owner's groups. Surrounding spaces are trimmed.
+	// Name 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
 	//
 	// Examples: Client work
 	Name *GroupName `json:"name,omitempty"`

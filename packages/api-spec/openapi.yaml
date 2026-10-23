@@ -2248,7 +2248,7 @@ paths:
       operationId: listGroups
       summary: List the owner's groups.
       description: >-
-        Every group, by name. Not paged: an owner has at most 100.
+        Every group, by name ignoring case. Not paged: an owner has at most 100.
       tags: [organisation]
       security:
         - sessionCookie: []
@@ -2277,7 +2277,7 @@ paths:
       operationId: createGroup
       summary: Create a group.
       description: >-
-        A name the owner already gives a group answers
+        A name the owner already gives a group, in any case, answers
         `409 group_name_taken`; an owner with 100 groups gets
         `413 limit_exceeded` with target `name`.
       tags: [organisation]
@@ -2324,6 +2324,9 @@ paths:
       summary: Rename a group or change its note.
       description: >-
         Fields left out keep their value; an empty `note` removes it.
+        Renaming to another group's name in any case answers
+        `409 group_name_taken`; renaming to another case of the group's own
+        name is allowed.
       tags: [organisation]
       security:
         - sessionCookie: []
@@ -3553,7 +3556,10 @@ components:
       type: string
       description: >-
         1 to 40 characters with no control characters, unique among the
-        owner's groups. Surrounding spaces are trimmed.
+        owner's groups ignoring case: names are compared after Unicode NFC
+        normalisation and lowercasing, so "Board" and "board", or "Kōwhai"
+        and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the
+        name is kept and shown as typed.
       minLength: 1
       maxLength: 40
       examples: [Client work]

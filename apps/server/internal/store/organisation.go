@@ -22,6 +22,9 @@ type Group struct {
 	ID      string
 	OwnerID string
 	Name    string
+	// NameKey is what makes the name unique per owner: the caller derives
+	// it from Name (internal/sites folds case) and sets it with Name.
+	NameKey string
 	Note    string // empty for no note
 	// CreatedAt is set by the caller on create and read only after.
 	CreatedAt time.Time
@@ -75,14 +78,14 @@ type OrganiseChange struct {
 // Every method matches only ownerID's rows; another owner's group, tag or
 // site is ErrNotFound, exactly like a missing one.
 type Organisation interface {
-	// ListGroups returns every one of the owner's groups by name.
+	// ListGroups returns every one of the owner's groups by name key.
 	ListGroups(ctx context.Context, ownerID string) ([]Group, error)
 	GetGroup(ctx context.Context, ownerID, id string) (Group, error)
-	// CreateGroup inserts g. A name the owner already uses is ErrConflict;
+	// CreateGroup inserts g. A NameKey the owner already uses is ErrConflict;
 	// an owner who already has max groups (when max > 0) gets
 	// ErrLimitReached. Concurrent creates by one owner are serialised.
 	CreateGroup(ctx context.Context, g Group, max int) error
-	// UpdateGroup sets g's name and note.
+	// UpdateGroup sets g's name, name key and note.
 	UpdateGroup(ctx context.Context, g Group) error
 	// DeleteGroup deletes the group; its sites become ungrouped.
 	DeleteGroup(ctx context.Context, ownerID, id string) error
@@ -136,13 +139,13 @@ func (r organisationRepo) CreateGroup(ctx context.Context, g Group, max int) err
 			return fmt.Errorf("create group: %w", err)
 		}
 		return mapErr("create group", q.CreateGroup(ctx, sqlcgen.CreateGroupParams{
-			ID: g.ID, OwnerID: g.OwnerID, Name: g.Name, Note: nullString(g.Note), CreatedAt: ms(g.CreatedAt),
+			ID: g.ID, OwnerID: g.OwnerID, Name: g.Name, NameKey: g.NameKey, Note: nullString(g.Note), CreatedAt: ms(g.CreatedAt),
 		}))
 	})
 }
 
 func (r organisationRepo) UpdateGroup(ctx context.Context, g Group) error {
-	n, err := r.db.q.UpdateGroup(ctx, sqlcgen.UpdateGroupParams{ID: g.ID, OwnerID: g.OwnerID, Name: g.Name, Note: nullString(g.Note)})
+	n, err := r.db.q.UpdateGroup(ctx, sqlcgen.UpdateGroupParams{ID: g.ID, OwnerID: g.OwnerID, Name: g.Name, NameKey: g.NameKey, Note: nullString(g.Note)})
 	return rowsAffected("update group", n, err)
 }
 
@@ -342,7 +345,7 @@ func lockOwnerCount(ctx context.Context, q *sqlcgen.Queries, ownerID string, max
 }
 
 func groupFrom(row sqlcgen.SiteGroup) Group {
-	return Group{ID: row.ID, OwnerID: row.OwnerID, Name: row.Name, Note: row.Note.String, CreatedAt: fromMs(row.CreatedAt)}
+	return Group{ID: row.ID, OwnerID: row.OwnerID, Name: row.Name, NameKey: row.NameKey, Note: row.Note.String, CreatedAt: fromMs(row.CreatedAt)}
 }
 
 func tagFrom(row sqlcgen.Tag) Tag {
