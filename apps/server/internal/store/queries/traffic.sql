@@ -31,6 +31,13 @@ FROM sites WHERE sites.id = sqlc.arg(site_id)
 ON CONFLICT (site_id, hour, browser) DO UPDATE
 SET allowed = traffic_browsers.allowed + excluded.allowed, refused = traffic_browsers.refused + excluded.refused;
 
+-- name: AddTrafficCountry :exec
+INSERT INTO traffic_countries (site_id, hour, country, allowed, refused)
+SELECT sites.id, sqlc.arg(hour), sqlc.arg(country), sqlc.arg(allowed), sqlc.arg(refused)
+FROM sites WHERE sites.id = sqlc.arg(site_id)
+ON CONFLICT (site_id, hour, country) DO UPDATE
+SET allowed = traffic_countries.allowed + excluded.allowed, refused = traffic_countries.refused + excluded.refused;
+
 -- Adds to a path's row while the site has fewer than max_paths distinct
 -- paths in the hour, or the path already has a row; otherwise it adds
 -- nothing (no row affected) and the caller counts it under the empty path,
@@ -56,7 +63,7 @@ SET allowed = traffic_paths.allowed + excluded.allowed, refused = traffic_paths.
 -- The backfill reads the log oldest first, after the cursor (occurred_at,
 -- id), for sites that exist: a deleted site's entries have nowhere to go.
 -- name: ListAccessLogForRollup :many
-SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.user_agent
+SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.user_agent, access_log.country
 FROM access_log JOIN sites ON sites.id = access_log.site_id
 WHERE access_log.occurred_at > sqlc.arg(after_occurred_at)
   OR (access_log.occurred_at = sqlc.arg(after_occurred_at) AND access_log.id > sqlc.arg(after_id))
@@ -92,6 +99,11 @@ DELETE FROM traffic_paths WHERE hour = sqlc.arg(hour)
 
 -- name: PruneTrafficBrowsers :execrows
 DELETE FROM traffic_browsers WHERE hour = sqlc.arg(hour)
+  AND site_id NOT IN (SELECT sites.id FROM sites JOIN owners ON owners.id = sites.owner_id
+    WHERE sites.taken_down_at IS NOT NULL OR owners.suspended_at IS NOT NULL);
+
+-- name: PruneTrafficCountries :execrows
+DELETE FROM traffic_countries WHERE hour = sqlc.arg(hour)
   AND site_id NOT IN (SELECT sites.id FROM sites JOIN owners ON owners.id = sites.owner_id
     WHERE sites.taken_down_at IS NOT NULL OR owners.suspended_at IS NOT NULL);
 
@@ -211,6 +223,18 @@ WHERE sites.owner_id = sqlc.arg(owner_id)
   AND traffic_browsers.hour >= sqlc.arg(from_hour) AND traffic_browsers.hour < sqlc.arg(to_hour)
 GROUP BY traffic_browsers.browser
 ORDER BY traffic_browsers.browser;
+
+-- Requests by country (V5.13), busiest first, 'unknown' among them.
+-- name: TrafficByCountry :many
+SELECT traffic_countries.country, CAST(SUM(traffic_countries.allowed) AS BIGINT) AS allowed, CAST(SUM(traffic_countries.refused) AS BIGINT) AS refused
+FROM traffic_countries JOIN sites ON sites.id = traffic_countries.site_id
+WHERE sites.owner_id = sqlc.arg(owner_id)
+  AND (CAST(sqlc.narg(site_id) AS TEXT) IS NULL OR sites.id = sqlc.narg(site_id))
+  AND (CAST(sqlc.narg(group_id) AS TEXT) IS NULL OR sites.group_id = sqlc.narg(group_id))
+  AND (CAST(sqlc.narg(tag_id) AS TEXT) IS NULL OR EXISTS (SELECT 1 FROM site_tags WHERE site_tags.site_id = sites.id AND site_tags.tag_id = sqlc.narg(tag_id)))
+  AND traffic_countries.hour >= sqlc.arg(from_hour) AND traffic_countries.hour < sqlc.arg(to_hour)
+GROUP BY traffic_countries.country
+ORDER BY SUM(traffic_countries.allowed) + SUM(traffic_countries.refused) DESC, traffic_countries.country;
 
 -- SPDX-FileCopyrightText: 2026 CubieCode
 -- SPDX-License-Identifier: AGPL-3.0-only

@@ -14,8 +14,8 @@ import (
 )
 
 const insertAccessLogEntry = `-- name: InsertAccessLogEntry :exec
-INSERT INTO access_log (id, occurred_at, site_id, host, path, status, via, link_public_id, ip, user_agent)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+INSERT INTO access_log (id, occurred_at, site_id, host, path, status, via, link_public_id, ip, user_agent, country)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
 `
 
 type InsertAccessLogEntryParams struct {
@@ -29,6 +29,7 @@ type InsertAccessLogEntryParams struct {
 	LinkPublicID sql.NullString
 	Ip           sql.NullString
 	UserAgent    sql.NullString
+	Country      sql.NullString
 }
 
 func (q *Queries) InsertAccessLogEntry(ctx context.Context, arg InsertAccessLogEntryParams) error {
@@ -43,12 +44,13 @@ func (q *Queries) InsertAccessLogEntry(ctx context.Context, arg InsertAccessLogE
 		arg.LinkPublicID,
 		arg.Ip,
 		arg.UserAgent,
+		arg.Country,
 	)
 	return err
 }
 
 const listAccessLogByLink = `-- name: ListAccessLogByLink :many
-SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.host, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.ip, access_log.user_agent
+SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.host, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.ip, access_log.user_agent, access_log.country
 FROM access_log JOIN sites ON sites.id = access_log.site_id
 WHERE access_log.link_public_id = ?1 AND access_log.site_id = ?2
   AND sites.owner_id = ?3
@@ -95,6 +97,7 @@ func (q *Queries) ListAccessLogByLink(ctx context.Context, arg ListAccessLogByLi
 			&i.LinkPublicID,
 			&i.Ip,
 			&i.UserAgent,
+			&i.Country,
 		); err != nil {
 			return nil, err
 		}
@@ -110,7 +113,7 @@ func (q *Queries) ListAccessLogByLink(ctx context.Context, arg ListAccessLogByLi
 }
 
 const listAccessLogBySite = `-- name: ListAccessLogBySite :many
-SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.host, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.ip, access_log.user_agent
+SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.host, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.ip, access_log.user_agent, access_log.country
 FROM access_log JOIN sites ON sites.id = access_log.site_id
 WHERE access_log.site_id = ?1 AND sites.owner_id = ?2
   AND (access_log.occurred_at < ?3
@@ -156,6 +159,7 @@ func (q *Queries) ListAccessLogBySite(ctx context.Context, arg ListAccessLogBySi
 			&i.LinkPublicID,
 			&i.Ip,
 			&i.UserAgent,
+			&i.Country,
 		); err != nil {
 			return nil, err
 		}

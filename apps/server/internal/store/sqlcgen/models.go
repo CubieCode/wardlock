@@ -22,6 +22,7 @@ type AccessLog struct {
 	LinkPublicID sql.NullString
 	Ip           sql.NullString
 	UserAgent    sql.NullString
+	Country      sql.NullString
 }
 
 type ApiToken struct {
@@ -284,6 +285,14 @@ type TrafficBrowser struct {
 	SiteID  string
 	Hour    int64
 	Browser string
+	Allowed int64
+	Refused int64
+}
+
+type TrafficCountry struct {
+	SiteID  string
+	Hour    int64
+	Country string
 	Allowed int64
 	Refused int64
 }

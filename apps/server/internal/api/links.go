@@ -277,12 +277,14 @@ func (s *Server) accessLogPage(limitParam *Limit, cursorParam *Cursor, list func
 		page.NextCursor = encodeCursor(strconv.FormatInt(last.OccurredAt.UnixMilli(), 10) + ":" + last.ID)
 	}
 	for _, e := range entries {
-		page.Items = append(page.Items, accessLogEntryBody(e))
+		page.Items = append(page.Items, accessLogEntryBody(e, s.Countries != nil))
 	}
 	return page, nil, nil
 }
 
-func accessLogEntryBody(e access.LoggedAccess) AccessLogEntry {
+// accessLogEntryBody leaves out the country while the lookup is off
+// (withCountry false), even for entries recorded while it was on.
+func accessLogEntryBody(e access.LoggedAccess, withCountry bool) AccessLogEntry {
 	out := AccessLogEntry{
 		Id:         e.ID,
 		OccurredAt: e.OccurredAt.UnixMilli(),
@@ -302,6 +304,9 @@ func accessLogEntryBody(e access.LoggedAccess) AccessLogEntry {
 	}
 	if e.UserAgent != "" {
 		out.UserAgent = &e.UserAgent
+	}
+	if withCountry && e.Country != "" {
+		out.Country = &e.Country
 	}
 	return out
 }

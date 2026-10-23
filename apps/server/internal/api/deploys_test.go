@@ -39,6 +39,7 @@ const baseDomain = "wardlock.example.test"
 type harness struct {
 	t        *testing.T
 	h        http.Handler
+	srv      *api.Server
 	db       *store.DB
 	blobDir  string
 	blobs    *deploys.FSBlobStore
@@ -124,6 +125,7 @@ func newHarnessWith(t *testing.T, limits deploys.Limits, quotas store.Quotas, co
 		configure(&dc)
 	}
 	srv.Deploys = deploys.NewService(dc)
+	hs.srv = srv
 	inner := srv.Handler()
 	hs.h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if id := r.Header.Get(ownerHeader); id != "" {

@@ -44,10 +44,12 @@ func (s *Server) GetAnalytics(ctx context.Context, req GetAnalyticsRequestObject
 	case err != nil:
 		return nil, err
 	}
-	return GetAnalytics200JSONResponse(analyticsBody(days, a)), nil
+	return GetAnalytics200JSONResponse(analyticsBody(days, a, s.Countries)), nil
 }
 
-func analyticsBody(days AnalyticsDays, a access.Analytics) Analytics {
+// analyticsBody answers a report; countries, and the lookup's credit,
+// only while the country lookup is on.
+func analyticsBody(days AnalyticsDays, a access.Analytics, countries *CountryLookupConfig) Analytics {
 	out := Analytics{
 		Days:       days,
 		From:       a.From.UnixMilli(),
@@ -94,6 +96,17 @@ func analyticsBody(days AnalyticsDays, a access.Analytics) Analytics {
 	}
 	for _, b := range a.Browsers {
 		out.Browsers = append(out.Browsers, AnalyticsBrowser{Browser: BrowserFamily(b.Browser), Allowed: b.Allowed, Refused: b.Refused})
+	}
+	if countries != nil {
+		list := make([]AnalyticsCountry, 0, len(a.Countries))
+		for _, c := range a.Countries {
+			list = append(list, AnalyticsCountry{Country: c.Country, Allowed: c.Allowed, Refused: c.Refused})
+		}
+		out.Countries = &list
+		out.CountryLookup = &CountryLookup{Attribution: countries.Attribution}
+		if countries.ServerCountry != "" {
+			out.CountryLookup.ServerCountry = &countries.ServerCountry
+		}
 	}
 	return out
 }

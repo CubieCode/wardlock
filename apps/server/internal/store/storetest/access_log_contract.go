@@ -15,7 +15,7 @@ func accessLogContract(t *testing.T, open Opener) {
 	valid := func() store.AccessEntry {
 		return store.AccessEntry{
 			ID: store.NewID(), OccurredAt: now, SiteID: store.NewID(), Host: "docs.wardlock.localhost", Path: "/",
-			Status: 200, Via: store.ViaLink, LinkPublicID: "p000000001", IP: "192.0.2.0", UserAgent: "curl/8",
+			Status: 200, Via: store.ViaLink, LinkPublicID: "p000000001", IP: "192.0.2.0", UserAgent: "curl/8", Country: "NZ",
 		}
 	}
 	t.Run("Append", func(t *testing.T) {
@@ -32,6 +32,12 @@ func accessLogContract(t *testing.T, open Opener) {
 				{name: "public ID without link", mutate: func(_ *fixture, e *store.AccessEntry) { e.Via = store.ViaPublic }, want: store.ErrConstraint},
 				{name: "unknown via", mutate: func(_ *fixture, e *store.AccessEntry) { e.Via = "cookie" }, want: store.ErrConstraint},
 				{name: "bad status", mutate: func(_ *fixture, e *store.AccessEntry) { e.Status = 0 }, want: store.ErrConstraint},
+				{name: "unknown country", mutate: func(_ *fixture, e *store.AccessEntry) { e.Country = store.CountryUnknown }},
+				{name: "no country", mutate: func(_ *fixture, e *store.AccessEntry) { e.Country = "" }},
+				{name: "lower-case country", mutate: func(_ *fixture, e *store.AccessEntry) { e.Country = "nz" }, want: store.ErrConstraint},
+				{name: "three-letter country", mutate: func(_ *fixture, e *store.AccessEntry) { e.Country = "NZL" }, want: store.ErrConstraint},
+				{name: "digit in country", mutate: func(_ *fixture, e *store.AccessEntry) { e.Country = "N1" }, want: store.ErrConstraint},
+				{name: "city as country", mutate: func(_ *fixture, e *store.AccessEntry) { e.Country = "Wellington" }, want: store.ErrConstraint},
 			})
 	})
 	t.Run("AppendIsAtomic", func(t *testing.T) {
@@ -54,7 +60,10 @@ func accessLogContract(t *testing.T, open Opener) {
 			e := valid()
 			e.SiteID, e.OccurredAt, e.LinkPublicID = s.ID, now.Add(at), f.publicID()
 			if i == 0 {
-				e.Via, e.LinkPublicID, e.IP, e.UserAgent = store.ViaPublic, "", "", ""
+				e.Via, e.LinkPublicID, e.IP, e.UserAgent, e.Country = store.ViaPublic, "", "", "", ""
+			}
+			if i == 1 {
+				e.Country = store.CountryUnknown
 			}
 			want = append(want, e)
 		}
@@ -265,5 +274,5 @@ func newestFirst(a, b store.AccessEntry) int {
 func sameEntry(a, b store.AccessEntry) bool {
 	return a.ID == b.ID && a.OccurredAt.Equal(b.OccurredAt) && a.SiteID == b.SiteID && a.Host == b.Host &&
 		a.Path == b.Path && a.Status == b.Status && a.Via == b.Via && a.LinkPublicID == b.LinkPublicID &&
-		a.IP == b.IP && a.UserAgent == b.UserAgent
+		a.IP == b.IP && a.UserAgent == b.UserAgent && a.Country == b.Country
 }

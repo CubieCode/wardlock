@@ -51,6 +51,19 @@ linters:
               desc: access never imports the HTTP layer
             - pkg: wardlock.nz/server/internal/edge
               desc: access never imports the HTTP layer
+        country:
+          files: ['**/apps/server/internal/country/**']
+          deny:
+            - pkg: net/http
+              desc: country reads a local file; it never fetches anything
+            - pkg: wardlock.nz/server/internal/api
+              desc: country is a leaf; cmd/wardlockd hands it to the access-log writer
+            - pkg: wardlock.nz/server/internal/edge
+              desc: country is a leaf; cmd/wardlockd hands it to the access-log writer
+            - pkg: wardlock.nz/server/internal/access
+              desc: country is a leaf; the access-log writer calls it through accesslog.CountryLookup
+            - pkg: wardlock.nz/server/internal/store
+              desc: country keeps no state in the database
         oauth:
           files: ['**/apps/server/internal/oauth/**']
           deny:
@@ -93,6 +106,8 @@ linters:
               desc: platform is the base layer; it imports no other internal package
             - pkg: wardlock.nz/server/internal/moderation
               desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/country
+              desc: platform is the base layer; it imports no other internal package
             - pkg: wardlock.nz/server/internal/tls
               desc: platform is the base layer; it imports no other internal package
             - pkg: wardlock.nz/server/internal/api
@@ -120,6 +135,8 @@ linters:
               desc: store serves domain packages through repository interfaces; it never imports them
             - pkg: wardlock.nz/server/internal/moderation
               desc: store serves domain packages through repository interfaces; it never imports them
+            - pkg: wardlock.nz/server/internal/country
+              desc: store serves domain packages through repository interfaces; it never imports them
             - pkg: wardlock.nz/server/internal/tls
               desc: store serves domain packages through repository interfaces; it never imports them
             - pkg: wardlock.nz/server/internal/api
@@ -144,6 +161,8 @@ linters:
             - pkg: wardlock.nz/server/internal/mail
               desc: the dashboard only serves embedded files; it reaches the server through the API
             - pkg: wardlock.nz/server/internal/moderation
+              desc: the dashboard only serves embedded files; it reaches the server through the API
+            - pkg: wardlock.nz/server/internal/country
               desc: the dashboard only serves embedded files; it reaches the server through the API
             - pkg: wardlock.nz/server/internal/tls
               desc: the dashboard only serves embedded files; it reaches the server through the API
@@ -193,6 +212,7 @@ linters:
             - '**/apps/server/internal/owners/**'
             - '**/apps/server/internal/edge/**'
             - '**/apps/server/internal/moderation/**'
+            - '**/apps/server/internal/country/**'
           deny:
             - pkg: database/sql
               desc: domain code depends on store's repository interfaces

@@ -251,6 +251,21 @@ A hostname belongs to one site per instance, and the claim conflict error does n
 
 </details>
 
+### Country lookup
+
+The optional country lookup (V5.13) adds one fact to each access-log entry: the country of its stored IP, from a database file on the server. Nothing is sent to a third party: the operator downloads the file, and every lookup reads it locally. It records a country code or `unknown`, never a city or region, and it is off unless the operator turns it on.
+
+<details>
+<summary>What it can reveal, and its limits</summary>
+
+- **Less than the IP it comes from.** The country is looked up from the IP as the log stores it, after truncation (IPv4 /24 and IPv6 /48 by default), never the full address, and with no IP stored no country is recorded. Owners already see the truncated IP; the country adds no precision, only a name. Only `country.iso_code` is read from the database, so even a city database yields nothing finer, and analytics counts countries per site and hour without addresses.
+- **Who sees it.** Like the rest of the access log, only the site's owner, through the dashboard and API, owner-scoped with the usual same-`404` for another owner's site. For a site with few visitors, a country beside a time and path can still hint at who a visitor was ("the request from Iceland at 3 a.m."); that is as true of the truncated IP.
+- **It can be wrong or hidden.** A relay, VPN, Tor exit, corporate proxy, mobile carrier or Apple's iCloud Private Relay shows the country of its exit, not the visitor's; a database can be out of date or simply wrong, and an address it has no country for records `unknown`. Behind a reverse proxy not listed in `WARDLOCK_TRUSTED_PROXIES`, every entry carries the proxy's address and so the proxy's country. Countries are a rough picture of where requests come from, never evidence of where a person is, and never an access control: no policy reads them.
+- **The file is trusted input.** The operator chooses it; the server reads at most 512 MiB into memory and checks its structure (the reader's `Verify`) before using it, and a bad file stops lookups with a warning rather than stopping serving. Lookups run in the access-log writer, off the request path, so a slow or broken lookup can delay or drop log entries but never a response. Log lines about the file name its path and build time, never an address.
+- **Licences.** DB-IP's Lite database is CC BY 4.0 and its credit is shown wherever countries are; MaxMind's GeoLite2 has its own end-user licence the operator accepts ([DEPLOYMENT](DEPLOYMENT.md#country-lookup)).
+
+</details>
+
 ### Supply chain and the server itself
 
 Pinned tool versions (`tools/go.mod`, lockfiles), `govulncheck` in every check run, a minimum release age of one day for npm packages (pnpm's `minimumReleaseAge: 1440` in `pnpm-workspace.yaml`; Go modules have no equivalent, so Go dependencies rely on `go.sum` pinning, review and `govulncheck`), no CGO, and a small dependency set. Releases are built by GoReleaser in CI with checksums (O4.1).

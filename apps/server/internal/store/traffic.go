@@ -27,6 +27,10 @@ const (
 	BrowserOther Browser = "other"
 )
 
+// CountryUnknown is the country of an entry whose IP the country database
+// has no match for (V5.13).
+const CountryUnknown = "unknown"
+
 // Rollup limits (V5.4).
 const (
 	// MaxTrafficPaths is how many distinct paths a site keeps per hour:
@@ -74,6 +78,10 @@ type TrafficReport struct {
 	Paths []TrafficPath
 	// OtherPaths counts the requests for paths the rollup did not keep.
 	OtherPaths TrafficCount
+	// Countries lists each country with requests, CountryUnknown among
+	// them, busiest first (V5.13). Entries logged without a country are
+	// not in it.
+	Countries []TrafficCountry
 }
 
 type TrafficHour struct {
@@ -103,6 +111,11 @@ type TrafficTag struct {
 
 type TrafficBrowser struct {
 	Browser Browser
+	TrafficCount
+}
+
+type TrafficCountry struct {
+	Country string
 	TrafficCount
 }
 
@@ -160,17 +173,18 @@ type trafficKey struct {
 // trafficBatch is a batch's counts per table, each key once. paths keeps
 // the order paths first appear in, which decides which are kept.
 type trafficBatch struct {
-	hours, links, browsers map[trafficKey]*TrafficCount
-	paths                  map[trafficKey]*TrafficCount
-	pathOrder              []trafficKey
+	hours, links, browsers, countries map[trafficKey]*TrafficCount
+	paths                             map[trafficKey]*TrafficCount
+	pathOrder                         []trafficKey
 }
 
 func newTrafficBatch() *trafficBatch {
 	return &trafficBatch{
-		hours:    map[trafficKey]*TrafficCount{},
-		links:    map[trafficKey]*TrafficCount{},
-		browsers: map[trafficKey]*TrafficCount{},
-		paths:    map[trafficKey]*TrafficCount{},
+		hours:     map[trafficKey]*TrafficCount{},
+		links:     map[trafficKey]*TrafficCount{},
+		browsers:  map[trafficKey]*TrafficCount{},
+		countries: map[trafficKey]*TrafficCount{},
+		paths:     map[trafficKey]*TrafficCount{},
 	}
 }
 
@@ -199,6 +213,9 @@ func (b *trafficBatch) add(e AccessEntry) {
 		browser = BrowserOther
 	}
 	bump(b.browsers, string(browser))
+	if e.Country != "" {
+		bump(b.countries, e.Country)
+	}
 	path := e.Path
 	if len(path) > MaxTrafficPathBytes {
 		path = ""
@@ -225,6 +242,11 @@ func (b *trafficBatch) write(ctx context.Context, q *sqlcgen.Queries) error {
 	for k, c := range b.browsers {
 		if err := q.AddTrafficBrowser(ctx, sqlcgen.AddTrafficBrowserParams{SiteID: k.siteID, Hour: k.hour, Browser: k.value, Allowed: c.Allowed, Refused: c.Refused}); err != nil {
 			return mapErr("add traffic browser", err)
+		}
+	}
+	for k, c := range b.countries {
+		if err := q.AddTrafficCountry(ctx, sqlcgen.AddTrafficCountryParams{SiteID: k.siteID, Hour: k.hour, Country: k.value, Allowed: c.Allowed, Refused: c.Refused}); err != nil {
+			return mapErr("add traffic country", err)
 		}
 	}
 	for _, k := range b.pathOrder {
@@ -290,6 +312,7 @@ func (r trafficRepo) Backfill(ctx context.Context, classify func(string) Browser
 					Status:       int(row.Status),
 					Via:          AccessVia(row.Via),
 					LinkPublicID: row.LinkPublicID.String,
+					Country:      row.Country.String,
 					Browser:      classify(row.UserAgent.String),
 				})
 			}
@@ -322,7 +345,7 @@ func (r trafficRepo) PruneHour(ctx context.Context, cutoff time.Time) (bool, err
 		}
 		pruned = true
 		for _, prune := range []func(context.Context, int64) (int64, error){
-			q.PruneTrafficHours, q.PruneTrafficLinks, q.PruneTrafficPaths, q.PruneTrafficBrowsers,
+			q.PruneTrafficHours, q.PruneTrafficLinks, q.PruneTrafficPaths, q.PruneTrafficBrowsers, q.PruneTrafficCountries,
 		} {
 			if _, err := prune(ctx, hour); err != nil {
 				return mapErr("prune traffic", err)
@@ -403,6 +426,13 @@ func (r trafficRepo) Report(ctx context.Context, ownerID string, scope TrafficSc
 		return TrafficReport{}, mapErr("other traffic paths", err)
 	}
 	out.OtherPaths = TrafficCount{other.Allowed, other.Refused}
+	countries, err := q.TrafficByCountry(ctx, sqlcgen.TrafficByCountryParams{OwnerID: ownerID, SiteID: site, GroupID: group, TagID: tag, FromHour: fromHour, ToHour: toHour})
+	if err != nil {
+		return TrafficReport{}, mapErr("traffic by country", err)
+	}
+	for _, row := range countries {
+		out.Countries = append(out.Countries, TrafficCountry{row.Country, TrafficCount{row.Allowed, row.Refused}})
+	}
 	return out, nil
 }
 

@@ -6,9 +6,11 @@
 // redaction) and a background goroutine writes buffered entries to the store
 // in batches, so serving never waits on the database. Each batch also adds
 // to the traffic rollup for analytics (V5.4), classifying every
-// User-Agent's browser family first. It prunes entries and rollup hours
-// past their retention periods. Like the rest of internal/access it takes
-// plain values and imports no HTTP packages.
+// User-Agent's browser family first and, when the operator has configured
+// a country database, looking up each stored IP's country (V5.13). It
+// prunes entries and rollup hours past their retention periods. Like the
+// rest of internal/access it takes plain values and imports no HTTP
+// packages.
 package accesslog
 
 import (
@@ -56,6 +58,13 @@ type Repository interface {
 	Prune(ctx context.Context, cutoff time.Time, limit int) (int64, error)
 }
 
+// CountryLookup returns the ISO 3166-1 alpha-2 country of a stored
+// (already truncated) IP, store.CountryUnknown when it has none, or "" to
+// record nothing; country.DB satisfies it.
+type CountryLookup interface {
+	Lookup(ip string) string
+}
+
 // TrafficRepository is the part of store.Traffic the writer uses to prune
 // the rollup.
 type TrafficRepository interface {
@@ -69,6 +78,9 @@ type Config struct {
 	Now  func() time.Time
 	// Truncation is applied to every IP before it is buffered.
 	Truncation Truncation
+	// Countries, when set, looks up each entry's country from its stored
+	// IP as batches are written; nil (the lookup off) records none.
+	Countries CountryLookup
 	// BufferSize is how many entries may wait for a write; further entries
 	// are dropped and counted.
 	BufferSize int
@@ -244,10 +256,13 @@ func (w *Writer) write(batch []store.AccessEntry) []store.AccessEntry {
 	if len(batch) == 0 {
 		return batch
 	}
-	// Classified here, off the request path, from the User-Agent as
-	// stored, so the backfill would count the entry the same way.
+	// Classified and looked up here, off the request path, from the
+	// User-Agent and IP as stored, so the backfill would count the entry
+	// the same way and the country never comes from more of the address
+	// than the log keeps.
 	for i := range batch {
 		batch[i].Browser = Classify(batch[i].UserAgent)
+		batch[i].Country = w.country(batch[i].IP)
 	}
 	ctx, cancel := context.WithTimeout(w.ctx, writeTimeout)
 	defer cancel()
@@ -256,6 +271,20 @@ func (w *Writer) write(batch []store.AccessEntry) []store.AccessEntry {
 		w.log.ErrorContext(ctx, "write access log", slog.Int("entries", len(batch)), slog.Any("error", err))
 	}
 	return batch[:0]
+}
+
+// country looks up ip, as stored, when the lookup is on and an IP was
+// stored. Anything but a code or store.CountryUnknown records nothing, so
+// one odd answer cannot fail its batch.
+func (w *Writer) country(ip string) string {
+	if w.cfg.Countries == nil || ip == "" {
+		return ""
+	}
+	c := w.cfg.Countries.Lookup(ip)
+	if c == store.CountryUnknown || len(c) == 2 && c[0] >= 'A' && c[0] <= 'Z' && c[1] >= 'A' && c[1] <= 'Z' {
+		return c
+	}
+	return ""
 }
 
 // runPruner prunes at start and every PruneInterval until Close, beside

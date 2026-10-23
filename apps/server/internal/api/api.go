@@ -50,8 +50,19 @@ type Server struct {
 	// Tokens authenticates API tokens and serves the token and CLI login
 	// operations (C1.7).
 	Tokens *owners.Tokens
+	// Countries is the operator's country lookup (V5.13); nil while it is
+	// off, when analytics leaves countries out.
+	Countries *CountryLookupConfig
 	// Logger receives unmapped errors (500 internal); nil discards them.
 	Logger *slog.Logger
+}
+
+// CountryLookupConfig is what getAnalytics says about the country lookup
+// while it is on: the credit its database's licence requires, and the
+// country to draw the server in ("" for none).
+type CountryLookupConfig struct {
+	Attribution   string
+	ServerCountry string
 }
 
 var _ StrictServerInterface = (*Server)(nil)
