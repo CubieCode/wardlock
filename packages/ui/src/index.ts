@@ -34,3 +34,35 @@ export {
   PageHeader,
   PanelLayout,
 } from './layout.js';
+export {
+  StatusTag,
+  TagChip,
+  Ward,
+  type StatusTagTone,
+  type TagSlot,
+} from './tag.js';
+export { HubLayout, Wire } from './hub.js';
+export { SegmentedControl, Tab, Tabs, type SegmentedOption } from './tabs.js';
+export {
+  Menu,
+  MenuCheckboxItem,
+  MenuItem,
+  Popover,
+  PopoverFilter,
+  type PopoverTriggerProps,
+} from './popover.js';
+export { BulkBar } from './bulk-bar.js';
+export { Toast } from './toast.js';
+export {
+  BarList,
+  Sparkline,
+  StackedBars,
+  type BarListItem,
+  type ChartSeries,
+  type StackedBarsPoint,
+} from './charts.js';
+export {
+  CommandPalette,
+  type CommandGroup,
+  type CommandItem,
+} from './command-palette.js';
