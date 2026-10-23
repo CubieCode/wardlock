@@ -125,10 +125,14 @@
 /* Pinned: name and access, then requests and sparkline. */
 .pinned-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-1) var(--space-3);
-  padding: var(--space-2) 0;
+  gap: 0 var(--space-3);
+  padding: var(--space-1) 0 var(--space-3);
+}
+
+.pinned-main {
+  grid-column: 1 / -1;
 }
 
 .pinned-main,
@@ -164,19 +168,10 @@
 }
 
 .deploy-feed-message {
-  margin-left: var(--space-2);
   overflow-wrap: anywhere;
 }
 
 @media (max-width: 47.99rem) {
-  .pinned-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .pinned-main {
-    grid-column: 1 / -1;
-  }
-
   .attention-item {
     grid-template-columns: auto minmax(0, 1fr);
   }

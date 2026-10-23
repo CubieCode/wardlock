@@ -91,6 +91,7 @@ Every v1 item in the foundation, core, access, dashboard and operations areas is
 | O4.13 | `/acceptable-use`, bundled from `docs/ACCEPTABLE-USE.md`, and the policy line and Continue step on the setup and sign-in-link pages                                                | SPEC "Dashboard"                                                            |
 | V5.4  | The traffic rollup (`traffic_*` tables, `store.Traffic`, `accesslog.Classify` and `Backfill`) and `getAnalytics` (`access.Service.Analytics`)                                      | Access log pipeline, Data model, SPEC "Analytics"                           |
 | V5.5  | `listSiteSummaries` and `getSiteCounts` (`sites.Service.SiteSummaries` and `SiteCounts` over `store.Sites.Summaries`) and `listSignInProviders` (`access.Service.SignInProviders`) | SPEC "Site summaries", SPEC "OAuth and OIDC"                                |
+| V5.11 | `listExpiringLinks` (`sites.Service.ExpiringLinks` over `store.Sites.ExpiringLinks`, the same rule as `expiringLinks`)                                                             | SPEC "Site summaries"                                                       |
 
 O4.4, O4.6 and O4.7 changed documents only (the launch checklist, the alpha documentation refresh and the CLA text).
 

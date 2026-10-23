@@ -236,7 +236,7 @@ describe('overview', () => {
     ]);
     expect(within(attention).getByText(/^On 2 sites\./)).toBeTruthy();
     for (const [name, href] of [
-      ['Review sites with links expiring soon', '/sites?v=expiring'],
+      ['Review sites with links expiring soon', '/sites?v=expiring'] as const,
       ['Review sites with no requests in 30 days', '/sites?v=quiet'],
       ['Review untagged sites', '/sites?v=untagged'],
       ['Check public sites', '/sites?v=public'],
@@ -391,7 +391,11 @@ describe('overview', () => {
   it('says when nothing is live', async () => {
     await show({
       ...full,
-      sites: sites.map(({ liveDeploy: _, ...s }) => s),
+      sites: sites.map((s) => {
+        const copy = { ...s };
+        delete copy.liveDeploy;
+        return copy;
+      }),
     });
     expect(
       within(card('Recent deploys')).getByText('Nothing is live yet.'),

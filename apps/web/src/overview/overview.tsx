@@ -415,13 +415,11 @@ export function LiveDeploys({ sites }: { sites: SiteSummary[] }) {
         <ul className="overview-list" aria-label="Live deploys">
           {live.map(({ id, name, deploy }) => (
             <li key={id} className="deploy-feed-row">
-              <span>
-                <a className="overview-name" href={siteHref(name)}>
-                  {name}
-                </a>
-                <span className="deploy-feed-message">
-                  {deploy.message ?? 'No message'}
-                </span>
+              <a className="overview-name" href={siteHref(name)}>
+                {name}
+              </a>
+              <span className="deploy-feed-message">
+                {deploy.message ?? 'No message'}
               </span>
               <small>
                 <code>{shortId(deploy.id)}</code> · went live{' '}
