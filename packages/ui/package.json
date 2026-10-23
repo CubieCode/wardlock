@@ -14,7 +14,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "gallery": "pnpm --filter @wardlock/web exec vite ../../packages/ui/gallery --host 127.0.0.1"
   },
   "peerDependencies": {
     "react": "^19.0.0"

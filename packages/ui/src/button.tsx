@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import type { ButtonHTMLAttributes } from 'react';
+import type { ComponentPropsWithRef } from 'react';
 import { cx } from './cx.js';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger';
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps extends ComponentPropsWithRef<'button'> {
   /** Required so a button inside a form never submits by accident. */
   type: 'button' | 'submit' | 'reset';
   /**
