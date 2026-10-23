@@ -119,6 +119,7 @@
 .site-add-tag {
   display: inline-flex;
   align-items: center;
+  gap: 0.25rem;
   min-height: 1.75rem;
   padding: 0 var(--space-3);
   border: 1px dashed var(--color-border-strong);
@@ -240,10 +241,4 @@
 
 .site-live-deploy .site-muted {
   font-size: var(--text-sm);
-}
-
-/* The live deploy's row stands out in the history. */
-.deploy-row[data-live='true'] {
-  box-shadow: inset 2px 0 0 var(--color-success);
-  padding-inline-start: var(--space-3);
 }

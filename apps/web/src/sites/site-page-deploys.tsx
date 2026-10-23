@@ -142,7 +142,7 @@ function DeployRow({
 }) {
   const id = shortId(deploy.id);
   return (
-    <li className="deploy-row" data-live={deploy.status === 'active'}>
+    <li className="deploy-row">
       <div className="deploy-row-status">
         <DeployStatus deploy={deploy} />
       </div>

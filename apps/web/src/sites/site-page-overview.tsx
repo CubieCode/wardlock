@@ -22,24 +22,18 @@ import { siteHref } from './site-page-tabs.js';
 const newestLinks = 3;
 
 type Preview<T> =
-  | { kind: 'loading' }
-  | { kind: 'error' }
-  | { kind: 'ready'; items: T[]; more: boolean };
+  { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; items: T[] };
 
 /** Settles a preview from one read of a list. */
 function settle<T>(
-  read: Promise<{ data?: { items: T[]; nextCursor?: string } }>,
+  read: Promise<{ data?: { items: T[] } }>,
   set: (state: Preview<T>) => void,
 ) {
   let live = true;
   read.then(
     ({ data }) =>
       live &&
-      set(
-        data
-          ? { kind: 'ready', items: data.items, more: !!data.nextCursor }
-          : { kind: 'error' },
-      ),
+      set(data ? { kind: 'ready', items: data.items } : { kind: 'error' }),
     () => live && set({ kind: 'error' }),
   );
   return () => {
@@ -137,11 +131,7 @@ export function OverviewTab({
             </ul>
           ))}
         <CardLinks>
-          <a href={siteHref(site.name, 'links')}>
-            {links.kind === 'ready' && links.more
-              ? 'All share links'
-              : 'Share links'}
-          </a>
+          <a href={siteHref(site.name, 'links')}>Manage share links</a>
         </CardLinks>
       </Card>
 

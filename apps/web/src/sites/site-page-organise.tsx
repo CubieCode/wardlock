@@ -233,7 +233,7 @@ export function TagPicker({
       }}
       trigger={(props) => (
         <button {...props} type="button" className="site-add-tag">
-          <span aria-hidden="true">+ </span>Tag
+          <span aria-hidden="true">+</span>Tag
         </button>
       )}
     >
