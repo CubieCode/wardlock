@@ -1684,3 +1684,296 @@
     display: none;
   }
 }
+
+/* Rail layout: rail and navigator columns from 48rem; top and bottom bars below */
+.wl-rail-layout {
+  min-height: 100vh;
+}
+
+.wl-rail,
+.wl-rail-navigator {
+  display: none;
+}
+
+.wl-rail-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.wl-rail-layout > .wl-main {
+  padding-bottom: calc(
+    var(--bottom-bar-height) + env(safe-area-inset-bottom) + var(--space-8)
+  );
+}
+
+@media (min-width: 48rem) {
+  .wl-rail-layout {
+    display: grid;
+    grid-template-columns: var(--rail-width) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .wl-rail-layout-navigator {
+    grid-template-columns: var(--rail-width) var(--sidebar-width) minmax(0, 1fr);
+  }
+
+  .wl-rail,
+  .wl-rail-navigator {
+    display: flex;
+    flex-direction: column;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+  }
+
+  .wl-rail-header,
+  .wl-bottom-bar {
+    display: none;
+  }
+
+  .wl-rail-layout > .wl-main {
+    padding: var(--space-8);
+  }
+}
+
+.wl-rail {
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) 0;
+}
+
+.wl-rail-home {
+  display: grid;
+  place-items: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  border-radius: var(--radius-control);
+  color: var(--color-primary);
+}
+
+.wl-rail-items {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.wl-rail-foot {
+  margin-top: auto;
+}
+
+.wl-rail-navigator {
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-3);
+  overflow-y: auto;
+}
+
+/* One place: an icon square in the rail, an icon over its name in the bar */
+.wl-rail-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.wl-rail-item:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.wl-rail-item[aria-current='page'],
+.wl-rail-item[aria-expanded='true'] {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.wl-rail-item[aria-current='page'] {
+  box-shadow: var(--glow);
+}
+
+.wl-rail-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+.wl-rail-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* In the rail the name is a tooltip, shown on hover and keyboard focus. */
+.wl-rail .wl-rail-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.wl-rail .wl-rail-item:hover .wl-rail-label,
+.wl-rail .wl-rail-item:focus-visible .wl-rail-label {
+  z-index: 20;
+  left: calc(100% + var(--space-3));
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius-control) - 4px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  box-shadow: var(--glow);
+  pointer-events: none;
+}
+
+.wl-bottom-bar {
+  position: fixed;
+  z-index: 30;
+  inset-inline: 0;
+  bottom: 0;
+  display: flex;
+  min-height: var(--bottom-bar-height);
+  padding: 0 var(--space-1) env(safe-area-inset-bottom);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+}
+
+.wl-bottom-bar .wl-rail-item {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  height: auto;
+  min-height: var(--bottom-bar-height);
+  align-content: center;
+  gap: 0.125rem;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.wl-bottom-bar .wl-rail-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.wl-bottom-bar .wl-rail-shortcut {
+  display: none;
+}
+
+/* A touch screen usually has no keyboard to press a shortcut on. */
+@media (pointer: coarse) {
+  .wl-rail-shortcut {
+    display: none;
+  }
+}
+
+/* A bulk bar or toast sits above the bottom bar on small screens. */
+@media (max-width: 47.99rem) {
+  .wl-rail-layout .wl-bulk-bar {
+    bottom: calc(
+      var(--bottom-bar-height) + env(safe-area-inset-bottom) + var(--space-2)
+    );
+  }
+
+  .wl-rail-layout .wl-toast-region {
+    bottom: calc(
+      var(--bottom-bar-height) + 2 * var(--touch-target) + var(--space-12)
+    );
+  }
+}
+
+/* Drawer: a panel from the start edge, over the page */
+.wl-drawer {
+  width: min(20rem, calc(100vw - var(--space-12)));
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0 auto 0 0;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--glow);
+}
+
+.wl-drawer[open] {
+  display: flex;
+  flex-direction: column;
+  animation: wl-slide-in var(--duration-short) ease-out;
+}
+
+.wl-drawer::backdrop {
+  background: color-mix(in srgb, var(--color-backdrop) 55%, transparent);
+}
+
+.wl-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.wl-drawer-title {
+  flex: 1;
+  font-size: var(--text-base);
+}
+
+.wl-drawer-close {
+  min-height: var(--touch-target);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.wl-drawer-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-3)
+    calc(var(--space-6) + env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+
+@keyframes wl-slide-in {
+  from {
+    transform: translateX(-100%);
+  }
+}

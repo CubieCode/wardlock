@@ -53,18 +53,18 @@ Share links and API tokens use one format: `wl_<public id>_<secret>`. The public
 
 ## Dashboard (D3.1)
 
-Signed-in owners manage everything from the dashboard on the dashboard host. Only built screens appear.
+Signed-in owners manage everything from the dashboard on the dashboard host. Only built screens appear. Every signed-in page has the rail (a bottom bar below 48rem) and the jump-to palette (⌘K on Apple devices, Ctrl+K elsewhere); the sites list also has the sites navigator (V5.6).
 
-| Page                       | What it is for                                                                    |
-| -------------------------- | --------------------------------------------------------------------------------- |
-| `/sign-in`, `/setup`       | Sign in by email code or passkey; set up the first owner                          |
-| `/sites`                   | The owner's sites, each with its policy and when it last went live                |
-| `/sites/<name>`            | One site: a header and its tabs (V5.10), Overview first                           |
-| `/sites/<name>/<tab>`      | The site's Links, Access, Domains, Deploys, Access log (A2.12) and Settings tabs  |
-| `/sites/<name>/links/<id>` | One share link and its access log (D3.3), on the Links tab                        |
-| `/passkeys`                | Add and remove passkeys (C1.6)                                                    |
-| `/cli-login`               | Approve or deny a `wardlock login` (C1.7)                                         |
-| `/acceptable-use`          | The [acceptable use policy](ACCEPTABLE-USE.md), readable signed in or out (O4.13) |
+| Page                       | What it is for                                                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------------------- |
+| `/sign-in`, `/setup`       | Sign in by email code or passkey; set up the first owner                                       |
+| `/sites`                   | The owner's sites, each with its policy and when it last went live, beside the sites navigator |
+| `/sites/<name>`            | One site: a header and its tabs (V5.10), Overview first                                        |
+| `/sites/<name>/<tab>`      | The site's Links, Access, Domains, Deploys, Access log (A2.12) and Settings tabs               |
+| `/sites/<name>/links/<id>` | One share link and its access log (D3.3), on the Links tab                                     |
+| `/passkeys`                | Add and remove passkeys (C1.6)                                                                 |
+| `/cli-login`               | Approve or deny a `wardlock login` (C1.7)                                                      |
+| `/acceptable-use`          | The [acceptable use policy](ACCEPTABLE-USE.md), readable signed in or out (O4.13)              |
 
 <details>
 <summary>Screen by screen</summary>
@@ -83,7 +83,9 @@ Signed-in owners manage everything from the dashboard on the dashboard host. Onl
 - **Access log** (A2.12): the Access log tab, `/sites/<name>/access-log`, lists the site's visits newest first with time, path, status, how the visitor got in (with the share link's label when it came through one) and the truncated IP, paged like the link access log.
 - **Taken down** (A2.13): a site the operator has taken down, or whose owner is suspended, shows a "Taken down" badge on `/sites` and beside its access word in the site header, and every tab of the site page says "The operator of this server has taken this site down…". The site stays readable and its policies and share links editable, but its custom domains are frozen: the Add domain field is replaced by a note that the domains stay as they are, and Remove, a path policy's Delete, Open site, Roll back and Tear down are hidden (Check now still runs). Its pin, group and tags can still be changed, since visitors never see them.
 - `/passkeys` (C1.6) lists the owner's passkeys with when each was added and last used, adds one with the browser's passkey prompt, and removes one after a confirmation naming it.
-- The signed-in shell has a sidebar (a top bar with a Menu button below 48rem) listing only built screens, the signed-in owner's address and Sign out.
+- **Shell** (V5.6). An icon rail lists the built screens (Overview, Sites, Passkeys; Analytics and Groups and tags join it when they are built), with Jump to and the account menu at its foot. Each icon is named on hover and keyboard focus. Below 48rem the same places sit in a bottom bar under a top bar with the wordmark. The account menu shows the signed-in owner's address, the **Theme** setting (System, Light or Dark) and Sign out. The theme is kept per device in the browser's local storage, applied before the first paint, and is System whenever storage holds nothing readable.
+- **Sites navigator** (V5.6), beside `/sites` from 48rem: Jump to and All sites with its count from `getSiteCounts`. Below 48rem it is left out until it has filters, since All sites is the Sites tab; with them, it opens from a Browse sites button in a drawer. Saved views (each with its count, a view with no sites hidden except Pinned), groups with counts and No group, and tags with counts join it once the sites list filters by `?v=`, `?g=` and `?t=` (V5.8); New group and Manage tags link to the organise screen once it is built (V5.7). The current entry is marked.
+- **Jump to** (V5.6): ⌘K on Apple devices or Ctrl+K elsewhere, or the Jump to button, opens a palette that searches the owner's sites on the server (`listSiteSummaries` with `q`, recent deploys first while the field is empty) and lists the built pages; saved views, groups and tags join it with the navigator's filters. The highlight stays on its result while late search results arrive, so Enter opens what is highlighted. Up and Down move, Enter opens, Escape closes and returns focus to whatever opened it; below 48rem it spans the screen.
 
 </details>
 

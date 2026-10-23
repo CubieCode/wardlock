@@ -26,7 +26,10 @@ export interface CommandGroup {
  * grouped listbox: Up and Down move the highlighted option (wrapping), Enter
  * or a click calls `onSelect`, Escape calls `onClose`, and closing returns
  * focus to whatever opened it. Typing moves the highlight back to the first
- * option. Below 48rem it spans the screen's width.
+ * option. Otherwise the highlight stays on its option (by `id`) as `groups`
+ * change, so results that arrive late never move what Enter opens; when that
+ * option is gone it falls back to the first. Below 48rem it spans the
+ * screen's width.
  */
 export function CommandPalette({
   open,
@@ -59,7 +62,8 @@ export function CommandPalette({
   const listRef = useRef<HTMLUListElement>(null);
   const handlers = useModal(ref, open, onClose);
   const id = useId();
-  const [active, setActive] = useState(0);
+  // The highlighted option's id; undefined means the first option.
+  const [activeId, setActiveId] = useState<string>();
 
   const shown = groups.filter((group) => group.items.length > 0);
   const options = shown.flatMap((group) => group.items);
@@ -67,7 +71,11 @@ export function CommandPalette({
   const starts = shown.map((_, g) =>
     shown.slice(0, g).reduce((sum, group) => sum + group.items.length, 0),
   );
-  const at = Math.min(active, Math.max(0, options.length - 1));
+  const found = options.findIndex((item) => item.id === activeId);
+  const at = Math.max(0, found);
+  // Pin the highlight to the option shown, so it stays put when results
+  // arrive above it (setting state while rendering re-renders at once).
+  if (found < 0 && options.length > 0) setActiveId(options[0]!.id);
   const optionId = (index: number) => `${id}-option-${index}`;
 
   useEffect(() => {
@@ -111,7 +119,7 @@ export function CommandPalette({
               value={query}
               autoFocus
               onChange={(event) => {
-                setActive(0);
+                setActiveId(undefined);
                 onQueryChange(event.target.value);
               }}
               onKeyDown={(event) => {
@@ -120,7 +128,7 @@ export function CommandPalette({
                   event.preventDefault();
                   if (count === 0) return;
                   const step = event.key === 'ArrowDown' ? 1 : -1;
-                  setActive((at + step + count) % count);
+                  setActiveId(options[(at + step + count) % count]!.id);
                 } else if (event.key === 'Enter') {
                   event.preventDefault();
                   const item = options[at];
@@ -167,7 +175,7 @@ export function CommandPalette({
                             i === at ? 'wl-palette-option-active' : null,
                           )}
                           onPointerMove={() => {
-                            if (i !== at) setActive(i);
+                            if (i !== at) setActiveId(item.id);
                           }}
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => onSelect(item)}

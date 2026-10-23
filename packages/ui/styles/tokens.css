@@ -120,6 +120,8 @@
   --touch-target: 44px;
   --content-width: 64rem;
   --sidebar-width: 16rem;
+  --rail-width: 4.5rem;
+  --bottom-bar-height: 4rem;
   --panel-width: 26rem;
   --duration-short: 120ms;
 }

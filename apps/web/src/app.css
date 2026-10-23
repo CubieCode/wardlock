@@ -45,22 +45,6 @@
   flex: 1 1 auto;
 }
 
-.shell-owner {
-  display: grid;
-  min-width: 0;
-}
-
-.shell-owner-label {
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-}
-
-.shell-owner-email {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .auth-alternative {
   display: grid;
   gap: var(--space-4);

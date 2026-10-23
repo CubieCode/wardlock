@@ -6,6 +6,11 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app.js';
 import { api } from './api.js';
+import { applyTheme, readTheme } from './shell/theme.js';
+
+// public/theme.js has already done this before the first paint; this covers
+// a page where that script did not run.
+applyTheme(readTheme());
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

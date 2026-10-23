@@ -183,6 +183,7 @@ describe('email-code sign-in', () => {
       code: '482913',
     });
     expect(here()).toBe('/');
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }));
     expect(screen.getByText('owner@example.test')).toBeTruthy();
     expect(
       screen
@@ -274,7 +275,8 @@ describe('signed in', () => {
       },
     });
     render(<App api={server.api} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(await screen.findByText('You have signed out.')).toBeTruthy();
     expect(here()).toBe('/sign-in');
     expect(server.count('POST /api/v0/auth/sign-out')).toBe(1);
@@ -287,7 +289,8 @@ describe('signed in', () => {
         Response.json({ code: 'internal', message: 'Oops.' }, { status: 500 }),
     });
     render(<App api={api} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect((await screen.findByRole('alert')).textContent).toBe(
       'Could not sign out. Try again.',
     );
@@ -375,6 +378,7 @@ describe('signed in', () => {
     held = null;
 
     // Meanwhile the owner signs out and back in.
+    fireEvent.click(screen.getByRole('button', { name: 'Account' }));
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     await screen.findByText('You have signed out.');
     type('Email address', 'owner@example.test');

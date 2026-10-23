@@ -8,6 +8,7 @@ import { OverviewPage } from '../overview/overview.js';
 import { SitePage } from '../sites/site-page.js';
 import { siteTabs } from '../sites/site-page-tabs.js';
 import { SitesPage } from '../sites/sites-page.js';
+import { overviewIcon, passkeysIcon, sitesIcon } from './icons.js';
 
 export interface RouteContext {
   api: ApiClient;
@@ -20,25 +21,31 @@ export interface RouteContext {
 export interface ShellRoute {
   /** Path pattern; `:name` segments become parameters. */
   path: string;
-  /** Sidebar label. Only built screens get one; omit for unlisted pages. */
-  nav?: string;
+  /**
+   * The screen's place in the rail, bottom bar and jump-to. Only built
+   * screens get one; omit it for pages reached from another page.
+   */
+  rail?: { label: string; icon: ReactNode };
+  /** Shows the sites navigator beside the page. */
+  navigator?: boolean;
   render: (context: RouteContext) => ReactNode;
 }
 
 /**
- * Screens shown inside the signed-in shell, in sidebar order. A signed-out
+ * Screens shown inside the signed-in shell, in rail order. A signed-out
  * visitor to any of them is sent to sign-in and returned afterwards. Add a
  * screen here when it is built, never before.
  */
 export const shellRoutes: ShellRoute[] = [
   {
     path: '/',
-    nav: 'Overview',
+    rail: { label: 'Overview', icon: overviewIcon },
     render: ({ api }) => <OverviewPage api={api} />,
   },
   {
     path: '/sites',
-    nav: 'Sites',
+    rail: { label: 'Sites', icon: sitesIcon },
+    navigator: true,
     render: ({ api }) => <SitesPage api={api} />,
   },
   // One entry per tab. The same key for every tab of a site keeps the page,
@@ -64,7 +71,7 @@ export const shellRoutes: ShellRoute[] = [
   },
   {
     path: '/passkeys',
-    nav: 'Passkeys',
+    rail: { label: 'Passkeys', icon: passkeysIcon },
     render: ({ api }) => <PasskeysPage api={api} />,
   },
 ];

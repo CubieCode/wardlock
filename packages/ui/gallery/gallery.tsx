@@ -13,11 +13,13 @@ import '../styles/index.css';
 import './gallery.css';
 import {
   BarList,
+  BottomBar,
   BulkBar,
   Button,
   Card,
   CommandPalette,
   Dialog,
+  Drawer,
   HubLayout,
   Menu,
   MenuCheckboxItem,
@@ -25,6 +27,9 @@ import {
   PageHeader,
   Popover,
   PopoverFilter,
+  Rail,
+  RailButton,
+  RailItem,
   SegmentedControl,
   Sparkline,
   StackedBars,
@@ -145,6 +150,15 @@ function PickerDemo() {
   );
 }
 
+// Decorative glyphs for the rail demo; the dashboard draws its own icons.
+const railPlaces = (
+  <>
+    <RailItem href="#rail" icon="◇" label="Overview" current />
+    <RailItem href="#places" icon="◎" label="Places" />
+    <RailItem href="#keys" icon="◆" label="Keys" />
+  </>
+);
+
 function Gallery() {
   const [range, setRange] = useState<'7' | '30' | '90'>('30');
   const [selected, setSelected] = useState(0);
@@ -152,6 +166,7 @@ function Gallery() {
   const [toastKey, setToastKey] = useState(0);
   const [dialog, setDialog] = useState(false);
   const [palette, setPalette] = useState(false);
+  const [drawer, setDrawer] = useState(false);
   const [query, setQuery] = useState('');
   const [chips, setChips] = useState(labels.slice(1, 4));
   const match = (group: CommandGroup) => ({
@@ -327,6 +342,41 @@ function Gallery() {
         />
       </Card>
 
+      <Card title="Rail, bottom bar and drawer">
+        <p className="gallery-muted">
+          The rail shows from 48rem and the bottom bar below it; hover or focus
+          a rail icon for its name.
+        </p>
+        <div className="gallery-rail">
+          <Rail
+            label="Rail example"
+            productName="Product"
+            homeHref="#rail"
+            foot={
+              <RailButton
+                icon="⌕"
+                label="Search"
+                shortcut="⌘K"
+                aria-keyshortcuts="Meta+K"
+              />
+            }
+          >
+            {railPlaces}
+          </Rail>
+        </div>
+        <div className="gallery-bottom-bar">
+          <BottomBar label="Bottom bar example">
+            {railPlaces}
+            <RailButton icon="⌕" label="Search" />
+          </BottomBar>
+        </div>
+        <div className="gallery-row">
+          <Button type="button" onClick={() => setDrawer(true)}>
+            Open drawer
+          </Button>
+        </div>
+      </Card>
+
       <Card title="Dialog and command palette">
         <div className="gallery-row">
           <Button type="button" onClick={() => setDialog(true)}>
@@ -361,6 +411,11 @@ function Gallery() {
       >
         <p>This shows the dialog layout; it removes nothing.</p>
       </Dialog>
+
+      <Drawer open={drawer} title="Filters" onClose={() => setDrawer(false)}>
+        <p>A panel from the start edge. Links inside close it.</p>
+        <a href="#rail">Back to the rail</a>
+      </Drawer>
 
       <CommandPalette
         open={palette}

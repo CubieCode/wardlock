@@ -64,8 +64,6 @@ for (const scheme of schemes) {
       await expect(
         page.getByRole('heading', { level: 1, name: 'Overview' }),
       ).toBeVisible();
-      const menu = page.getByRole('button', { name: 'Menu' });
-      if (await menu.isVisible()) await menu.click();
       await page
         .getByRole('navigation', { name: 'Main' })
         .getByRole('link', { name: 'Sites' })

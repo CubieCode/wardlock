@@ -69,13 +69,13 @@ function Routes() {
     const routeParams = matchPath(route.path, pathname);
     if (routeParams)
       return (
-        <Shell me={session.me} pathname={pathname}>
+        <Shell api={api} me={session.me} pathname={pathname} route={route}>
           {route.render({ api, params: routeParams, query: params })}
         </Shell>
       );
   }
   return (
-    <Shell me={session.me} pathname={pathname}>
+    <Shell api={api} me={session.me} pathname={pathname} route={undefined}>
       <NotFoundPage />
     </Shell>
   );
