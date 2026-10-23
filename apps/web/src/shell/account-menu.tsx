@@ -3,12 +3,14 @@
 
 import {
   Button,
+  NavItem,
+  NavList,
   Notice,
   Popover,
   RailButton,
   SegmentedControl,
 } from '@wardlock/ui';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useSession, type Me } from '../auth/session.js';
 import { accountIcon } from './icons.js';
 import { useTheme, type Theme } from './theme.js';
@@ -19,11 +21,21 @@ const themes: { value: Theme; label: string }[] = [
   { value: 'dark', label: 'Dark' },
 ];
 
+/** A screen's place in the rail, bottom bar or account sheet. */
+export interface Place {
+  href: string;
+  label: string;
+  icon: ReactNode;
+  current: boolean;
+}
+
 /**
  * The account place at the foot of the rail and bottom bar: who is signed
- * in, the theme for this device and Sign out.
+ * in, the theme for this device and Sign out. Below 48rem it also lists the
+ * `places` the bottom bar has no room for; while one of them is showing, the
+ * Account tab is marked current.
  */
-export function AccountMenu({ me }: { me: Me }) {
+export function AccountMenu({ me, places = [] }: { me: Me; places?: Place[] }) {
   const { signOut } = useSession();
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useTheme();
@@ -48,7 +60,12 @@ export function AccountMenu({ me }: { me: Me }) {
       onOpenChange={setOpen}
       placement="above"
       trigger={(props) => (
-        <RailButton icon={accountIcon} label="Account" {...props} />
+        <RailButton
+          icon={accountIcon}
+          label="Account"
+          aria-current={places.some((p) => p.current) ? 'page' : undefined}
+          {...props}
+        />
       )}
     >
       <div className="shell-account">
@@ -58,6 +75,25 @@ export function AccountMenu({ me }: { me: Me }) {
             {me.owner.email}
           </span>
         </p>
+        {places.length > 0 ? (
+          <NavList label="More places">
+            {places.map((p) => (
+              <NavItem
+                key={p.href}
+                href={p.href}
+                current={p.current}
+                className="shell-nav-row shell-account-place"
+                // Following a place closes the sheet.
+                onClick={() => setOpen(false)}
+              >
+                <span className="shell-nav-icon" aria-hidden="true">
+                  {p.icon}
+                </span>
+                <span className="shell-nav-name">{p.label}</span>
+              </NavItem>
+            ))}
+          </NavList>
+        ) : null}
         <div className="shell-theme">
           <span className="shell-theme-label" aria-hidden="true">
             Theme

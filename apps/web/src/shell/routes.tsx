@@ -4,11 +4,17 @@
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import type { ReactNode } from 'react';
 import { PasskeysPage } from '../auth/passkeys.js';
+import { OrganisePage } from '../organise/organise-page.js';
 import { OverviewPage } from '../overview/overview.js';
 import { SitePage } from '../sites/site-page.js';
 import { siteTabs } from '../sites/site-page-tabs.js';
 import { SitesPage } from '../sites/sites-page.js';
-import { overviewIcon, passkeysIcon, sitesIcon } from './icons.js';
+import {
+  organiseIcon,
+  overviewIcon,
+  passkeysIcon,
+  sitesIcon,
+} from './icons.js';
 
 export interface RouteContext {
   api: ApiClient;
@@ -22,14 +28,21 @@ export interface ShellRoute {
   /** Path pattern; `:name` segments become parameters. */
   path: string;
   /**
-   * The screen's place in the rail, bottom bar and jump-to. Only built
-   * screens get one; omit it for pages reached from another page.
+   * The screen's place in the rail and jump-to. Only built screens get one;
+   * omit it for pages reached from another page. Below 48rem, `bar` puts it
+   * in the bottom bar; every other place is listed in the Account sheet.
    */
-  rail?: { label: string; icon: ReactNode };
+  rail?: { label: string; icon: ReactNode; bar?: boolean };
   /** Shows the sites navigator beside the page. */
   navigator?: boolean;
   render: (context: RouteContext) => ReactNode;
 }
+
+/**
+ * How many places the bottom bar holds below 48rem, beside Jump to and
+ * Account: five items in all. Mark at most this many routes `bar`.
+ */
+export const barPlaces = 3;
 
 /**
  * Screens shown inside the signed-in shell, in rail order. A signed-out
@@ -39,12 +52,12 @@ export interface ShellRoute {
 export const shellRoutes: ShellRoute[] = [
   {
     path: '/',
-    rail: { label: 'Overview', icon: overviewIcon },
+    rail: { label: 'Overview', icon: overviewIcon, bar: true },
     render: ({ api }) => <OverviewPage api={api} />,
   },
   {
     path: '/sites',
-    rail: { label: 'Sites', icon: sitesIcon },
+    rail: { label: 'Sites', icon: sitesIcon, bar: true },
     navigator: true,
     render: ({ api }) => <SitesPage api={api} />,
   },
@@ -68,6 +81,11 @@ export const shellRoutes: ShellRoute[] = [
         linkId={params.linkId!}
       />
     ),
+  },
+  {
+    path: '/organise',
+    rail: { label: 'Groups and tags', icon: organiseIcon },
+    render: ({ api }) => <OrganisePage api={api} />,
   },
   {
     path: '/passkeys',

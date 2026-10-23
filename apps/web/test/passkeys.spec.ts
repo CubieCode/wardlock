@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { mailbox, passkeyOwnerFor, schemes } from './mail.js';
+import { goToPlace } from './places.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 if (!origin) throw new Error('Run through pnpm browser:test');
@@ -20,13 +21,6 @@ async function check(page: Page, info: TestInfo, name: string) {
 }
 
 /** Follows a link in the rail, or the bottom bar below 48rem. */
-async function goTo(page: Page, name: string) {
-  await page
-    .getByRole('navigation', { name: 'Main' })
-    .getByRole('link', { name })
-    .click();
-}
-
 async function signOut(page: Page) {
   await page
     .getByRole('navigation', { name: 'Main' })
@@ -73,7 +67,7 @@ for (const scheme of schemes) {
       await expect(
         page.getByRole('heading', { level: 1, name: 'Overview' }),
       ).toBeVisible();
-      await goTo(page, 'Passkeys');
+      await goToPlace(page, info, 'Passkeys');
       await expect(
         page.getByRole('heading', { level: 1, name: 'Passkeys' }),
       ).toBeVisible();

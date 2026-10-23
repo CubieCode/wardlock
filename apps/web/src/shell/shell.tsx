@@ -19,7 +19,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { Me } from '../auth/session.js';
-import { AccountMenu } from './account-menu.js';
+import { AccountMenu, type Place } from './account-menu.js';
 import { filterIcon, searchIcon } from './icons.js';
 import { JumpTo } from './jump-to.js';
 import {
@@ -32,12 +32,13 @@ import {
 } from './navigator.js';
 import { useTitle } from './page.js';
 import { matchPath } from './router.js';
-import { shellRoutes, type ShellRoute } from './routes.js';
+import { barPlaces, shellRoutes, type ShellRoute } from './routes.js';
 import './shell.css';
 
 /**
  * The signed-in frame: the rail (a bottom bar below 48rem) with each built
- * screen, Jump to and the account menu; the sites navigator beside the sites
+ * screen, Jump to and the account menu (below 48rem, the screens the bar has
+ * no room for are listed in the account sheet); the sites navigator beside the sites
  * list; and the jump-to palette on ⌘K (Apple) or Ctrl+K. Below 48rem the
  * navigator opens in a drawer from the Browse sites button.
  */
@@ -83,17 +84,30 @@ export function Shell({
   }, []);
 
   const openJump = () => setJumping(true);
-  const places = shellRoutes.map((route) =>
-    route.rail ? (
-      <RailItem
-        key={route.path}
-        href={route.path}
-        icon={route.rail.icon}
-        label={route.rail.label}
-        current={isCurrent(route.path, pathname)}
-      />
-    ) : null,
+  const placed = shellRoutes.flatMap((route) =>
+    route.rail
+      ? [
+          {
+            ...route.rail,
+            href: route.path,
+            current: isCurrent(route.path, pathname),
+          },
+        ]
+      : [],
   );
+  const place = (p: Place) => (
+    <RailItem
+      key={p.href}
+      href={p.href}
+      icon={p.icon}
+      label={p.label}
+      current={p.current}
+    />
+  );
+  // Below 48rem the bar keeps the places marked for it, with Jump to and
+  // Account five items at most; the rest move into the account sheet.
+  const barred = placed.filter((p) => p.bar).slice(0, barPlaces);
+  const sheet = placed.filter((p) => !barred.includes(p));
   const jump = (
     <RailButton
       icon={searchIcon}
@@ -130,16 +144,16 @@ export function Shell({
                 </>
               }
             >
-              {places}
+              {placed.map(place)}
             </Rail>
           ) : null
         }
         bottomBar={
           wide ? null : (
             <BottomBar label="Main">
-              {places}
+              {barred.map(place)}
               {jump}
-              <AccountMenu me={me} />
+              <AccountMenu me={me} places={sheet} />
             </BottomBar>
           )
         }

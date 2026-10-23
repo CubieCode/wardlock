@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { mailbox, ownerFor, schemes } from './mail.js';
+import { barPlaces, isMobile, railPlaces, sheetPlaces } from './places.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 if (!origin) throw new Error('Run through pnpm browser:test');
@@ -95,11 +96,16 @@ for (const scheme of schemes) {
       await expect(
         main.getByRole('link', { name: 'Overview' }),
       ).toHaveAttribute('aria-current', 'page');
+      const mobile = isMobile(info);
       await expect(
-        main.getByRole('link', { name: /^(Overview|Sites|Passkeys)$/ }),
-      ).toHaveText(['Overview', 'Sites', 'Passkeys']);
+        main.getByRole('link', { name: /^(?!Wardlock$)/ }),
+      ).toHaveText(mobile ? barPlaces : railPlaces);
       await openAccount(page);
       await expect(page.getByText(email, { exact: true })).toBeVisible();
+      // Below 48rem the places the bar has no room for are in the sheet.
+      const more = page.getByRole('navigation', { name: 'More places' });
+      if (mobile) await expect(more.getByRole('link')).toHaveText(sheetPlaces);
+      else await expect(more).toHaveCount(0);
       await shot('navigation');
       // Escape closes the account menu and returns focus to its button.
       await page.keyboard.press('Escape');
