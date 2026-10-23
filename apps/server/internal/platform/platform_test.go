@@ -177,6 +177,13 @@ func TestLoadConfig(t *testing.T) {
 		{"IPv6 prefix too long", map[string]string{"WARDLOCK_ACCESS_LOG_IPV6_PREFIX": "129"}, true, nil},
 		{"negative prefix", map[string]string{"WARDLOCK_ACCESS_LOG_IPV4_PREFIX": "-1"}, true, nil},
 		{"retention with unit", map[string]string{"WARDLOCK_ACCESS_LOG_RETENTION_DAYS": "30d"}, true, nil},
+		{"analytics retention default", nil, false, func(c platform.Config) bool { return c.AnalyticsRetention == 400*24*time.Hour }},
+		{"analytics retention apart from the log's", map[string]string{"WARDLOCK_ANALYTICS_RETENTION_DAYS": "30", "WARDLOCK_ACCESS_LOG_RETENTION_DAYS": "7"}, false, func(c platform.Config) bool {
+			return c.AnalyticsRetention == 30*24*time.Hour && c.AccessLogRetention == 7*24*time.Hour
+		}},
+		{"analytics kept forever", map[string]string{"WARDLOCK_ANALYTICS_RETENTION_DAYS": "0"}, false, func(c platform.Config) bool { return c.AnalyticsRetention == 0 }},
+		{"negative analytics retention", map[string]string{"WARDLOCK_ANALYTICS_RETENTION_DAYS": "-1"}, true, nil},
+		{"analytics retention too long", map[string]string{"WARDLOCK_ANALYTICS_RETENTION_DAYS": "36501"}, true, nil},
 		{"zero buffer", map[string]string{"WARDLOCK_ACCESS_LOG_BUFFER": "0"}, true, nil},
 		{"buffer too large", map[string]string{"WARDLOCK_ACCESS_LOG_BUFFER": "1000001"}, true, nil},
 		{"gc defaults", nil, false, func(c platform.Config) bool {

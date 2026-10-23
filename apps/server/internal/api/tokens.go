@@ -84,6 +84,8 @@ var tokenScopes = map[string][]string{
 	"PinSite":             {"manage"},
 	"UnpinSite":           {"manage"},
 	"OrganiseSites":       {"manage"},
+
+	"GetAnalytics": {"deploy", "manage"},
 }
 
 var sessionOnly = map[string]bool{

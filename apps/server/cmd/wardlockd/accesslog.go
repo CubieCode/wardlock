@@ -14,10 +14,14 @@ import (
 	"wardlock.nz/server/internal/store"
 )
 
-// startAccessLog starts the access-log writer. The returned stop flushes
-// what is buffered within platform.ShutdownTimeout; call it after the HTTP
-// server has shut down and before the database closes.
-func startAccessLog(ctx context.Context, cfg platform.Config, log *slog.Logger, db *store.DB) (accessRecorder, func()) {
+// startAccessLog backfills the traffic rollup the first time and starts
+// the access-log writer. The returned stop flushes what is buffered within
+// platform.ShutdownTimeout; call it after the HTTP server has shut down and
+// before the database closes.
+func startAccessLog(ctx context.Context, cfg platform.Config, log *slog.Logger, db *store.DB) (accessRecorder, func(), error) {
+	if err := accesslog.Backfill(ctx, db.Traffic(), time.Now, log); err != nil {
+		return accessRecorder{}, nil, err
+	}
 	w := accesslog.Start(accesslog.Config{
 		Repo: db.AccessLog(),
 		Log:  log,
@@ -26,8 +30,10 @@ func startAccessLog(ctx context.Context, cfg platform.Config, log *slog.Logger, 
 			IPv4Prefix: cfg.AccessLogIPv4Prefix,
 			IPv6Prefix: cfg.AccessLogIPv6Prefix,
 		},
-		BufferSize: cfg.AccessLogBuffer,
-		Retention:  cfg.AccessLogRetention,
+		BufferSize:         cfg.AccessLogBuffer,
+		Retention:          cfg.AccessLogRetention,
+		Traffic:            db.Traffic(),
+		AnalyticsRetention: cfg.AnalyticsRetention,
 	})
 	stop := func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), platform.ShutdownTimeout)
@@ -39,7 +45,7 @@ func startAccessLog(ctx context.Context, cfg platform.Config, log *slog.Logger, 
 			log.Warn("access log entries dropped since start", slog.Int64("dropped_total", n))
 		}
 	}
-	return accessRecorder{w}, stop
+	return accessRecorder{w}, stop, nil
 }
 
 // accessRecorder adapts the writer to the edge's AccessRecorder: the edge

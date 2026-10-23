@@ -716,7 +716,7 @@ Every run logs `garbage collection finished` with `deploys_pruned`, `blobs_delet
 
 ## Access log
 
-Every request for a published site's content (A2.8) adds one entry to the access log in the database: time, site, host, path, status, how the visitor got in (`public`, `link`, `password`, `email`, `oauth`, or `none` when refused), the share link's public ID, a truncated client IP and the User-Agent. Health checks, `/.wardlock/` pages, the dashboard and hosts with nothing published are not logged. The access log never holds a share link, and entries are kept for 90 days by default.
+Every request for a published site's content (A2.8) adds one entry to the access log in the database: time, site, host, path, status, how the visitor got in (`public`, `link`, `password`, `email`, `oauth`, or `none` when refused), the share link's public ID, a truncated client IP and the User-Agent. Health checks, `/.wardlock/` pages, the dashboard and hosts with nothing published are not logged. The access log never holds a share link, and entries are kept for 90 days by default. Analytics reads an hourly rollup of the log, written in the same batches and kept 400 days by default, independent of the log's retention; it holds counts only, never addresses, User-Agents or tokens ([SPEC](SPEC.md#analytics-v54)).
 
 <details>
 <summary>Variables</summary>
@@ -727,6 +727,7 @@ Every request for a published site's content (A2.8) adds one entry to the access
 | `WARDLOCK_ACCESS_LOG_IPV6_PREFIX`    | `48`    | leading bits of an IPv6 address kept, 0 to 128; 0 stores no IP                                     |
 | `WARDLOCK_ACCESS_LOG_RETENTION_DAYS` | `90`    | days to keep entries, 0 to 36500; 0 keeps them forever (taken-down sites' entries are always kept) |
 | `WARDLOCK_ACCESS_LOG_BUFFER`         | `10000` | entries that may wait for a write, 1 to 1000000, before dropping                                   |
+| `WARDLOCK_ANALYTICS_RETENTION_DAYS`  | `400`   | days to keep the hourly traffic rollup behind analytics (V5.4), 0 to 36500; 0 keeps it forever     |
 
 </details>
 
@@ -740,7 +741,7 @@ The defaults keep enough of an address to tell networks apart, not individual ho
 <details>
 <summary>Batched writes, dropped entries and retention</summary>
 
-Entries are written in batches off the request path: serving never waits on the database. If the database falls behind and the buffer fills, new entries are dropped rather than slowing visitors; the server logs a warning (`access log entries dropped`, at most every 10 seconds) with the running total, and a failed batch write is logged and counted the same way. On shutdown the server writes what is buffered within the shutdown timeout. Retention runs at start and hourly beside the writer, deleting entries older than the retention period (including those of deleted sites) 1,000 at a time so the database is never locked for long. It never prunes the entries of a taken-down site or a suspended owner's sites, which are evidence ([Operator controls](#operator-controls)); they are pruned by age again once the site is restored or the owner reinstated, or once the site is torn down.
+Entries are written in batches off the request path: serving never waits on the database. If the database falls behind and the buffer fills, new entries are dropped rather than slowing visitors; the server logs a warning (`access log entries dropped`, at most every 10 seconds) with the running total, and a failed batch write is logged and counted the same way. On shutdown the server writes what is buffered within the shutdown timeout. Each batch also adds its counts to the analytics rollup in the same transaction. The first start after upgrading counts the access log already stored into the rollup once, before serving; on a large log this can take a while and is logged as `backfilled traffic rollup` with the number of entries. Retention runs at start and hourly beside the writer, deleting entries older than the retention period (including those of deleted sites) 1,000 at a time so the database is never locked for long. It never prunes the entries of a taken-down site or a suspended owner's sites, which are evidence ([Operator controls](#operator-controls)); they are pruned by age again once the site is restored or the owner reinstated, or once the site is torn down. The rollup is pruned the same way, one hour at a time, after `WARDLOCK_ANALYTICS_RETENTION_DAYS`; tearing down or deleting a site deletes its rollup rows at once.
 
 </details>
 

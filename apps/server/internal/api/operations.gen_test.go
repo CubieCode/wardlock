@@ -21,6 +21,7 @@ type operation struct {
 
 // operations lists every operation in packages/api-spec/openapi.yaml.
 var operations = []operation{
+	{id: "GetAnalytics", method: "GET", path: "/api/v0/analytics", jsonBody: false, security: []string{"sessionCookie", "apiToken:deploy", "apiToken:manage"}},
 	{id: "SendEmailCode", method: "POST", path: "/api/v0/auth/email-code", jsonBody: true, security: []string{}},
 	{id: "VerifyEmailCode", method: "POST", path: "/api/v0/auth/email-code/verify", jsonBody: true, security: []string{}},
 	{id: "StartPasskeySignIn", method: "POST", path: "/api/v0/auth/passkey", jsonBody: false, security: []string{}},

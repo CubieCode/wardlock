@@ -293,6 +293,12 @@ func TestSchemaConventions(t *testing.T) {
 	}
 	for table, cs := range cols {
 		hasPK := false
+		pkCols := 0
+		for _, c := range cs {
+			if c.pk {
+				pkCols++
+			}
+		}
 		for _, c := range cs {
 			hasPK = hasPK || c.pk
 			switch {
@@ -300,7 +306,9 @@ func TestSchemaConventions(t *testing.T) {
 				t.Errorf("%s.%s is %s; IDs are TEXT", table, c.name, c.typ)
 			case strings.HasSuffix(c.name, "_at") && c.typ != "INTEGER":
 				t.Errorf("%s.%s is %s; timestamps are INTEGER Unix milliseconds", table, c.name, c.typ)
-			case c.pk && c.typ == "INTEGER":
+			// Only a one-column INTEGER primary key aliases rowid; a
+			// composite key (such as a rollup's site and hour) does not.
+			case c.pk && pkCols == 1 && c.typ == "INTEGER":
 				t.Errorf("%s.%s is an INTEGER primary key; that aliases rowid, use a TEXT ID", table, c.name)
 			}
 		}

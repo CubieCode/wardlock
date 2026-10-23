@@ -1147,6 +1147,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/analytics': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Count requests over the last 7, 30 or 90 days.
+     * @description Requests for the owner's sites over the last `days` days, from the hourly traffic rollup: per UTC hour, so a client can draw days in the viewer's timezone, and in total by way in, site, group, tag, browser family, the busiest share links and the busiest paths. Every count is of requests, split into `allowed` (answered with a status below 400) and `refused` (400 and above); none is a count of visitors. The range is the `days` × 24 whole UTC hours ending with the current one. Give at most one of `site`, `group` and `tag` to narrow it; groups and tags are read as they are now, so a site's history moves with it. Giving more than one answers `400 invalid_request`; a missing site, group or tag and another owner's answer the same `404`.
+     */
+    get: operations['getAnalytics'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1784,6 +1804,101 @@ export interface components {
       /** @description The User-Agent header; absent when the request sent none. */
       userAgent?: string;
     };
+    /**
+     * Format: int32
+     * @description The range of an analytics report, in days.
+     * @default 7
+     * @enum {integer}
+     */
+    AnalyticsDays: 7 | 30 | 90;
+    /** @description Requests answered below 400 (`allowed`) and at 400 or above (`refused`). */
+    RequestCount: {
+      allowed: components['schemas']['Requests'];
+      refused: components['schemas']['Requests'];
+    };
+    /**
+     * Format: int64
+     * @description A number of requests.
+     */
+    Requests: number;
+    Analytics: {
+      days: components['schemas']['AnalyticsDays'];
+      /** @description The start of the first hour counted. */
+      from: components['schemas']['Timestamp'];
+      /** @description The end of the current hour, the first not counted. */
+      to: components['schemas']['Timestamp'];
+      total: components['schemas']['RequestCount'];
+      /** @description Each UTC hour with requests, oldest first; hours with none are left out. */
+      hours: components['schemas']['AnalyticsHour'][];
+      /** @description Requests by way in, each way with requests, by name. */
+      via: components['schemas']['AnalyticsVia'][];
+      /** @description Requests by site, each site with requests, by name. */
+      sites: components['schemas']['AnalyticsSite'][];
+      /** @description Requests by the group each site is in now, each group with requests; the entry without `groupId` is the ungrouped sites. */
+      groups: components['schemas']['AnalyticsGroup'][];
+      /** @description Requests by each tag the sites have now, each tag with requests. A site with several tags counts under each, so these can add up to more than the total. */
+      tags: components['schemas']['AnalyticsTag'][];
+      /** @description The 10 share links with the most requests, busiest first. */
+      links: components['schemas']['AnalyticsLink'][];
+      /** @description The 10 paths with the most requests, busiest first. The rollup keeps a site's first 50 distinct paths in each hour, up to 256 bytes each; requests for any other path count in `otherPaths`. */
+      paths: components['schemas']['AnalyticsPath'][];
+      /** @description Requests for the paths the rollup did not keep. */
+      otherPaths: components['schemas']['RequestCount'];
+      /** @description Requests by browser family, each family with requests, by name. */
+      browsers: components['schemas']['AnalyticsBrowser'][];
+    };
+    AnalyticsHour: {
+      /** @description The start of the hour. */
+      hour: components['schemas']['Timestamp'];
+      allowed: components['schemas']['Requests'];
+      refused: components['schemas']['Requests'];
+    };
+    AnalyticsVia: {
+      via: components['schemas']['AccessVia'];
+      allowed: components['schemas']['Requests'];
+      refused: components['schemas']['Requests'];
+    };
+    AnalyticsSite: {
+      site: components['schemas']['SiteName'];
+      allowed: components['schemas']['Requests'];
+      refused: components['schemas']['Requests'];
+    };
+    AnalyticsGroup: {
+      /** @description Absent for the sites in no group. */
+      groupId?: components['schemas']['Id'];
+      allowed: components['schemas']['Requests'];
+      refused: components['schemas']['Requests'];
+    };
+    AnalyticsTag: {
+      tagId: components['schemas']['Id'];
+      allowed: components['schemas']['Requests'];
+      refused: components['schemas']['Requests'];
+    };
+    AnalyticsLink: {
+      site: components['schemas']['SiteName'];
+      publicId: components['schemas']['LinkPublicId'];
+      /** @description The link's label, while the link exists (revoked or not); absent when it has none or has been deleted. */
+      label?: string;
+      allowed: components['schemas']['Requests'];
+      refused: components['schemas']['Requests'];
+    };
+    AnalyticsPath: {
+      site: components['schemas']['SiteName'];
+      /** @description The path, without the query string. */
+      path: string;
+      allowed: components['schemas']['Requests'];
+      refused: components['schemas']['Requests'];
+    };
+    AnalyticsBrowser: {
+      browser: components['schemas']['BrowserFamily'];
+      allowed: components['schemas']['Requests'];
+      refused: components['schemas']['Requests'];
+    };
+    /**
+     * @description The browser family of the request's User-Agent: `chrome`, `safari`, `firefox`, `edge`, `tool` (scripts and tools: command-line clients, HTTP libraries, crawlers and other bots, and requests with no User-Agent) or `other`.
+     * @enum {string}
+     */
+    BrowserFamily: 'chrome' | 'safari' | 'firefox' | 'edge' | 'tool' | 'other';
     AccessLogPage: {
       items: components['schemas']['AccessLogEntry'][];
       nextCursor?: components['schemas']['Cursor'];
@@ -4665,6 +4780,152 @@ export interface operations {
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
       413: components['responses']['TooLarge'];
+      default: components['responses']['Error'];
+    };
+  };
+  getAnalytics: {
+    parameters: {
+      query?: {
+        /**
+         * @description How many days back to count, ending with the current hour.
+         * @example 30
+         */
+        days?: components['schemas']['AnalyticsDays'];
+        /**
+         * @description Only this site, by name.
+         * @example docs
+         */
+        site?: components['schemas']['SiteName'];
+        /**
+         * @description Only the sites now in this group, by ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70
+         */
+        group?: components['schemas']['Id'];
+        /**
+         * @description Only the sites that now have this tag, by ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80
+         */
+        tag?: components['schemas']['Id'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The requests in the range and scope. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "days": 7,
+           *       "from": 1767225600000,
+           *       "to": 1767830400000,
+           *       "total": {
+           *         "allowed": 42,
+           *         "refused": 3
+           *       },
+           *       "hours": [
+           *         {
+           *           "hour": 1767229200000,
+           *           "allowed": 40,
+           *           "refused": 3
+           *         },
+           *         {
+           *           "hour": 1767232800000,
+           *           "allowed": 2,
+           *           "refused": 0
+           *         }
+           *       ],
+           *       "via": [
+           *         {
+           *           "via": "link",
+           *           "allowed": 30,
+           *           "refused": 0
+           *         },
+           *         {
+           *           "via": "none",
+           *           "allowed": 0,
+           *           "refused": 3
+           *         },
+           *         {
+           *           "via": "public",
+           *           "allowed": 12,
+           *           "refused": 0
+           *         }
+           *       ],
+           *       "sites": [
+           *         {
+           *           "site": "docs",
+           *           "allowed": 42,
+           *           "refused": 3
+           *         }
+           *       ],
+           *       "groups": [
+           *         {
+           *           "groupId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70",
+           *           "allowed": 42,
+           *           "refused": 3
+           *         }
+           *       ],
+           *       "tags": [
+           *         {
+           *           "tagId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80",
+           *           "allowed": 42,
+           *           "refused": 3
+           *         }
+           *       ],
+           *       "links": [
+           *         {
+           *           "site": "docs",
+           *           "publicId": "q4v7m2xkpa",
+           *           "label": "Client review",
+           *           "allowed": 30,
+           *           "refused": 0
+           *         }
+           *       ],
+           *       "paths": [
+           *         {
+           *           "site": "docs",
+           *           "path": "/",
+           *           "allowed": 25,
+           *           "refused": 1
+           *         },
+           *         {
+           *           "site": "docs",
+           *           "path": "/docs/",
+           *           "allowed": 17,
+           *           "refused": 0
+           *         }
+           *       ],
+           *       "otherPaths": {
+           *         "allowed": 0,
+           *         "refused": 2
+           *       },
+           *       "browsers": [
+           *         {
+           *           "browser": "chrome",
+           *           "allowed": 28,
+           *           "refused": 0
+           *         },
+           *         {
+           *           "browser": "tool",
+           *           "allowed": 14,
+           *           "refused": 3
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['Analytics'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
       default: components['responses']['Error'];
     };
   };

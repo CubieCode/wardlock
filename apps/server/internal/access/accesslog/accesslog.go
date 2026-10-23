@@ -4,9 +4,11 @@
 // Package accesslog is the access-log pipeline: the edge hands it one Entry
 // per site access, it scrubs the entry (IP truncation, token and query
 // redaction) and a background goroutine writes buffered entries to the store
-// in batches, so serving never waits on the database. It also prunes entries
-// past the retention period. Like the rest of internal/access it takes plain
-// values and imports no HTTP packages.
+// in batches, so serving never waits on the database. Each batch also adds
+// to the traffic rollup for analytics (V5.4), classifying every
+// User-Agent's browser family first. It prunes entries and rollup hours
+// past their retention periods. Like the rest of internal/access it takes
+// plain values and imports no HTTP packages.
 package accesslog
 
 import (
@@ -54,6 +56,12 @@ type Repository interface {
 	Prune(ctx context.Context, cutoff time.Time, limit int) (int64, error)
 }
 
+// TrafficRepository is the part of store.Traffic the writer uses to prune
+// the rollup.
+type TrafficRepository interface {
+	PruneHour(ctx context.Context, cutoff time.Time) (bool, error)
+}
+
 // Config configures a Writer. Zero durations and sizes take the defaults.
 type Config struct {
 	Repo Repository
@@ -68,8 +76,12 @@ type Config struct {
 	BatchSize     int
 	FlushInterval time.Duration
 	// Retention is how long entries are kept; zero keeps them forever.
-	Retention     time.Duration
-	PruneInterval time.Duration
+	Retention time.Duration
+	// Traffic, when set, has its rollup hours older than
+	// AnalyticsRetention pruned; zero keeps them forever.
+	Traffic            TrafficRepository
+	AnalyticsRetention time.Duration
+	PruneInterval      time.Duration
 	// PruneChunk is how many entries one delete removes; pruning repeats
 	// until none are left, so no statement holds the write lock for long.
 	PruneChunk int
@@ -131,7 +143,7 @@ func Start(cfg Config) *Writer {
 	}
 	var wg sync.WaitGroup
 	wg.Go(w.run)
-	if cfg.Retention > 0 {
+	if cfg.Retention > 0 || cfg.Traffic != nil && cfg.AnalyticsRetention > 0 {
 		wg.Go(w.runPruner)
 	}
 	go func() { wg.Wait(); close(w.done) }()
@@ -225,11 +237,17 @@ func (w *Writer) run() {
 	}
 }
 
-// write appends batch in one transaction and returns it emptied. A failed
-// batch is dropped and counted: retrying would back up the buffer.
+// write appends batch, with its rollup counts, in one transaction and
+// returns it emptied. A failed batch is dropped and counted: retrying would
+// back up the buffer.
 func (w *Writer) write(batch []store.AccessEntry) []store.AccessEntry {
 	if len(batch) == 0 {
 		return batch
+	}
+	// Classified here, off the request path, from the User-Agent as
+	// stored, so the backfill would count the entry the same way.
+	for i := range batch {
+		batch[i].Browser = Classify(batch[i].UserAgent)
 	}
 	ctx, cancel := context.WithTimeout(w.ctx, writeTimeout)
 	defer cancel()
@@ -255,9 +273,19 @@ func (w *Writer) runPruner() {
 	}
 }
 
-// prune deletes expired entries a chunk at a time, each chunk within
-// writeTimeout, until none are left or the writer closes.
+// prune deletes expired entries and rollup hours.
 func (w *Writer) prune() {
+	if w.cfg.Retention > 0 {
+		w.pruneLog()
+	}
+	if w.cfg.Traffic != nil && w.cfg.AnalyticsRetention > 0 {
+		w.pruneTraffic()
+	}
+}
+
+// pruneLog deletes expired entries a chunk at a time, each chunk within
+// writeTimeout, until none are left or the writer closes.
+func (w *Writer) pruneLog() {
 	cutoff := w.cfg.Now().Add(-w.cfg.Retention)
 	var total int64
 	for {
@@ -286,4 +314,53 @@ func (w *Writer) pruneChunk(cutoff time.Time) (int64, error) {
 	ctx, cancel := context.WithTimeout(w.ctx, writeTimeout)
 	defer cancel()
 	return w.cfg.Repo.Prune(ctx, cutoff, w.cfg.PruneChunk)
+}
+
+// pruneTraffic deletes expired rollup hours one at a time, each within
+// writeTimeout, until none are left or the writer closes.
+func (w *Writer) pruneTraffic() {
+	cutoff := w.cfg.Now().Add(-w.cfg.AnalyticsRetention)
+	var hours int64
+	for {
+		ctx, cancel := context.WithTimeout(w.ctx, writeTimeout)
+		pruned, err := w.cfg.Traffic.PruneHour(ctx, cutoff)
+		cancel()
+		if err != nil {
+			w.log.Error("prune traffic rollup", slog.Int64("hours", hours), slog.Any("error", err))
+			return
+		}
+		if !pruned {
+			break
+		}
+		hours++
+		select {
+		case <-w.stop:
+			w.log.Info("pruned traffic rollup until shutdown", slog.Int64("hours", hours))
+			return
+		default:
+		}
+	}
+	if hours > 0 {
+		w.log.Info("pruned traffic rollup", slog.Int64("hours", hours))
+	}
+}
+
+// Backfiller is the part of store.Traffic the backfill uses.
+type Backfiller interface {
+	Backfill(ctx context.Context, classify func(userAgent string) store.Browser, at time.Time) (int64, bool, error)
+}
+
+// Backfill counts the access log written before the traffic rollup
+// existed into it, once: later calls change nothing. Run it before Start,
+// so the backfill's transaction never holds up a batch.
+func Backfill(ctx context.Context, repo Backfiller, now func() time.Time, log *slog.Logger) error {
+	start := now()
+	n, ran, err := repo.Backfill(ctx, Classify, start)
+	if err != nil {
+		return err
+	}
+	if ran {
+		log.Info("backfilled traffic rollup", slog.Int64("entries", n), slog.Duration("took", now().Sub(start)))
+	}
+	return nil
 }

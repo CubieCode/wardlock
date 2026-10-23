@@ -89,6 +89,7 @@ Every v1 item in the foundation, core, access, dashboard and operations areas is
 | O4.11 | The release workflow's publish job, run only on an authorised `v*` tag                                                                                                           | DEPLOYMENT "Releases and module tags"                                       |
 | O4.12 | `deploy/vps/`: one VPS with automatic TLS and R2 blob storage                                                                                                                    | DEPLOYMENT "VPS with automatic TLS and R2 (O4.12)"                          |
 | O4.13 | `/acceptable-use`, bundled from `docs/ACCEPTABLE-USE.md`, and the policy line and Continue step on the setup and sign-in-link pages                                              | SPEC "Dashboard"                                                            |
+| V5.4  | The traffic rollup (`traffic_*` tables, `store.Traffic`, `accesslog.Classify` and `Backfill`) and `getAnalytics` (`access.Service.Analytics`)                                    | Access log pipeline, Data model, SPEC "Analytics"                           |
 
 O4.4, O4.6 and O4.7 changed documents only (the launch checklist, the alpha documentation refresh and the CLA text).
 
@@ -320,9 +321,9 @@ Every table is in the diagram below, and `internal/store/schema_test.go` checks 
 <details>
 <summary>Migrations and conventions</summary>
 
-Migration `0002_core_schema.sql` creates every table below; `0003_deploy_spa_and_owner_blobs.sql` (C1.2) moves the SPA fallback flag from sites to deploys, adds `owner_blobs` and the optional columns the API contract exposes (`owner_sessions.user_agent`, `domains.verified_at` and `failure_detail`, `cli_login_requests.client_name`); `0004_owner_passkeys.sql` (C1.6) adds `owner_passkeys`; `0005_deploy_renditions.sql` (A2.6) adds `deploy_renditions`; `0006_policy_allowlist_and_email_codes.sql` (A2.4) adds `policy_allowlist` and `visitor_email_codes`; `0007_deploy_immutable_assets.sql` (C1.10) adds `deploys.immutable_assets`, the long-term caching opt-in. `0008_operator_controls.sql` (A2.13) adds the nullable `owners.suspended_at` and `sites.taken_down_at` (UTC Unix milliseconds) that operator commands set. `0009_owner_quotas.sql` (A2.14) adds the per-owner quota overrides (`owners.max_storage_bytes`, `max_sites`, `max_deploys_per_day`; NULL follows the instance default, 0 is unlimited), the running total `owners.stored_bytes`, `owner_blob_refs` (each distinct blob the owner's deploys list, with how many deploys list it) and `owner_deploy_log` (when each deploy was created, kept 24 hours for the daily quota), and fills all three from the existing deploys. `0010_content_screening.sql` (A2.15) adds `owners.moderation_exempt` and `moderation_results`, one row per content hash ever queued for screening: the persistent queue while `next_attempt_at` is set, and the verdict and the operator's decisions on it (see [Content screening](#content-screening)). `0011_deploy_path_prefix.sql` (C1.13) adds `deploys.path_prefix`, the prefix a path deploy replaced (NULL for a full deploy), and `deploys.base_deploy_id`, the active deploy it was built on, which activation requires still to be active (`ON DELETE SET NULL`). `0012_groups_tags_pins.sql` (V5.3) adds `site_groups` (name as typed, unique per owner by `name_key`, its NFC lowercase form computed in Go; optional note), `tags` (name unique per owner, colour slot 0–8) and `site_tags`, and the nullable `sites.group_id` (`ON DELETE SET NULL`, so deleting a group ungroups its sites) and `sites.pinned_at`; `store.Organisation` reads and writes them, and its queries set a site's group or add a tag row only when the group or tag has the site's owner. Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
+Migration `0002_core_schema.sql` creates every table below; `0003_deploy_spa_and_owner_blobs.sql` (C1.2) moves the SPA fallback flag from sites to deploys, adds `owner_blobs` and the optional columns the API contract exposes (`owner_sessions.user_agent`, `domains.verified_at` and `failure_detail`, `cli_login_requests.client_name`); `0004_owner_passkeys.sql` (C1.6) adds `owner_passkeys`; `0005_deploy_renditions.sql` (A2.6) adds `deploy_renditions`; `0006_policy_allowlist_and_email_codes.sql` (A2.4) adds `policy_allowlist` and `visitor_email_codes`; `0007_deploy_immutable_assets.sql` (C1.10) adds `deploys.immutable_assets`, the long-term caching opt-in. `0008_operator_controls.sql` (A2.13) adds the nullable `owners.suspended_at` and `sites.taken_down_at` (UTC Unix milliseconds) that operator commands set. `0009_owner_quotas.sql` (A2.14) adds the per-owner quota overrides (`owners.max_storage_bytes`, `max_sites`, `max_deploys_per_day`; NULL follows the instance default, 0 is unlimited), the running total `owners.stored_bytes`, `owner_blob_refs` (each distinct blob the owner's deploys list, with how many deploys list it) and `owner_deploy_log` (when each deploy was created, kept 24 hours for the daily quota), and fills all three from the existing deploys. `0010_content_screening.sql` (A2.15) adds `owners.moderation_exempt` and `moderation_results`, one row per content hash ever queued for screening: the persistent queue while `next_attempt_at` is set, and the verdict and the operator's decisions on it (see [Content screening](#content-screening)). `0011_deploy_path_prefix.sql` (C1.13) adds `deploys.path_prefix`, the prefix a path deploy replaced (NULL for a full deploy), and `deploys.base_deploy_id`, the active deploy it was built on, which activation requires still to be active (`ON DELETE SET NULL`). `0012_groups_tags_pins.sql` (V5.3) adds `site_groups` (name as typed, unique per owner by `name_key`, its NFC lowercase form computed in Go; optional note), `tags` (name unique per owner, colour slot 0–8) and `site_tags`, and the nullable `sites.group_id` (`ON DELETE SET NULL`, so deleting a group ungroups its sites) and `sites.pinned_at`; `store.Organisation` reads and writes them, and its queries set a site's group or add a tag row only when the group or tag has the site's owner. `0013_traffic_rollup.sql` (V5.4) adds the traffic rollup for analytics: `traffic_hours` (requests per site and UTC hour by way in), `traffic_links` (by share-link public ID), `traffic_paths` (top paths: a site's first 50 distinct paths in each hour, the rest under the empty path) and `traffic_browsers` (by browser family), each counting `allowed` (status below 400) and `refused`, and `traffic_backfill`, the one row that marks the one-time backfill from `access_log` done. `store.AccessLog`'s `Append` adds each batch to them in its transaction once that row exists, and `store.Traffic` backfills, prunes and reports them; they hold no IP, User-Agent or token. Solid lines are foreign keys; the dotted line is a reference by value with no foreign key.
 
-Columns follow the portable-SQL rules: text IDs (UUIDv7, `store.NewID`) generated in Go, timestamps as UTC Unix milliseconds in `INTEGER` (Postgres `BIGINT`), booleans as `INTEGER` with `CHECK (x IN (0, 1))`, upserts with `ON CONFLICT … DO UPDATE` (or `DO NOTHING`). Token, session and code columns hold only HMAC hashes (a visitor email code's address too), and the policy password only an Argon2id hash; the domain verification token is stored as is because it is published in DNS. `access_log` has no foreign keys, so it can later move to a separate store and outlive the sites it mentions. A site session's link and policy are composite foreign keys `(site_id, share_link_id)` and `(site_id, policy_id)` onto `UNIQUE (site_id, id)` in `share_links` and `policies`, so a session can never name another site's link or policy. A policy's allowlist entries and visitor email codes (A2.4) use the same `(site_id, policy_id)` key and go with the policy. Deleting a site cascades to its domains, deploys and their manifests, policies (with their allowlists and email codes), share links, site sessions and `site_tags` rows; the active deploy cannot be deleted on its own.
+Columns follow the portable-SQL rules: text IDs (UUIDv7, `store.NewID`) generated in Go, timestamps as UTC Unix milliseconds in `INTEGER` (Postgres `BIGINT`), booleans as `INTEGER` with `CHECK (x IN (0, 1))`, upserts with `ON CONFLICT … DO UPDATE` (or `DO NOTHING`). Token, session and code columns hold only HMAC hashes (a visitor email code's address too), and the policy password only an Argon2id hash; the domain verification token is stored as is because it is published in DNS. `access_log` has no foreign keys, so it can later move to a separate store and outlive the sites it mentions. A site session's link and policy are composite foreign keys `(site_id, share_link_id)` and `(site_id, policy_id)` onto `UNIQUE (site_id, id)` in `share_links` and `policies`, so a session can never name another site's link or policy. A policy's allowlist entries and visitor email codes (A2.4) use the same `(site_id, policy_id)` key and go with the policy. Deleting a site cascades to its domains, deploys and their manifests, policies (with their allowlists and email codes), share links, site sessions, `site_tags` rows and traffic rollup rows; the active deploy cannot be deleted on its own.
 
 Names chosen for C1.1: one-time owner credentials live in `owner_login_codes` (`purpose` is `setup` for the first-start setup URL with no owner, `signin_url` for the `admin create` or invite sign-in URL, `email_code` for the 6-digit code). An invite is an `owners` row with `invited_by` set and `accepted_at` NULL plus a `signin_url` code; `accepted_at` is set on first sign-in. CLI login (C1.7) is `cli_login_requests`: the CLI polls with a hashed device code and the API token is minted only when an approved request is redeemed. `client_name` holds what the CLI called itself until approval, then the name of the token it will receive. Poll intervals and API-token failure limits are kept in memory (`internal/owners`), like the sign-in limits; a restart only resets them early.
 
@@ -363,6 +364,10 @@ erDiagram
   blobs |o..o| moderation_results : "sha256, no FK"
   sites ||--o{ policies : "site_id"
   sites ||--o{ share_links : "site_id"
+  sites ||--o{ traffic_hours : "site_id"
+  sites ||--o{ traffic_links : "site_id"
+  sites ||--o{ traffic_paths : "site_id"
+  sites ||--o{ traffic_browsers : "site_id"
   sites ||--o{ site_sessions : "site_id"
   share_links |o--o{ site_sessions : "(site_id, share_link_id)"
   policies ||--o{ site_sessions : "(site_id, policy_id)"
@@ -614,6 +619,38 @@ erDiagram
     TEXT ip
     TEXT user_agent
   }
+  traffic_hours {
+    TEXT site_id PK, FK
+    INTEGER hour PK "start of the UTC hour"
+    TEXT via PK "public, link, password, email, oauth, none"
+    INTEGER allowed "status below 400"
+    INTEGER refused
+  }
+  traffic_links {
+    TEXT site_id PK, FK
+    INTEGER hour PK "start of the UTC hour"
+    TEXT link_public_id PK "no FK"
+    INTEGER allowed "status below 400"
+    INTEGER refused
+  }
+  traffic_paths {
+    TEXT site_id PK, FK
+    INTEGER hour PK "start of the UTC hour"
+    TEXT path PK "first 50 per site and hour; empty for the rest"
+    INTEGER allowed "status below 400"
+    INTEGER refused
+  }
+  traffic_browsers {
+    TEXT site_id PK, FK
+    INTEGER hour PK "start of the UTC hour"
+    TEXT browser PK "chrome, safari, firefox, edge, tool, other"
+    INTEGER allowed "status below 400"
+    INTEGER refused
+  }
+  traffic_backfill {
+    TEXT id PK "access_log"
+    INTEGER done_at
+  }
 ```
 
 </details>
@@ -648,6 +685,7 @@ Access-log writes go into an in-memory buffer flushed in batches (every second o
 - **Cheap work on the request goroutine.** `Record` truncates the IP, drops any query or fragment, reduces any `wl_<public id>_<secret>` in the path or User-Agent to its public ID, caps lengths, normalises `via` (an unknown value, or `link` without a public ID, becomes `none`; a status outside 100 to 599 is dropped and counted) so no entry can fail its batch's checks, assigns an ID and makes a non-blocking send into a bounded channel (`WARDLOCK_ACCESS_LOG_BUFFER`); when the channel is full it counts a drop.
 - **Writing.** One writer goroutine appends batches in a transaction through `store.AccessLog`, with a 10-second bound per write; a failed batch is logged and counted as dropped, not retried, so it cannot back up the buffer. Drops are logged from whichever goroutine sees them, at most every 10 seconds, because the writer goroutine may be the one stuck. `Close`, called after the HTTP server has shut down and before the database closes, stops accepting entries, drains the channel and writes the rest within `platform.ShutdownTimeout`. `Close` relies on the store honouring context cancellation to return at its deadline.
 - **Pruning.** A second goroutine prunes entries older than the retention period, except those of a taken-down site or a suspended owner's site, at start and hourly, in chunks of 1,000 rows (`DELETE … WHERE id IN (SELECT … LIMIT …)`), each within the 10-second bound, until none are left or the writer closes, so a large backlog never holds the write lock for long or delays batches. Pruning has no index on `occurred_at` alone, so each chunk scans; adding one needs a migration (follow-up).
+- **Traffic rollup (V5.4).** The writer goroutine classifies each entry's stored User-Agent with `accesslog.Classify` and `store.AccessLog.Append` adds the batch's counts to the `traffic_*` tables in the batch's own transaction (one upsert per site, hour and value, a path only while the site has fewer than 50 in the hour), so the rollup equals a recount of the log and costs serving nothing. `cmd/wardlockd` runs `accesslog.Backfill` before starting the writer: `store.Traffic.Backfill` claims the `traffic_backfill` row first, taking the write lock, then counts the existing log in chunks of 5,000 in the same transaction, and `Append` adds to the rollup only once that row exists. The pruner deletes rollup hours past `WARDLOCK_ANALYTICS_RETENTION_DAYS` one hour at a time across the four tables, with the same takedown and suspension hold as the log. `store.Traffic.Report` reads it, owner-scoped, for `access.Service.Analytics`.
 - **Reading.** `store.AccessLog` lists a site's entries, or one link's on a site, newest first with an `(occurred_at, id)` cursor and a limit clamped to 1 to 1,000, joined to `sites` on the owner, so a foreign or deleted site lists nothing. `access.Service` serves them to the API as `LinkAccessLog` (D3.3) and `SiteAccessLog` (A2.12).
 
 </details>

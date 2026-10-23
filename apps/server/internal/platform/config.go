@@ -80,6 +80,10 @@ type Config struct {
 	AccessLogIPv6Prefix int
 	AccessLogRetention  time.Duration
 	AccessLogBuffer     int
+	// AnalyticsRetention is how long the traffic rollup keeps an hour
+	// (WARDLOCK_ANALYTICS_RETENTION_DAYS, V5.4), independent of the access
+	// log's; 0 keeps them forever.
+	AnalyticsRetention time.Duration
 	// Garbage collection: GCInterval between runs in serve (0 runs none;
 	// `wardlockd gc` still works), GCGrace protecting recent uploads and
 	// pending deploys, DeployHistory deploys kept per site.
@@ -300,7 +304,8 @@ func (c *Config) loadOperator(get func(key, fallback string) string) error {
 	return nil
 }
 
-// loadAccessLog reads the WARDLOCK_ACCESS_LOG_* variables.
+// loadAccessLog reads the WARDLOCK_ACCESS_LOG_* variables and
+// WARDLOCK_ANALYTICS_RETENTION_DAYS.
 func (c *Config) loadAccessLog(get func(key, fallback string) string) error {
 	for _, l := range []struct {
 		key           string
@@ -310,6 +315,7 @@ func (c *Config) loadAccessLog(get func(key, fallback string) string) error {
 		{"WARDLOCK_ACCESS_LOG_IPV4_PREFIX", 24, 32, func(v int64) { c.AccessLogIPv4Prefix = int(v) }},
 		{"WARDLOCK_ACCESS_LOG_IPV6_PREFIX", 48, 128, func(v int64) { c.AccessLogIPv6Prefix = int(v) }},
 		{"WARDLOCK_ACCESS_LOG_RETENTION_DAYS", 90, 36_500, func(v int64) { c.AccessLogRetention = time.Duration(v) * 24 * time.Hour }},
+		{"WARDLOCK_ANALYTICS_RETENTION_DAYS", 400, 36_500, func(v int64) { c.AnalyticsRetention = time.Duration(v) * 24 * time.Hour }},
 	} {
 		raw := get(l.key, "")
 		v, err := strconv.ParseInt(raw, 10, 64)

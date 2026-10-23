@@ -11,16 +11,18 @@ import (
 
 // Repos is one backend's set of repositories, as domain packages see them.
 type Repos struct {
-	Owners     store.Owners
-	Sessions   store.Sessions
-	Passkeys   store.Passkeys
-	APITokens  store.APITokens
-	Sites      store.Sites
-	Domains    store.Domains
-	Deploys    store.Deploys
-	Policies   store.Policies
-	Links      store.Links
-	AccessLog  store.AccessLog
+	Owners    store.Owners
+	Sessions  store.Sessions
+	Passkeys  store.Passkeys
+	APITokens store.APITokens
+	Sites     store.Sites
+	Domains   store.Domains
+	Deploys   store.Deploys
+	Policies  store.Policies
+	Links     store.Links
+	AccessLog store.AccessLog
+	// Traffic is the analytics rollup of the access log (V5.4).
+	Traffic    store.Traffic
 	GC         store.GC
 	Renditions store.Renditions
 	// PasswordSessions creates and ends password sessions (A2.3).
@@ -53,6 +55,7 @@ func ReposOf(db *store.DB) Repos {
 		Policies:   db.Policies(),
 		Links:      db.Links(),
 		AccessLog:  db.AccessLog(),
+		Traffic:    db.Traffic(),
 		GC:         db.GC(),
 		Renditions: db.Renditions(),
 
@@ -82,6 +85,7 @@ func suites() []suite {
 		{"Policies", policiesContract},
 		{"Links", linksContract},
 		{"AccessLog", accessLogContract},
+		{"Traffic", trafficContract},
 		{"GC", gcContract},
 		{"Renditions", renditionsContract},
 		{"PasswordSessions", passwordSessionsContract},

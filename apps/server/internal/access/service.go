@@ -69,6 +69,8 @@ type Config struct {
 	// AccessLog backs LinkAccessLog (D3.3) and SiteAccessLog (A2.12); nil when the caller never reads
 	// the access log.
 	AccessLog store.AccessLog
+	// Traffic backs Analytics (V5.4); nil when the caller never reads it.
+	Traffic store.Traffic
 	// EmailCodes stores visitor email codes and the sessions they earn
 	// (A2.4).
 	EmailCodes store.EmailCodes
