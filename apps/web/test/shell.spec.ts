@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { firstOwnerState, schemes } from './mail.js';
+import { barPlaces, railPlaces } from './places.js';
 import { createSite } from './publish.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
@@ -42,15 +43,19 @@ for (const scheme of schemes) {
         page.getByRole('heading', { level: 1, name: 'Sites' }),
       ).toBeVisible();
       await expect(
-        main.getByRole('link', { name: /^(Overview|Sites|Passkeys)$/ }),
-      ).toHaveText(['Overview', 'Sites', 'Passkeys']);
+        main.getByRole('link', { name: /^(?!Wardlock$)/ }),
+      ).toHaveText(mobile ? barPlaces : railPlaces);
       await expect(main.getByRole('link', { name: 'Sites' })).toHaveAttribute(
         'aria-current',
         'page',
       );
-      await expect(
-        page.locator('a[href^="/analytics"], a[href^="/organise"]'),
-      ).toHaveCount(0);
+      if (mobile) {
+        // Five items at most: the bar's places, Jump to and Account.
+        expect(await main.locator('.wl-rail-item').count()).toBeLessThanOrEqual(
+          5,
+        );
+      }
+      await expect(page.locator('a[href^="/analytics"]')).toHaveCount(0);
     });
 
     await test.step('the navigator shows All sites with its count, in a drawer on narrow screens', async () => {
@@ -103,7 +108,7 @@ for (const scheme of schemes) {
       ).toBeFocused();
       await expect(
         page.getByRole('group', { name: 'Pages' }).getByRole('option'),
-      ).toHaveText(['Overview', 'Sites', 'Passkeys']);
+      ).toHaveText(railPlaces);
       await page.keyboard.press('Escape');
       await expect(page.getByRole('combobox')).toHaveCount(0);
       await expect(jump).toBeFocused();

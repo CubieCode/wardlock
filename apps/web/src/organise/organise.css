@@ -1,0 +1,136 @@
+/* SPDX-FileCopyrightText: 2026 CubieCode */
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* Groups, then tags, each full width so a row keeps its actions on one line */
+.organise-columns {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.organise-failed {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.organise-lead,
+.organise-empty {
+  color: var(--color-text-muted);
+}
+
+.organise-list {
+  display: grid;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* One group or tag: its name, how many sites, then its actions */
+.organise-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+.organise-row:last-child {
+  border-bottom: 0;
+}
+
+.organise-row-editing {
+  display: block;
+}
+
+.organise-hub {
+  flex: none;
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 1.5px solid var(--color-primary);
+  border-radius: 50%;
+}
+
+.organise-name {
+  display: grid;
+  flex: 1 1 10rem;
+  min-width: 0;
+  justify-items: start;
+  overflow-wrap: anywhere;
+}
+
+.organise-title {
+  font-weight: var(--font-weight-bold);
+}
+
+.organise-note {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.organise-count {
+  display: inline-flex;
+  justify-content: flex-end;
+  min-width: 5rem;
+  align-items: center;
+  min-height: var(--touch-target);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.organise-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.organise-error {
+  flex-basis: 100%;
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+/* Create and rename: the field, then Save and Cancel */
+.organise-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.organise-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+@media (max-width: 47.99rem) {
+  /* The actions take their own line under the name and count. */
+  .organise-actions {
+    flex-basis: 100%;
+  }
+}
+
+/* What the last delete did, for everyone and for screen readers */
+.organise-said {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* The colour picker: one 44px row per choice, scrolling within the popover */
+.organise-colours {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+}
+
+.organise-colours .wl-choice {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.organise-colours .wl-choice-hint {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  margin: 0;
+  padding: 0;
+}

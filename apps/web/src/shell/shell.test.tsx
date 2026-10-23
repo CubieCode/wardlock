@@ -20,7 +20,7 @@ import {
   SitesNavigator,
   type NavigatorState,
 } from './navigator.js';
-import { shellRoutes } from './routes.js';
+import { barPlaces, shellRoutes } from './routes.js';
 import { Shell } from './shell.js';
 import { readTheme, setTheme, themeStorageKey } from './theme.js';
 
@@ -173,6 +173,7 @@ describe('rail', () => {
       'Wardlock',
       'Overview',
       'Sites',
+      'Groups and tags',
       'Passkeys',
     ]);
     expect(
@@ -200,8 +201,8 @@ describe('rail', () => {
     const hrefs = [...document.querySelectorAll('a')].map((a) =>
       a.getAttribute('href'),
     );
-    for (const href of hrefs) expect(href).not.toMatch(/analytics|organise/);
-    expect(screen.queryByText(/Analytics|Groups and tags/)).toBeNull();
+    for (const href of hrefs) expect(href).not.toMatch(/analytics/);
+    expect(screen.queryByText(/Analytics/)).toBeNull();
   });
 
   it('shows no navigator outside the sites list', async () => {
@@ -312,10 +313,11 @@ describe('sites navigator', () => {
       ['No group 3', '/sites?g=none'],
     ]);
     expect(names('Tags')).toEqual([['docs 4', `/sites?t=${tagId}`]]);
-    // The organise screen is not built: no New group or tag management.
-    expect(
-      screen.queryByRole('link', { name: /New group|Manage tags/ }),
-    ).toBeNull();
+    // Both lead to the organise screen.
+    for (const name of ['New group', 'Manage tags'])
+      expect(screen.getByRole('link', { name }).getAttribute('href')).toBe(
+        '/organise',
+      );
   });
 
   it.each([
@@ -609,7 +611,7 @@ describe('below 48rem', () => {
       within(bar)
         .getAllByRole('link')
         .map((l) => l.textContent),
-    ).toEqual(['Overview', 'Sites', 'Passkeys']);
+    ).toEqual(['Overview', 'Sites']);
     expect(within(bar).getByRole('button', { name: 'Jump to' })).toBeTruthy();
     expect(within(bar).getByRole('button', { name: 'Account' })).toBeTruthy();
     await screen.findByRole('heading', { level: 1, name: 'Sites' });
@@ -619,6 +621,83 @@ describe('below 48rem', () => {
     expect(
       server.calls.some((url) => url.pathname === '/api/v0/site-counts'),
     ).toBe(true);
+  });
+
+  it('never holds more than five items, however many routes ask for it', async () => {
+    narrow(true);
+    expect(
+      shellRoutes.filter((route) => route.rail?.bar).length,
+    ).toBeLessThanOrEqual(barPlaces);
+    const extra = ['/extra-one', '/extra-two'].map((path) => ({
+      path,
+      rail: { label: path, icon: null, bar: true },
+      render: () => null,
+    }));
+    shellRoutes.push(...extra);
+    try {
+      render(<App api={fakeServer().api} />);
+      const bar = await screen.findByRole('navigation', { name: 'Main' });
+      const items = bar.querySelectorAll('.wl-rail-item');
+      expect(items).toHaveLength(5);
+      // The places that did not fit are in the account sheet.
+      fireEvent.click(within(bar).getByRole('button', { name: 'Account' }));
+      const more = screen.getByRole('navigation', { name: 'More places' });
+      expect(
+        within(more)
+          .getAllByRole('link')
+          .map((link) => link.textContent),
+      ).toEqual(['Groups and tags', 'Passkeys', '/extra-two']);
+    } finally {
+      shellRoutes.splice(shellRoutes.indexOf(extra[0]!), extra.length);
+    }
+  });
+
+  it('lists the other places in the account sheet and marks the current one', async () => {
+    narrow(true);
+    render(<App api={fakeServer().api} />);
+    const bar = await screen.findByRole('navigation', { name: 'Main' });
+    const account = within(bar).getByRole('button', { name: 'Account' });
+    expect(account.hasAttribute('aria-current')).toBe(false);
+    fireEvent.click(account);
+    const sheet = screen.getByRole('dialog', { name: 'Account' });
+    const more = within(sheet).getByRole('navigation', { name: 'More places' });
+    expect(
+      within(more)
+        .getAllByRole('link')
+        .map((link) => [link.textContent, link.getAttribute('href')]),
+    ).toEqual([
+      ['Groups and tags', '/organise'],
+      ['Passkeys', '/passkeys'],
+    ]);
+    // Theme and Sign out stay in the sheet.
+    expect(within(sheet).getByRole('radio', { name: 'System' })).toBeTruthy();
+    expect(
+      within(sheet).getByRole('button', { name: 'Sign out' }),
+    ).toBeTruthy();
+
+    fireEvent.click(
+      within(more).getByRole('link', { name: 'Groups and tags' }),
+    );
+    await screen.findByRole('heading', { level: 1, name: 'Groups and tags' });
+    expect(window.location.pathname).toBe('/organise');
+    expect(screen.queryByRole('dialog', { name: 'Account' })).toBeNull();
+    expect(account.getAttribute('aria-current')).toBe('page');
+    expect(
+      within(bar)
+        .getAllByRole('link')
+        .some((link) => link.hasAttribute('aria-current')),
+    ).toBe(false);
+    fireEvent.click(account);
+    expect(
+      screen
+        .getByRole('link', { name: 'Groups and tags' })
+        .getAttribute('aria-current'),
+    ).toBe('page');
+    expect(
+      screen
+        .getByRole('link', { name: 'Passkeys' })
+        .hasAttribute('aria-current'),
+    ).toBe(false);
   });
 
   it('with filters, opens the navigator in a drawer', async () => {

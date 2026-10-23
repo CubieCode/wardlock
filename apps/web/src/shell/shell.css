@@ -201,3 +201,9 @@
   display: grid;
   gap: var(--space-2);
 }
+
+/* A screen listed in the account sheet below 48rem */
+.shell-account-place {
+  min-height: var(--touch-target);
+  font-size: var(--text-base);
+}
