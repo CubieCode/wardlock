@@ -2176,6 +2176,7 @@ paths:
                     linkPublicId: q4v7m2xkpa
                     ip: 203.0.113.0
                     userAgent: Mozilla/5.0
+                    country: NZ
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -2225,6 +2226,7 @@ paths:
                     via: none
                     ip: 198.51.100.0
                     userAgent: curl/8.5.0
+                    country: unknown
                   - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e60
                     occurredAt: 1767312000000
                     host: docs.wardlock.example.net
@@ -2235,6 +2237,7 @@ paths:
                     linkLabel: Linear ENG-123
                     ip: 203.0.113.0
                     userAgent: Mozilla/5.0
+                    country: NZ
                 nextCursor: MTc2NzMxMjAwMDAwMDowMTkyOGM1ZQ
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -2584,8 +2587,9 @@ paths:
         Requests for the owner's sites over the last `days` days, from the
         hourly traffic rollup: per UTC hour, so a client can draw days in
         the viewer's timezone, and in total by way in, site, group, tag,
-        browser family, the busiest share links and the busiest paths.
-        Every count is of requests, split into `allowed` (answered with a
+        browser family, the busiest share links and the busiest paths, and,
+        when the operator has turned on the country lookup, by country with
+        the credit the country database's licence requires. Every count is of requests, split into `allowed` (answered with a
         status below 400) and `refused` (400 and above); none is a count
         of visitors. The range is the `days` × 24 whole UTC hours ending
         with the current one. Give at most one of `site`, `group` and
@@ -2675,6 +2679,16 @@ paths:
                 browsers:
                   - { browser: chrome, allowed: 28, refused: 0 }
                   - { browser: tool, allowed: 14, refused: 3 }
+                countries:
+                  - { country: NZ, allowed: 30, refused: 1 }
+                  - { country: AU, allowed: 12, refused: 0 }
+                  - { country: unknown, allowed: 0, refused: 2 }
+                countryLookup:
+                  attribution: >-
+                    IP Geolocation by DB-IP (https://db-ip.com), licensed
+                    under CC BY 4.0
+                    (https://creativecommons.org/licenses/by/4.0/)
+                  serverCountry: NZ
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -4597,6 +4611,56 @@ components:
         userAgent:
           type: string
           description: The User-Agent header; absent when the request sent none.
+        country:
+          description: >-
+            The country the server's country database places the stored
+            (truncated) IP in, or `unknown` when it has none. Absent when
+            the operator has not turned the lookup on, its database could
+            not be read, or no IP was stored.
+          $ref: '#/components/schemas/RequestCountry'
+    RequestCountry:
+      type: string
+      description: >-
+        An ISO 3166-1 alpha-2 country code in upper case, looked up from a
+        request's stored IP, or `unknown` when the country database has no
+        country for it (often a relay, VPN or private network). Never a
+        city or region.
+      pattern: ^([A-Z]{2}|unknown)$
+      examples: [NZ]
+    CountryCode:
+      type: string
+      description: An ISO 3166-1 alpha-2 country code in upper case.
+      pattern: ^[A-Z]{2}$
+      examples: [NZ]
+    CountryLookup:
+      type: object
+      additionalProperties: false
+      description: The operator's country lookup, present only while it is on.
+      required: [attribution]
+      properties:
+        attribution:
+          type: string
+          maxLength: 300
+          description: >-
+            The credit the country database's licence requires, to show
+            wherever countries are shown; show any https URL in it as a
+            link. By default DB-IP's: `IP Geolocation by DB-IP
+            (https://db-ip.com), licensed under CC BY 4.0
+            (https://creativecommons.org/licenses/by/4.0/)`.
+        serverCountry:
+          description: The country to draw the server in; absent when the operator has not named one.
+          $ref: '#/components/schemas/CountryCode'
+    AnalyticsCountry:
+      type: object
+      additionalProperties: false
+      required: [country, allowed, refused]
+      properties:
+        country:
+          $ref: '#/components/schemas/RequestCountry'
+        allowed:
+          $ref: '#/components/schemas/Requests'
+        refused:
+          $ref: '#/components/schemas/Requests'
     AnalyticsDays:
       type: integer
       format: int32
@@ -4702,6 +4766,18 @@ components:
           description: Requests by browser family, each family with requests, by name.
           items:
             $ref: '#/components/schemas/AnalyticsBrowser'
+        countries:
+          type: array
+          maxItems: 300
+          description: >-
+            Requests by country, each country with requests, busiest first,
+            `unknown` among them. Present only while the country lookup is
+            on (with `countryLookup`). Requests logged while it was off have
+            no country, so these can add up to less than the total.
+          items:
+            $ref: '#/components/schemas/AnalyticsCountry'
+        countryLookup:
+          $ref: '#/components/schemas/CountryLookup'
     AnalyticsHour:
       type: object
       additionalProperties: false

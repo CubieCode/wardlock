@@ -37,6 +37,10 @@ type AccessEntry struct {
 	LinkPublicID string // set exactly when Via is ViaLink
 	IP           string // already truncated per configuration
 	UserAgent    string
+	// Country is the ISO 3166-1 alpha-2 code (upper case) the writer
+	// looked IP up as, CountryUnknown when the database had no match, or ""
+	// when the lookup is off or no IP is stored (V5.13).
+	Country string
 	// Browser is the family the writer classified UserAgent as, for the
 	// traffic rollup (V5.4); the log row does not store it. Append counts
 	// "" as BrowserOther. Lists leave it "".
@@ -97,6 +101,7 @@ func (r accessLogRepo) Append(ctx context.Context, entries []AccessEntry) error 
 				LinkPublicID: nullString(e.LinkPublicID),
 				Ip:           nullString(e.IP),
 				UserAgent:    nullString(e.UserAgent),
+				Country:      nullString(e.Country),
 			})
 			if err != nil {
 				return mapErr("append access log", err)
@@ -173,6 +178,7 @@ func accessEntriesFrom(rows []sqlcgen.AccessLog) []AccessEntry {
 			LinkPublicID: row.LinkPublicID.String,
 			IP:           row.Ip.String,
 			UserAgent:    row.UserAgent.String,
+			Country:      row.Country.String,
 		})
 	}
 	return entries

@@ -41,6 +41,7 @@ func recount(entries []store.AccessEntry, siteNames map[string]string) store.Tra
 	links := map[key]*store.TrafficCount{}
 	paths := map[key]*store.TrafficCount{}
 	browsers := map[string]*store.TrafficCount{}
+	countries := map[string]*store.TrafficCount{}
 	bump := func(c *store.TrafficCount, status int) {
 		if status >= 400 {
 			c.Refused++
@@ -77,6 +78,9 @@ func recount(entries []store.AccessEntry, siteNames map[string]string) store.Tra
 		}
 		bump(getKey(paths, key{name, e.Path}), e.Status)
 		bump(get(browsers, string(testBrowser(e.UserAgent))), e.Status)
+		if e.Country != "" {
+			bump(get(countries, e.Country), e.Status)
+		}
 	}
 	var out store.TrafficReport
 	for _, h := range slices.Sorted(maps.Keys(hours)) {
@@ -90,6 +94,16 @@ func recount(entries []store.AccessEntry, siteNames map[string]string) store.Tra
 	}
 	for _, b := range slices.Sorted(maps.Keys(browsers)) {
 		out.Browsers = append(out.Browsers, store.TrafficBrowser{Browser: store.Browser(b), TrafficCount: *browsers[b]})
+	}
+	codes := slices.Collect(maps.Keys(countries))
+	slices.SortFunc(codes, func(x, y string) int {
+		if tx, ty := countries[x].Allowed+countries[x].Refused, countries[y].Allowed+countries[y].Refused; tx != ty {
+			return int(ty - tx)
+		}
+		return strings.Compare(x, y)
+	})
+	for _, c := range codes {
+		out.Countries = append(out.Countries, store.TrafficCountry{Country: c, TrafficCount: *countries[c]})
 	}
 	busiest := func(m map[key]*store.TrafficCount) []key {
 		ks := slices.Collect(maps.Keys(m))
@@ -126,6 +140,9 @@ func compareReports(t *testing.T, got, want store.TrafficReport) {
 	}
 	if !slices.Equal(got.Browsers, want.Browsers) {
 		t.Errorf("Browsers = %+v, want %+v", got.Browsers, want.Browsers)
+	}
+	if !slices.Equal(got.Countries, want.Countries) {
+		t.Errorf("Countries = %+v, want %+v", got.Countries, want.Countries)
 	}
 	gotLinks := slices.Clone(got.Links)
 	for i := range gotLinks {
@@ -169,6 +186,8 @@ func trafficContract(t *testing.T, open Opener) {
 			f.entry(s.ID, now, 200, store.ViaPublic, "", "/", "Mozilla/5.0 Firefox/130"),
 			f.entry(s.ID, now.Add(time.Hour), 401, store.ViaNone, "", "/admin/", "curl/8"),
 		}
+		// The backfill counts the country each entry was logged with.
+		before[0].Country, before[1].Country = "NZ", store.CountryUnknown
 		f.must(f.r.AccessLog.Append(t.Context(), before))
 		// Before the backfill, batches only log.
 		if r := f.report(o.ID, store.TrafficScope{}); len(r.Hours) != 0 {
@@ -195,6 +214,8 @@ func trafficContract(t *testing.T, open Opener) {
 		la, lb := f.link(o.ID, a.ID), f.link(o.ID, b.ID)
 		var entries []store.AccessEntry
 		agents := []string{"", "curl/8", "Mozilla/5.0 Firefox/130", "Mozilla/5.0 Chrome/129"}
+		// "" is an entry logged with the lookup off or no IP stored.
+		countries := []string{"NZ", "", "AU", store.CountryUnknown, "NZ", "DE", ""}
 		statuses := []int{200, 304, 401, 404, 500}
 		for i := range 400 {
 			site, link, via := a, la.PublicID, store.ViaLink
@@ -205,7 +226,9 @@ func trafficContract(t *testing.T, open Opener) {
 				link, via = "", store.ViaPublic
 			}
 			at := now.Add(time.Duration(i%30)*time.Hour + time.Duration(i)*time.Second)
-			entries = append(entries, f.entry(site.ID, at, statuses[i%len(statuses)], via, link, fmt.Sprintf("/p%d", i%12), agents[i%len(agents)]))
+			e := f.entry(site.ID, at, statuses[i%len(statuses)], via, link, fmt.Sprintf("/p%d", i%12), agents[i%len(agents)])
+			e.Country = countries[i%len(countries)]
+			entries = append(entries, e)
 		}
 		// An entry of a site that no longer exists is logged, not counted.
 		entries = append(entries, f.entry(store.NewID(), now, 200, store.ViaPublic, "", "/", ""))
@@ -282,7 +305,12 @@ func trafficContract(t *testing.T, open Opener) {
 		f.backfill()
 		var entries []store.AccessEntry
 		for i, s := range []store.Site{a, b, b, c, c, c, foreignSite} {
-			entries = append(entries, f.entry(s.ID, now.Add(time.Duration(i)*time.Minute), 200, store.ViaPublic, "", "/", ""))
+			e := f.entry(s.ID, now.Add(time.Duration(i)*time.Minute), 200, store.ViaPublic, "", "/", "")
+			e.Country = "NZ"
+			if s.ID == foreignSite.ID {
+				e.Country = "FR"
+			}
+			entries = append(entries, e)
 		}
 		f.must(f.r.AccessLog.Append(t.Context(), entries))
 		total := func(r store.TrafficReport) (n int64) {
@@ -307,6 +335,12 @@ func trafficContract(t *testing.T, open Opener) {
 			}
 		}
 		r := f.report(o.ID, store.TrafficScope{})
+		if want := []store.TrafficCountry{{Country: "NZ", TrafficCount: store.TrafficCount{Allowed: 6}}}; !slices.Equal(r.Countries, want) {
+			t.Errorf("Countries = %+v, want %+v", r.Countries, want)
+		}
+		if got := f.report(o.ID, store.TrafficScope{SiteID: c.ID}).Countries; len(got) != 1 || got[0].Allowed != 3 {
+			t.Errorf("site Countries = %+v, want NZ with 3", got)
+		}
 		wantGroups := []store.TrafficGroup{{GroupID: "", TrafficCount: store.TrafficCount{Allowed: 3}}, {GroupID: g.ID, TrafficCount: store.TrafficCount{Allowed: 3}}}
 		if !slices.Equal(r.Groups, wantGroups) {
 			t.Errorf("Groups = %+v, want %+v", r.Groups, wantGroups)
@@ -329,6 +363,8 @@ func trafficContract(t *testing.T, open Opener) {
 		// The other owner sees only their own site.
 		if got := f.report(other.ID, store.TrafficScope{}); len(got.Sites) != 1 || got.Sites[0].SiteName != foreignSite.Name {
 			t.Errorf("other owner's Sites = %+v", got.Sites)
+		} else if len(got.Countries) != 1 || got.Countries[0].Country != "FR" {
+			t.Errorf("other owner's Countries = %+v, want FR only", got.Countries)
 		}
 	})
 	t.Run("Range", func(t *testing.T) {
@@ -362,7 +398,9 @@ func trafficContract(t *testing.T, open Opener) {
 		var entries []store.AccessEntry
 		for _, s := range []store.Site{live, down, held} {
 			for _, at := range []time.Time{hour.Add(-3 * time.Hour), hour.Add(-2 * time.Hour), hour} {
-				entries = append(entries, f.entry(s.ID, at, 200, store.ViaLink, l.PublicID, "/", "curl/8"))
+				e := f.entry(s.ID, at, 200, store.ViaLink, l.PublicID, "/", "curl/8")
+				e.Country = "NZ"
+				entries = append(entries, e)
 			}
 		}
 		f.must(f.r.AccessLog.Append(t.Context(), entries))
@@ -381,8 +419,8 @@ func trafficContract(t *testing.T, open Opener) {
 		hoursOf := func(ownerID string, s store.Site) int {
 			r, err := f.r.Traffic.Report(t.Context(), ownerID, store.TrafficScope{SiteID: s.ID}, allFrom, allTo)
 			f.must(err)
-			if len(r.Paths) != 1 || len(r.Links) != 1 || len(r.Browsers) != 1 {
-				t.Errorf("%s: paths %v, links %v, browsers %v; want one each", s.Name, r.Paths, r.Links, r.Browsers)
+			if len(r.Paths) != 1 || len(r.Links) != 1 || len(r.Browsers) != 1 || len(r.Countries) != 1 {
+				t.Errorf("%s: paths %v, links %v, browsers %v, countries %v; want one each", s.Name, r.Paths, r.Links, r.Browsers, r.Countries)
 			}
 			return len(r.Hours)
 		}
@@ -399,7 +437,7 @@ func trafficContract(t *testing.T, open Opener) {
 		}
 		r, err := f.r.Traffic.Report(t.Context(), o.ID, store.TrafficScope{SiteID: live.ID}, allFrom, hour)
 		f.must(err)
-		if len(r.Paths)+len(r.Links)+len(r.Browsers)+len(r.Via) != 0 {
+		if len(r.Paths)+len(r.Links)+len(r.Browsers)+len(r.Via)+len(r.Countries) != 0 {
 			t.Errorf("pruned hours left rows: %+v", r)
 		}
 	})
@@ -409,10 +447,9 @@ func trafficContract(t *testing.T, open Opener) {
 		o := f.owner()
 		s, deleted := f.site(o.ID), f.site(o.ID)
 		f.backfill()
-		f.must(f.r.AccessLog.Append(t.Context(), []store.AccessEntry{
-			f.entry(s.ID, now, 200, store.ViaPublic, "", "/", ""),
-			f.entry(deleted.ID, now, 200, store.ViaPublic, "", "/", ""),
-		}))
+		kept, gone := f.entry(s.ID, now, 200, store.ViaPublic, "", "/", ""), f.entry(deleted.ID, now, 200, store.ViaPublic, "", "/", "")
+		kept.Country, gone.Country = "NZ", "AU"
+		f.must(f.r.AccessLog.Append(t.Context(), []store.AccessEntry{kept, gone}))
 		f.must(f.r.Sites.TakeDown(t.Context(), s.ID, now))
 		if r := f.report(o.ID, store.TrafficScope{}); len(r.Sites) != 2 {
 			t.Fatalf("after takedown Sites = %+v, want both kept", r.Sites)

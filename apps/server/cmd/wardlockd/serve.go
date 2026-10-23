@@ -216,6 +216,8 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Passkeys: passkeys,
 		Logger:   log,
 		Sites:    sitesSvc,
+		// The country lookup's credit and server country (V5.13).
+		Countries: countryLookup(cfg),
 		Deploys: deploys.NewService(deploys.Config{
 			Sites:    db.Sites(),
 			Deploys:  db.Deploys(),

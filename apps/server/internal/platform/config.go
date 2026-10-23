@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Config is the server configuration, read once at startup from WARDLOCK_*
@@ -84,6 +86,9 @@ type Config struct {
 	// (WARDLOCK_ANALYTICS_RETENTION_DAYS, V5.4), independent of the access
 	// log's; 0 keeps them forever.
 	AnalyticsRetention time.Duration
+	// Country is the optional country lookup (V5.13); off unless
+	// WARDLOCK_COUNTRY_DB names a file.
+	Country CountryConfig
 	// Garbage collection: GCInterval between runs in serve (0 runs none;
 	// `wardlockd gc` still works), GCGrace protecting recent uploads and
 	// pending deploys, DeployHistory deploys kept per site.
@@ -108,6 +113,31 @@ type Config struct {
 	// call RequireSecret.
 	Secret []byte
 }
+
+// CountryConfig is the country lookup from a local IP-to-country MMDB
+// file the operator downloads (V5.13).
+type CountryConfig struct {
+	// DB is the file's path (WARDLOCK_COUNTRY_DB); "" turns the lookup off
+	// and the other fields are then unused.
+	DB string
+	// Attribution is the credit the dashboard shows beside countries
+	// (WARDLOCK_COUNTRY_DB_ATTRIBUTION), DefaultCountryAttribution unless
+	// set. The dashboard shows any https URL in it as a link.
+	Attribution string
+	// ServerCountry is the ISO 3166-1 alpha-2 code, in upper case, of the
+	// country the dashboard draws the server in (WARDLOCK_SERVER_COUNTRY);
+	// "" draws none.
+	ServerCountry string
+}
+
+// DefaultCountryAttribution is the credit DB-IP's IP to Country Lite
+// asks for: a link back to DB-IP.com on pages that show results from it,
+// with the CC BY 4.0 licence notice and link section 3(a) of that licence
+// requires.
+const DefaultCountryAttribution = "IP Geolocation by DB-IP (https://db-ip.com), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)"
+
+// maxAttributionBytes bounds WARDLOCK_COUNTRY_DB_ATTRIBUTION.
+const maxAttributionBytes = 300
 
 // MinSecretBytes is the shortest WARDLOCK_SECRET accepted, after decoding.
 const MinSecretBytes = 32
@@ -213,6 +243,9 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	if err := cfg.loadGC(get); err != nil {
+		return Config{}, err
+	}
+	if err := cfg.loadCountry(get); err != nil {
 		return Config{}, err
 	}
 	if cfg.DNSResolvers, err = parseResolvers(get("WARDLOCK_DNS_RESOLVERS", "")); err != nil {
@@ -332,6 +365,24 @@ func (c *Config) loadAccessLog(get func(key, fallback string) string) error {
 		return fmt.Errorf("%w: WARDLOCK_ACCESS_LOG_BUFFER must be a whole number from 1 to 1000000", ErrInvalidConfig)
 	}
 	c.AccessLogBuffer = int(buf)
+	return nil
+}
+
+// loadCountry reads WARDLOCK_COUNTRY_DB, WARDLOCK_COUNTRY_DB_ATTRIBUTION
+// and WARDLOCK_SERVER_COUNTRY. The last two are checked even with the
+// lookup off, so a typo shows before it matters.
+func (c *Config) loadCountry(get func(key, fallback string) string) error {
+	c.Country.DB = get("WARDLOCK_COUNTRY_DB", "")
+	c.Country.Attribution = get("WARDLOCK_COUNTRY_DB_ATTRIBUTION", DefaultCountryAttribution)
+	if len(c.Country.Attribution) > maxAttributionBytes || !utf8.ValidString(c.Country.Attribution) ||
+		strings.ContainsFunc(c.Country.Attribution, unicode.IsControl) {
+		return fmt.Errorf("%w: WARDLOCK_COUNTRY_DB_ATTRIBUTION must be one line of at most %d bytes", ErrInvalidConfig, maxAttributionBytes)
+	}
+	code := strings.ToUpper(get("WARDLOCK_SERVER_COUNTRY", ""))
+	if code != "" && (len(code) != 2 || strings.ContainsFunc(code, func(r rune) bool { return r < 'A' || r > 'Z' })) {
+		return fmt.Errorf("%w: WARDLOCK_SERVER_COUNTRY must be an ISO 3166-1 alpha-2 country code, such as NZ", ErrInvalidConfig)
+	}
+	c.Country.ServerCountry = code
 	return nil
 }
 

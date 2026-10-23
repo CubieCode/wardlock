@@ -40,6 +40,33 @@ func (q *Queries) AddTrafficBrowser(ctx context.Context, arg AddTrafficBrowserPa
 	return err
 }
 
+const addTrafficCountry = `-- name: AddTrafficCountry :exec
+INSERT INTO traffic_countries (site_id, hour, country, allowed, refused)
+SELECT sites.id, ?1, ?2, ?3, ?4
+FROM sites WHERE sites.id = ?5
+ON CONFLICT (site_id, hour, country) DO UPDATE
+SET allowed = traffic_countries.allowed + excluded.allowed, refused = traffic_countries.refused + excluded.refused
+`
+
+type AddTrafficCountryParams struct {
+	Hour    int64
+	Country string
+	Allowed int64
+	Refused int64
+	SiteID  string
+}
+
+func (q *Queries) AddTrafficCountry(ctx context.Context, arg AddTrafficCountryParams) error {
+	_, err := q.db.ExecContext(ctx, addTrafficCountry,
+		arg.Hour,
+		arg.Country,
+		arg.Allowed,
+		arg.Refused,
+		arg.SiteID,
+	)
+	return err
+}
+
 const addTrafficHour = `-- name: AddTrafficHour :exec
 INSERT INTO traffic_hours (site_id, hour, via, allowed, refused)
 SELECT sites.id, ?1, ?2, ?3, ?4
@@ -142,7 +169,7 @@ func (q *Queries) AddTrafficPath(ctx context.Context, arg AddTrafficPathParams) 
 }
 
 const listAccessLogForRollup = `-- name: ListAccessLogForRollup :many
-SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.user_agent
+SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.user_agent, access_log.country
 FROM access_log JOIN sites ON sites.id = access_log.site_id
 WHERE access_log.occurred_at > ?1
   OR (access_log.occurred_at = ?1 AND access_log.id > ?2)
@@ -165,6 +192,7 @@ type ListAccessLogForRollupRow struct {
 	Via          string
 	LinkPublicID sql.NullString
 	UserAgent    sql.NullString
+	Country      sql.NullString
 }
 
 // The backfill reads the log oldest first, after the cursor (occurred_at,
@@ -187,6 +215,7 @@ func (q *Queries) ListAccessLogForRollup(ctx context.Context, arg ListAccessLogF
 			&i.Via,
 			&i.LinkPublicID,
 			&i.UserAgent,
+			&i.Country,
 		); err != nil {
 			return nil, err
 		}
@@ -243,6 +272,20 @@ DELETE FROM traffic_browsers WHERE hour = ?1
 
 func (q *Queries) PruneTrafficBrowsers(ctx context.Context, hour int64) (int64, error) {
 	result, err := q.db.ExecContext(ctx, pruneTrafficBrowsers, hour)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const pruneTrafficCountries = `-- name: PruneTrafficCountries :execrows
+DELETE FROM traffic_countries WHERE hour = ?1
+  AND site_id NOT IN (SELECT sites.id FROM sites JOIN owners ON owners.id = sites.owner_id
+    WHERE sites.taken_down_at IS NOT NULL OR owners.suspended_at IS NOT NULL)
+`
+
+func (q *Queries) PruneTrafficCountries(ctx context.Context, hour int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneTrafficCountries, hour)
 	if err != nil {
 		return 0, err
 	}
@@ -492,6 +535,64 @@ func (q *Queries) TrafficByBrowser(ctx context.Context, arg TrafficByBrowserPara
 	for rows.Next() {
 		var i TrafficByBrowserRow
 		if err := rows.Scan(&i.Browser, &i.Allowed, &i.Refused); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const trafficByCountry = `-- name: TrafficByCountry :many
+SELECT traffic_countries.country, CAST(SUM(traffic_countries.allowed) AS BIGINT) AS allowed, CAST(SUM(traffic_countries.refused) AS BIGINT) AS refused
+FROM traffic_countries JOIN sites ON sites.id = traffic_countries.site_id
+WHERE sites.owner_id = ?1
+  AND (CAST(?2 AS TEXT) IS NULL OR sites.id = ?2)
+  AND (CAST(?3 AS TEXT) IS NULL OR sites.group_id = ?3)
+  AND (CAST(?4 AS TEXT) IS NULL OR EXISTS (SELECT 1 FROM site_tags WHERE site_tags.site_id = sites.id AND site_tags.tag_id = ?4))
+  AND traffic_countries.hour >= ?5 AND traffic_countries.hour < ?6
+GROUP BY traffic_countries.country
+ORDER BY SUM(traffic_countries.allowed) + SUM(traffic_countries.refused) DESC, traffic_countries.country
+`
+
+type TrafficByCountryParams struct {
+	OwnerID  string
+	SiteID   sql.NullString
+	GroupID  sql.NullString
+	TagID    sql.NullString
+	FromHour int64
+	ToHour   int64
+}
+
+type TrafficByCountryRow struct {
+	Country string
+	Allowed int64
+	Refused int64
+}
+
+// Requests by country (V5.13), busiest first, 'unknown' among them.
+func (q *Queries) TrafficByCountry(ctx context.Context, arg TrafficByCountryParams) ([]TrafficByCountryRow, error) {
+	rows, err := q.db.QueryContext(ctx, trafficByCountry,
+		arg.OwnerID,
+		arg.SiteID,
+		arg.GroupID,
+		arg.TagID,
+		arg.FromHour,
+		arg.ToHour,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TrafficByCountryRow
+	for rows.Next() {
+		var i TrafficByCountryRow
+		if err := rows.Scan(&i.Country, &i.Allowed, &i.Refused); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

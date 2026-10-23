@@ -184,6 +184,21 @@ func TestLoadConfig(t *testing.T) {
 		{"analytics kept forever", map[string]string{"WARDLOCK_ANALYTICS_RETENTION_DAYS": "0"}, false, func(c platform.Config) bool { return c.AnalyticsRetention == 0 }},
 		{"negative analytics retention", map[string]string{"WARDLOCK_ANALYTICS_RETENTION_DAYS": "-1"}, true, nil},
 		{"analytics retention too long", map[string]string{"WARDLOCK_ANALYTICS_RETENTION_DAYS": "36501"}, true, nil},
+		{"country lookup off by default", nil, false, func(c platform.Config) bool {
+			return c.Country == platform.CountryConfig{Attribution: platform.DefaultCountryAttribution}
+		}},
+		{"country lookup", map[string]string{"WARDLOCK_COUNTRY_DB": "/var/lib/wardlock/dbip-country-lite.mmdb", "WARDLOCK_SERVER_COUNTRY": "nz"}, false, func(c platform.Config) bool {
+			return c.Country.DB == "/var/lib/wardlock/dbip-country-lite.mmdb" && c.Country.ServerCountry == "NZ" &&
+				c.Country.Attribution == "IP Geolocation by DB-IP (https://db-ip.com), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)"
+		}},
+		{"country attribution override", map[string]string{"WARDLOCK_COUNTRY_DB": "geo.mmdb", "WARDLOCK_COUNTRY_DB_ATTRIBUTION": "This product includes GeoLite Data created by MaxMind, available from https://www.maxmind.com."}, false, func(c platform.Config) bool {
+			return c.Country.Attribution == "This product includes GeoLite Data created by MaxMind, available from https://www.maxmind.com."
+		}},
+		{"country attribution too long", map[string]string{"WARDLOCK_COUNTRY_DB_ATTRIBUTION": strings.Repeat("a", 301)}, true, nil},
+		{"country attribution on two lines", map[string]string{"WARDLOCK_COUNTRY_DB_ATTRIBUTION": "one\ntwo"}, true, nil},
+		{"server country a name", map[string]string{"WARDLOCK_SERVER_COUNTRY": "New Zealand"}, true, nil},
+		{"server country three letters", map[string]string{"WARDLOCK_SERVER_COUNTRY": "NZL"}, true, nil},
+		{"server country digits", map[string]string{"WARDLOCK_SERVER_COUNTRY": "N1"}, true, nil},
 		{"zero buffer", map[string]string{"WARDLOCK_ACCESS_LOG_BUFFER": "0"}, true, nil},
 		{"buffer too large", map[string]string{"WARDLOCK_ACCESS_LOG_BUFFER": "1000001"}, true, nil},
 		{"gc defaults", nil, false, func(c platform.Config) bool {

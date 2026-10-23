@@ -729,6 +729,8 @@ Every request for a published site's content (A2.8) adds one entry to the access
 | `WARDLOCK_ACCESS_LOG_BUFFER`         | `10000` | entries that may wait for a write, 1 to 1000000, before dropping                                   |
 | `WARDLOCK_ANALYTICS_RETENTION_DAYS`  | `400`   | days to keep the hourly traffic rollup behind analytics (V5.4), 0 to 36500; 0 keeps it forever     |
 
+The country lookup's variables are under [Country lookup](#country-lookup).
+
 </details>
 
 <details>
@@ -742,6 +744,45 @@ The defaults keep enough of an address to tell networks apart, not individual ho
 <summary>Batched writes, dropped entries and retention</summary>
 
 Entries are written in batches off the request path: serving never waits on the database. If the database falls behind and the buffer fills, new entries are dropped rather than slowing visitors; the server logs a warning (`access log entries dropped`, at most every 10 seconds) with the running total, and a failed batch write is logged and counted the same way. On shutdown the server writes what is buffered within the shutdown timeout. Each batch also adds its counts to the analytics rollup in the same transaction. The first start after upgrading counts the access log already stored into the rollup once, before serving; on a large log this can take a while and is logged as `backfilled traffic rollup` with the number of entries. Retention runs at start and hourly beside the writer, deleting entries older than the retention period (including those of deleted sites) 1,000 at a time so the database is never locked for long. It never prunes the entries of a taken-down site or a suspended owner's sites, which are evidence ([Operator controls](#operator-controls)); they are pruned by age again once the site is restored or the owner reinstated, or once the site is torn down. The rollup is pruned the same way, one hour at a time, after `WARDLOCK_ANALYTICS_RETENTION_DAYS`; tearing down or deleting a site deletes its rollup rows at once.
+
+</details>
+
+### Country lookup
+
+Wardlock can record the country of each request (V5.13) from a free IP-to-country database you download and keep on the server: by default DB-IP's [IP to Country Lite](https://db-ip.com/db/download/ip-to-country-lite) in MMDB format. Lookups are local; no address leaves the server. Set `WARDLOCK_COUNTRY_DB` to the file and restart once; after that, replace the file each month and the server picks it up within a minute.
+
+```sh
+# Once a month, as the user wardlockd runs as (shown for October 2026):
+curl -fsSL -o /tmp/dbip.mmdb.gz https://download.db-ip.com/free/dbip-country-lite-2026-10.mmdb.gz
+gunzip -c /tmp/dbip.mmdb.gz > /var/lib/wardlock/dbip-country-lite.mmdb.new
+mv /var/lib/wardlock/dbip-country-lite.mmdb.new /var/lib/wardlock/dbip-country-lite.mmdb
+```
+
+| Variable                          | Default        | Meaning                                                                                                  |
+| --------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------- |
+| `WARDLOCK_COUNTRY_DB`             | (unset: off)   | path of the MMDB file; set, the lookup is on                                                             |
+| `WARDLOCK_COUNTRY_DB_ATTRIBUTION` | DB-IP's credit | the credit the dashboard shows beside countries, one line of at most 300 bytes; https URLs show as links |
+| `WARDLOCK_SERVER_COUNTRY`         | (unset)        | ISO 3166-1 alpha-2 code of the country to draw the server in on the dashboard's map, such as `NZ`        |
+
+<details>
+<summary>Downloading and updating</summary>
+
+- **Where to get it.** DB-IP publishes the Lite database monthly at the link above, as CSV and MMDB; download the MMDB (`dbip-country-lite-YYYY-MM.mmdb.gz`, about 8 MB unpacked) and unpack it. The download page lists the current month's file; the URL above follows that page's naming. No account or key is needed.
+- **Replacing it.** Write the new file beside the old one and `mv` it into place, as above, so the server never reads a half-written file. The server checks the file every minute and rereads it when it changes (a different file at the path, or a new size or modification time), with no restart, and logs `country database loaded` with the database's type and build date. Rewriting the file in place also works, but a check that lands mid-write sees a bad file and records no countries until the next check.
+- **When it is missing or bad.** Serving is never affected: the server logs `country database unavailable; recording no countries` once, logs entries without a country, and starts again as soon as a good file appears. The file must be an MMDB of at most 512 MiB that passes the reader's structural check.
+- **Automating it.** A monthly cron job or systemd timer running the commands above, with the month filled in (`$(date -u +%Y-%m)`), keeps it current. DB-IP's Lite data is revised monthly; an old file keeps working, but grows less accurate.
+- **Docker.** Mount the file (or its directory) into the container, read-only, and set `WARDLOCK_COUNTRY_DB` to its path inside the container; replace the file on the host the same way.
+- **Turning it off.** Unset `WARDLOCK_COUNTRY_DB` and restart. Countries already recorded stay in the access log and rollup until their retention, but the dashboard and API stop showing any.
+
+</details>
+
+<details>
+<summary>Licences and attribution (checked 2026-10-23)</summary>
+
+- **DB-IP IP to Country Lite** (the default). Licensed under [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/): free to use, including commercially, "provided you give attribution to DB-IP.com", and web applications "must include a link back to DB-IP.com on pages that display or use results from the database" ([DB-IP's download page](https://db-ip.com/db/download/ip-to-country-lite)). CC BY 4.0 section 3(a) also asks for a notice naming the licence with a link to it ([legal code](https://creativecommons.org/licenses/by/4.0/legalcode.en)). Wardlock's default credit covers both: `IP Geolocation by DB-IP (https://db-ip.com), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)`, shown beside every country breakdown in the dashboard. Leave `WARDLOCK_COUNTRY_DB_ATTRIBUTION` unset when you use DB-IP.
+- **MaxMind GeoLite2 Country** (an alternative with the same layout). Not CC-licensed: the [GeoLite End User License Agreement](https://www.maxmind.com/en/geolite2/eula) governs it. It needs a free MaxMind account and licence key to download (at most 30 downloads a day), grants use for "your own internal business purposes", forbids sharing the data with third parties without MaxMind's consent and using it to identify a specific household, individual or street address, and requires you to use updates promptly and destroy old versions within 30 days of a new release ([GeoLite2 developer page](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data/)). Its required notice is `This product includes GeoLite Data created by MaxMind, available from https://www.maxmind.com.`; set exactly that as `WARDLOCK_COUNTRY_DB_ATTRIBUTION`. Check that your use fits the EULA, especially on a public instance whose owners see the results.
+- **Others.** Any MMDB with a `country.iso_code` field works. Set `WARDLOCK_COUNTRY_DB_ATTRIBUTION` to whatever its licence requires; Wardlock cannot check it for you.
+- **Keep the file out of repositories.** It is data you downloaded under its own licence, and a GeoLite2 file may not be shared at all; Wardlock's own tests use small synthetic databases instead.
 
 </details>
 

@@ -407,6 +407,11 @@ func (e SiteView) Valid() bool {
 
 // AccessLogEntry defines model for AccessLogEntry.
 type AccessLogEntry struct {
+	// Country The country the server's country database places the stored (truncated) IP in, or `unknown` when it has none. Absent when the operator has not turned the lookup on, its database could not be read, or no IP was stored.
+	//
+	// Examples: NZ
+	Country *RequestCountry `json:"country,omitempty"`
+
 	// Host The host the request named.
 	Host string `json:"host"`
 
@@ -474,6 +479,12 @@ type Analytics struct {
 	// Browsers Requests by browser family, each family with requests, by name.
 	Browsers []AnalyticsBrowser `json:"browsers"`
 
+	// Countries Requests by country, each country with requests, busiest first, `unknown` among them. Present only while the country lookup is on (with `countryLookup`). Requests logged while it was off have no country, so these can add up to less than the total.
+	Countries *[]AnalyticsCountry `json:"countries,omitempty"`
+
+	// CountryLookup The operator's country lookup, present only while it is on.
+	CountryLookup *CountryLookup `json:"countryLookup,omitempty"`
+
 	// Days The range of an analytics report, in days.
 	Days AnalyticsDays `json:"days"`
 
@@ -522,6 +533,20 @@ type AnalyticsBrowser struct {
 
 	// Browser The browser family of the request's User-Agent: `chrome`, `safari`, `firefox`, `edge`, `tool` (scripts and tools: command-line clients, HTTP libraries, crawlers and other bots, and requests with no User-Agent) or `other`.
 	Browser BrowserFamily `json:"browser"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+}
+
+// AnalyticsCountry defines model for AnalyticsCountry.
+type AnalyticsCountry struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Country An ISO 3166-1 alpha-2 country code in upper case, looked up from a request's stored IP, or `unknown` when the country database has no country for it (often a relay, VPN or private network). Never a city or region.
+	//
+	// Examples: NZ
+	Country RequestCountry `json:"country"`
 
 	// Refused A number of requests.
 	Refused Requests `json:"refused"`
@@ -728,6 +753,22 @@ type CliLoginPending struct {
 
 // CliLoginPendingStatus defines model for CliLoginPending.Status.
 type CliLoginPendingStatus string
+
+// CountryCode An ISO 3166-1 alpha-2 country code in upper case.
+//
+// Examples: NZ
+type CountryCode = string
+
+// CountryLookup The operator's country lookup, present only while it is on.
+type CountryLookup struct {
+	// Attribution The credit the country database's licence requires, to show wherever countries are shown; show any https URL in it as a link. By default DB-IP's: `IP Geolocation by DB-IP (https://db-ip.com), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)`.
+	Attribution string `json:"attribution"`
+
+	// ServerCountry The country to draw the server in; absent when the operator has not named one.
+	//
+	// Examples: NZ
+	ServerCountry *CountryCode `json:"serverCountry,omitempty"`
+}
 
 // CreateApiTokenRequest defines model for CreateApiTokenRequest.
 type CreateApiTokenRequest struct {
@@ -1418,6 +1459,11 @@ type RequestCount struct {
 	// Refused A number of requests.
 	Refused Requests `json:"refused"`
 }
+
+// RequestCountry An ISO 3166-1 alpha-2 country code in upper case, looked up from a request's stored IP, or `unknown` when the country database has no country for it (often a relay, VPN or private network). Never a city or region.
+//
+// Examples: NZ
+type RequestCountry = string
 
 // Requests A number of requests.
 type Requests = int64

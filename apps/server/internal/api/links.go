@@ -303,5 +303,8 @@ func accessLogEntryBody(e access.LoggedAccess) AccessLogEntry {
 	if e.UserAgent != "" {
 		out.UserAgent = &e.UserAgent
 	}
+	if e.Country != "" {
+		out.Country = &e.Country
+	}
 	return out
 }
