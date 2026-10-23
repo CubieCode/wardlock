@@ -2,14 +2,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // The shell's places: every built screen is in the rail from 48rem; below
-// it the bottom bar holds Overview and Sites (with Jump to and Account) and
-// the rest are listed in the Account sheet.
+// it the bottom bar holds Overview, Sites and Analytics (with Jump to and
+// Account) and the rest are listed in the Account sheet.
 import type { Page, TestInfo } from '@playwright/test';
 
 /** The places in the rail, in order. */
-export const railPlaces = ['Overview', 'Sites', 'Groups and tags', 'Passkeys'];
+export const railPlaces = [
+  'Overview',
+  'Sites',
+  'Analytics',
+  'Groups and tags',
+  'Passkeys',
+];
 /** The places in the bottom bar below 48rem. */
-export const barPlaces = ['Overview', 'Sites'];
+export const barPlaces = ['Overview', 'Sites', 'Analytics'];
 /** The places in the Account sheet below 48rem. */
 export const sheetPlaces = ['Groups and tags', 'Passkeys'];
 

@@ -3,6 +3,8 @@
 
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import type { ReactNode } from 'react';
+import { AnalyticsPage } from '../analytics/analytics-page.js';
+import { analyticsIcon } from '../analytics/icon.js';
 import { PasskeysPage } from '../auth/passkeys.js';
 import { OrganisePage } from '../organise/organise-page.js';
 import { OverviewPage } from '../overview/overview.js';
@@ -81,6 +83,11 @@ export const shellRoutes: ShellRoute[] = [
         linkId={params.linkId!}
       />
     ),
+  },
+  {
+    path: '/analytics',
+    rail: { label: 'Analytics', icon: analyticsIcon, bar: true },
+    render: ({ api, query }) => <AnalyticsPage api={api} query={query} />,
   },
   {
     path: '/organise',

@@ -173,6 +173,7 @@ describe('rail', () => {
       'Wardlock',
       'Overview',
       'Sites',
+      'Analytics',
       'Groups and tags',
       'Passkeys',
     ]);
@@ -201,8 +202,9 @@ describe('rail', () => {
     const hrefs = [...document.querySelectorAll('a')].map((a) =>
       a.getAttribute('href'),
     );
-    for (const href of hrefs) expect(href).not.toMatch(/analytics/);
-    expect(screen.queryByText(/Analytics/)).toBeNull();
+    // The sites map (V5.9) is the one screen not built yet.
+    for (const href of hrefs) expect(href).not.toMatch(/\/sites\/map/);
+    expect(screen.queryByText(/Sites map/)).toBeNull();
   });
 
   it('shows no navigator outside the sites list', async () => {
@@ -611,7 +613,7 @@ describe('below 48rem', () => {
       within(bar)
         .getAllByRole('link')
         .map((l) => l.textContent),
-    ).toEqual(['Overview', 'Sites']);
+    ).toEqual(['Overview', 'Sites', 'Analytics']);
     expect(within(bar).getByRole('button', { name: 'Jump to' })).toBeTruthy();
     expect(within(bar).getByRole('button', { name: 'Account' })).toBeTruthy();
     await screen.findByRole('heading', { level: 1, name: 'Sites' });
@@ -646,7 +648,7 @@ describe('below 48rem', () => {
         within(more)
           .getAllByRole('link')
           .map((link) => link.textContent),
-      ).toEqual(['Groups and tags', 'Passkeys', '/extra-two']);
+      ).toEqual(['Groups and tags', 'Passkeys', '/extra-one', '/extra-two']);
     } finally {
       shellRoutes.splice(shellRoutes.indexOf(extra[0]!), extra.length);
     }

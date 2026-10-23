@@ -55,7 +55,6 @@ for (const scheme of schemes) {
           5,
         );
       }
-      await expect(page.locator('a[href^="/analytics"]')).toHaveCount(0);
     });
 
     await test.step('the navigator shows All sites with its count, in a drawer on narrow screens', async () => {
