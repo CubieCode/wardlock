@@ -3,6 +3,7 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { foreignSite, mailbox, schemes, sitesOwnerFor } from './mail.js';
 import { createSite, protect, publish } from './publish.js';
+import { siteTab } from './site-page.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 if (!origin) throw new Error('Run through pnpm browser:test');
@@ -116,6 +117,9 @@ for (const scheme of schemes) {
       expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
         `http://${name}.wardlock.localhost:${port}/`,
       );
+      await shot('overview');
+      await siteTab(page, 'Deploys');
+      await expect(page).toHaveURL(`${origin}/sites/${name}/deploys`);
       const history = page.getByRole('list', { name: 'Deploy history' });
       await expect(history.getByRole('listitem')).toHaveCount(2);
       await expect(history.getByRole('listitem').nth(0)).toContainText('Live');
@@ -187,6 +191,7 @@ for (const scheme of schemes) {
     });
 
     await test.step('tearing down needs the site name, then frees it', async () => {
+      await siteTab(page, 'Settings');
       await page.getByRole('button', { name: 'Tear down site' }).click();
       const dialog = page.getByRole('dialog', { name: `Tear down ${name}?` });
       await expect(dialog).toContainText('This cannot be undone.');
@@ -217,14 +222,19 @@ for (const scheme of schemes) {
 
     await test.step('a foreign site looks exactly like a missing one', async () => {
       const seen: string[] = [];
-      for (const site of [foreignSite, 'no-such-site']) {
+      for (const site of [
+        foreignSite,
+        'no-such-site',
+        `${foreignSite}/settings`,
+        'no-such-site/links',
+      ]) {
         await page.goto(`${origin}/sites/${site}`);
         await expect(
           page.getByRole('heading', { level: 1, name: 'Site not found' }),
         ).toBeVisible();
         seen.push((await page.getByRole('main').textContent()) ?? '');
       }
-      expect(seen[0]).toBe(seen[1]);
+      expect(new Set(seen).size).toBe(1);
       // Policies (D3.4): no editor on the page, and the API reads, sets and
       // deletes a foreign site's policies exactly as a missing site's.
       await expect(
