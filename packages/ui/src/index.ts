@@ -18,6 +18,7 @@ export {
   SelectField,
   TextAreaField,
   TextField,
+  type CheckboxProps,
   type ChoiceProps,
   type SelectFieldProps,
   type TextAreaFieldProps,

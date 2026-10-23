@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import {
+  useEffect,
   useId,
+  useRef,
   type InputHTMLAttributes,
+  type Ref,
   type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
@@ -240,8 +243,12 @@ function Choice({
   hint,
   className,
   'aria-describedby': describedByProp,
+  inputRef,
   ...props
-}: ChoiceProps & { type: 'checkbox' | 'radio' }) {
+}: ChoiceProps & {
+  type: 'checkbox' | 'radio';
+  inputRef?: Ref<HTMLInputElement>;
+}) {
   const id = useId();
   const describedBy =
     [describedByProp, hint ? `${id}-hint` : null].filter(Boolean).join(' ') ||
@@ -250,6 +257,7 @@ function Choice({
     <div className={cx('wl-choice', className)}>
       <input
         {...props}
+        ref={inputRef}
         id={id}
         type={type}
         className="wl-choice-input"
@@ -267,9 +275,41 @@ function Choice({
   );
 }
 
-/** A labelled checkbox with optional hint. */
-export function Checkbox(props: ChoiceProps) {
-  return <Choice {...props} type="checkbox" />;
+export interface CheckboxProps extends ChoiceProps {
+  /**
+   * Some but not all of what the box stands for is chosen (a Select all
+   * over a partly selected list). Shown as a dash and announced as mixed;
+   * `checked` still says what a click does next.
+   */
+  indeterminate?: boolean;
+  /**
+   * Keeps the label for assistive technology only, for a box whose row says
+   * what it selects. The box keeps a 44px target.
+   */
+  hideLabel?: boolean;
+}
+
+/** A labelled checkbox with optional hint, optionally tri-state. */
+export function Checkbox({
+  indeterminate = false,
+  hideLabel = false,
+  hint,
+  ...props
+}: CheckboxProps) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  if (!hideLabel)
+    return <Choice {...props} hint={hint} type="checkbox" inputRef={ref} />;
+  // A hidden label has no room for a hint beside it.
+  const { label, className, ...input } = props;
+  return (
+    <label className={cx('wl-choice-bare', className)}>
+      <input {...input} ref={ref} type="checkbox" className="wl-choice-input" />
+      <span className="wl-visually-hidden">{label}</span>
+    </label>
+  );
 }
 
 /** A labelled radio; put a set with one `name` inside a `Fieldset`. */

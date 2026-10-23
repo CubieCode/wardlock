@@ -31,7 +31,8 @@ export type TagSlot = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 /**
  * A named label with its colour dot. The dot is decorative and always sits
  * beside the name. With `onRemove`, a small button named "Remove <label>"
- * follows the name.
+ * follows the name. In a narrow space the name ends in an ellipsis, with
+ * the whole name on hover.
  */
 export function TagChip({
   label,
@@ -49,7 +50,9 @@ export function TagChip({
         style={{ background: `var(--color-tag-${slot})` }}
         aria-hidden="true"
       />
-      {label}
+      <span className="wl-tag-chip-label" title={label}>
+        {label}
+      </span>
       {onRemove ? (
         <button
           type="button"

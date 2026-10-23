@@ -15,7 +15,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app.js';
 import { SessionProvider } from '../auth/session.js';
 import { JumpTo } from './jump-to.js';
-import { SitesNavigator, type NavigatorState } from './navigator.js';
+import {
+  sitesChanged,
+  SitesNavigator,
+  type NavigatorState,
+} from './navigator.js';
 import { shellRoutes } from './routes.js';
 import { Shell } from './shell.js';
 import { readTheme, setTheme, themeStorageKey } from './theme.js';
@@ -190,7 +194,9 @@ describe('rail', () => {
     render(<App api={fakeServer().api} />);
     await screen.findByRole('complementary', { name: 'Sites navigator' });
     fireEvent.click(screen.getByRole('button', { name: 'Jump to' }));
-    await screen.findByRole('option', { name: /docs/ });
+    await within(
+      await screen.findByRole('group', { name: 'Sites' }),
+    ).findByRole('option', { name: /docs/ });
     const hrefs = [...document.querySelectorAll('a')].map((a) =>
       a.getAttribute('href'),
     );
@@ -206,21 +212,42 @@ describe('rail', () => {
 });
 
 describe('sites navigator', () => {
-  it('shows All sites with its count and nothing the list cannot filter', async () => {
+  it('shows All sites, the views, groups and tags the list filters by', async () => {
     at('/sites');
-    const server = fakeServer();
-    render(<App api={server.api} />);
+    render(<App api={fakeServer().api} />);
     const nav = await screen.findByRole('complementary', {
       name: 'Sites navigator',
     });
     const all = await within(nav).findByRole('link', { name: 'All sites 12' });
     expect(all.getAttribute('href')).toBe('/sites');
     expect(all.getAttribute('aria-current')).toBe('page');
-    expect(within(nav).getAllByRole('link')).toHaveLength(1);
-    // Group and tag names are only read once they are shown.
-    expect(server.calls.some((url) => url.pathname === '/api/v0/groups')).toBe(
-      false,
+    expect(
+      await within(nav).findByRole('link', { name: 'Client work 9' }),
+    ).toBeTruthy();
+    expect(within(nav).getByRole('link', { name: 'docs 4' })).toBeTruthy();
+  });
+
+  it('counts again when the sites list changes something', async () => {
+    at('/sites');
+    let all = 12;
+    render(
+      <App
+        api={
+          fakeServer({
+            'GET /api/v0/site-counts': () => Response.json({ ...counts, all }),
+          }).api
+        }
+      />,
     );
+    const nav = await screen.findByRole('complementary', {
+      name: 'Sites navigator',
+    });
+    await within(nav).findByRole('link', { name: 'All sites 12' });
+    all = 13;
+    act(() => sitesChanged());
+    expect(
+      await within(nav).findByRole('link', { name: 'All sites 13' }),
+    ).toBeTruthy();
   });
 
   it('offers to count again when the counts fail', async () => {
@@ -341,7 +368,9 @@ describe('jump to', () => {
     expect(document.activeElement).toBe(input);
     const list = screen.getByRole('listbox', { name: 'Jump to' });
     expect(
-      await within(list).findByRole('option', { name: /docs/ }),
+      await within(
+        await within(list).findByRole('group', { name: 'Sites' }),
+      ).findByRole('option', { name: /docs/ }),
     ).toBeTruthy();
     expect(within(list).getByRole('group', { name: 'Pages' })).toBeTruthy();
 
@@ -434,7 +463,9 @@ describe('jump to', () => {
     opener.focus();
     fireEvent.click(opener);
     const input = screen.getByRole('combobox', { name: 'Jump to' });
-    await screen.findByRole('option', { name: /docs/ });
+    await within(
+      await screen.findByRole('group', { name: 'Sites' }),
+    ).findByRole('option', { name: /docs/ });
     const selected = () =>
       screen
         .getAllByRole('option')
@@ -568,7 +599,7 @@ describe('theme', () => {
 });
 
 describe('below 48rem', () => {
-  it('puts the places in a bottom bar and leaves out the navigator', async () => {
+  it('puts the places in a bottom bar and the navigator behind Browse sites', async () => {
     narrow(true);
     at('/sites');
     const server = fakeServer();
@@ -582,12 +613,12 @@ describe('below 48rem', () => {
     expect(within(bar).getByRole('button', { name: 'Jump to' })).toBeTruthy();
     expect(within(bar).getByRole('button', { name: 'Account' })).toBeTruthy();
     await screen.findByRole('heading', { level: 1, name: 'Sites' });
-    // Until it has filters, All sites is just the Sites tab.
+    // The navigator is not a column here; it opens in a drawer.
     expect(screen.queryByRole('complementary')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Browse sites' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Browse sites' })).toBeTruthy();
     expect(
       server.calls.some((url) => url.pathname === '/api/v0/site-counts'),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('with filters, opens the navigator in a drawer', async () => {

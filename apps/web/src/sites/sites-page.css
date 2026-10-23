@@ -1,0 +1,542 @@
+/* SPDX-FileCopyrightText: 2026 CubieCode */
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The sites list: toolbar, filter chips, sections on wires and rows. */
+
+/* The list has seven columns; give it more room than a form page. */
+.wl-main:has(> .sites-page) {
+  max-width: 82rem;
+}
+
+.sites-page {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* Room for the bulk bar, so it never covers the last row. */
+.sites-page-bulk {
+  padding-bottom: calc(2 * var(--touch-target) + var(--space-8));
+}
+
+.sites-mono {
+  font-family: var(--font-mono);
+}
+
+/* Toolbar */
+.sites-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.sites-search {
+  position: relative;
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.sites-search .wl-input {
+  width: 100%;
+  padding-right: calc(var(--space-3) + 2rem);
+}
+
+.sites-search-key {
+  position: absolute;
+  right: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.sites-tools .wl-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sites-tools .wl-field-label {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.sites-tools .wl-select {
+  width: auto;
+}
+
+/* Narrow: search across, then Group by and Sort side by side; the rows are
+   already stacked, so density stays at its setting without a control. */
+@media (max-width: 47.99rem) {
+  .sites-tools {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sites-search {
+    grid-column: 1 / -1;
+  }
+
+  .sites-tools .wl-field {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .sites-tools .wl-select {
+    width: 100%;
+  }
+
+  .sites-tools .wl-segmented {
+    display: none;
+  }
+}
+
+/* Filter chips */
+.sites-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sites-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-left: var(--space-3);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+  font-size: var(--text-sm);
+}
+
+.sites-chip-remove,
+.sites-clear,
+.sites-link-button {
+  min-height: var(--touch-target);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sites-chip-remove {
+  min-width: var(--touch-target);
+}
+
+.sites-chip-remove:hover {
+  background: var(--color-surface-muted);
+}
+
+.sites-clear,
+.sites-link-button {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.sites-link-button {
+  min-height: 0;
+  padding: 0;
+}
+
+.sites-meta-error,
+.sites-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* Sections and rows */
+.sites-list {
+  container: sites / inline-size;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.sites-list .wl-hub {
+  --wire-y: 1.375rem;
+}
+
+.sites-hub {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.sites-hub > span {
+  color: var(--color-text-muted);
+}
+
+.sites-section {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sites-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-3);
+  min-height: var(--touch-target);
+}
+
+.sites-section-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  margin-left: calc(-1 * var(--space-2));
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--color-primary);
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+
+.sites-section-toggle > span {
+  display: inline-block;
+  transition: transform var(--duration-short);
+}
+
+.sites-section-toggle[aria-expanded='true'] > span {
+  transform: rotate(90deg);
+}
+
+.sites-section-toggle:hover {
+  background: var(--color-surface-muted);
+}
+
+.sites-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-lg);
+  overflow-wrap: anywhere;
+}
+
+.sites-section-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sites-section-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.sites-section-select {
+  margin-left: auto;
+  font-size: var(--text-sm);
+}
+
+.sites-show-all {
+  justify-self: start;
+  margin-top: var(--space-2);
+}
+
+/* A row: stacked below the wide layout. */
+.sites-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-areas:
+    'check site site more'
+    '. tags tags tags'
+    '. access access access'
+    '. links requests requests'
+    '. deploy deploy deploy';
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: 0 var(--space-1) var(--space-3) 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.sites-row-selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.sites-row-check {
+  grid-area: check;
+}
+
+.sites-row-site {
+  grid-area: site;
+  display: grid;
+  min-width: 0;
+}
+
+.sites-row-tags {
+  grid-area: tags;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.sites-row-tags:empty {
+  display: none;
+}
+
+.sites-row-access {
+  grid-area: access;
+}
+
+.sites-row-links {
+  grid-area: links;
+}
+
+.sites-row-requests {
+  grid-area: requests;
+}
+
+.sites-row-deploy {
+  grid-area: deploy;
+}
+
+.sites-row-more {
+  grid-area: more;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-lg);
+  cursor: pointer;
+}
+
+.sites-row-more:hover,
+.sites-row-more[aria-expanded='true'] {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.sites-row-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.sites-row-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--touch-target);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sites-row-name:hover,
+.sites-section-title a:hover {
+  text-decoration: underline;
+}
+
+.sites-pin {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.sites-pin svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.sites-pin:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.sites-pin[aria-pressed='true'],
+.sites-pin[aria-pressed='true']:hover {
+  color: var(--color-ward);
+}
+
+.sites-row-access,
+.sites-row-deploy {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.sites-row-words {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.sites-row-sub {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sites-row-links,
+.sites-row-requests {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.sites-row-requests .wl-sparkline {
+  width: 3.5rem;
+  height: 1.25rem;
+}
+
+.sites-row-message {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sites-row-extra {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.sites-columns {
+  display: none;
+}
+
+/* Wide: one line per site, under column names. */
+@container sites (min-width: 56rem) {
+  .sites-row,
+  .sites-columns {
+    grid-template-columns:
+      var(--touch-target) minmax(11rem, 2fr) minmax(6rem, 1.1fr)
+      minmax(8.5rem, 1.1fr) 4.75rem 8rem minmax(7.5rem, 1.3fr) var(
+        --touch-target
+      );
+    grid-template-areas: 'check site tags access links requests deploy more';
+    grid-auto-flow: column;
+    gap: var(--space-2);
+  }
+
+  .sites-row {
+    min-height: 3.75rem;
+    padding: var(--space-1) var(--space-1) var(--space-1) 0;
+  }
+
+  .sites-row-tags:empty {
+    display: flex;
+  }
+
+  .sites-row-tags {
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+
+  .sites-row-tags .wl-tag-chip {
+    flex: 0 1 auto;
+  }
+
+  .sites-row-tags .sites-row-extra {
+    flex: none;
+  }
+
+  .sites-row-links {
+    flex-wrap: wrap;
+    gap: 0.125rem var(--space-1);
+  }
+
+  .sites-columns {
+    display: grid;
+    /* Under the rows: two wire levels in from the hub. */
+    margin-left: calc(2 * (0.875rem + 1.5rem));
+    padding-inline: 0 var(--space-1);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: var(--letter-spacing-caps);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+}
+
+/* Compact: one line of text per cell. */
+.sites-list-compact .sites-row-host,
+.sites-list-compact .sites-row-access .sites-row-sub,
+.sites-list-compact .sites-row-deploy .sites-row-sub:not(.sites-row-none) {
+  display: none;
+}
+
+.sites-list-compact .sites-row-name {
+  line-height: 2rem;
+}
+
+.sites-list-compact .sites-row {
+  padding-bottom: var(--space-1);
+}
+
+@container sites (min-width: 56rem) {
+  .sites-list-compact .sites-row {
+    min-height: 2.75rem;
+    padding-block: 0;
+  }
+}
+
+.sites-list-compact .wl-hub {
+  --wire-gap: var(--space-1);
+}
+
+/* Pickers in popovers */
+.sites-pick-title {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) 0;
+  font-weight: var(--font-weight-bold);
+}
+
+.sites-pick-hint {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sites-section-toggle > span {
+    transition: none;
+  }
+}

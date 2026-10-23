@@ -23,11 +23,10 @@ type Group = components['schemas']['Group'];
 type Tag = components['schemas']['Tag'];
 
 /**
- * Whether the navigator offers saved views, groups and tags. The sites list
- * ignores `g`, `t` and `v` until V5.8 replaces it, so linking to them would
- * show every site under a filter's name; V5.8 turns this on.
+ * Whether the navigator offers saved views, groups and tags: on since the
+ * sites list filters by `g`, `t` and `v` (V5.8).
  */
-export const navigatorFilters = false;
+export const navigatorFilters = true;
 
 /** The saved views in navigator order (docs/SPEC.md, "Saved views"). */
 export const savedViews: { view: SiteView; label: string; icon: ReactNode }[] =
@@ -40,10 +39,31 @@ export const savedViews: { view: SiteView; label: string; icon: ReactNode }[] =
     { view: 'down', label: 'Taken down', icon: downIcon },
   ];
 
-/** A sites list address filtered by one group (`none`), tag or view. */
-export function sitesHref(filter?: { g?: string; t?: string; v?: string }) {
-  const query = new URLSearchParams(filter).toString();
-  return query ? `/sites?${query}` : '/sites';
+/**
+ * A sites list address: filtered by a group (`none`), tag, view or search,
+ * and drawn grouped (`by`), sorted and at a density (`d`). Empty values are
+ * left out.
+ */
+export function sitesHref(
+  filter?: Partial<
+    Record<'g' | 't' | 'v' | 'q' | 'by' | 'sort' | 'd', string | undefined>
+  >,
+) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter ?? {}))
+    if (value) query.set(key, value);
+  const text = query.toString();
+  return text ? `/sites?${text}` : '/sites';
+}
+
+const sitesChangedEvent = 'wardlock:sites-changed';
+
+/**
+ * Tells the navigator that sites were filed, tagged or pinned, so it counts
+ * them again.
+ */
+export function sitesChanged() {
+  window.dispatchEvent(new Event(sitesChangedEvent));
 }
 
 /** The organise screen, once it is built (V5.7). */
@@ -98,6 +118,14 @@ export function useNavigatorData(
       live = false;
     };
   }, [api, enabled, filters, attempt]);
+  // A change on the sites list counts again, keeping the old counts shown
+  // until the new ones arrive.
+  useEffect(() => {
+    if (!enabled) return;
+    const recount = () => setAttempt((n) => n + 1);
+    window.addEventListener(sitesChangedEvent, recount);
+    return () => window.removeEventListener(sitesChangedEvent, recount);
+  }, [enabled]);
   const retry = () => {
     setState({ kind: 'loading' });
     setAttempt((n) => n + 1);

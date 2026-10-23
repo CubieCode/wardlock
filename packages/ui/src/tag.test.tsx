@@ -42,7 +42,7 @@ describe('StatusTag', () => {
 describe('TagChip', () => {
   it('draws its colour slot beside the name, hidden from assistive technology', () => {
     render(<TagChip label="docs" slot={3} />);
-    const chip = screen.getByText('docs');
+    const chip = screen.getByText('docs').closest('.wl-tag-chip')!;
     const dot = chip.querySelector('.wl-tag-dot') as HTMLElement;
     expect(dot.getAttribute('aria-hidden')).toBe('true');
     expect(dot.style.background).toBe('var(--color-tag-3)');
@@ -52,12 +52,21 @@ describe('TagChip', () => {
   it('offers a named remove button when it can be removed', () => {
     const onRemove = vi.fn();
     render(<TagChip label="docs" onRemove={onRemove} />);
-    const chip = screen.getByText('docs');
+    const chip = screen.getByText('docs').closest('.wl-tag-chip')!;
     expect(
       (chip.querySelector('.wl-tag-dot') as HTMLElement).style.background,
     ).toBe('var(--color-tag-0)');
     fireEvent.click(screen.getByRole('button', { name: 'Remove docs' }));
     expect(onRemove).toHaveBeenCalledOnce();
+  });
+});
+
+describe('TagChip in a narrow space', () => {
+  it('keeps the whole name on hover for when it is cut short', () => {
+    render(<TagChip label="a-very-long-tag-name-indeed" />);
+    expect(
+      screen.getByText('a-very-long-tag-name-indeed').getAttribute('title'),
+    ).toBe('a-very-long-tag-name-indeed');
   });
 });
 

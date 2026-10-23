@@ -131,7 +131,8 @@ function WeekRequests({ api, name }: { api: ApiClient; name: string }) {
   );
 }
 
-function Star({ filled }: { filled: boolean }) {
+/** The pin glyph: filled while pinned. Decorative. */
+export function Star({ filled }: { filled: boolean }) {
   return (
     <svg
       viewBox="0 0 16 16"
