@@ -739,9 +739,20 @@
 }
 
 .wl-tag-chip-label {
+  display: inline-flex;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.wl-tag-chip-head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-tag-chip-tail {
+  flex: none;
 }
 
 .wl-tag-chip-remove {
@@ -1134,6 +1145,12 @@
   white-space: nowrap;
 }
 
+.wl-bulk-note {
+  margin-left: var(--space-2);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-regular);
+}
+
 .wl-bulk-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1236,6 +1253,26 @@
 
 .wl-toast-undo:hover {
   border-color: var(--color-primary);
+}
+
+.wl-toast-key {
+  margin-left: var(--space-2);
+  font-weight: var(--font-weight-regular);
+}
+
+.wl-toast-danger {
+  border-color: var(--color-danger-border);
+  background: var(--color-danger-surface);
+}
+
+.wl-toast-dismiss {
+  color: var(--color-text);
+}
+
+@media (hover: none) {
+  .wl-toast-key {
+    display: none;
+  }
 }
 
 @keyframes wl-rise {

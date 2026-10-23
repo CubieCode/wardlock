@@ -21,6 +21,7 @@ import {
   Ward,
   Wire,
 } from './index.js';
+import { nameTail } from './tag.js';
 
 afterEach(cleanup);
 
@@ -62,11 +63,19 @@ describe('TagChip', () => {
 });
 
 describe('TagChip in a narrow space', () => {
-  it('keeps the whole name on hover for when it is cut short', () => {
-    render(<TagChip label="a-very-long-tag-name-indeed" />);
-    expect(
-      screen.getByText('a-very-long-tag-name-indeed').getAttribute('title'),
-    ).toBe('a-very-long-tag-name-indeed');
+  it('cuts a long name in the middle, keeping its end, and its whole name', () => {
+    render(<TagChip label="ls-desktop-light-red" />);
+    const label = document.querySelector('.wl-tag-chip-label')!;
+    expect(label.getAttribute('title')).toBe('ls-desktop-light-red');
+    expect(label.textContent).toBe('ls-desktop-light-red');
+    expect(document.querySelector('.wl-tag-chip-tail')!.textContent).toBe(
+      '-light-red',
+    );
+  });
+
+  it('keeps the last eight characters when no hyphen fits, and short names whole', () => {
+    expect(nameTail('abcdefghijklmnopqrstuvwxyz')).toBe('stuvwxyz');
+    expect(nameTail('client-preview')).toBeUndefined();
   });
 });
 

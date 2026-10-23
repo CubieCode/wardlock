@@ -175,7 +175,15 @@ function RowMenu({
         ?.querySelector<HTMLElement>('input, [role="menuitemcheckbox"]')
         ?.focus();
   }, [open, mode]);
-  const close = () => setOpen(false);
+  // After an action the menu closes with focus back on its ⋯ button.
+  const close = () => {
+    body.current
+      ?.closest('[data-site]')
+      ?.querySelector<HTMLElement>('.sites-row-more')
+      ?.focus();
+    setOpen(false);
+    setMode('menu');
+  };
   const label =
     mode === 'tags'
       ? `Tags for ${site.name}`
@@ -295,7 +303,10 @@ export const SiteRow = memo(function SiteRow({
       tone={kind === 'public' ? 'public' : 'default'}
       ward={kind === 'protected'}
     >
-      <div className={cx('sites-row', selected ? 'sites-row-selected' : null)}>
+      <div
+        className={cx('sites-row', selected ? 'sites-row-selected' : null)}
+        data-site={site.name}
+      >
         <Checkbox
           hideLabel
           label={`Select ${site.name}`}

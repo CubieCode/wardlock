@@ -184,7 +184,21 @@ function toggled(set: Set<string>, key: string) {
 interface ToastState {
   message: string;
   key: number;
+  tone: 'info' | 'danger';
   undo?: OrganiseRequest[] | undefined;
+}
+
+/** The most sites one change can name (`organiseSites`). */
+export const maxSelection = 500;
+
+/** After a change to one row, where focus goes if the row moved or went. */
+interface FocusAfter {
+  name: string;
+  /** The row's place among the rows shown when the change was made. */
+  index: number;
+  /** The row's control that had focus. */
+  control: 'pin' | 'more';
+  until: number;
 }
 
 const SectionView = memo(function SectionView({
@@ -221,6 +235,7 @@ const SectionView = memo(function SectionView({
   const id = `sites-section-${key.replace(/[^a-z0-9-]/gi, '-')}`;
   const names = sites.map((site) => site.name);
   const chosen = names.filter((name) => selected.has(name)).length;
+  const capped = names.length > maxSelection;
   const shown = shownSites(section, sectionCount, cap, expanded);
   const links = sites.reduce((sum, site) => sum + site.workingLinks, 0);
   const requests = sites.reduce((sum, site) => sum + weekRequests(site), 0);
@@ -261,40 +276,51 @@ const SectionView = memo(function SectionView({
             ) : null}
           </span>
           <Checkbox
-            label="Select all"
-            aria-label={`Select all in ${title}`}
+            label={capped ? `Select the first ${maxSelection}` : 'Select all'}
+            aria-label={
+              capped
+                ? `Select the first ${maxSelection} in ${title}`
+                : `Select all in ${title}`
+            }
             className="sites-section-select"
-            checked={chosen === names.length}
-            indeterminate={chosen > 0 && chosen < names.length}
+            checked={chosen === Math.min(names.length, maxSelection)}
+            indeterminate={
+              chosen > 0 && chosen < Math.min(names.length, maxSelection)
+            }
             onChange={(event) => actions.select(names, event.target.checked)}
           />
         </div>
-        {collapsed ? null : (
-          <div id={`${id}-rows`}>
-            <HubLayout label={`Sites in ${title}`}>
-              {shown.map((site) => (
-                <SiteRow
-                  key={site.id}
-                  site={site}
-                  selected={selected.has(site.name)}
-                  tagsById={tagsById}
-                  tags={tags}
-                  groups={groups}
-                  actions={actions}
-                />
-              ))}
-            </HubLayout>
-            {shown.length < sites.length ? (
-              <Button
-                type="button"
-                className="sites-show-all"
-                onClick={() => onExpand(key)}
-              >
-                Show all {sites.length} in {title}
-              </Button>
-            ) : null}
-          </div>
-        )}
+        <div id={`${id}-rows`} hidden={collapsed}>
+          {collapsed ? null : (
+            <>
+              <HubLayout label={`Sites in ${title}`}>
+                {shown.map((site) => (
+                  <SiteRow
+                    key={site.id}
+                    site={site}
+                    selected={selected.has(site.name)}
+                    tagsById={tagsById}
+                    tags={tags}
+                    groups={groups}
+                    actions={actions}
+                  />
+                ))}
+              </HubLayout>
+              {sectionCount > 1 && sites.length > cap ? (
+                // One button for both, so focus stays on it.
+                <Button
+                  type="button"
+                  className="sites-show-all"
+                  onClick={() => onExpand(key)}
+                >
+                  {expanded
+                    ? `Show fewer in ${title}`
+                    : `Show all ${sites.length} in ${title}`}
+                </Button>
+              ) : null}
+            </>
+          )}
+        </div>
       </section>
     </Wire>
   );
@@ -359,19 +385,22 @@ export function SitesPage({ api }: { api: ApiClient }) {
             groups,
             tags,
             title === 'Sites' ? 'All sites' : title,
+            { by: query.by, sort: query.sort, d: query.d },
           )
         : [],
-    [ready, query.by, groups, tags, title],
+    [ready, query.by, query.sort, query.d, groups, tags, title],
   );
 
-  // Selection, by name, of sites the list still shows.
-  const [chosen, setChosen] = useState<Set<string>>(() => new Set());
-  const selected = useMemo(() => {
-    if (!ready) return chosen;
+  // Selection, by name. A site the filters stop showing leaves it, so a
+  // change never reaches a site the owner cannot see in the list.
+  const [selected, setChosen] = useState<Set<string>>(() => new Set());
+  const [prunedFor, setPrunedFor] = useState(ready);
+  if (ready && ready !== prunedFor) {
+    setPrunedFor(ready);
     const shown = new Set(ready.map((site) => site.name));
-    const kept = [...chosen].filter((name) => shown.has(name));
-    return kept.length === chosen.size ? chosen : new Set(kept);
-  }, [chosen, ready]);
+    if ([...selected].some((name) => !shown.has(name)))
+      setChosen(new Set([...selected].filter((name) => shown.has(name))));
+  }
   const targets = useMemo(
     () => (ready ?? []).filter((site) => selected.has(site.name)),
     [ready, selected],
@@ -390,12 +419,20 @@ export function SitesPage({ api }: { api: ApiClient }) {
 
   const [toast, setToast] = useState<ToastState | null>(null);
   const toastKey = useRef(0);
-  const say = (message: string, undo?: OrganiseRequest[]) =>
-    setToast({ message, key: ++toastKey.current, undo });
-  const [error, setError] = useState<string | null>(null);
+  const say = (
+    message: string,
+    undo?: OrganiseRequest[],
+    tone: ToastState['tone'] = 'info',
+  ) => setToast({ message, key: ++toastKey.current, tone, undo });
 
-  // Changes run one after another, in the order the owner made them.
+  // Changes run one after another, in the order the owner made them; a
+  // change that throws is reported and the next still runs.
   const queue = useRef(Promise.resolve());
+  const enqueue = (task: () => Promise<void>) => {
+    queue.current = queue.current
+      .then(task)
+      .catch(() => failed('make the change', ''));
+  };
   const latest = useRef({ tags, list, meta });
   useLayoutEffect(() => {
     latest.current = { tags, list, meta };
@@ -424,15 +461,16 @@ export function SitesPage({ api }: { api: ApiClient }) {
   };
 
   const failed = (what: string, message: string) =>
-    setError(
+    say(
       message
         ? `Could not ${what}: ${message}`
         : `Could not ${what}. Check your connection, then try again.`,
+      undefined,
+      'danger',
     );
 
   const organise = (change: OrganiseRequest, done: string, what: string) => {
-    queue.current = queue.current.then(async () => {
-      setError(null);
+    enqueue(async () => {
       const result = await post(change);
       if (typeof result === 'string') return failed(what, result);
       latest.current.list.patch((sites) =>
@@ -445,8 +483,7 @@ export function SitesPage({ api }: { api: ApiClient }) {
   };
 
   const undo = (requests: OrganiseRequest[]) => {
-    queue.current = queue.current.then(async () => {
-      setError(null);
+    enqueue(async () => {
       for (const request of requests) {
         const result = await post(request);
         if (typeof result === 'string') {
@@ -484,7 +521,16 @@ export function SitesPage({ api }: { api: ApiClient }) {
         : `Removed ${tag.name} from ${siteCount(names)}`,
       add ? 'add the tag' : 'remove the tag',
     );
-  const moveChange = (names: string[], group: Group | undefined) =>
+  const moveChange = (all: string[], group: Group | undefined) => {
+    // Sites already there are left out; with none left, nothing happens.
+    const current = latest.current.list.state;
+    const where = new Map(
+      current.kind === 'ready'
+        ? current.sites.map((site) => [site.name, site.groupId])
+        : [],
+    );
+    const names = all.filter((name) => where.get(name) !== group?.id);
+    if (names.length === 0) return;
     organise(
       group
         ? { sites: names, groupId: group.id }
@@ -494,6 +540,43 @@ export function SitesPage({ api }: { api: ApiClient }) {
         : `Took ${siteCount(names)} out of ${names.length === 1 ? 'its' : 'their'} group`,
       'move the sites',
     );
+  };
+
+  // A change to one row can move it to another section or out of the list,
+  // taking focus with it. Focus then goes to the row where it is now, else
+  // the row that took its place, else the search.
+  const focusAfter = useRef<FocusAfter | null>(null);
+  const remember = (names: string[]) => {
+    const row = document.activeElement?.closest<HTMLElement>('[data-site]');
+    if (names.length !== 1 || !row || row.dataset.site !== names[0]) return;
+    const rows = [...document.querySelectorAll('[data-site]')];
+    focusAfter.current = {
+      name: names[0]!,
+      index: rows.indexOf(row),
+      control: document.activeElement?.matches('.sites-pin') ? 'pin' : 'more',
+      until: Date.now() + 5000,
+    };
+  };
+  useLayoutEffect(() => {
+    const after = focusAfter.current;
+    if (!after) return;
+    if (Date.now() > after.until) {
+      focusAfter.current = null;
+      return;
+    }
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    const rows = [...document.querySelectorAll<HTMLElement>('[data-site]')];
+    const same = rows.find((row) => row.dataset.site === after.name);
+    const target = same
+      ? same.querySelector<HTMLElement>(
+          after.control === 'pin' ? '.sites-pin' : '.sites-row-more',
+        )
+      : (
+          rows[after.index] ?? rows[after.index - 1]
+        )?.querySelector<HTMLElement>('.sites-row-name');
+    (target ?? search.current)?.focus();
+  });
 
   // One object for every row, reading the latest handlers when called.
   const handlers = useRef<ListActions>(null!);
@@ -503,31 +586,37 @@ export function SitesPage({ api }: { api: ApiClient }) {
         setChosen((current) => {
           const next = new Set(current);
           for (const name of names) {
-            if (on) next.add(name);
-            else next.delete(name);
+            if (!on) next.delete(name);
+            else if (next.size < maxSelection) next.add(name);
           }
           return next;
         }),
-      pin: (names, pinned) =>
+      pin: (names, pinned) => {
+        remember(names);
         organise(
           { sites: names, pinned },
           `${pinned ? 'Pinned' : 'Unpinned'} ${siteCount(names)}`,
           pinned ? 'pin the sites' : 'unpin the sites',
-        ),
-      tag: tagChange,
+        );
+      },
+      tag: (names, tag, add) => {
+        remember(names);
+        tagChange(names, tag, add);
+      },
       createTag: (names, name) => {
-        queue.current = queue.current.then(async () => {
-          setError(null);
+        enqueue(async () => {
           const tag = await create('/api/v0/tags', name);
           if (typeof tag === 'string') return failed('create the tag', tag);
           latest.current.meta.reload();
           tagChange(names, tag as Tag, true);
         });
       },
-      move: moveChange,
+      move: (names, group) => {
+        remember(names);
+        moveChange(names, group);
+      },
       createGroup: (names, name) => {
-        queue.current = queue.current.then(async () => {
-          setError(null);
+        enqueue(async () => {
           const group = await create('/api/v0/groups', name);
           if (typeof group === 'string')
             return failed('create the group', group);
@@ -538,7 +627,7 @@ export function SitesPage({ api }: { api: ApiClient }) {
       copy: (site) => {
         navigator.clipboard.writeText(site.url).then(
           () => say(`Copied ${site.url}`),
-          () => setError('Could not copy the address.'),
+          () => failed('copy the address', 'this browser did not allow it'),
         );
       },
     };
@@ -561,6 +650,28 @@ export function SitesPage({ api }: { api: ApiClient }) {
   const bulkOpen = (which: 'tags' | 'group' | 'pin') => (open: boolean) =>
     setBulk(open ? which : null);
   const names = targets.map((site) => site.name);
+  // Selected sites in a collapsed section or behind Show all.
+  const unseen = useMemo(() => {
+    const seen = new Set<string>();
+    for (const section of sections)
+      if (!collapsed.has(section.key))
+        for (const site of shownSites(
+          section,
+          sections.length,
+          cap,
+          expanded.has(section.key),
+        ))
+          seen.add(site.name);
+    return targets.filter((site) => !seen.has(site.name)).length;
+  }, [sections, collapsed, expanded, cap, targets]);
+  const bulkNote = [
+    targets.length >= maxSelection
+      ? `${maxSelection} is the most at once`
+      : null,
+    unseen ? `${unseen} not shown` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   const chips = filterChips(query, meta.state);
   const isFiltered = filtered(query);
@@ -600,6 +711,7 @@ export function SitesPage({ api }: { api: ApiClient }) {
             autoComplete="off"
             spellCheck={false}
             aria-keyshortcuts="/"
+            maxLength={200}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter') go({ ...query, q: text }, true);
@@ -653,7 +765,10 @@ export function SitesPage({ api }: { api: ApiClient }) {
                 type="button"
                 className="sites-chip-remove"
                 aria-label={`Remove filter ${chip.label}`}
-                onClick={() => go(chip.without)}
+                onClick={() => {
+                  setText(chip.without.q);
+                  go(chip.without);
+                }}
               >
                 <span aria-hidden="true">×</span>
               </button>
@@ -662,13 +777,15 @@ export function SitesPage({ api }: { api: ApiClient }) {
           <button
             type="button"
             className="sites-clear"
-            onClick={() => go(unfiltered(query))}
+            onClick={() => {
+              setText('');
+              go(unfiltered(query));
+            }}
           >
             Clear all
           </button>
         </div>
       ) : null}
-      {error ? <Notice tone="danger">{error}</Notice> : null}
 
       {list.state.kind === 'loading' ? (
         <p role="status">Loading sites…</p>
@@ -679,7 +796,13 @@ export function SitesPage({ api }: { api: ApiClient }) {
               The group or tag in this address is not one of yours, or was
               deleted.
             </p>
-            <Button type="button" onClick={() => go(unfiltered(query))}>
+            <Button
+              type="button"
+              onClick={() => {
+                setText('');
+                go(unfiltered(query));
+              }}
+            >
               Clear filters
             </Button>
           </EmptyState>
@@ -700,7 +823,13 @@ export function SitesPage({ api }: { api: ApiClient }) {
               Search looks at names, addresses, domains, tags and groups. Try
               removing a filter.
             </p>
-            <Button type="button" onClick={() => go(unfiltered(query))}>
+            <Button
+              type="button"
+              onClick={() => {
+                setText('');
+                go(unfiltered(query));
+              }}
+            >
               Clear filters
             </Button>
           </EmptyState>
@@ -732,6 +861,11 @@ export function SitesPage({ api }: { api: ApiClient }) {
               </button>
             </p>
           ) : null}
+          {query.by === 'tag' ? (
+            <p className="sites-note">
+              A site with several tags appears under each of them.
+            </p>
+          ) : null}
           <div className="sites-columns" aria-hidden="true">
             <span />
             <span>Site</span>
@@ -746,7 +880,7 @@ export function SitesPage({ api }: { api: ApiClient }) {
             hub={
               <span className="sites-hub">
                 <b className="sites-mono">wardlockd</b>
-                <span>{plural(all ?? ready?.length ?? 0, 'site')}</span>
+                <span>{description}</span>
               </span>
             }
             label="Sections"
@@ -770,17 +904,13 @@ export function SitesPage({ api }: { api: ApiClient }) {
               />
             ))}
           </HubLayout>
-          {query.by === 'tag' ? (
-            <p className="sites-note">
-              A site with several tags appears under each of them.
-            </p>
-          ) : null}
         </div>
       )}
 
       <BulkBar
         label="Bulk actions"
         count={targets.length}
+        note={bulkNote}
         onClear={() => setChosen(new Set())}
       >
         <Popover
@@ -848,6 +978,7 @@ export function SitesPage({ api }: { api: ApiClient }) {
       <Toast
         message={toast?.message ?? null}
         toastKey={toast?.key ?? 0}
+        tone={toast?.tone ?? 'info'}
         {...(toast?.undo ? { onUndo: () => undo(toast.undo!) } : {})}
         onDismiss={() => setToast(null)}
       />

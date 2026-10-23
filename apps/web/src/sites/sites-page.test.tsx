@@ -460,7 +460,7 @@ describe('filters and search', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: 'Client work' }),
     ).toBeTruthy();
-    expect(screen.getByText('7 of 10 sites')).toBeTruthy();
+    expect(screen.getByText('7 of 10 sites', { selector: 'p' })).toBeTruthy();
     expect(server.summaries().at(-1)!.searchParams.get('group')).toBe(work);
     const filters = screen.getByRole('group', { name: 'Filters' });
     expect(within(filters).getByText('Group: Client work')).toBeTruthy();
@@ -856,11 +856,16 @@ describe('selection and bulk changes', () => {
     fireEvent.click(
       within(row('handbook')).getByRole('button', { name: 'Pin handbook' }),
     );
-    expect(
-      await screen.findByText(
+    // A failure is an assertive toast that stays until dismissed, not a
+    // notice at the top of the page.
+    const alert = await screen.findByRole('alert');
+    await waitFor(() =>
+      expect(alert.textContent).toContain(
         'Could not pin the sites: A site can have at most 20 tags.',
       ),
-    ).toBeTruthy();
+    );
+    fireEvent.click(within(alert).getByRole('button', { name: 'Dismiss' }));
+    expect(alert.textContent).toBe('');
     expect(
       within(row('handbook'))
         .getByRole('button', { name: 'Pin handbook' })
@@ -937,5 +942,201 @@ describe('row menu', () => {
       sites: ['handbook'],
       ungroup: true,
     });
+  });
+});
+
+describe('follow-ups', () => {
+  it('undoes a row change by keyboard and keeps focus on the row', async () => {
+    const server = await open();
+    const star = within(row('handbook')).getByRole('button', {
+      name: 'Pin handbook',
+    });
+    star.focus();
+    fireEvent.click(star);
+    expect(await screen.findByText('Pinned handbook')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain(
+      'Control Z undoes it.',
+    );
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: 'z',
+      ctrlKey: true,
+    });
+    expect(await screen.findByText('Undone.')).toBeTruthy();
+    expect(server.organised().at(-1)).toEqual({
+      pinned: false,
+      sites: ['handbook'],
+    });
+    expect(document.activeElement).toBe(
+      within(row('handbook')).getByRole('button', { name: 'Pin handbook' }),
+    );
+  });
+
+  it('keeps focus on a row that moves to another section', async () => {
+    await open();
+    const more = within(row('scratch')).getByRole('button', {
+      name: 'Actions for scratch',
+    });
+    more.focus();
+    fireEvent.click(more);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to group…' }));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /Docs/ }));
+    await screen.findByText('Moved scratch to Docs');
+    await waitFor(() => expect(rows('Docs')).toContain('scratch'));
+    expect(document.activeElement).toBe(
+      within(row('scratch')).getByRole('button', {
+        name: 'Actions for scratch',
+      }),
+    );
+  });
+
+  it('moves focus to the next row when a row leaves the filtered list', async () => {
+    await open(world(), `/sites?g=${work}&sort=name`);
+    const more = within(row('client-1')).getByRole('button', {
+      name: 'Actions for client-1',
+    });
+    more.focus();
+    fireEvent.click(more);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to group…' }));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /Docs/ }));
+    await screen.findByText('Moved client-1 to Docs');
+    await waitFor(() =>
+      expect(screen.queryByRole('link', { name: 'client-1' })).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('link', { name: 'client-2' }),
+      ),
+    );
+  });
+
+  it('does nothing when moving sites to the group they are in', async () => {
+    const server = await open();
+    fireEvent.click(
+      within(row('handbook')).getByRole('button', {
+        name: 'Actions for handbook',
+      }),
+    );
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to group…' }));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /Docs/ }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(server.organised()).toEqual([]);
+  });
+
+  it('keeps how the list is drawn when a section or the navigator filters it', async () => {
+    await open(world(), '/sites?sort=name&d=compact');
+    expect(
+      within(section('Docs'))
+        .getByRole('link', { name: 'Docs' })
+        .getAttribute('href'),
+    ).toBe(`/sites?g=${docs}&sort=name&d=compact`);
+    const nav = screen.getByRole('complementary', { name: 'Sites navigator' });
+    expect(
+      (await within(nav).findByRole('link', { name: /^Docs/ })).getAttribute(
+        'href',
+      ),
+    ).toBe(`/sites?g=${docs}&sort=name&d=compact`);
+  });
+
+  it('selects at most 500 sites and says so', async () => {
+    const w = world();
+    w.sites = Array.from({ length: 501 }, (_, i) =>
+      summary(`s-${String(i).padStart(3, '0')}`, { groupId: docs }),
+    );
+    await open(w, `/sites?g=${docs}`);
+    const all = within(section('Docs')).getByRole('checkbox', {
+      name: 'Select the first 500 in Docs',
+    }) as HTMLInputElement;
+    fireEvent.click(all);
+    expect(all.checked).toBe(true);
+    const bar = screen.getByRole('toolbar', { name: 'Bulk actions' });
+    expect(bar.textContent).toContain('500 selected');
+    expect(bar.textContent).toContain('500 is the most at once');
+    fireEvent.click(
+      within(row('s-500')).getByRole('checkbox', { name: 'Select s-500' }),
+    );
+    expect(bar.textContent).toContain('500 selected');
+  });
+
+  it('drops selected sites the filter hides, and counts those not shown', async () => {
+    await open();
+    fireEvent.click(
+      within(row('scratch')).getByRole('checkbox', { name: 'Select scratch' }),
+    );
+    fireEvent.click(
+      within(section('Client work')).getByRole('checkbox', {
+        name: 'Select all in Client work',
+      }),
+    );
+    const bar = screen.getByRole('toolbar', { name: 'Bulk actions' });
+    expect(bar.textContent).toContain('8 selected');
+    // Two of Client work's rows are behind Show all.
+    expect(bar.textContent).toContain('2 not shown');
+    act(() => {
+      window.history.pushState(null, '', `/sites?g=${work}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await waitFor(() =>
+      expect(screen.getByRole('toolbar').textContent).toContain('7 selected'),
+    );
+    act(() => {
+      window.history.pushState(null, '', '/sites');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await screen.findByRole('region', { name: 'Docs' });
+    expect(
+      (
+        within(row('scratch')).getByRole('checkbox', {
+          name: 'Select scratch',
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+  });
+
+  it('cancels a search still waiting to be sent when Clear all is pressed', async () => {
+    await open(world(), `/sites?g=${work}`);
+    vi.useFakeTimers();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search sites' }), {
+      target: { value: 'portal' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+    act(() => vi.advanceTimersByTime(1000));
+    vi.useRealTimers();
+    expect(window.location.search).toBe('');
+    expect(
+      (
+        screen.getByRole('searchbox', {
+          name: 'Search sites',
+        }) as HTMLInputElement
+      ).value,
+    ).toBe('');
+  });
+
+  it('offers Show fewer after Show all, and keeps a collapsed section controllable', async () => {
+    await open();
+    const button = within(section('Client work')).getByRole('button', {
+      name: 'Show all 7 in Client work',
+    });
+    fireEvent.click(button);
+    expect(button.textContent).toBe('Show fewer in Client work');
+    fireEvent.click(button);
+    expect(rows('Client work')).toHaveLength(5);
+    const toggle = within(section('Docs')).getByRole('button', {
+      name: 'Collapse Docs',
+    });
+    fireEvent.click(toggle);
+    const controlled = document.getElementById(
+      toggle.getAttribute('aria-controls')!,
+    );
+    expect(controlled).not.toBeNull();
+    expect(controlled!.hidden).toBe(true);
+  });
+
+  it('caps the search at the server’s 200 characters', async () => {
+    await open();
+    expect(
+      screen
+        .getByRole('searchbox', { name: 'Search sites' })
+        .getAttribute('maxlength'),
+    ).toBe('200');
   });
 });

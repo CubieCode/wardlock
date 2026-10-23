@@ -4,7 +4,11 @@
 import type { components } from '@wardlock/apiclient-ts';
 import { sitesHref, tagSlot } from '../shell/navigator.js';
 import type { Group, Tag } from './site-page-organise.js';
-import type { GroupBy } from './sites-page-query.js';
+import {
+  viewParams,
+  type GroupBy,
+  type ListQuery,
+} from './sites-page-query.js';
 
 export type SiteSummary = components['schemas']['SiteSummary'];
 
@@ -41,7 +45,10 @@ export function buildSections(
   groups: Group[],
   tags: Tag[],
   allTitle: string,
+  /** How the list is drawn, kept by the sections' links. */
+  view: Pick<ListQuery, 'by' | 'sort' | 'd'>,
 ): Section[] {
+  const keep = viewParams(view);
   let sections: Section[];
   if (by === 'group') {
     const byGroup = new Map<string, SiteSummary[]>();
@@ -54,14 +61,14 @@ export function buildSections(
     sections = groups.map((group) => ({
       key: `g:${group.id}`,
       title: group.name,
-      href: sitesHref({ g: group.id }),
+      href: sitesHref({ g: group.id, ...keep }),
       note: group.note,
       sites: byGroup.get(group.id) ?? [],
     }));
     sections.push({
       key: 'g:none',
       title: 'No group',
-      href: sitesHref({ g: 'none' }),
+      href: sitesHref({ g: 'none', ...keep }),
       // A site whose group is not in the list (deleted meanwhile) is shown
       // here until the next reload.
       sites: sites.filter(
@@ -79,14 +86,14 @@ export function buildSections(
     sections = tags.map((tag) => ({
       key: `t:${tag.id}`,
       title: tag.name,
-      href: sitesHref({ t: tag.id }),
+      href: sitesHref({ t: tag.id, ...keep }),
       slot: tagSlot(tag.colour),
       sites: byTag.get(tag.id) ?? [],
     }));
     sections.push({
       key: 't:none',
       title: 'Untagged',
-      href: sitesHref({ v: 'untagged' }),
+      href: sitesHref({ v: 'untagged', ...keep }),
       sites: sites.filter((site) => site.tagIds.length === 0),
     });
   } else if (by === 'access') {

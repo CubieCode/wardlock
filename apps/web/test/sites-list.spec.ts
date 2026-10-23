@@ -194,7 +194,8 @@ for (const scheme of schemes) {
           .getByRole('listitem'),
       ).toHaveCount(10);
       await filters.getByRole('button', { name: 'Clear all' }).click();
-      await expect(page).toHaveURL(`${origin}/sites`);
+      // The navigator kept the sort the owner chose.
+      await expect(page).toHaveURL(`${origin}/sites?sort=name`);
       await expect(page.getByRole('group', { name: 'Filters' })).toHaveCount(0);
     });
 
@@ -299,6 +300,23 @@ for (const scheme of schemes) {
           has: page.getByRole('link', { name: name(40), exact: true }),
         })
         .last();
+      await row.getByRole('button', { name: `Pin ${name(40)}` }).click();
+      await expect(
+        row.getByRole('button', { name: `Pin ${name(40)}` }),
+      ).toHaveAttribute('aria-pressed', 'true');
+      // Undo by keyboard: focus stays on the star.
+      await expect(page.getByRole('status')).toContainText(
+        'Control Z undoes it.',
+      );
+      await shot('undo-toast');
+      await page.keyboard.press('Control+z');
+      await expect(page.getByRole('status').getByText('Undone.')).toBeVisible();
+      await expect(
+        row.getByRole('button', { name: `Pin ${name(40)}` }),
+      ).toHaveAttribute('aria-pressed', 'false');
+      await expect(
+        row.getByRole('button', { name: `Pin ${name(40)}` }),
+      ).toBeFocused();
       await row.getByRole('button', { name: `Pin ${name(40)}` }).click();
       await expect(
         row.getByRole('button', { name: `Pin ${name(40)}` }),

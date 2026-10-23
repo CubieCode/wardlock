@@ -110,8 +110,14 @@ describe('list address', () => {
     expect(withoutWord('docs  tag:client is:public', 'tag:client')).toBe(
       'docs is:public',
     );
+    // Any white space separates words, as on the server.
+    expect(
+      searchTokens('docs\ttag:client\nis:pinned').map((t) => t.word),
+    ).toEqual(['tag:client', 'is:pinned']);
   });
 });
+
+const view = { by: 'group', sort: 'deploy', d: 'comfortable' } as const;
 
 describe('sections', () => {
   const sites = [
@@ -122,7 +128,14 @@ describe('sections', () => {
   ];
 
   it('groups by group in group order, then No group, leaving out empty ones', () => {
-    const sections = buildSections(sites, 'group', groups, tags, 'All sites');
+    const sections = buildSections(
+      sites,
+      'group',
+      groups,
+      tags,
+      'All sites',
+      view,
+    );
     expect(sections.map((s) => [s.title, s.sites.map((x) => x.name)])).toEqual([
       ['Client work', ['beta']],
       ['Docs', ['alpha']],
@@ -134,8 +147,24 @@ describe('sections', () => {
     expect(sections[2]!.href).toBe('/sites?g=none');
   });
 
+  it('keeps how the list is drawn in its links', () => {
+    const [first] = buildSections(sites, 'tag', groups, tags, 'All sites', {
+      by: 'tag',
+      sort: 'name',
+      d: 'compact',
+    });
+    expect(first!.href).toBe(`/sites?t=${t1}&by=tag&sort=name&d=compact`);
+  });
+
   it('puts a site under each of its tags, then Untagged', () => {
-    const sections = buildSections(sites, 'tag', groups, tags, 'All sites');
+    const sections = buildSections(
+      sites,
+      'tag',
+      groups,
+      tags,
+      'All sites',
+      view,
+    );
     expect(sections.map((s) => [s.title, s.sites.map((x) => x.name)])).toEqual([
       ['client', ['alpha', 'beta']],
       ['preview', ['alpha']],
@@ -145,7 +174,14 @@ describe('sections', () => {
   });
 
   it('groups by access with taken down on its own', () => {
-    const sections = buildSections(sites, 'access', groups, tags, 'All sites');
+    const sections = buildSections(
+      sites,
+      'access',
+      groups,
+      tags,
+      'All sites',
+      view,
+    );
     expect(sections.map((s) => [s.title, s.sites.map((x) => x.name)])).toEqual([
       ['Protected', ['beta']],
       ['Public', ['alpha', 'delta']],
@@ -160,6 +196,7 @@ describe('sections', () => {
       groups,
       tags,
       'Pinned',
+      view,
     );
     expect(rest).toEqual([]);
     expect(section!.title).toBe('Pinned');

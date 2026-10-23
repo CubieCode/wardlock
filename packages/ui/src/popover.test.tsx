@@ -160,6 +160,53 @@ describe('Popover with a menu', () => {
   });
 });
 
+describe('Popover placement', () => {
+  it('stays clear of a bottom bar and fits the room it has', () => {
+    const rects = new Map<string, Partial<DOMRect>>([
+      ['trigger', { top: 600, bottom: 640, left: 20, height: 40 }],
+      ['bar', { top: 780, bottom: 844, left: 0, height: 64 }],
+    ]);
+    const rect = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: Element) {
+        const key = this.classList.contains('wl-bottom-bar')
+          ? 'bar'
+          : this.tagName === 'BUTTON'
+            ? 'trigger'
+            : '';
+        return {
+          top: 0,
+          bottom: 0,
+          left: 0,
+          height: 0,
+          ...rects.get(key),
+        } as DOMRect;
+      });
+    const height = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockReturnValue(300);
+    Object.assign(window, { innerHeight: 844, innerWidth: 390 });
+    try {
+      render(
+        <>
+          <nav className="wl-bottom-bar" />
+          <Picker />
+        </>,
+      );
+      fireEvent.click(trigger());
+      const panel = screen.getByRole('dialog', { name: 'Labels' });
+      // 300px does not fit between the trigger and the bar (124px), so it
+      // opens above, no taller than the 586px above the trigger.
+      expect(panel.style.top).toBe('');
+      expect(panel.style.bottom).toBe(`${844 - 600 + 6}px`);
+      expect(panel.style.maxHeight).toBe(`${600 - 6 - 8}px`);
+    } finally {
+      rect.mockRestore();
+      height.mockRestore();
+    }
+  });
+});
+
 describe('BulkBar', () => {
   function Selection({ initial }: { initial: number }) {
     const [count, setCount] = useState(initial);
@@ -231,7 +278,7 @@ describe('Toast', () => {
   it('undoes and dismisses', () => {
     const onUndo = vi.fn();
     render(<Host onUndo={onUndo} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.click(screen.getByRole('button', { name: /Undo/ }));
     expect(onUndo).toHaveBeenCalledOnce();
     expect(screen.getByRole('status').textContent).toBe('');
   });
@@ -239,13 +286,74 @@ describe('Toast', () => {
   it('waits while focus is inside it', () => {
     vi.useFakeTimers();
     render(<Host onUndo={() => {}} />);
-    const undo = screen.getByRole('button', { name: 'Undo' });
+    const undo = screen.getByRole('button', { name: /Undo/ });
     act(() => undo.focus());
     act(() => vi.advanceTimersByTime(10000));
     expect(screen.getByRole('status').textContent).toContain('Tagged 3 items');
     act(() => screen.getByRole('button', { name: 'Elsewhere' }).focus());
-    act(() => vi.advanceTimersByTime(5000));
+    act(() => vi.advanceTimersByTime(10000));
     expect(screen.getByRole('status').textContent).toBe('');
+  });
+
+  it('gives a change with Undo ten seconds, and says how to undo by key', () => {
+    vi.useFakeTimers();
+    render(<Host onUndo={() => {}} />);
+    const status = screen.getByRole('status');
+    expect(status.textContent).toContain('Control Z undoes it.');
+    expect(
+      screen
+        .getByRole('button', { name: /Undo/ })
+        .getAttribute('aria-keyshortcuts'),
+    ).toBe('Control+Z');
+    act(() => vi.advanceTimersByTime(9999));
+    expect(status.textContent).toContain('Tagged 3 items');
+    act(() => vi.advanceTimersByTime(1));
+    expect(status.textContent).toBe('');
+  });
+
+  it('undoes on Ctrl+Z, but not while typing in a field', () => {
+    const onUndo = vi.fn();
+    render(
+      <>
+        <Host onUndo={onUndo} />
+        <input aria-label="Search" />
+      </>,
+    );
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Search' }), {
+      key: 'z',
+      ctrlKey: true,
+    });
+    expect(onUndo).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true });
+    expect(onUndo).toHaveBeenCalledOnce();
+    expect(screen.getByRole('status').textContent).toBe('');
+    // Gone with its toast: a second press does nothing.
+    fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true });
+    expect(onUndo).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a failure, announced assertively, until it is dismissed', () => {
+    vi.useFakeTimers();
+    function Failure() {
+      const [message, setMessage] = useState<string | null>(
+        'Could not tag 3 items.',
+      );
+      return (
+        <Toast
+          tone="danger"
+          message={message}
+          onDismiss={() => setMessage(null)}
+        />
+      );
+    }
+    render(<Failure />);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('Could not tag 3 items.');
+    expect(screen.getByRole('status').textContent).toBe('');
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(alert.textContent).toContain('Could not tag 3 items.');
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(alert.textContent).toBe('');
   });
 
   it('waits while the pointer is over it', () => {

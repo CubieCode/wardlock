@@ -174,14 +174,18 @@ export function Sparkline({ values }: { values: number[] }) {
   );
 }
 
-/** A rounded axis maximum and its four equal steps. */
-function niceScale(max: number) {
+/**
+ * A rounded axis maximum and its four equal steps. The charts count whole
+ * things (requests), so a fractional step is rounded up to a whole one.
+ */
+export function niceScale(max: number) {
   const raw = Math.max(1, max) / 4;
   const magnitude = 10 ** Math.floor(Math.log10(raw));
-  const step =
+  const nice =
     [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
       .map((m) => m * magnitude)
       .find((s) => s >= raw) ?? 10 * magnitude;
+  const step = Number.isInteger(nice) ? nice : Math.ceil(nice);
   return { top: step * 4, ticks: [0, 1, 2, 3, 4].map((k) => k * step) };
 }
 

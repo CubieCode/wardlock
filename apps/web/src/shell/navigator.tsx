@@ -159,6 +159,16 @@ export function SitesNavigator({
     g === (filter.g ?? null) &&
     t === (filter.t ?? null) &&
     v === (filter.v ?? null);
+  // On the list, a filter keeps how the owner has it drawn.
+  const drawn = onList
+    ? {
+        by: params.get('by') ?? undefined,
+        sort: params.get('sort') ?? undefined,
+        d: params.get('d') ?? undefined,
+      }
+    : {};
+  const href = (filter: { g?: string; t?: string; v?: string }) =>
+    sitesHref({ ...filter, ...drawn });
   const ready = state.kind === 'ready' ? state : undefined;
   const organise = organiseBuilt();
 
@@ -175,7 +185,7 @@ export function SitesNavigator({
       </button>
       <NavList label="Sites">
         <Row
-          href={sitesHref()}
+          href={href({})}
           current={current({})}
           icon={listIcon}
           name="All sites"
@@ -186,7 +196,7 @@ export function SitesNavigator({
               ready.counts.views[view] > 0 || view === 'pinned' ? (
                 <Row
                   key={view}
-                  href={sitesHref({ v: view })}
+                  href={href({ v: view })}
                   current={current({ v: view })}
                   icon={icon}
                   name={label}
@@ -219,7 +229,7 @@ export function SitesNavigator({
             {ready.groups.map((group) => (
               <Row
                 key={group.id}
-                href={sitesHref({ g: group.id })}
+                href={href({ g: group.id })}
                 current={current({ g: group.id })}
                 icon={<span className="shell-nav-hub" />}
                 name={group.name}
@@ -228,7 +238,7 @@ export function SitesNavigator({
             ))}
             {ready.groups.length > 0 && ready.counts.noGroup > 0 ? (
               <Row
-                href={sitesHref({ g: 'none' })}
+                href={href({ g: 'none' })}
                 current={current({ g: 'none' })}
                 icon={<span className="shell-nav-hub shell-nav-hub-none" />}
                 name="No group"
@@ -253,7 +263,7 @@ export function SitesNavigator({
             {ready.tags.map((tag) => (
               <Row
                 key={tag.id}
-                href={sitesHref({ t: tag.id })}
+                href={href({ t: tag.id })}
                 current={current({ t: tag.id })}
                 icon={
                   <span

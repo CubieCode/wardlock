@@ -54,6 +54,19 @@ export function readQuery(params: URLSearchParams): ListQuery {
   };
 }
 
+/** How the list is drawn, as address values with the defaults left out. */
+export function viewParams({
+  by,
+  sort,
+  d,
+}: Pick<ListQuery, 'by' | 'sort' | 'd'>) {
+  return {
+    by: by === 'group' ? undefined : by,
+    sort: sort === 'deploy' ? undefined : sort,
+    d: d === 'compact' ? 'compact' : undefined,
+  };
+}
+
 /** The address of the list in this state. */
 export function queryHref(query: ListQuery) {
   return sitesHref({
@@ -61,9 +74,7 @@ export function queryHref(query: ListQuery) {
     t: query.t,
     v: query.v,
     q: query.q.trim() ? query.q : undefined,
-    by: query.by === 'group' ? undefined : query.by,
-    sort: query.sort === 'deploy' ? undefined : query.sort,
-    d: query.d === 'compact' ? 'compact' : undefined,
+    ...viewParams(query),
   });
 }
 
@@ -94,12 +105,13 @@ const isLabels: Record<string, string> = {
 };
 
 /**
- * The `tag:`, `group:` and `is:` words in a search, in order. A word of
- * just `tag:` with nothing after the colon is free text, as on the server.
+ * The `tag:`, `group:` and `is:` words in a search, in order, split at any
+ * run of white space as the server does. A word of just `tag:` with nothing
+ * after the colon is free text, as on the server.
  */
 export function searchTokens(q: string): SearchToken[] {
   const tokens: SearchToken[] = [];
-  for (const word of q.split(' ')) {
+  for (const word of q.split(/\s+/)) {
     const match = /^(tag|group|is):(.+)$/i.exec(word);
     if (!match) continue;
     const kind = match[1]!.toLowerCase();
@@ -119,7 +131,7 @@ export function searchTokens(q: string): SearchToken[] {
 
 /** The search without one of its words. */
 export function withoutWord(q: string, word: string) {
-  const words = q.split(' ');
+  const words = q.split(/\s+/);
   const at = words.indexOf(word);
   if (at >= 0) words.splice(at, 1);
   return words.filter(Boolean).join(' ');
