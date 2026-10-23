@@ -23,6 +23,9 @@ type Group = components['schemas']['Group'];
 type Tag = components['schemas']['Tag'];
 type SiteCounts = components['schemas']['SiteCounts'];
 
+const mapPath = '/sites/map';
+const mapLabel = 'Sites map';
+
 /** How many sites jump-to shows for a search. */
 const siteLimit = 8;
 /** Waits this long after typing stops before searching. */
@@ -263,6 +266,17 @@ export function results(
         : [],
     ),
   });
+  // The sites map has no rail place of its own; jump-to lists it after
+  // Sites.
+  const pages = out.at(-1)!.items;
+  const after = pages.findIndex((item) => item.href === '/sites') + 1;
+  if (matches(mapLabel) && shellRoutes.some((r) => r.path === mapPath))
+    pages.splice(after, 0, {
+      id: `page:${mapPath}`,
+      label: mapLabel,
+      icon: icon(pageIcon),
+      href: mapPath,
+    });
   return out;
 }
 

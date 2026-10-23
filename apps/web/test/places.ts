@@ -14,6 +14,15 @@ export const railPlaces = [
   'Groups and tags',
   'Passkeys',
 ];
+/** The pages Jump to lists: the rail's, with the sites map after Sites. */
+export const jumpPages = [
+  'Overview',
+  'Sites',
+  'Sites map',
+  'Analytics',
+  'Groups and tags',
+  'Passkeys',
+];
 /** The places in the bottom bar below 48rem. */
 export const barPlaces = ['Overview', 'Sites', 'Analytics'];
 /** The places in the Account sheet below 48rem. */

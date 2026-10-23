@@ -21,6 +21,7 @@ import {
   type NavigatorState,
 } from './navigator.js';
 import { barPlaces, shellRoutes } from './routes.js';
+import { matchPath } from './router.js';
 import { Shell } from './shell.js';
 import { readTheme, setTheme, themeStorageKey } from './theme.js';
 
@@ -199,12 +200,18 @@ describe('rail', () => {
     await within(
       await screen.findByRole('group', { name: 'Sites' }),
     ).findByRole('option', { name: /docs/ });
-    const hrefs = [...document.querySelectorAll('a')].map((a) =>
-      a.getAttribute('href'),
+    // Every link leads to a screen the shell has.
+    const hrefs = [...document.querySelectorAll('a')].map(
+      (a) => new URL(a.getAttribute('href')!, window.location.origin).pathname,
     );
-    // The sites map (V5.9) is the one screen not built yet.
-    for (const href of hrefs) expect(href).not.toMatch(/\/sites\/map/);
-    expect(screen.queryByText(/Sites map/)).toBeNull();
+    const built = (path: string) =>
+      shellRoutes.some((route) => matchPath(route.path, path) !== null);
+    for (const href of hrefs) expect(built(href), href).toBe(true);
+    // Jump to lists the sites map (V5.9) after Sites.
+    const pages = within(screen.getByRole('group', { name: 'Pages' }))
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(pages.slice(0, 3)).toEqual(['Overview', 'Sites', 'Sites map']);
   });
 
   it('shows no navigator outside the sites list', async () => {

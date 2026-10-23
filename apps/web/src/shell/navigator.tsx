@@ -150,7 +150,9 @@ export function SitesNavigator({
   filters?: boolean;
 }) {
   const { pathname, params } = useLocation();
-  const onList = pathname === '/sites';
+  // On the map (V5.9) the filters stay on the map.
+  const onMap = pathname === '/sites/map';
+  const onList = pathname === '/sites' || onMap;
   const g = params.get('g');
   const t = params.get('t');
   const v = params.get('v');
@@ -167,8 +169,10 @@ export function SitesNavigator({
         d: params.get('d') ?? undefined,
       }
     : {};
-  const href = (filter: { g?: string; t?: string; v?: string }) =>
-    sitesHref({ ...filter, ...drawn });
+  const href = (filter: { g?: string; t?: string; v?: string }) => {
+    const list = sitesHref({ ...filter, ...drawn });
+    return onMap ? `/sites/map${list.slice('/sites'.length)}` : list;
+  };
   const ready = state.kind === 'ready' ? state : undefined;
   const organise = organiseBuilt();
 

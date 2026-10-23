@@ -1,0 +1,397 @@
+/* SPDX-FileCopyrightText: 2026 CubieCode */
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+/* The sites map, and the List/Map switch shared with the list. */
+
+.map-switch {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted);
+}
+
+.map-switch a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: calc(var(--touch-target) - 8px);
+  padding: 0 var(--space-3);
+  border-radius: calc(var(--radius-control) - 3px);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.map-switch a:hover {
+  color: var(--color-text);
+}
+
+.map-switch a[aria-current='page'] {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+}
+
+.map-switch a:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.map-switch-icon {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+}
+
+.map-switch-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* The page title with the switch at its end. */
+.map-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.map-head > .wl-page-header {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.map-body {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.map-skip {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.map-skip:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  clip-path: none;
+  justify-self: start;
+}
+
+.map-frame {
+  position: relative;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+/* A picture wider than half its size scrolls sideways; vertical scrolling
+   always reaches the page. */
+.map-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  padding: var(--space-2);
+}
+
+.map-svg {
+  display: block;
+  height: auto;
+  margin: 0 auto;
+  font-family: var(--font-mono);
+}
+
+.map-svg text {
+  fill: var(--color-text);
+  text-anchor: middle;
+}
+
+.map-svg a {
+  cursor: pointer;
+  outline: none;
+}
+
+.map-wire {
+  stroke: color-mix(in srgb, var(--color-primary) 55%, transparent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+}
+
+.map-spoke {
+  stroke: color-mix(in srgb, var(--color-primary) 35%, transparent);
+  stroke-width: 1;
+}
+
+.map-spoke-public {
+  stroke: color-mix(in srgb, var(--color-public) 45%, transparent);
+}
+
+.map-ward {
+  fill: var(--color-surface);
+  stroke: var(--color-ward);
+  stroke-width: 1.5;
+}
+
+.map-hub-mark {
+  fill: var(--color-surface);
+  stroke: var(--color-primary);
+  stroke-width: 1.5;
+}
+
+.map-hub-none {
+  stroke-dasharray: 3 3;
+}
+
+.map-hub:hover .map-hub-mark,
+.map-hub:focus-visible .map-hub-mark {
+  stroke: var(--color-focus);
+  stroke-width: 3;
+}
+
+.map-hub-count {
+  font-size: 13px;
+  font-weight: var(--font-weight-bold);
+}
+
+.map-svg .map-hub-title {
+  font-size: 13px;
+  font-weight: var(--font-weight-bold);
+}
+
+.map-hit {
+  fill: transparent;
+}
+
+.map-focus {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2.5;
+}
+
+.map-site:hover .map-focus,
+.map-site:focus-visible .map-focus {
+  stroke: var(--color-focus);
+}
+
+/* A surface ring parts touching dots. */
+.map-dot {
+  stroke: var(--color-surface);
+  stroke-width: 1.5;
+}
+
+.map-dot-protected {
+  fill: var(--color-ward);
+}
+
+.map-dot-public {
+  fill: var(--color-public);
+}
+
+.map-dot-down {
+  fill: var(--color-surface);
+  stroke: var(--color-border-strong);
+  stroke-dasharray: 2 2;
+}
+
+.map-dot-key {
+  fill: var(--color-text-muted);
+}
+
+.map-svg .map-label {
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: var(--color-surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.map-server circle {
+  fill: var(--color-surface);
+  stroke: var(--color-primary);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 14px var(--color-primary-soft));
+}
+
+.map-server-name {
+  font-size: 13px;
+  font-weight: var(--font-weight-bold);
+}
+
+.map-svg .map-server-count {
+  font-size: 11px;
+  fill: var(--color-text-muted);
+}
+
+.map-dim {
+  opacity: 0.2;
+  transition: opacity var(--duration-short) ease-out;
+}
+
+.map-svg a,
+.map-svg g {
+  transition: opacity var(--duration-short) ease-out;
+}
+
+.map-tip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  max-width: 16rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  box-shadow: var(--glow);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 8px));
+}
+
+.map-tip-below {
+  transform: translate(-50%, 8px);
+}
+
+.map-tip-title {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.map-tip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 2px 0;
+}
+
+.map-tip-hint {
+  margin-top: 2px;
+  font-style: italic;
+}
+
+.map-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.map-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.map-swatch {
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+}
+
+.map-swatch-wide {
+  width: 2.25rem;
+}
+
+.map-list {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.map-list summary {
+  min-height: var(--touch-target);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-4);
+  font-weight: var(--font-weight-bold);
+  cursor: pointer;
+}
+
+.map-list summary span {
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-regular);
+}
+
+.map-list summary:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -3px;
+  border-radius: var(--radius-card);
+}
+
+.map-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.map-list .map-list-groups {
+  display: grid;
+  gap: var(--space-4);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.map-list-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-weight: var(--font-weight-bold);
+}
+
+.map-list-groups > li > ul {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  padding-left: var(--space-4);
+  border-left: 1.5px dashed
+    color-mix(in srgb, var(--color-primary) 55%, transparent);
+}
+
+.map-list-groups > li > ul > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2rem;
+}
+
+.map-list-meta {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-regular);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-dim,
+  .map-svg a,
+  .map-svg g {
+    transition: none;
+  }
+}
