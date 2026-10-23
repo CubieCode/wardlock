@@ -62,6 +62,9 @@ for (const scheme of schemes) {
     const groupName = `Overview ${run}`;
 
     const request = page.request;
+    // A site with no expiring link, which the Expiring view leaves out.
+    const calm = `${site}-calm`;
+    await createSite(request, calm);
     await createSite(request, site);
     await protect(request, site);
     const group = await api<{ id: string }>(request, 'post', '/groups', {
@@ -114,6 +117,28 @@ for (const scheme of schemes) {
         `${origin}/sites/${site}/links/${shareLink.id}`,
       );
       await page.goBack();
+    });
+
+    await test.step('a needs-attention link opens the filtered list', async () => {
+      await attention
+        .getByRole('link', { name: 'Review sites with links expiring soon' })
+        .click();
+      await expect(page).toHaveURL(`${origin}/sites?v=expiring`);
+      const main = page.getByRole('main');
+      await expect(
+        main.getByRole('link', { name: site, exact: true }),
+      ).toBeVisible();
+      await expect(
+        main.getByRole('link', { name: calm, exact: true }),
+      ).toHaveCount(0);
+      // Of this spec's sites, only those with a link expiring soon are
+      // listed (other specs' sites may be listed too).
+      for (const name of await main
+        .getByRole('link', { name: /^ov-/ })
+        .allTextContents())
+        expect(name).toMatch(/^ov-(desktop|mobile)-(light|dark)$/);
+      await page.goBack();
+      await expect(attention).toBeVisible();
     });
 
     await test.step('pinned shows access, requests and a sparkline', async () => {
