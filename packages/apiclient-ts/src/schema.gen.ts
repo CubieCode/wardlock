@@ -1167,6 +1167,66 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/site-summaries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the owner's sites with what lists and maps show of each.
+     * @description One read for the dashboard's sites list, navigator, jump-to, map and overview: each site with its default policy, group, tags, pin, working and soon-expiring share links, requests on each of the last 7 UTC days, whether it had no requests in the last 30 UTC days, and its live deploy. `group`, `tag`, `view` and `q` narrow the list and combine (a site must match all of them); SPEC "Site summaries" defines each saved view and search token. A missing group or tag and another owner's answer the same `404`. Every page costs the same few database queries, whatever its size. `nextCursor` belongs to the `sort` it was issued for; a cursor from another sort answers `400 invalid_request`.
+     */
+    get: operations['listSiteSummaries'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/site-counts': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Count the owner's sites in each view, group and tag.
+     * @description How many sites listSiteSummaries would answer for all sites, each saved view, each group, no group and each tag, as the navigator shows them. Every group and tag is listed, with `0` when it has no sites, in the order listGroups and listTags answer them.
+     */
+    get: operations['getSiteCounts'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sign-in-providers': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the OAuth and OIDC providers the operator configured.
+     * @description The providers a policy's `oauth` method signs visitors in with (A2.5), as the operator configured them: `github`, `google` and `oidc`, in that order, each only when configured, with the name its login button shows. Empty when none is, and then enabling `oauth` answers `400 invalid_policy`. Never includes client IDs, secrets or the issuer URL.
+     */
+    get: operations['listSignInProviders'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1899,6 +1959,125 @@ export interface components {
      * @enum {string}
      */
     BrowserFamily: 'chrome' | 'safari' | 'firefox' | 'edge' | 'tool' | 'other';
+    /**
+     * @description A group's ID, or `none` for the sites in no group.
+     * @example none
+     */
+    GroupFilter: string;
+    /**
+     * @description A saved view (SPEC "Site summaries"). `pinned`: pinned sites. `expiring`: sites with a share link expiring within 48 hours (`expiringLinks` above 0). `public`: available sites whose default policy is public. `quiet`: available sites with no requests in the last 30 UTC days. `untagged`: sites with no tags. `down`: sites the operator has taken down.
+     * @enum {string}
+     */
+    SiteView: 'pinned' | 'expiring' | 'public' | 'quiet' | 'untagged' | 'down';
+    /**
+     * @description The order of a list of site summaries.
+     * @default deploy
+     * @enum {string}
+     */
+    SiteSort: 'deploy' | 'name' | 'requests' | 'links';
+    /** @description The deploy a site serves. */
+    LiveDeploy: {
+      id: components['schemas']['Id'];
+      /**
+       * @description The last eight characters of `id`, as the dashboard and CLI show it.
+       * @example 5a6b7c8d
+       */
+      shortId: string;
+      /** @description The deploy's message; absent when it has none. */
+      message?: string;
+      /** @description When it was last activated. */
+      activatedAt: components['schemas']['Timestamp'];
+    };
+    SiteSummary: {
+      id: components['schemas']['Id'];
+      name: components['schemas']['SiteName'];
+      /** @description `<name>.<base domain>`. */
+      hostname: components['schemas']['Hostname'];
+      /**
+       * Format: uri
+       * @description The site's URL on the base domain.
+       */
+      url: string;
+      createdAt: components['schemas']['Timestamp'];
+      /** @description True while the operator has taken the site down, as on Site. */
+      unavailable: boolean;
+      /** @description The site's group; absent when ungrouped. */
+      groupId?: components['schemas']['Id'];
+      /** @description The site's tags in tag-name order; empty when it has none. */
+      tagIds: components['schemas']['Id'][];
+      pinned: boolean;
+      /** @description The site's default policy (path `/`); `public` for a site that has not stored one yet. */
+      visibility: components['schemas']['PolicyVisibility'];
+      /** @description The default policy's methods; empty when it is public. */
+      methods: components['schemas']['PolicyMethod'][];
+      /**
+       * Format: int32
+       * @description The site's share links that work now: not revoked, not expired and not used up.
+       */
+      workingLinks: number;
+      /**
+       * Format: int32
+       * @description Working links that expire within the next 48 hours, leaving out links whose whole lifetime (creation to expiry) is an hour or less, such as the Open site button's 10-minute links.
+       */
+      expiringLinks: number;
+      /** @description Requests (allowed and refused) on each of the last 7 UTC days, oldest first; the last is today so far. */
+      requests: components['schemas']['Requests'][];
+      /** @description True when the site had no requests in the last 30 UTC days (today and the 29 days before). */
+      quiet: boolean;
+      /** @description The deploy the site serves; absent until the first activation. */
+      liveDeploy?: components['schemas']['LiveDeploy'];
+    };
+    SiteSummaryPage: {
+      items: components['schemas']['SiteSummary'][];
+      nextCursor?: components['schemas']['Cursor'];
+    };
+    /**
+     * Format: int32
+     * @description A number of sites.
+     */
+    SiteCount: number;
+    /** @description The sites in each saved view. */
+    SiteViewCounts: {
+      pinned: components['schemas']['SiteCount'];
+      expiring: components['schemas']['SiteCount'];
+      public: components['schemas']['SiteCount'];
+      quiet: components['schemas']['SiteCount'];
+      untagged: components['schemas']['SiteCount'];
+      down: components['schemas']['SiteCount'];
+    };
+    GroupSiteCount: {
+      groupId: components['schemas']['Id'];
+      sites: components['schemas']['SiteCount'];
+    };
+    TagSiteCount: {
+      tagId: components['schemas']['Id'];
+      sites: components['schemas']['SiteCount'];
+    };
+    SiteCounts: {
+      all: components['schemas']['SiteCount'];
+      views: components['schemas']['SiteViewCounts'];
+      /** @description Every group, in listGroups order. */
+      groups: components['schemas']['GroupSiteCount'][];
+      noGroup: components['schemas']['SiteCount'];
+      /** @description Every tag, in listTags order. */
+      tags: components['schemas']['TagSiteCount'][];
+    };
+    /**
+     * @description An OAuth or OIDC provider the operator can configure.
+     * @enum {string}
+     */
+    SignInProviderId: 'github' | 'google' | 'oidc';
+    SignInProvider: {
+      id: components['schemas']['SignInProviderId'];
+      /**
+       * @description The name its login button shows: `GitHub`, `Google`, or for `oidc` the operator's `WARDLOCK_OIDC_NAME` (default `single sign-on`).
+       * @example GitHub
+       */
+      name: string;
+    };
+    SignInProviderList: {
+      items: components['schemas']['SignInProvider'][];
+    };
     AccessLogPage: {
       items: components['schemas']['AccessLogEntry'][];
       nextCursor?: components['schemas']['Cursor'];
@@ -4926,6 +5105,196 @@ export interface operations {
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  listSiteSummaries: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+        /**
+         * @description Only the sites in this group, by ID, or `none` for the ungrouped sites.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70
+         */
+        group?: components['schemas']['GroupFilter'];
+        /**
+         * @description Only the sites with this tag, by ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80
+         */
+        tag?: components['schemas']['Id'];
+        /**
+         * @description Only the sites in this saved view.
+         * @example expiring
+         */
+        view?: components['schemas']['SiteView'];
+        /**
+         * @description Search: words separated by spaces, each of which a site must match. `tag:NAME`, `group:NAME` and `is:public`, `is:protected`, `is:down` or `is:pinned` are tokens; any other word is free text over the site's name, hostnames, tag names and group name, ignoring case.
+         * @example is:protected tag:client docs
+         */
+        q?: string;
+        /**
+         * @description `deploy`: the live deploy's activation, newest first, sites with nothing live last. `name`: by name. `requests`: requests over the last 7 UTC days, most first. `links`: working share links, most first. Ties are broken by name.
+         * @example deploy
+         */
+        sort?: components['schemas']['SiteSort'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One page of site summaries. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01",
+           *           "name": "docs",
+           *           "hostname": "docs.wardlock.example.net",
+           *           "url": "https://docs.wardlock.example.net/",
+           *           "createdAt": 1767225600000,
+           *           "unavailable": false,
+           *           "groupId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70",
+           *           "tagIds": [
+           *             "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80"
+           *           ],
+           *           "pinned": true,
+           *           "visibility": "protected",
+           *           "methods": [
+           *             "links",
+           *             "password"
+           *           ],
+           *           "workingLinks": 3,
+           *           "expiringLinks": 1,
+           *           "requests": [
+           *             12,
+           *             0,
+           *             4,
+           *             31,
+           *             8,
+           *             0,
+           *             2
+           *           ],
+           *           "quiet": false,
+           *           "liveDeploy": {
+           *             "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10",
+           *             "shortId": "5a6b7c8d",
+           *             "message": "Fix typo on the install page",
+           *             "activatedAt": 1767225660000
+           *           }
+           *         }
+           *       ],
+           *       "nextCursor": "ZGVwbG95OjE3NjcyMjU2NjAwMDA6ZG9jcw"
+           *     }
+           */
+          'application/json': components['schemas']['SiteSummaryPage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  getSiteCounts: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The counts. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "all": 12,
+           *       "views": {
+           *         "pinned": 2,
+           *         "expiring": 1,
+           *         "public": 5,
+           *         "quiet": 3,
+           *         "untagged": 4,
+           *         "down": 0
+           *       },
+           *       "groups": [
+           *         {
+           *           "groupId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70",
+           *           "sites": 7
+           *         }
+           *       ],
+           *       "noGroup": 5,
+           *       "tags": [
+           *         {
+           *           "tagId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80",
+           *           "sites": 6
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['SiteCounts'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      default: components['responses']['Error'];
+    };
+  };
+  listSignInProviders: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The configured providers. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "github",
+           *           "name": "GitHub"
+           *         },
+           *         {
+           *           "id": "oidc",
+           *           "name": "Harbour SSO"
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['SignInProviderList'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
       default: components['responses']['Error'];
     };
   };

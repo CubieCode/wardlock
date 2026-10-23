@@ -231,6 +231,24 @@ func (s *Service) OAuthProviders() []ProviderInfo {
 	return out
 }
 
+// SignInProvider is a configured provider as the owner API lists it: its
+// ID and the name its login button shows, never its client or issuer.
+type SignInProvider struct {
+	ID   string
+	Name string
+}
+
+// SignInProviders lists the configured providers in configuration order
+// (GitHub, Google, OIDC). Unlike OAuthProviders it never starts OIDC
+// discovery.
+func (s *Service) SignInProviders() []SignInProvider {
+	out := make([]SignInProvider, 0, len(s.c.OAuth.Providers))
+	for _, p := range s.c.OAuth.Providers {
+		out = append(out, SignInProvider{ID: p.ID(), Name: p.Name()})
+	}
+	return out
+}
+
 func (s *Service) provider(id string) (Provider, bool) {
 	for _, p := range s.c.OAuth.Providers {
 		if p.ID() == id {

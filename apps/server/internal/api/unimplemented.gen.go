@@ -149,6 +149,21 @@ func (Unimplemented) CompleteSetup(context.Context, CompleteSetupRequestObject) 
 	return nil, ErrNotImplemented
 }
 
+// ListSignInProviders is not implemented yet.
+func (Unimplemented) ListSignInProviders(context.Context, ListSignInProvidersRequestObject) (ListSignInProvidersResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// GetSiteCounts is not implemented yet.
+func (Unimplemented) GetSiteCounts(context.Context, GetSiteCountsRequestObject) (GetSiteCountsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListSiteSummaries is not implemented yet.
+func (Unimplemented) ListSiteSummaries(context.Context, ListSiteSummariesRequestObject) (ListSiteSummariesResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // ListSites is not implemented yet.
 func (Unimplemented) ListSites(context.Context, ListSitesRequestObject) (ListSitesResponseObject, error) {
 	return nil, ErrNotImplemented

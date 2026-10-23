@@ -110,6 +110,10 @@ var implemented = map[string]bool{
 	"OrganiseSites":       true,
 
 	"GetAnalytics": true,
+
+	"ListSiteSummaries":   true,
+	"GetSiteCounts":       true,
+	"ListSignInProviders": true,
 }
 
 // pathValues are valid values for every path parameter in the contract.

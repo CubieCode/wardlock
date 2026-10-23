@@ -245,4 +245,5 @@ func sitesContract(t *testing.T, open Opener) {
 		}
 	})
 	sitesOperatorContract(t, open)
+	siteSummariesContract(t, open)
 }

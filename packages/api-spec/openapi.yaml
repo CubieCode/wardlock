@@ -38,7 +38,8 @@ info:
       pinning, and changing many sites at once. Setting one site's group and
       tags (setSiteOrganisation) accepts either scope, so a deploy can file
       the site it publishes under existing groups and tags; it never creates
-      them. Analytics (V5.4) is a read and accepts either scope. Tokens
+      them. Analytics (V5.4), site summaries and counts (V5.5) and the
+      configured sign-in providers are reads and accept either scope. Tokens
       never manage owners, sessions or other tokens.
 
     Each operation lists the credentials it accepts; any one of them is
@@ -2685,6 +2686,192 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v0/site-summaries:
+    get:
+      operationId: listSiteSummaries
+      summary: List the owner's sites with what lists and maps show of each.
+      description: >-
+        One read for the dashboard's sites list, navigator, jump-to, map and
+        overview: each site with its default policy, group, tags, pin,
+        working and soon-expiring share links, requests on each of the last
+        7 UTC days, whether it had no requests in the last 30 UTC days, and
+        its live deploy. `group`, `tag`, `view` and `q` narrow the list and
+        combine (a site must match all of them); SPEC "Site summaries"
+        defines each saved view and search token. A missing group or tag
+        and another owner's answer the same `404`. Every page costs the
+        same few database queries, whatever its size. `nextCursor` belongs
+        to the `sort` it was issued for; a cursor from another sort answers
+        `400 invalid_request`.
+      tags: [sites]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: group
+          in: query
+          required: false
+          description: Only the sites in this group, by ID, or `none` for the ungrouped sites.
+          schema:
+            $ref: '#/components/schemas/GroupFilter'
+          example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70
+        - name: tag
+          in: query
+          required: false
+          description: Only the sites with this tag, by ID.
+          schema:
+            $ref: '#/components/schemas/Id'
+          example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80
+        - name: view
+          in: query
+          required: false
+          description: Only the sites in this saved view.
+          schema:
+            $ref: '#/components/schemas/SiteView'
+          example: expiring
+        - name: q
+          in: query
+          required: false
+          description: >-
+            Search: words separated by spaces, each of which a site must
+            match. `tag:NAME`, `group:NAME` and `is:public`, `is:protected`,
+            `is:down` or `is:pinned` are tokens; any other word is free text
+            over the site's name, hostnames, tag names and group name,
+            ignoring case.
+          schema:
+            type: string
+            maxLength: 200
+          example: is:protected tag:client docs
+        - name: sort
+          in: query
+          required: false
+          description: >-
+            `deploy`: the live deploy's activation, newest first, sites with
+            nothing live last. `name`: by name. `requests`: requests over the
+            last 7 UTC days, most first. `links`: working share links, most
+            first. Ties are broken by name.
+          schema:
+            $ref: '#/components/schemas/SiteSort'
+          example: deploy
+      responses:
+        '200':
+          description: One page of site summaries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteSummaryPage'
+              example:
+                items:
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+                    name: docs
+                    hostname: docs.wardlock.example.net
+                    url: https://docs.wardlock.example.net/
+                    createdAt: 1767225600000
+                    unavailable: false
+                    groupId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70
+                    tagIds: [01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80]
+                    pinned: true
+                    visibility: protected
+                    methods: [links, password]
+                    workingLinks: 3
+                    expiringLinks: 1
+                    requests: [12, 0, 4, 31, 8, 0, 2]
+                    quiet: false
+                    liveDeploy:
+                      id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
+                      shortId: 5a6b7c8d
+                      message: Fix typo on the install page
+                      activatedAt: 1767225660000
+                nextCursor: ZGVwbG95OjE3NjcyMjU2NjAwMDA6ZG9jcw
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/site-counts:
+    get:
+      operationId: getSiteCounts
+      summary: Count the owner's sites in each view, group and tag.
+      description: >-
+        How many sites listSiteSummaries would answer for all sites, each
+        saved view, each group, no group and each tag, as the navigator
+        shows them. Every group and tag is listed, with `0` when it has no
+        sites, in the order listGroups and listTags answer them.
+      tags: [sites]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      responses:
+        '200':
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteCounts'
+              example:
+                all: 12
+                views:
+                  pinned: 2
+                  expiring: 1
+                  public: 5
+                  quiet: 3
+                  untagged: 4
+                  down: 0
+                groups:
+                  - { groupId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70, sites: 7 }
+                noGroup: 5
+                tags:
+                  - { tagId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80, sites: 6 }
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/sign-in-providers:
+    get:
+      operationId: listSignInProviders
+      summary: List the OAuth and OIDC providers the operator configured.
+      description: >-
+        The providers a policy's `oauth` method signs visitors in with
+        (A2.5), as the operator configured them: `github`, `google` and
+        `oidc`, in that order, each only when configured, with the name its
+        login button shows. Empty when none is, and then enabling `oauth`
+        answers `400 invalid_policy`. Never includes client IDs, secrets or
+        the issuer URL.
+      tags: [policies]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      responses:
+        '200':
+          description: The configured providers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignInProviderList'
+              example:
+                items:
+                  - { id: github, name: GitHub }
+                  - { id: oidc, name: Harbour SSO }
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   securitySchemes:
     sessionCookie:
@@ -4625,6 +4812,243 @@ components:
         HTTP libraries, crawlers and other bots, and requests with no
         User-Agent) or `other`.
       enum: [chrome, safari, firefox, edge, tool, other]
+    GroupFilter:
+      type: string
+      description: A group's ID, or `none` for the sites in no group.
+      pattern: ^(none|[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$
+      examples: [none]
+    SiteView:
+      type: string
+      description: >-
+        A saved view (SPEC "Site summaries"). `pinned`: pinned sites.
+        `expiring`: sites with a share link expiring within 48 hours
+        (`expiringLinks` above 0). `public`: available sites whose default
+        policy is public. `quiet`: available sites with no requests in the
+        last 30 UTC days. `untagged`: sites with no tags. `down`: sites the
+        operator has taken down.
+      enum: [pinned, expiring, public, quiet, untagged, down]
+    SiteSort:
+      type: string
+      description: The order of a list of site summaries.
+      enum: [deploy, name, requests, links]
+      default: deploy
+    LiveDeploy:
+      type: object
+      additionalProperties: false
+      description: The deploy a site serves.
+      required: [id, shortId, activatedAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        shortId:
+          type: string
+          description: The last eight characters of `id`, as the dashboard and CLI show it.
+          pattern: ^[0-9a-f]{8}$
+          examples: [5a6b7c8d]
+        message:
+          type: string
+          description: The deploy's message; absent when it has none.
+          maxLength: 500
+        activatedAt:
+          description: When it was last activated.
+          $ref: '#/components/schemas/Timestamp'
+    SiteSummary:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          name,
+          hostname,
+          url,
+          createdAt,
+          unavailable,
+          tagIds,
+          pinned,
+          visibility,
+          methods,
+          workingLinks,
+          expiringLinks,
+          requests,
+          quiet,
+        ]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          $ref: '#/components/schemas/SiteName'
+        hostname:
+          description: '`<name>.<base domain>`.'
+          $ref: '#/components/schemas/Hostname'
+        url:
+          type: string
+          format: uri
+          description: The site's URL on the base domain.
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        unavailable:
+          type: boolean
+          description: True while the operator has taken the site down, as on Site.
+        groupId:
+          description: The site's group; absent when ungrouped.
+          $ref: '#/components/schemas/Id'
+        tagIds:
+          type: array
+          description: The site's tags in tag-name order; empty when it has none.
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/Id'
+        pinned:
+          type: boolean
+        visibility:
+          description: >-
+            The site's default policy (path `/`); `public` for a site that
+            has not stored one yet.
+          $ref: '#/components/schemas/PolicyVisibility'
+        methods:
+          type: array
+          description: The default policy's methods; empty when it is public.
+          maxItems: 4
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PolicyMethod'
+        workingLinks:
+          type: integer
+          format: int32
+          minimum: 0
+          description: >-
+            The site's share links that work now: not revoked, not expired
+            and not used up.
+        expiringLinks:
+          type: integer
+          format: int32
+          minimum: 0
+          description: >-
+            Working links that expire within the next 48 hours, leaving out
+            links whose whole lifetime (creation to expiry) is an hour or
+            less, such as the Open site button's 10-minute links.
+        requests:
+          type: array
+          description: >-
+            Requests (allowed and refused) on each of the last 7 UTC days,
+            oldest first; the last is today so far.
+          minItems: 7
+          maxItems: 7
+          items:
+            $ref: '#/components/schemas/Requests'
+        quiet:
+          type: boolean
+          description: >-
+            True when the site had no requests in the last 30 UTC days
+            (today and the 29 days before).
+        liveDeploy:
+          description: The deploy the site serves; absent until the first activation.
+          $ref: '#/components/schemas/LiveDeploy'
+    SiteSummaryPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SiteSummary'
+        nextCursor:
+          $ref: '#/components/schemas/Cursor'
+    SiteCount:
+      type: integer
+      format: int32
+      minimum: 0
+      description: A number of sites.
+    SiteViewCounts:
+      type: object
+      additionalProperties: false
+      description: The sites in each saved view.
+      required: [pinned, expiring, public, quiet, untagged, down]
+      properties:
+        pinned:
+          $ref: '#/components/schemas/SiteCount'
+        expiring:
+          $ref: '#/components/schemas/SiteCount'
+        public:
+          $ref: '#/components/schemas/SiteCount'
+        quiet:
+          $ref: '#/components/schemas/SiteCount'
+        untagged:
+          $ref: '#/components/schemas/SiteCount'
+        down:
+          $ref: '#/components/schemas/SiteCount'
+    GroupSiteCount:
+      type: object
+      additionalProperties: false
+      required: [groupId, sites]
+      properties:
+        groupId:
+          $ref: '#/components/schemas/Id'
+        sites:
+          $ref: '#/components/schemas/SiteCount'
+    TagSiteCount:
+      type: object
+      additionalProperties: false
+      required: [tagId, sites]
+      properties:
+        tagId:
+          $ref: '#/components/schemas/Id'
+        sites:
+          $ref: '#/components/schemas/SiteCount'
+    SiteCounts:
+      type: object
+      additionalProperties: false
+      required: [all, views, groups, noGroup, tags]
+      properties:
+        all:
+          $ref: '#/components/schemas/SiteCount'
+        views:
+          $ref: '#/components/schemas/SiteViewCounts'
+        groups:
+          type: array
+          description: Every group, in listGroups order.
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/GroupSiteCount'
+        noGroup:
+          $ref: '#/components/schemas/SiteCount'
+        tags:
+          type: array
+          description: Every tag, in listTags order.
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/TagSiteCount'
+    SignInProviderId:
+      type: string
+      description: An OAuth or OIDC provider the operator can configure.
+      enum: [github, google, oidc]
+    SignInProvider:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          $ref: '#/components/schemas/SignInProviderId'
+        name:
+          type: string
+          description: >-
+            The name its login button shows: `GitHub`, `Google`, or for
+            `oidc` the operator's `WARDLOCK_OIDC_NAME` (default
+            `single sign-on`).
+          minLength: 1
+          maxLength: 40
+          examples: [GitHub]
+    SignInProviderList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/SignInProvider'
     AccessLogPage:
       type: object
       additionalProperties: false

@@ -330,6 +330,81 @@ func (e ShareLinkStatus) Valid() bool {
 	}
 }
 
+// Defines values for SignInProviderId.
+const (
+	SignInProviderIdGithub SignInProviderId = "github"
+	SignInProviderIdGoogle SignInProviderId = "google"
+	SignInProviderIdOidc   SignInProviderId = "oidc"
+)
+
+// Valid indicates whether the value is a known member of the SignInProviderId enum.
+func (e SignInProviderId) Valid() bool {
+	switch e {
+	case SignInProviderIdGithub:
+		return true
+	case SignInProviderIdGoogle:
+		return true
+	case SignInProviderIdOidc:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SiteSort.
+const (
+	SiteSortDeploy   SiteSort = "deploy"
+	SiteSortLinks    SiteSort = "links"
+	SiteSortName     SiteSort = "name"
+	SiteSortRequests SiteSort = "requests"
+)
+
+// Valid indicates whether the value is a known member of the SiteSort enum.
+func (e SiteSort) Valid() bool {
+	switch e {
+	case SiteSortDeploy:
+		return true
+	case SiteSortLinks:
+		return true
+	case SiteSortName:
+		return true
+	case SiteSortRequests:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SiteView.
+const (
+	SiteViewDown     SiteView = "down"
+	SiteViewExpiring SiteView = "expiring"
+	SiteViewPinned   SiteView = "pinned"
+	SiteViewPublic   SiteView = "public"
+	SiteViewQuiet    SiteView = "quiet"
+	SiteViewUntagged SiteView = "untagged"
+)
+
+// Valid indicates whether the value is a known member of the SiteView enum.
+func (e SiteView) Valid() bool {
+	switch e {
+	case SiteViewDown:
+		return true
+	case SiteViewExpiring:
+		return true
+	case SiteViewPinned:
+		return true
+	case SiteViewPublic:
+		return true
+	case SiteViewQuiet:
+		return true
+	case SiteViewUntagged:
+		return true
+	default:
+		return false
+	}
+}
+
 // AccessLogEntry defines model for AccessLogEntry.
 type AccessLogEntry struct {
 	// Host The host the request named.
@@ -1012,6 +1087,11 @@ type Group struct {
 	Note *GroupNote `json:"note,omitempty"`
 }
 
+// GroupFilter A group's ID, or `none` for the sites in no group.
+//
+// Examples: none
+type GroupFilter = string
+
 // GroupList defines model for GroupList.
 type GroupList struct {
 	Items []Group `json:"items"`
@@ -1026,6 +1106,17 @@ type GroupName = string
 //
 // Examples: Previews for clients
 type GroupNote = string
+
+// GroupSiteCount defines model for GroupSiteCount.
+type GroupSiteCount struct {
+	// GroupId A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId Id `json:"groupId"`
+
+	// Sites A number of sites.
+	Sites SiteCount `json:"sites"`
+}
 
 // Health defines model for Health.
 type Health struct {
@@ -1060,6 +1151,27 @@ type InviteOwnerRequest struct {
 //
 // Examples: q4v7m2xkpa
 type LinkPublicId = string
+
+// LiveDeploy The deploy a site serves.
+type LiveDeploy struct {
+	// ActivatedAt When it was last activated.
+	//
+	// Examples: 1767225600000
+	ActivatedAt Timestamp `json:"activatedAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Message The deploy's message; absent when it has none.
+	Message *string `json:"message,omitempty"`
+
+	// ShortId The last eight characters of `id`, as the dashboard and CLI show it.
+	//
+	// Examples: 5a6b7c8d
+	ShortId string `json:"shortId"`
+}
 
 // ManifestFile defines model for ManifestFile.
 type ManifestFile struct {
@@ -1448,6 +1560,25 @@ type SignInLinkRequest struct {
 	Code string `json:"code"`
 }
 
+// SignInProvider defines model for SignInProvider.
+type SignInProvider struct {
+	// Id An OAuth or OIDC provider the operator can configure.
+	Id SignInProviderId `json:"id"`
+
+	// Name The name its login button shows: `GitHub`, `Google`, or for `oidc` the operator's `WARDLOCK_OIDC_NAME` (default `single sign-on`).
+	//
+	// Examples: GitHub
+	Name string `json:"name"`
+}
+
+// SignInProviderId An OAuth or OIDC provider the operator can configure.
+type SignInProviderId string
+
+// SignInProviderList defines model for SignInProviderList.
+type SignInProviderList struct {
+	Items []SignInProvider `json:"items"`
+}
+
 // Site defines model for Site.
 type Site struct {
 	// ActivatedAt When the active deploy was last activated.
@@ -1498,6 +1629,27 @@ type Site struct {
 	Url string `json:"url"`
 }
 
+// SiteCount A number of sites.
+type SiteCount = int32
+
+// SiteCounts defines model for SiteCounts.
+type SiteCounts struct {
+	// All A number of sites.
+	All SiteCount `json:"all"`
+
+	// Groups Every group, in listGroups order.
+	Groups []GroupSiteCount `json:"groups"`
+
+	// NoGroup A number of sites.
+	NoGroup SiteCount `json:"noGroup"`
+
+	// Tags Every tag, in listTags order.
+	Tags []TagSiteCount `json:"tags"`
+
+	// Views The sites in each saved view.
+	Views SiteViewCounts `json:"views"`
+}
+
 // SiteName A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
 //
 // Examples: docs
@@ -1528,6 +1680,102 @@ type SitePage struct {
 	//
 	// Examples: c2l0ZTpkb2Nz
 	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// SiteSort The order of a list of site summaries.
+type SiteSort string
+
+// SiteSummary defines model for SiteSummary.
+type SiteSummary struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// ExpiringLinks Working links that expire within the next 48 hours, leaving out links whose whole lifetime (creation to expiry) is an hour or less, such as the Open site button's 10-minute links.
+	ExpiringLinks int32 `json:"expiringLinks"`
+
+	// GroupId The site's group; absent when ungrouped.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId *Id `json:"groupId,omitempty"`
+
+	// Hostname `<name>.<base domain>`.
+	//
+	// Examples: docs.example.com
+	Hostname Hostname `json:"hostname"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// LiveDeploy The deploy the site serves; absent until the first activation.
+	LiveDeploy *LiveDeploy `json:"liveDeploy,omitempty"`
+
+	// Methods The default policy's methods; empty when it is public.
+	Methods []PolicyMethod `json:"methods"`
+
+	// Name A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Name   SiteName `json:"name"`
+	Pinned bool     `json:"pinned"`
+
+	// Quiet True when the site had no requests in the last 30 UTC days (today and the 29 days before).
+	Quiet bool `json:"quiet"`
+
+	// Requests Requests (allowed and refused) on each of the last 7 UTC days, oldest first; the last is today so far.
+	Requests []Requests `json:"requests"`
+
+	// TagIds The site's tags in tag-name order; empty when it has none.
+	TagIds []Id `json:"tagIds"`
+
+	// Unavailable True while the operator has taken the site down, as on Site.
+	Unavailable bool `json:"unavailable"`
+
+	// Url The site's URL on the base domain.
+	Url string `json:"url"`
+
+	// Visibility The site's default policy (path `/`); `public` for a site that has not stored one yet.
+	Visibility PolicyVisibility `json:"visibility"`
+
+	// WorkingLinks The site's share links that work now: not revoked, not expired and not used up.
+	WorkingLinks int32 `json:"workingLinks"`
+}
+
+// SiteSummaryPage defines model for SiteSummaryPage.
+type SiteSummaryPage struct {
+	Items []SiteSummary `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// SiteView A saved view (SPEC "Site summaries"). `pinned`: pinned sites. `expiring`: sites with a share link expiring within 48 hours (`expiringLinks` above 0). `public`: available sites whose default policy is public. `quiet`: available sites with no requests in the last 30 UTC days. `untagged`: sites with no tags. `down`: sites the operator has taken down.
+type SiteView string
+
+// SiteViewCounts The sites in each saved view.
+type SiteViewCounts struct {
+	// Down A number of sites.
+	Down SiteCount `json:"down"`
+
+	// Expiring A number of sites.
+	Expiring SiteCount `json:"expiring"`
+
+	// Pinned A number of sites.
+	Pinned SiteCount `json:"pinned"`
+
+	// Public A number of sites.
+	Public SiteCount `json:"public"`
+
+	// Quiet A number of sites.
+	Quiet SiteCount `json:"quiet"`
+
+	// Untagged A number of sites.
+	Untagged SiteCount `json:"untagged"`
 }
 
 // StartCliLoginRequest defines model for StartCliLoginRequest.
@@ -1573,6 +1821,17 @@ type TagList struct {
 //
 // Examples: preview
 type TagName = string
+
+// TagSiteCount defines model for TagSiteCount.
+type TagSiteCount struct {
+	// Sites A number of sites.
+	Sites SiteCount `json:"sites"`
+
+	// TagId A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	TagId Id `json:"tagId"`
+}
 
 // Timestamp UTC milliseconds since the Unix epoch.
 //
@@ -1716,6 +1975,30 @@ type ListSessionsParams struct {
 
 	// Cursor The `nextCursor` of the previous page.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListSiteSummariesParams defines parameters for ListSiteSummaries.
+type ListSiteSummariesParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Group Only the sites in this group, by ID, or `none` for the ungrouped sites.
+	Group *GroupFilter `form:"group,omitempty" json:"group,omitempty"`
+
+	// Tag Only the sites with this tag, by ID.
+	Tag *Id `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// View Only the sites in this saved view.
+	View *SiteView `form:"view,omitempty" json:"view,omitempty"`
+
+	// Q Search: words separated by spaces, each of which a site must match. `tag:NAME`, `group:NAME` and `is:public`, `is:protected`, `is:down` or `is:pinned` are tokens; any other word is free text over the site's name, hostnames, tag names and group name, ignoring case.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Sort `deploy`: the live deploy's activation, newest first, sites with nothing live last. `name`: by name. `requests`: requests over the last 7 UTC days, most first. `links`: working share links, most first. Ties are broken by name.
+	Sort *SiteSort `form:"sort,omitempty" json:"sort,omitempty"`
 }
 
 // ListSitesParams defines parameters for ListSites.
@@ -2067,6 +2350,15 @@ type ServerInterface interface {
 	// CompleteSetup Create the first owner from the one-time setup code.
 	// (POST /api/v0/setup)
 	CompleteSetup(w http.ResponseWriter, r *http.Request)
+	// ListSignInProviders List the OAuth and OIDC providers the operator configured.
+	// (GET /api/v0/sign-in-providers)
+	ListSignInProviders(w http.ResponseWriter, r *http.Request)
+	// GetSiteCounts Count the owner's sites in each view, group and tag.
+	// (GET /api/v0/site-counts)
+	GetSiteCounts(w http.ResponseWriter, r *http.Request)
+	// ListSiteSummaries List the owner's sites with what lists and maps show of each.
+	// (GET /api/v0/site-summaries)
+	ListSiteSummaries(w http.ResponseWriter, r *http.Request, params ListSiteSummariesParams)
 	// ListSites List the owner's sites.
 	// (GET /api/v0/sites)
 	ListSites(w http.ResponseWriter, r *http.Request, params ListSitesParams)
@@ -2676,6 +2968,145 @@ func (siw *ServerInterfaceWrapper) CompleteSetup(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CompleteSetup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSignInProviders operation middleware
+func (siw *ServerInterfaceWrapper) ListSignInProviders(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSignInProviders(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSiteCounts operation middleware
+func (siw *ServerInterfaceWrapper) GetSiteCounts(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSiteCounts(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSiteSummaries operation middleware
+func (siw *ServerInterfaceWrapper) ListSiteSummaries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSiteSummariesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "group" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "group", r.URL.Query(), &params.Group, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "group"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "tag" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag", r.URL.Query(), &params.Tag, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tag"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "view" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "view", r.URL.Query(), &params.View, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "view"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "view", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSiteSummaries(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4125,6 +4556,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v0/tags/{tagId}", wrapper.UpdateTag)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/organise", wrapper.OrganiseSites)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/analytics", wrapper.GetAnalytics)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/site-summaries", wrapper.ListSiteSummaries)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/site-counts", wrapper.GetSiteCounts)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sign-in-providers", wrapper.ListSignInProviders)
 
 	return m
 }
@@ -6224,6 +6658,233 @@ type CompleteSetupdefaultJSONResponse struct {
 }
 
 func (response CompleteSetupdefaultJSONResponse) VisitCompleteSetupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSignInProvidersRequestObject struct {
+}
+
+type ListSignInProvidersResponseObject interface {
+	VisitListSignInProvidersResponse(w http.ResponseWriter) error
+}
+
+type ListSignInProviders200JSONResponse SignInProviderList
+
+func (response ListSignInProviders200JSONResponse) VisitListSignInProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSignInProviders401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListSignInProviders401JSONResponse) VisitListSignInProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSignInProviders403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListSignInProviders403JSONResponse) VisitListSignInProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSignInProvidersdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListSignInProvidersdefaultJSONResponse) VisitListSignInProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSiteCountsRequestObject struct {
+}
+
+type GetSiteCountsResponseObject interface {
+	VisitGetSiteCountsResponse(w http.ResponseWriter) error
+}
+
+type GetSiteCounts200JSONResponse SiteCounts
+
+func (response GetSiteCounts200JSONResponse) VisitGetSiteCountsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSiteCounts401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetSiteCounts401JSONResponse) VisitGetSiteCountsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSiteCounts403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetSiteCounts403JSONResponse) VisitGetSiteCountsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSiteCountsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetSiteCountsdefaultJSONResponse) VisitGetSiteCountsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSiteSummariesRequestObject struct {
+	Params ListSiteSummariesParams
+}
+
+type ListSiteSummariesResponseObject interface {
+	VisitListSiteSummariesResponse(w http.ResponseWriter) error
+}
+
+type ListSiteSummaries200JSONResponse SiteSummaryPage
+
+func (response ListSiteSummaries200JSONResponse) VisitListSiteSummariesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSiteSummaries400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListSiteSummaries400JSONResponse) VisitListSiteSummariesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSiteSummaries401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListSiteSummaries401JSONResponse) VisitListSiteSummariesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSiteSummaries403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListSiteSummaries403JSONResponse) VisitListSiteSummariesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSiteSummaries404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListSiteSummaries404JSONResponse) VisitListSiteSummariesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSiteSummariesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListSiteSummariesdefaultJSONResponse) VisitListSiteSummariesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -9698,6 +10359,15 @@ type StrictServerInterface interface {
 	// CompleteSetup Create the first owner from the one-time setup code.
 	// (POST /api/v0/setup)
 	CompleteSetup(ctx context.Context, request CompleteSetupRequestObject) (CompleteSetupResponseObject, error)
+	// ListSignInProviders List the OAuth and OIDC providers the operator configured.
+	// (GET /api/v0/sign-in-providers)
+	ListSignInProviders(ctx context.Context, request ListSignInProvidersRequestObject) (ListSignInProvidersResponseObject, error)
+	// GetSiteCounts Count the owner's sites in each view, group and tag.
+	// (GET /api/v0/site-counts)
+	GetSiteCounts(ctx context.Context, request GetSiteCountsRequestObject) (GetSiteCountsResponseObject, error)
+	// ListSiteSummaries List the owner's sites with what lists and maps show of each.
+	// (GET /api/v0/site-summaries)
+	ListSiteSummaries(ctx context.Context, request ListSiteSummariesRequestObject) (ListSiteSummariesResponseObject, error)
 	// ListSites List the owner's sites.
 	// (GET /api/v0/sites)
 	ListSites(ctx context.Context, request ListSitesRequestObject) (ListSitesResponseObject, error)
@@ -10571,6 +11241,80 @@ func (sh *strictHandler) CompleteSetup(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CompleteSetupResponseObject); ok {
 		if err := validResponse.VisitCompleteSetupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListSignInProviders operation middleware
+func (sh *strictHandler) ListSignInProviders(w http.ResponseWriter, r *http.Request) {
+	var request ListSignInProvidersRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSignInProviders(ctx, request.(ListSignInProvidersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSignInProviders")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSignInProvidersResponseObject); ok {
+		if err := validResponse.VisitListSignInProvidersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSiteCounts operation middleware
+func (sh *strictHandler) GetSiteCounts(w http.ResponseWriter, r *http.Request) {
+	var request GetSiteCountsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSiteCounts(ctx, request.(GetSiteCountsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSiteCounts")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSiteCountsResponseObject); ok {
+		if err := validResponse.VisitGetSiteCountsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListSiteSummaries operation middleware
+func (sh *strictHandler) ListSiteSummaries(w http.ResponseWriter, r *http.Request, params ListSiteSummariesParams) {
+	var request ListSiteSummariesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSiteSummaries(ctx, request.(ListSiteSummariesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSiteSummaries")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSiteSummariesResponseObject); ok {
+		if err := validResponse.VisitListSiteSummariesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

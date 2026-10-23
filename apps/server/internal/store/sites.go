@@ -71,6 +71,10 @@ type Sites interface {
 	// in tag-name order. A site with no tags, another owner's site and an
 	// unknown ID have no entry.
 	TagIDs(ctx context.Context, ownerID string, siteIDs ...string) (map[string][]string, error)
+	// Summaries returns every one of ownerID's sites, by name, with its
+	// default policy, tags, custom domains, links and requests as w says
+	// (V5.5). It costs the same few queries whatever the number of sites.
+	Summaries(ctx context.Context, ownerID string, w SummaryWindow) ([]SiteSummary, error)
 	// SetActiveDeploy points the site at one of its own deploys. A
 	// taken-down site is ErrNotFound.
 	SetActiveDeploy(ctx context.Context, ownerID, siteID, deployID string) error

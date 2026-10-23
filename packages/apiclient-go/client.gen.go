@@ -329,6 +329,81 @@ func (e ShareLinkStatus) Valid() bool {
 	}
 }
 
+// Defines values for SignInProviderId.
+const (
+	SignInProviderIdGithub SignInProviderId = "github"
+	SignInProviderIdGoogle SignInProviderId = "google"
+	SignInProviderIdOidc   SignInProviderId = "oidc"
+)
+
+// Valid indicates whether the value is a known member of the SignInProviderId enum.
+func (e SignInProviderId) Valid() bool {
+	switch e {
+	case SignInProviderIdGithub:
+		return true
+	case SignInProviderIdGoogle:
+		return true
+	case SignInProviderIdOidc:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SiteSort.
+const (
+	SiteSortDeploy   SiteSort = "deploy"
+	SiteSortLinks    SiteSort = "links"
+	SiteSortName     SiteSort = "name"
+	SiteSortRequests SiteSort = "requests"
+)
+
+// Valid indicates whether the value is a known member of the SiteSort enum.
+func (e SiteSort) Valid() bool {
+	switch e {
+	case SiteSortDeploy:
+		return true
+	case SiteSortLinks:
+		return true
+	case SiteSortName:
+		return true
+	case SiteSortRequests:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SiteView.
+const (
+	SiteViewDown     SiteView = "down"
+	SiteViewExpiring SiteView = "expiring"
+	SiteViewPinned   SiteView = "pinned"
+	SiteViewPublic   SiteView = "public"
+	SiteViewQuiet    SiteView = "quiet"
+	SiteViewUntagged SiteView = "untagged"
+)
+
+// Valid indicates whether the value is a known member of the SiteView enum.
+func (e SiteView) Valid() bool {
+	switch e {
+	case SiteViewDown:
+		return true
+	case SiteViewExpiring:
+		return true
+	case SiteViewPinned:
+		return true
+	case SiteViewPublic:
+		return true
+	case SiteViewQuiet:
+		return true
+	case SiteViewUntagged:
+		return true
+	default:
+		return false
+	}
+}
+
 // AccessLogEntry defines model for AccessLogEntry.
 type AccessLogEntry struct {
 	// Host The host the request named.
@@ -1011,6 +1086,11 @@ type Group struct {
 	Note *GroupNote `json:"note,omitempty"`
 }
 
+// GroupFilter A group's ID, or `none` for the sites in no group.
+//
+// Examples: none
+type GroupFilter = string
+
 // GroupList defines model for GroupList.
 type GroupList struct {
 	Items []Group `json:"items"`
@@ -1025,6 +1105,17 @@ type GroupName = string
 //
 // Examples: Previews for clients
 type GroupNote = string
+
+// GroupSiteCount defines model for GroupSiteCount.
+type GroupSiteCount struct {
+	// GroupId A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId Id `json:"groupId"`
+
+	// Sites A number of sites.
+	Sites SiteCount `json:"sites"`
+}
 
 // Health defines model for Health.
 type Health struct {
@@ -1059,6 +1150,27 @@ type InviteOwnerRequest struct {
 //
 // Examples: q4v7m2xkpa
 type LinkPublicId = string
+
+// LiveDeploy The deploy a site serves.
+type LiveDeploy struct {
+	// ActivatedAt When it was last activated.
+	//
+	// Examples: 1767225600000
+	ActivatedAt Timestamp `json:"activatedAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Message The deploy's message; absent when it has none.
+	Message *string `json:"message,omitempty"`
+
+	// ShortId The last eight characters of `id`, as the dashboard and CLI show it.
+	//
+	// Examples: 5a6b7c8d
+	ShortId string `json:"shortId"`
+}
 
 // ManifestFile defines model for ManifestFile.
 type ManifestFile struct {
@@ -1447,6 +1559,25 @@ type SignInLinkRequest struct {
 	Code string `json:"code"`
 }
 
+// SignInProvider defines model for SignInProvider.
+type SignInProvider struct {
+	// Id An OAuth or OIDC provider the operator can configure.
+	Id SignInProviderId `json:"id"`
+
+	// Name The name its login button shows: `GitHub`, `Google`, or for `oidc` the operator's `WARDLOCK_OIDC_NAME` (default `single sign-on`).
+	//
+	// Examples: GitHub
+	Name string `json:"name"`
+}
+
+// SignInProviderId An OAuth or OIDC provider the operator can configure.
+type SignInProviderId string
+
+// SignInProviderList defines model for SignInProviderList.
+type SignInProviderList struct {
+	Items []SignInProvider `json:"items"`
+}
+
 // Site defines model for Site.
 type Site struct {
 	// ActivatedAt When the active deploy was last activated.
@@ -1497,6 +1628,27 @@ type Site struct {
 	Url string `json:"url"`
 }
 
+// SiteCount A number of sites.
+type SiteCount = int32
+
+// SiteCounts defines model for SiteCounts.
+type SiteCounts struct {
+	// All A number of sites.
+	All SiteCount `json:"all"`
+
+	// Groups Every group, in listGroups order.
+	Groups []GroupSiteCount `json:"groups"`
+
+	// NoGroup A number of sites.
+	NoGroup SiteCount `json:"noGroup"`
+
+	// Tags Every tag, in listTags order.
+	Tags []TagSiteCount `json:"tags"`
+
+	// Views The sites in each saved view.
+	Views SiteViewCounts `json:"views"`
+}
+
 // SiteName A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
 //
 // Examples: docs
@@ -1527,6 +1679,102 @@ type SitePage struct {
 	//
 	// Examples: c2l0ZTpkb2Nz
 	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// SiteSort The order of a list of site summaries.
+type SiteSort string
+
+// SiteSummary defines model for SiteSummary.
+type SiteSummary struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// ExpiringLinks Working links that expire within the next 48 hours, leaving out links whose whole lifetime (creation to expiry) is an hour or less, such as the Open site button's 10-minute links.
+	ExpiringLinks int32 `json:"expiringLinks"`
+
+	// GroupId The site's group; absent when ungrouped.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId *Id `json:"groupId,omitempty"`
+
+	// Hostname `<name>.<base domain>`.
+	//
+	// Examples: docs.example.com
+	Hostname Hostname `json:"hostname"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// LiveDeploy The deploy the site serves; absent until the first activation.
+	LiveDeploy *LiveDeploy `json:"liveDeploy,omitempty"`
+
+	// Methods The default policy's methods; empty when it is public.
+	Methods []PolicyMethod `json:"methods"`
+
+	// Name A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Name   SiteName `json:"name"`
+	Pinned bool     `json:"pinned"`
+
+	// Quiet True when the site had no requests in the last 30 UTC days (today and the 29 days before).
+	Quiet bool `json:"quiet"`
+
+	// Requests Requests (allowed and refused) on each of the last 7 UTC days, oldest first; the last is today so far.
+	Requests []Requests `json:"requests"`
+
+	// TagIds The site's tags in tag-name order; empty when it has none.
+	TagIds []Id `json:"tagIds"`
+
+	// Unavailable True while the operator has taken the site down, as on Site.
+	Unavailable bool `json:"unavailable"`
+
+	// Url The site's URL on the base domain.
+	Url string `json:"url"`
+
+	// Visibility The site's default policy (path `/`); `public` for a site that has not stored one yet.
+	Visibility PolicyVisibility `json:"visibility"`
+
+	// WorkingLinks The site's share links that work now: not revoked, not expired and not used up.
+	WorkingLinks int32 `json:"workingLinks"`
+}
+
+// SiteSummaryPage defines model for SiteSummaryPage.
+type SiteSummaryPage struct {
+	Items []SiteSummary `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// SiteView A saved view (SPEC "Site summaries"). `pinned`: pinned sites. `expiring`: sites with a share link expiring within 48 hours (`expiringLinks` above 0). `public`: available sites whose default policy is public. `quiet`: available sites with no requests in the last 30 UTC days. `untagged`: sites with no tags. `down`: sites the operator has taken down.
+type SiteView string
+
+// SiteViewCounts The sites in each saved view.
+type SiteViewCounts struct {
+	// Down A number of sites.
+	Down SiteCount `json:"down"`
+
+	// Expiring A number of sites.
+	Expiring SiteCount `json:"expiring"`
+
+	// Pinned A number of sites.
+	Pinned SiteCount `json:"pinned"`
+
+	// Public A number of sites.
+	Public SiteCount `json:"public"`
+
+	// Quiet A number of sites.
+	Quiet SiteCount `json:"quiet"`
+
+	// Untagged A number of sites.
+	Untagged SiteCount `json:"untagged"`
 }
 
 // StartCliLoginRequest defines model for StartCliLoginRequest.
@@ -1572,6 +1820,17 @@ type TagList struct {
 //
 // Examples: preview
 type TagName = string
+
+// TagSiteCount defines model for TagSiteCount.
+type TagSiteCount struct {
+	// Sites A number of sites.
+	Sites SiteCount `json:"sites"`
+
+	// TagId A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	TagId Id `json:"tagId"`
+}
 
 // Timestamp UTC milliseconds since the Unix epoch.
 //
@@ -1715,6 +1974,30 @@ type ListSessionsParams struct {
 
 	// Cursor The `nextCursor` of the previous page.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListSiteSummariesParams defines parameters for ListSiteSummaries.
+type ListSiteSummariesParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Group Only the sites in this group, by ID, or `none` for the ungrouped sites.
+	Group *GroupFilter `form:"group,omitempty" json:"group,omitempty"`
+
+	// Tag Only the sites with this tag, by ID.
+	Tag *Id `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// View Only the sites in this saved view.
+	View *SiteView `form:"view,omitempty" json:"view,omitempty"`
+
+	// Q Search: words separated by spaces, each of which a site must match. `tag:NAME`, `group:NAME` and `is:public`, `is:protected`, `is:down` or `is:pinned` are tokens; any other word is free text over the site's name, hostnames, tag names and group name, ignoring case.
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Sort `deploy`: the live deploy's activation, newest first, sites with nothing live last. `name`: by name. `requests`: requests over the last 7 UTC days, most first. `links`: working share links, most first. Ties are broken by name.
+	Sort *SiteSort `form:"sort,omitempty" json:"sort,omitempty"`
 }
 
 // ListSitesParams defines parameters for ListSites.
@@ -2393,6 +2676,27 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/v0/setup (the `CompleteSetup` operationId).
 	CompleteSetup(ctx context.Context, body CompleteSetupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListSignInProviders List the OAuth and OIDC providers the operator configured.
+	//
+	// The providers a policy's `oauth` method signs visitors in with (A2.5), as the operator configured them: `github`, `google` and `oidc`, in that order, each only when configured, with the name its login button shows. Empty when none is, and then enabling `oauth` answers `400 invalid_policy`. Never includes client IDs, secrets or the issuer URL.
+	//
+	// Corresponds with GET /api/v0/sign-in-providers (the `ListSignInProviders` operationId).
+	ListSignInProviders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSiteCounts Count the owner's sites in each view, group and tag.
+	//
+	// How many sites listSiteSummaries would answer for all sites, each saved view, each group, no group and each tag, as the navigator shows them. Every group and tag is listed, with `0` when it has no sites, in the order listGroups and listTags answer them.
+	//
+	// Corresponds with GET /api/v0/site-counts (the `GetSiteCounts` operationId).
+	GetSiteCounts(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListSiteSummaries List the owner's sites with what lists and maps show of each.
+	//
+	// One read for the dashboard's sites list, navigator, jump-to, map and overview: each site with its default policy, group, tags, pin, working and soon-expiring share links, requests on each of the last 7 UTC days, whether it had no requests in the last 30 UTC days, and its live deploy. `group`, `tag`, `view` and `q` narrow the list and combine (a site must match all of them); SPEC "Site summaries" defines each saved view and search token. A missing group or tag and another owner's answer the same `404`. Every page costs the same few database queries, whatever its size. `nextCursor` belongs to the `sort` it was issued for; a cursor from another sort answers `400 invalid_request`.
+	//
+	// Corresponds with GET /api/v0/site-summaries (the `ListSiteSummaries` operationId).
+	ListSiteSummaries(ctx context.Context, params *ListSiteSummariesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSites List the owner's sites.
 	//
@@ -3474,6 +3778,57 @@ func (c *Client) CompleteSetupWithBody(ctx context.Context, contentType string, 
 // Corresponds with POST /api/v0/setup (the `CompleteSetup` operationId).
 func (c *Client) CompleteSetup(ctx context.Context, body CompleteSetupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCompleteSetupRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListSignInProviders List the OAuth and OIDC providers the operator configured.
+//
+// The providers a policy's `oauth` method signs visitors in with (A2.5), as the operator configured them: `github`, `google` and `oidc`, in that order, each only when configured, with the name its login button shows. Empty when none is, and then enabling `oauth` answers `400 invalid_policy`. Never includes client IDs, secrets or the issuer URL.
+//
+// Corresponds with GET /api/v0/sign-in-providers (the `ListSignInProviders` operationId).
+func (c *Client) ListSignInProviders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSignInProvidersRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSiteCounts Count the owner's sites in each view, group and tag.
+//
+// How many sites listSiteSummaries would answer for all sites, each saved view, each group, no group and each tag, as the navigator shows them. Every group and tag is listed, with `0` when it has no sites, in the order listGroups and listTags answer them.
+//
+// Corresponds with GET /api/v0/site-counts (the `GetSiteCounts` operationId).
+func (c *Client) GetSiteCounts(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSiteCountsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListSiteSummaries List the owner's sites with what lists and maps show of each.
+//
+// One read for the dashboard's sites list, navigator, jump-to, map and overview: each site with its default policy, group, tags, pin, working and soon-expiring share links, requests on each of the last 7 UTC days, whether it had no requests in the last 30 UTC days, and its live deploy. `group`, `tag`, `view` and `q` narrow the list and combine (a site must match all of them); SPEC "Site summaries" defines each saved view and search token. A missing group or tag and another owner's answer the same `404`. Every page costs the same few database queries, whatever its size. `nextCursor` belongs to the `sort` it was issued for; a cursor from another sort answers `400 invalid_request`.
+//
+// Corresponds with GET /api/v0/site-summaries (the `ListSiteSummaries` operationId).
+func (c *Client) ListSiteSummaries(ctx context.Context, params *ListSiteSummariesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSiteSummariesRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -5299,6 +5654,186 @@ func NewCompleteSetupRequestWithBody(server string, contentType string, body io.
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListSignInProvidersRequest constructs an http.Request for the ListSignInProviders method
+func NewListSignInProvidersRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sign-in-providers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSiteCountsRequest constructs an http.Request for the GetSiteCounts method
+func NewGetSiteCountsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/site-counts")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListSiteSummariesRequest constructs an http.Request for the ListSiteSummaries method
+func NewListSiteSummariesRequest(server string, params *ListSiteSummariesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/site-summaries")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Group != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "group", *params.Group, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Tag != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "tag", *params.Tag, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.View != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "view", *params.View, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Sort != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sort", *params.Sort, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -7453,6 +7988,33 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/v0/setup (the `CompleteSetup` operationId).
 	CompleteSetupWithResponse(ctx context.Context, body CompleteSetupJSONRequestBody, reqEditors ...RequestEditorFn) (*CompleteSetupResponse, error)
+
+	// ListSignInProvidersWithResponse List the OAuth and OIDC providers the operator configured.
+	//
+	// The providers a policy's `oauth` method signs visitors in with (A2.5), as the operator configured them: `github`, `google` and `oidc`, in that order, each only when configured, with the name its login button shows. Empty when none is, and then enabling `oauth` answers `400 invalid_policy`. Never includes client IDs, secrets or the issuer URL.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sign-in-providers (the `ListSignInProviders` operationId).
+	ListSignInProvidersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSignInProvidersResponse, error)
+
+	// GetSiteCountsWithResponse Count the owner's sites in each view, group and tag.
+	//
+	// How many sites listSiteSummaries would answer for all sites, each saved view, each group, no group and each tag, as the navigator shows them. Every group and tag is listed, with `0` when it has no sites, in the order listGroups and listTags answer them.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/site-counts (the `GetSiteCounts` operationId).
+	GetSiteCountsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSiteCountsResponse, error)
+
+	// ListSiteSummariesWithResponse List the owner's sites with what lists and maps show of each.
+	//
+	// One read for the dashboard's sites list, navigator, jump-to, map and overview: each site with its default policy, group, tags, pin, working and soon-expiring share links, requests on each of the last 7 UTC days, whether it had no requests in the last 30 UTC days, and its live deploy. `group`, `tag`, `view` and `q` narrow the list and combine (a site must match all of them); SPEC "Site summaries" defines each saved view and search token. A missing group or tag and another owner's answer the same `404`. Every page costs the same few database queries, whatever its size. `nextCursor` belongs to the `sort` it was issued for; a cursor from another sort answers `400 invalid_request`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/site-summaries (the `ListSiteSummaries` operationId).
+	ListSiteSummariesWithResponse(ctx context.Context, params *ListSiteSummariesParams, reqEditors ...RequestEditorFn) (*ListSiteSummariesResponse, error)
 
 	// ListSitesWithResponse List the owner's sites.
 	//
@@ -9674,6 +10236,206 @@ func (r CompleteSetupResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r CompleteSetupResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListSignInProvidersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SignInProviderList
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListSignInProvidersResponse) GetJSON200() *SignInProviderList {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListSignInProvidersResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListSignInProvidersResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListSignInProvidersResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListSignInProvidersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListSignInProvidersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListSignInProvidersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListSignInProvidersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetSiteCountsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SiteCounts
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSiteCountsResponse) GetJSON200() *SiteCounts {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetSiteCountsResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetSiteCountsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetSiteCountsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSiteCountsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSiteCountsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSiteCountsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSiteCountsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListSiteSummariesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SiteSummaryPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListSiteSummariesResponse) GetJSON200() *SiteSummaryPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListSiteSummariesResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListSiteSummariesResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListSiteSummariesResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListSiteSummariesResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListSiteSummariesResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListSiteSummariesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListSiteSummariesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListSiteSummariesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListSiteSummariesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -12905,6 +13667,51 @@ func (c *ClientWithResponses) CompleteSetupWithResponse(ctx context.Context, bod
 	return ParseCompleteSetupResponse(rsp)
 }
 
+// ListSignInProvidersWithResponse List the OAuth and OIDC providers the operator configured.
+//
+// The providers a policy's `oauth` method signs visitors in with (A2.5), as the operator configured them: `github`, `google` and `oidc`, in that order, each only when configured, with the name its login button shows. Empty when none is, and then enabling `oauth` answers `400 invalid_policy`. Never includes client IDs, secrets or the issuer URL.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sign-in-providers (the `ListSignInProviders` operationId).
+func (c *ClientWithResponses) ListSignInProvidersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSignInProvidersResponse, error) {
+	rsp, err := c.ListSignInProviders(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListSignInProvidersResponse(rsp)
+}
+
+// GetSiteCountsWithResponse Count the owner's sites in each view, group and tag.
+//
+// How many sites listSiteSummaries would answer for all sites, each saved view, each group, no group and each tag, as the navigator shows them. Every group and tag is listed, with `0` when it has no sites, in the order listGroups and listTags answer them.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/site-counts (the `GetSiteCounts` operationId).
+func (c *ClientWithResponses) GetSiteCountsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSiteCountsResponse, error) {
+	rsp, err := c.GetSiteCounts(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSiteCountsResponse(rsp)
+}
+
+// ListSiteSummariesWithResponse List the owner's sites with what lists and maps show of each.
+//
+// One read for the dashboard's sites list, navigator, jump-to, map and overview: each site with its default policy, group, tags, pin, working and soon-expiring share links, requests on each of the last 7 UTC days, whether it had no requests in the last 30 UTC days, and its live deploy. `group`, `tag`, `view` and `q` narrow the list and combine (a site must match all of them); SPEC "Site summaries" defines each saved view and search token. A missing group or tag and another owner's answer the same `404`. Every page costs the same few database queries, whatever its size. `nextCursor` belongs to the `sort` it was issued for; a cursor from another sort answers `400 invalid_request`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/site-summaries (the `ListSiteSummaries` operationId).
+func (c *ClientWithResponses) ListSiteSummariesWithResponse(ctx context.Context, params *ListSiteSummariesParams, reqEditors ...RequestEditorFn) (*ListSiteSummariesResponse, error) {
+	rsp, err := c.ListSiteSummaries(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListSiteSummariesResponse(rsp)
+}
+
 // ListSitesWithResponse List the owner's sites.
 //
 // Ordered by name. With `hostname`, answers the owner's site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
@@ -15119,6 +15926,161 @@ func ParseCompleteSetupResponse(rsp *http.Response) (*CompleteSetupResponse, err
 			headers.RetryAfter = &value
 		}
 		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListSignInProvidersResponse parses an HTTP response from a ListSignInProvidersWithResponse call
+func ParseListSignInProvidersResponse(rsp *http.Response) (*ListSignInProvidersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSignInProvidersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SignInProviderList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSiteCountsResponse parses an HTTP response from a GetSiteCountsWithResponse call
+func ParseGetSiteCountsResponse(rsp *http.Response) (*GetSiteCountsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSiteCountsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SiteCounts
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListSiteSummariesResponse parses an HTTP response from a ListSiteSummariesWithResponse call
+func ParseListSiteSummariesResponse(rsp *http.Response) (*ListSiteSummariesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSiteSummariesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SiteSummaryPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
 	}
 
 	return response, nil
