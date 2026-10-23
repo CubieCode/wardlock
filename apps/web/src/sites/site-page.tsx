@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DomainsCard } from '../domains/domains.js';
 import { LinkDetail } from '../links/access-log-page.js';
 import { ShareLinksCard } from '../links/share-links.js';
-import { PoliciesCard } from '../policies/policies.js';
+import { AccessTab } from '../policies/providers.js';
 import { useTitle } from '../shell/page.js';
 import { SiteAccessLogTab } from './access-log-page.js';
 import {
@@ -272,11 +272,7 @@ export function SitePage({
       body = (
         <>
           {accessRefreshFailed}
-          <PoliciesCard
-            api={api}
-            site={site}
-            onChange={() => refresh('access')}
-          />
+          <AccessTab api={api} site={site} onChange={() => refresh('access')} />
         </>
       );
       break;

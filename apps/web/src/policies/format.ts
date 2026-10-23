@@ -6,6 +6,7 @@ import type { Policy } from '../sites/format.js';
 
 export type PolicyMethod = components['schemas']['PolicyMethod'];
 export type SetPolicyRequest = components['schemas']['SetPolicyRequest'];
+export type SignInProvider = components['schemas']['SignInProvider'];
 
 /** Every method, in the order the editor offers them. */
 export const methods: PolicyMethod[] = ['links', 'password', 'email', 'oauth'];
@@ -22,6 +23,12 @@ export const methodNames: Record<PolicyMethod, string> = {
 export function listText(items: string[]) {
   return new Intl.ListFormat('en-NZ', { type: 'conjunction' }).format(items);
 }
+
+/** "GitHub or Google": the configured providers' names, in the API's order. */
+export const providerNames = (providers: SignInProvider[]) =>
+  new Intl.ListFormat('en-NZ', { type: 'disjunction' }).format(
+    providers.map((p) => p.name),
+  );
 
 /** How a protected policy lets visitors in, as a sentence fragment. */
 export const methodsText = (policy: Policy) =>

@@ -13,6 +13,7 @@ import {
   governing,
   methodsText,
   requestPath,
+  type SignInProvider,
   reserved,
 } from './format.js';
 import './policies.css';
@@ -52,10 +53,13 @@ export function PoliciesCard({
   api,
   site,
   onChange,
+  providers,
 }: {
   api: ApiClient;
   site: Site;
   onChange?: () => void;
+  /** The configured sign-in providers; absent while unknown. */
+  providers?: SignInProvider[] | undefined;
 }) {
   const [state, setState] = useState<ListState>({ kind: 'loading' });
   const [open, setOpen] = useState<Open>({ kind: 'none' });
@@ -184,6 +188,7 @@ export function PoliciesCard({
           site={site}
           policy={open.kind === 'edit' ? open.policy : undefined}
           policies={policies}
+          providers={providers}
           onClose={close}
           onSaved={(policy) =>
             saved(policy, open.kind === 'edit' ? open.policy : undefined)

@@ -144,6 +144,13 @@ for (const scheme of schemes) {
         await expect(
           page.getByRole('heading', { level: 1, name: site }),
         ).toBeVisible();
+        if (path === 'access')
+          // The providers this test server configures, in the API's order.
+          await expect(
+            page
+              .getByRole('region', { name: 'Sign-in providers' })
+              .getByRole('listitem'),
+          ).toHaveText(['GitHub', 'Google']);
         await shot(path);
       }
       // A tab's address opens straight to it.

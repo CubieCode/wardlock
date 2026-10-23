@@ -90,3 +90,11 @@
     align-items: center;
   }
 }
+
+/* Sign-in providers: the configured providers' names, one per line */
+.policy-providers {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-6);
+}

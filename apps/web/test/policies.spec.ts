@@ -264,11 +264,15 @@ for (const scheme of schemes) {
     });
 
     await test.step('sign-in lists the providers for a GitHub organisation', async () => {
+      // The test server configures GitHub and Google, and no OIDC provider;
+      // the editor names exactly those.
+      await expect(
+        page
+          .getByRole('list', { name: 'Sign-in providers' })
+          .getByRole('listitem'),
+      ).toHaveText(['GitHub', 'Google']);
       const dialog = await editDefault();
-      await method(
-        dialog,
-        'Sign in with GitHub, Google or single sign-on',
-      ).check();
+      await method(dialog, 'Sign in with GitHub or Google').check();
       await dialog
         .getByRole('textbox', { name: 'GitHub organisations' })
         .fill('example-org');

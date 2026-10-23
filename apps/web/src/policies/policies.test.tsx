@@ -59,6 +59,11 @@ function policy(path: string, extra: Partial<Policy> = {}): Policy {
   };
 }
 
+const github = { id: 'github', name: 'GitHub' } as const;
+const google = { id: 'google', name: 'Google' } as const;
+// The operator's own name for its OIDC provider.
+const oidc = { id: 'oidc', name: 'Harbour SSO' } as const;
+
 // A synthetic password; it must never reach the page.
 const password = 'harbour-lights-7';
 
@@ -83,6 +88,8 @@ function fakeServer(start: Policy[], routes: Record<string, Handler> = {}) {
         return Response.json({ items: [] });
       if (route === 'GET /api/v0/sites/docs/links')
         return Response.json({ items: [] });
+      if (route === 'GET /api/v0/sign-in-providers')
+        return Response.json({ items: [github, google] });
       if (route === 'GET /api/v0/sites/docs/policies')
         return Response.json({ items: policies });
       if (route === 'PUT /api/v0/sites/docs/policies') {
@@ -740,5 +747,127 @@ describe('on the site page', () => {
       screen.queryByText(/Could not refresh the deploy history/),
     ).toBeNull();
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy();
+  });
+});
+
+describe('sign-in providers on the Access tab', () => {
+  const open = async (providers: Handler, start: Policy[] = [policy('/')]) => {
+    window.history.replaceState(null, '', '/sites/docs/access');
+    const server = fakeServer(start, {
+      'GET /api/v0/sign-in-providers': providers,
+    });
+    render(<App api={server.api} />);
+    const card = await screen.findByRole('region', {
+      name: 'Sign-in providers',
+    });
+    return { ...server, card };
+  };
+  const answer =
+    (...items: { id: string; name: string }[]) =>
+    () =>
+      Response.json({ items });
+  /** The editor for the site default, made protected. */
+  const editor = async () => {
+    const policies = screen.getByRole('region', { name: 'Access policies' });
+    fireEvent.click(
+      await within(policies).findByRole('button', {
+        name: 'Edit the site default',
+      }),
+    );
+    const edit = dialog('Edit the site default for docs');
+    fireEvent.click(within(edit).getByRole('radio', { name: 'Protected' }));
+    return edit;
+  };
+  const signIn = (edit: HTMLElement) =>
+    within(edit).queryByRole('checkbox', { name: /^Sign in/ });
+
+  it('says plainly when none is set up, and does not offer Sign in', async () => {
+    const { card } = await open(answer());
+    await waitFor(() =>
+      expect(card.textContent).toContain(
+        'This server has no sign-in providers set up',
+      ),
+    );
+    expect(card.textContent).toContain('in its configuration');
+    expect(within(card).queryByRole('link')).toBeNull();
+    expect(within(card).queryByRole('button')).toBeNull();
+    const edit = await editor();
+    expect(signIn(edit)).toBeNull();
+    expect(
+      within(edit).getByRole('checkbox', { name: 'Share links' }),
+    ).toBeTruthy();
+  });
+
+  it('names one provider, and offers sign-in with it', async () => {
+    const { card } = await open(answer(github));
+    const list = await within(card).findByRole('list', {
+      name: 'Sign-in providers',
+    });
+    expect(
+      within(list)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['GitHub']);
+    await editor();
+    expect(
+      within(dialog('Edit the site default for docs')).getByRole('checkbox', {
+        name: 'Sign in with GitHub',
+      }),
+    ).toBeTruthy();
+  });
+
+  it('names every configured provider in the server’s order', async () => {
+    const { card } = await open(answer(github, google, oidc));
+    const list = await within(card).findByRole('list', {
+      name: 'Sign-in providers',
+    });
+    expect(
+      within(list)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['GitHub', 'Google', 'Harbour SSO']);
+    const edit = await editor();
+    expect(
+      within(edit).getByRole('checkbox', {
+        name: 'Sign in with GitHub, Google or Harbour SSO',
+      }),
+    ).toBeTruthy();
+  });
+
+  it('keeps Sign in on a policy that has it, so it can be cleared', async () => {
+    await open(answer(), [
+      policy('/', {
+        visibility: 'protected',
+        methods: ['links', 'oauth'],
+        allowlist: { emails: [], domains: ['example.com'], githubOrgs: [] },
+      }),
+    ]);
+    const edit = await editor();
+    const box = signIn(edit)!;
+    expect((box as HTMLInputElement).checked).toBe(true);
+    expect(edit.textContent).toContain(
+      'No sign-in providers are set up on this server',
+    );
+  });
+
+  it('keeps the policies working when the providers cannot be read', async () => {
+    let fail = true;
+    const { card } = await open(() =>
+      fail
+        ? Response.json({ code: 'internal', message: 'x' }, { status: 500 })
+        : Response.json({ items: [github] }),
+    );
+    expect(
+      await within(card).findByText(/Could not load the sign-in providers/),
+    ).toBeTruthy();
+    // The editor still offers Sign in; the server decides when it is saved.
+    const edit = await editor();
+    expect(signIn(edit)).toBeTruthy();
+    fireEvent.click(within(edit).getByRole('button', { name: 'Cancel' }));
+    fail = false;
+    fireEvent.click(within(card).getByRole('button', { name: 'Try again' }));
+    expect(
+      await within(card).findByRole('list', { name: 'Sign-in providers' }),
+    ).toBeTruthy();
   });
 });
