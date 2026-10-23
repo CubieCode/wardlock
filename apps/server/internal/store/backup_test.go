@@ -53,6 +53,14 @@ func TestBackupDuringWrites(t *testing.T) {
 			for i := 0; writeCtx.Err() == nil; i++ {
 				s := store.Site{ID: store.NewID(), OwnerID: owner.ID, Name: fmt.Sprintf("w%d-%06d", w, i), CreatedAt: time.Now()}
 				if err := h.Sites().Create(writeCtx, s, store.Quotas{}); err != nil {
+					// Two handles inserting in tight loops can starve one
+					// past busy_timeout on a loaded machine. Lock fairness
+					// is not what this test checks, so try the same site
+					// again.
+					if strings.Contains(err.Error(), "SQLITE_BUSY") {
+						i--
+						continue
+					}
 					if writeCtx.Err() == nil {
 						t.Errorf("writer %d: %v", w, err)
 					}
