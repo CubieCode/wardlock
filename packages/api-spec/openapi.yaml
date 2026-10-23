@@ -38,7 +38,8 @@ info:
       pinning, and changing many sites at once. Setting one site's group and
       tags (setSiteOrganisation) accepts either scope, so a deploy can file
       the site it publishes under existing groups and tags; it never creates
-      them. Tokens never manage owners, sessions or other tokens.
+      them. Analytics (V5.4) is a read and accepts either scope. Tokens
+      never manage owners, sessions or other tokens.
 
     Each operation lists the credentials it accepts; any one of them is
     enough. Operations with no security take no credentials and are
@@ -110,6 +111,8 @@ tags:
     description: Share links (A2.2).
   - name: organisation
     description: Groups, tags and pins (V5.3).
+  - name: analytics
+    description: Requests over time from the traffic rollup (V5.4).
 security: []
 paths:
   /api/v0/health:
@@ -2572,6 +2575,116 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v0/analytics:
+    get:
+      operationId: getAnalytics
+      summary: Count requests over the last 7, 30 or 90 days.
+      description: >-
+        Requests for the owner's sites over the last `days` days, from the
+        hourly traffic rollup: per UTC hour, so a client can draw days in
+        the viewer's timezone, and in total by way in, site, group, tag,
+        browser family, the busiest share links and the busiest paths.
+        Every count is of requests, split into `allowed` (answered with a
+        status below 400) and `refused` (400 and above); none is a count
+        of visitors. The range is the `days` × 24 whole UTC hours ending
+        with the current one. Give at most one of `site`, `group` and
+        `tag` to narrow it; groups and tags are read as they are now, so
+        a site's history moves with it. Giving more than one answers
+        `400 invalid_request`; a missing site, group or tag and another
+        owner's answer the same `404`.
+      tags: [analytics]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: How many days back to count, ending with the current hour.
+          schema:
+            $ref: '#/components/schemas/AnalyticsDays'
+          example: 30
+        - name: site
+          in: query
+          required: false
+          description: Only this site, by name.
+          schema:
+            $ref: '#/components/schemas/SiteName'
+          example: docs
+        - name: group
+          in: query
+          required: false
+          description: Only the sites now in this group, by ID.
+          schema:
+            $ref: '#/components/schemas/Id'
+          example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70
+        - name: tag
+          in: query
+          required: false
+          description: Only the sites that now have this tag, by ID.
+          schema:
+            $ref: '#/components/schemas/Id'
+          example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80
+      responses:
+        '200':
+          description: The requests in the range and scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Analytics'
+              example:
+                days: 7
+                from: 1767225600000
+                to: 1767830400000
+                total: { allowed: 42, refused: 3 }
+                hours:
+                  - { hour: 1767229200000, allowed: 40, refused: 3 }
+                  - { hour: 1767232800000, allowed: 2, refused: 0 }
+                via:
+                  - { via: link, allowed: 30, refused: 0 }
+                  - { via: none, allowed: 0, refused: 3 }
+                  - { via: public, allowed: 12, refused: 0 }
+                sites:
+                  - { site: docs, allowed: 42, refused: 3 }
+                groups:
+                  - {
+                      groupId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70,
+                      allowed: 42,
+                      refused: 3,
+                    }
+                tags:
+                  - {
+                      tagId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80,
+                      allowed: 42,
+                      refused: 3,
+                    }
+                links:
+                  - {
+                      site: docs,
+                      publicId: q4v7m2xkpa,
+                      label: Client review,
+                      allowed: 30,
+                      refused: 0,
+                    }
+                paths:
+                  - { site: docs, path: /, allowed: 25, refused: 1 }
+                  - { site: docs, path: /docs/, allowed: 17, refused: 0 }
+                otherPaths: { allowed: 0, refused: 2 }
+                browsers:
+                  - { browser: chrome, allowed: 28, refused: 0 }
+                  - { browser: tool, allowed: 14, refused: 3 }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   securitySchemes:
     sessionCookie:
@@ -4297,6 +4410,221 @@ components:
         userAgent:
           type: string
           description: The User-Agent header; absent when the request sent none.
+    AnalyticsDays:
+      type: integer
+      format: int32
+      description: The range of an analytics report, in days.
+      enum: [7, 30, 90]
+      default: 7
+    RequestCount:
+      type: object
+      additionalProperties: false
+      description: Requests answered below 400 (`allowed`) and at 400 or above (`refused`).
+      required: [allowed, refused]
+      properties:
+        allowed:
+          $ref: '#/components/schemas/Requests'
+        refused:
+          $ref: '#/components/schemas/Requests'
+    Requests:
+      type: integer
+      format: int64
+      minimum: 0
+      description: A number of requests.
+    Analytics:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          days,
+          from,
+          to,
+          total,
+          hours,
+          via,
+          sites,
+          groups,
+          tags,
+          links,
+          paths,
+          otherPaths,
+          browsers,
+        ]
+      properties:
+        days:
+          $ref: '#/components/schemas/AnalyticsDays'
+        from:
+          description: The start of the first hour counted.
+          $ref: '#/components/schemas/Timestamp'
+        to:
+          description: The end of the current hour, the first not counted.
+          $ref: '#/components/schemas/Timestamp'
+        total:
+          $ref: '#/components/schemas/RequestCount'
+        hours:
+          type: array
+          maxItems: 2160
+          description: Each UTC hour with requests, oldest first; hours with none are left out.
+          items:
+            $ref: '#/components/schemas/AnalyticsHour'
+        via:
+          type: array
+          description: Requests by way in, each way with requests, by name.
+          items:
+            $ref: '#/components/schemas/AnalyticsVia'
+        sites:
+          type: array
+          description: Requests by site, each site with requests, by name.
+          items:
+            $ref: '#/components/schemas/AnalyticsSite'
+        groups:
+          type: array
+          description: >-
+            Requests by the group each site is in now, each group with
+            requests; the entry without `groupId` is the ungrouped sites.
+          items:
+            $ref: '#/components/schemas/AnalyticsGroup'
+        tags:
+          type: array
+          description: >-
+            Requests by each tag the sites have now, each tag with requests.
+            A site with several tags counts under each, so these can add up
+            to more than the total.
+          items:
+            $ref: '#/components/schemas/AnalyticsTag'
+        links:
+          type: array
+          maxItems: 10
+          description: The 10 share links with the most requests, busiest first.
+          items:
+            $ref: '#/components/schemas/AnalyticsLink'
+        paths:
+          type: array
+          maxItems: 10
+          description: >-
+            The 10 paths with the most requests, busiest first. The rollup
+            keeps a site's first 50 distinct paths in each hour, up to 256
+            bytes each; requests for any other path count in `otherPaths`.
+          items:
+            $ref: '#/components/schemas/AnalyticsPath'
+        otherPaths:
+          description: Requests for the paths the rollup did not keep.
+          $ref: '#/components/schemas/RequestCount'
+        browsers:
+          type: array
+          description: Requests by browser family, each family with requests, by name.
+          items:
+            $ref: '#/components/schemas/AnalyticsBrowser'
+    AnalyticsHour:
+      type: object
+      additionalProperties: false
+      required: [hour, allowed, refused]
+      properties:
+        hour:
+          description: The start of the hour.
+          $ref: '#/components/schemas/Timestamp'
+        allowed:
+          $ref: '#/components/schemas/Requests'
+        refused:
+          $ref: '#/components/schemas/Requests'
+    AnalyticsVia:
+      type: object
+      additionalProperties: false
+      required: [via, allowed, refused]
+      properties:
+        via:
+          $ref: '#/components/schemas/AccessVia'
+        allowed:
+          $ref: '#/components/schemas/Requests'
+        refused:
+          $ref: '#/components/schemas/Requests'
+    AnalyticsSite:
+      type: object
+      additionalProperties: false
+      required: [site, allowed, refused]
+      properties:
+        site:
+          $ref: '#/components/schemas/SiteName'
+        allowed:
+          $ref: '#/components/schemas/Requests'
+        refused:
+          $ref: '#/components/schemas/Requests'
+    AnalyticsGroup:
+      type: object
+      additionalProperties: false
+      required: [allowed, refused]
+      properties:
+        groupId:
+          description: Absent for the sites in no group.
+          $ref: '#/components/schemas/Id'
+        allowed:
+          $ref: '#/components/schemas/Requests'
+        refused:
+          $ref: '#/components/schemas/Requests'
+    AnalyticsTag:
+      type: object
+      additionalProperties: false
+      required: [tagId, allowed, refused]
+      properties:
+        tagId:
+          $ref: '#/components/schemas/Id'
+        allowed:
+          $ref: '#/components/schemas/Requests'
+        refused:
+          $ref: '#/components/schemas/Requests'
+    AnalyticsLink:
+      type: object
+      additionalProperties: false
+      required: [site, publicId, allowed, refused]
+      properties:
+        site:
+          $ref: '#/components/schemas/SiteName'
+        publicId:
+          $ref: '#/components/schemas/LinkPublicId'
+        label:
+          type: string
+          description: >-
+            The link's label, while the link exists (revoked or not);
+            absent when it has none or has been deleted.
+          maxLength: 200
+        allowed:
+          $ref: '#/components/schemas/Requests'
+        refused:
+          $ref: '#/components/schemas/Requests'
+    AnalyticsPath:
+      type: object
+      additionalProperties: false
+      required: [site, path, allowed, refused]
+      properties:
+        site:
+          $ref: '#/components/schemas/SiteName'
+        path:
+          type: string
+          description: The path, without the query string.
+          maxLength: 256
+        allowed:
+          $ref: '#/components/schemas/Requests'
+        refused:
+          $ref: '#/components/schemas/Requests'
+    AnalyticsBrowser:
+      type: object
+      additionalProperties: false
+      required: [browser, allowed, refused]
+      properties:
+        browser:
+          $ref: '#/components/schemas/BrowserFamily'
+        allowed:
+          $ref: '#/components/schemas/Requests'
+        refused:
+          $ref: '#/components/schemas/Requests'
+    BrowserFamily:
+      type: string
+      description: >-
+        The browser family of the request's User-Agent: `chrome`, `safari`,
+        `firefox`, `edge`, `tool` (scripts and tools: command-line clients,
+        HTTP libraries, crawlers and other bots, and requests with no
+        User-Agent) or `other`.
+      enum: [chrome, safari, firefox, edge, tool, other]
     AccessLogPage:
       type: object
       additionalProperties: false

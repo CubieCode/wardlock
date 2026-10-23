@@ -19,6 +19,11 @@ type Unimplemented struct{}
 
 var _ StrictServerInterface = Unimplemented{}
 
+// GetAnalytics is not implemented yet.
+func (Unimplemented) GetAnalytics(context.Context, GetAnalyticsRequestObject) (GetAnalyticsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // SendEmailCode is not implemented yet.
 func (Unimplemented) SendEmailCode(context.Context, SendEmailCodeRequestObject) (SendEmailCodeResponseObject, error) {
 	return nil, ErrNotImplemented

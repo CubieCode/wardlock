@@ -275,6 +275,43 @@ type Tag struct {
 	CreatedAt int64
 }
 
+type TrafficBackfill struct {
+	ID     string
+	DoneAt int64
+}
+
+type TrafficBrowser struct {
+	SiteID  string
+	Hour    int64
+	Browser string
+	Allowed int64
+	Refused int64
+}
+
+type TrafficHour struct {
+	SiteID  string
+	Hour    int64
+	Via     string
+	Allowed int64
+	Refused int64
+}
+
+type TrafficLink struct {
+	SiteID       string
+	Hour         int64
+	LinkPublicID string
+	Allowed      int64
+	Refused      int64
+}
+
+type TrafficPath struct {
+	SiteID  string
+	Hour    int64
+	Path    string
+	Allowed int64
+	Refused int64
+}
+
 type VisitorEmailCode struct {
 	ID            string
 	SiteID        string

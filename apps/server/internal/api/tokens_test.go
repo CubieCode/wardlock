@@ -50,7 +50,7 @@ func newTokenHarness(t testing.TB, limits owners.TokenLimits) *ownerHarness {
 		s.Tokens = tokens
 		policies, err := access.New(access.Config{
 			Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(),
-			AccessLog: db.AccessLog(), EmailCodes: db.EmailCodes(), Notifier: notifier,
+			AccessLog: db.AccessLog(), Traffic: db.Traffic(), EmailCodes: db.EmailCodes(), Notifier: notifier,
 			Secret: bytes.Repeat([]byte("a"), 32), Now: time.Now,
 		})
 		if err != nil {

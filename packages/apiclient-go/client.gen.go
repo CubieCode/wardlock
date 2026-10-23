@@ -50,6 +50,57 @@ func (e AccessVia) Valid() bool {
 	}
 }
 
+// Defines values for AnalyticsDays.
+const (
+	AnalyticsDaysN30 AnalyticsDays = 30
+	AnalyticsDaysN7  AnalyticsDays = 7
+	AnalyticsDaysN90 AnalyticsDays = 90
+)
+
+// Valid indicates whether the value is a known member of the AnalyticsDays enum.
+func (e AnalyticsDays) Valid() bool {
+	switch e {
+	case AnalyticsDaysN30:
+		return true
+	case AnalyticsDaysN7:
+		return true
+	case AnalyticsDaysN90:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BrowserFamily.
+const (
+	BrowserFamilyChrome  BrowserFamily = "chrome"
+	BrowserFamilyEdge    BrowserFamily = "edge"
+	BrowserFamilyFirefox BrowserFamily = "firefox"
+	BrowserFamilyOther   BrowserFamily = "other"
+	BrowserFamilySafari  BrowserFamily = "safari"
+	BrowserFamilyTool    BrowserFamily = "tool"
+)
+
+// Valid indicates whether the value is a known member of the BrowserFamily enum.
+func (e BrowserFamily) Valid() bool {
+	switch e {
+	case BrowserFamilyChrome:
+		return true
+	case BrowserFamilyEdge:
+		return true
+	case BrowserFamilyFirefox:
+		return true
+	case BrowserFamilyOther:
+		return true
+	case BrowserFamilySafari:
+		return true
+	case BrowserFamilyTool:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CliLoginPendingStatus.
 const (
 	CliLoginPendingStatusPending CliLoginPendingStatus = "pending"
@@ -342,6 +393,174 @@ type AddDomainRequest struct {
 	Hostname string `json:"hostname"`
 }
 
+// Analytics defines model for Analytics.
+type Analytics struct {
+	// Browsers Requests by browser family, each family with requests, by name.
+	Browsers []AnalyticsBrowser `json:"browsers"`
+
+	// Days The range of an analytics report, in days.
+	Days AnalyticsDays `json:"days"`
+
+	// From The start of the first hour counted.
+	//
+	// Examples: 1767225600000
+	From Timestamp `json:"from"`
+
+	// Groups Requests by the group each site is in now, each group with requests; the entry without `groupId` is the ungrouped sites.
+	Groups []AnalyticsGroup `json:"groups"`
+
+	// Hours Each UTC hour with requests, oldest first; hours with none are left out.
+	Hours []AnalyticsHour `json:"hours"`
+
+	// Links The 10 share links with the most requests, busiest first.
+	Links []AnalyticsLink `json:"links"`
+
+	// OtherPaths Requests for the paths the rollup did not keep.
+	OtherPaths RequestCount `json:"otherPaths"`
+
+	// Paths The 10 paths with the most requests, busiest first. The rollup keeps a site's first 50 distinct paths in each hour, up to 256 bytes each; requests for any other path count in `otherPaths`.
+	Paths []AnalyticsPath `json:"paths"`
+
+	// Sites Requests by site, each site with requests, by name.
+	Sites []AnalyticsSite `json:"sites"`
+
+	// Tags Requests by each tag the sites have now, each tag with requests. A site with several tags counts under each, so these can add up to more than the total.
+	Tags []AnalyticsTag `json:"tags"`
+
+	// To The end of the current hour, the first not counted.
+	//
+	// Examples: 1767225600000
+	To Timestamp `json:"to"`
+
+	// Total Requests answered below 400 (`allowed`) and at 400 or above (`refused`).
+	Total RequestCount `json:"total"`
+
+	// Via Requests by way in, each way with requests, by name.
+	Via []AnalyticsVia `json:"via"`
+}
+
+// AnalyticsBrowser defines model for AnalyticsBrowser.
+type AnalyticsBrowser struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Browser The browser family of the request's User-Agent: `chrome`, `safari`, `firefox`, `edge`, `tool` (scripts and tools: command-line clients, HTTP libraries, crawlers and other bots, and requests with no User-Agent) or `other`.
+	Browser BrowserFamily `json:"browser"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+}
+
+// AnalyticsDays The range of an analytics report, in days.
+type AnalyticsDays int32
+
+// AnalyticsGroup defines model for AnalyticsGroup.
+type AnalyticsGroup struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// GroupId Absent for the sites in no group.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId *Id `json:"groupId,omitempty"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+}
+
+// AnalyticsHour defines model for AnalyticsHour.
+type AnalyticsHour struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Hour The start of the hour.
+	//
+	// Examples: 1767225600000
+	Hour Timestamp `json:"hour"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+}
+
+// AnalyticsLink defines model for AnalyticsLink.
+type AnalyticsLink struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Label The link's label, while the link exists (revoked or not); absent when it has none or has been deleted.
+	Label *string `json:"label,omitempty"`
+
+	// PublicId A share link's public ID: it names the link in listings, the access log and the CLI without revealing the token.
+	//
+	// Examples: q4v7m2xkpa
+	PublicId LinkPublicId `json:"publicId"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+
+	// Site A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Site SiteName `json:"site"`
+}
+
+// AnalyticsPath defines model for AnalyticsPath.
+type AnalyticsPath struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Path The path, without the query string.
+	Path string `json:"path"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+
+	// Site A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Site SiteName `json:"site"`
+}
+
+// AnalyticsSite defines model for AnalyticsSite.
+type AnalyticsSite struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+
+	// Site A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Site SiteName `json:"site"`
+}
+
+// AnalyticsTag defines model for AnalyticsTag.
+type AnalyticsTag struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+
+	// TagId A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	TagId Id `json:"tagId"`
+}
+
+// AnalyticsVia defines model for AnalyticsVia.
+type AnalyticsVia struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+
+	// Via How the request got in: `public` (no protection), `link` (a share link's token or a session from it), `password`, `email`, `oauth`, or `none` when it was refused.
+	Via AccessVia `json:"via"`
+}
+
 // ApiToken defines model for ApiToken.
 type ApiToken struct {
 	// CreatedAt UTC milliseconds since the Unix epoch.
@@ -397,6 +616,9 @@ type ApproveCliLoginRequest struct {
 	// Examples: BDFH-KMPR
 	UserCode UserCode `json:"userCode"`
 }
+
+// BrowserFamily The browser family of the request's User-Agent: `chrome`, `safari`, `firefox`, `edge`, `tool` (scripts and tools: command-line clients, HTTP libraries, crawlers and other bots, and requests with no User-Agent) or `other`.
+type BrowserFamily string
 
 // CliLogin defines model for CliLogin.
 type CliLogin struct {
@@ -1075,6 +1297,18 @@ type PollCliLoginRequest struct {
 	DeviceCode string `json:"deviceCode"`
 }
 
+// RequestCount Requests answered below 400 (`allowed`) and at 400 or above (`refused`).
+type RequestCount struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+}
+
+// Requests A number of requests.
+type Requests = int64
+
 // RollbackRequest defines model for RollbackRequest.
 type RollbackRequest struct {
 	// DeployId Omit to return to the deploy active before the current one.
@@ -1459,6 +1693,21 @@ type TooLarge = Error
 // Unauthenticated The body of every error response.
 type Unauthenticated = Error
 
+// GetAnalyticsParams defines parameters for GetAnalytics.
+type GetAnalyticsParams struct {
+	// Days How many days back to count, ending with the current hour.
+	Days *AnalyticsDays `form:"days,omitempty" json:"days,omitempty"`
+
+	// Site Only this site, by name.
+	Site *SiteName `form:"site,omitempty" json:"site,omitempty"`
+
+	// Group Only the sites now in this group, by ID.
+	Group *Id `form:"group,omitempty" json:"group,omitempty"`
+
+	// Tag Only the sites that now have this tag, by ID.
+	Tag *Id `form:"tag,omitempty" json:"tag,omitempty"`
+}
+
 // ListSessionsParams defines parameters for ListSessions.
 type ListSessionsParams struct {
 	// Limit Page size.
@@ -1810,6 +2059,13 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+
+	// GetAnalytics Count requests over the last 7, 30 or 90 days.
+	//
+	// Requests for the owner's sites over the last `days` days, from the hourly traffic rollup: per UTC hour, so a client can draw days in the viewer's timezone, and in total by way in, site, group, tag, browser family, the busiest share links and the busiest paths. Every count is of requests, split into `allowed` (answered with a status below 400) and `refused` (400 and above); none is a count of visitors. The range is the `days` × 24 whole UTC hours ending with the current one. Give at most one of `site`, `group` and `tag` to narrow it; groups and tags are read as they are now, so a site's history moves with it. Giving more than one answers `400 invalid_request`; a missing site, group or tag and another owner's answer the same `404`.
+	//
+	// Corresponds with GET /api/v0/analytics (the `GetAnalytics` operationId).
+	GetAnalytics(ctx context.Context, params *GetAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SendEmailCodeWithBody Email a sign-in code.
 	//
@@ -2492,6 +2748,23 @@ type ClientInterface interface {
 	//
 	// Corresponds with DELETE /api/v0/tokens/{tokenId} (the `RevokeApiToken` operationId).
 	RevokeApiToken(ctx context.Context, tokenId TokenId, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+// GetAnalytics Count requests over the last 7, 30 or 90 days.
+//
+// Requests for the owner's sites over the last `days` days, from the hourly traffic rollup: per UTC hour, so a client can draw days in the viewer's timezone, and in total by way in, site, group, tag, browser family, the busiest share links and the busiest paths. Every count is of requests, split into `allowed` (answered with a status below 400) and `refused` (400 and above); none is a count of visitors. The range is the `days` × 24 whole UTC hours ending with the current one. Give at most one of `site`, `group` and `tag` to narrow it; groups and tags are read as they are now, so a site's history moves with it. Giving more than one answers `400 invalid_request`; a missing site, group or tag and another owner's answer the same `404`.
+//
+// Corresponds with GET /api/v0/analytics (the `GetAnalytics` operationId).
+func (c *Client) GetAnalytics(ctx context.Context, params *GetAnalyticsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAnalyticsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 // SendEmailCodeWithBody Email a sign-in code.
@@ -4014,6 +4287,96 @@ func (c *Client) RevokeApiToken(ctx context.Context, tokenId TokenId, reqEditors
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewGetAnalyticsRequest constructs an http.Request for the GetAnalytics method
+func NewGetAnalyticsRequest(server string, params *GetAnalyticsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/analytics")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Days != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "days", *params.Days, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Site != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "site", *params.Site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Group != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "group", *params.Group, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Tag != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "tag", *params.Tag, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // NewSendEmailCodeRequest calls the generic SendEmailCode builder with application/json body
@@ -6733,6 +7096,15 @@ func WithBaseURL(baseURL string) ClientOption {
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
 
+	// GetAnalyticsWithResponse Count requests over the last 7, 30 or 90 days.
+	//
+	// Requests for the owner's sites over the last `days` days, from the hourly traffic rollup: per UTC hour, so a client can draw days in the viewer's timezone, and in total by way in, site, group, tag, browser family, the busiest share links and the busiest paths. Every count is of requests, split into `allowed` (answered with a status below 400) and `refused` (400 and above); none is a count of visitors. The range is the `days` × 24 whole UTC hours ending with the current one. Give at most one of `site`, `group` and `tag` to narrow it; groups and tags are read as they are now, so a site's history moves with it. Giving more than one answers `400 invalid_request`; a missing site, group or tag and another owner's answer the same `404`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/analytics (the `GetAnalytics` operationId).
+	GetAnalyticsWithResponse(ctx context.Context, params *GetAnalyticsParams, reqEditors ...RequestEditorFn) (*GetAnalyticsResponse, error)
+
 	// SendEmailCodeWithBodyWithResponse Email a sign-in code.
 	//
 	// Sends a 6-digit code valid for 10 minutes if the address belongs to an owner. The response is the same whether or not it does. Sends are rate-limited per IP and per address.
@@ -7484,6 +7856,82 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with DELETE /api/v0/tokens/{tokenId} (the `RevokeApiToken` operationId).
 	RevokeApiTokenWithResponse(ctx context.Context, tokenId TokenId, reqEditors ...RequestEditorFn) (*RevokeApiTokenResponse, error)
+}
+
+type GetAnalyticsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Analytics
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetAnalyticsResponse) GetJSON200() *Analytics {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetAnalyticsResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetAnalyticsResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetAnalyticsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetAnalyticsResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetAnalyticsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetAnalyticsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAnalyticsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAnalyticsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetAnalyticsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
 }
 
 // SendEmailCodeResponse429Headers the declared response headers of an HTTP 429 response for SendEmailCode
@@ -11859,6 +12307,21 @@ func (r RevokeApiTokenResponse) ContentType() string {
 	return ""
 }
 
+// GetAnalyticsWithResponse Count requests over the last 7, 30 or 90 days.
+//
+// Requests for the owner's sites over the last `days` days, from the hourly traffic rollup: per UTC hour, so a client can draw days in the viewer's timezone, and in total by way in, site, group, tag, browser family, the busiest share links and the busiest paths. Every count is of requests, split into `allowed` (answered with a status below 400) and `refused` (400 and above); none is a count of visitors. The range is the `days` × 24 whole UTC hours ending with the current one. Give at most one of `site`, `group` and `tag` to narrow it; groups and tags are read as they are now, so a site's history moves with it. Giving more than one answers `400 invalid_request`; a missing site, group or tag and another owner's answer the same `404`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/analytics (the `GetAnalytics` operationId).
+func (c *ClientWithResponses) GetAnalyticsWithResponse(ctx context.Context, params *GetAnalyticsParams, reqEditors ...RequestEditorFn) (*GetAnalyticsResponse, error) {
+	rsp, err := c.GetAnalytics(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAnalyticsResponse(rsp)
+}
+
 // SendEmailCodeWithBodyWithResponse Email a sign-in code.
 //
 // Sends a 6-digit code valid for 10 minutes if the address belongs to an owner. The response is the same whether or not it does. Sends are rate-limited per IP and per address.
@@ -13113,6 +13576,67 @@ func (c *ClientWithResponses) RevokeApiTokenWithResponse(ctx context.Context, to
 		return nil, err
 	}
 	return ParseRevokeApiTokenResponse(rsp)
+}
+
+// ParseGetAnalyticsResponse parses an HTTP response from a GetAnalyticsWithResponse call
+func ParseGetAnalyticsResponse(rsp *http.Response) (*GetAnalyticsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAnalyticsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Analytics
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseSendEmailCodeResponse parses an HTTP response from a SendEmailCodeWithResponse call

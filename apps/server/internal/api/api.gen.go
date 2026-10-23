@@ -51,6 +51,57 @@ func (e AccessVia) Valid() bool {
 	}
 }
 
+// Defines values for AnalyticsDays.
+const (
+	AnalyticsDaysN30 AnalyticsDays = 30
+	AnalyticsDaysN7  AnalyticsDays = 7
+	AnalyticsDaysN90 AnalyticsDays = 90
+)
+
+// Valid indicates whether the value is a known member of the AnalyticsDays enum.
+func (e AnalyticsDays) Valid() bool {
+	switch e {
+	case AnalyticsDaysN30:
+		return true
+	case AnalyticsDaysN7:
+		return true
+	case AnalyticsDaysN90:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BrowserFamily.
+const (
+	BrowserFamilyChrome  BrowserFamily = "chrome"
+	BrowserFamilyEdge    BrowserFamily = "edge"
+	BrowserFamilyFirefox BrowserFamily = "firefox"
+	BrowserFamilyOther   BrowserFamily = "other"
+	BrowserFamilySafari  BrowserFamily = "safari"
+	BrowserFamilyTool    BrowserFamily = "tool"
+)
+
+// Valid indicates whether the value is a known member of the BrowserFamily enum.
+func (e BrowserFamily) Valid() bool {
+	switch e {
+	case BrowserFamilyChrome:
+		return true
+	case BrowserFamilyEdge:
+		return true
+	case BrowserFamilyFirefox:
+		return true
+	case BrowserFamilyOther:
+		return true
+	case BrowserFamilySafari:
+		return true
+	case BrowserFamilyTool:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CliLoginPendingStatus.
 const (
 	CliLoginPendingStatusPending CliLoginPendingStatus = "pending"
@@ -343,6 +394,174 @@ type AddDomainRequest struct {
 	Hostname string `json:"hostname"`
 }
 
+// Analytics defines model for Analytics.
+type Analytics struct {
+	// Browsers Requests by browser family, each family with requests, by name.
+	Browsers []AnalyticsBrowser `json:"browsers"`
+
+	// Days The range of an analytics report, in days.
+	Days AnalyticsDays `json:"days"`
+
+	// From The start of the first hour counted.
+	//
+	// Examples: 1767225600000
+	From Timestamp `json:"from"`
+
+	// Groups Requests by the group each site is in now, each group with requests; the entry without `groupId` is the ungrouped sites.
+	Groups []AnalyticsGroup `json:"groups"`
+
+	// Hours Each UTC hour with requests, oldest first; hours with none are left out.
+	Hours []AnalyticsHour `json:"hours"`
+
+	// Links The 10 share links with the most requests, busiest first.
+	Links []AnalyticsLink `json:"links"`
+
+	// OtherPaths Requests for the paths the rollup did not keep.
+	OtherPaths RequestCount `json:"otherPaths"`
+
+	// Paths The 10 paths with the most requests, busiest first. The rollup keeps a site's first 50 distinct paths in each hour, up to 256 bytes each; requests for any other path count in `otherPaths`.
+	Paths []AnalyticsPath `json:"paths"`
+
+	// Sites Requests by site, each site with requests, by name.
+	Sites []AnalyticsSite `json:"sites"`
+
+	// Tags Requests by each tag the sites have now, each tag with requests. A site with several tags counts under each, so these can add up to more than the total.
+	Tags []AnalyticsTag `json:"tags"`
+
+	// To The end of the current hour, the first not counted.
+	//
+	// Examples: 1767225600000
+	To Timestamp `json:"to"`
+
+	// Total Requests answered below 400 (`allowed`) and at 400 or above (`refused`).
+	Total RequestCount `json:"total"`
+
+	// Via Requests by way in, each way with requests, by name.
+	Via []AnalyticsVia `json:"via"`
+}
+
+// AnalyticsBrowser defines model for AnalyticsBrowser.
+type AnalyticsBrowser struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Browser The browser family of the request's User-Agent: `chrome`, `safari`, `firefox`, `edge`, `tool` (scripts and tools: command-line clients, HTTP libraries, crawlers and other bots, and requests with no User-Agent) or `other`.
+	Browser BrowserFamily `json:"browser"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+}
+
+// AnalyticsDays The range of an analytics report, in days.
+type AnalyticsDays int32
+
+// AnalyticsGroup defines model for AnalyticsGroup.
+type AnalyticsGroup struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// GroupId Absent for the sites in no group.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	GroupId *Id `json:"groupId,omitempty"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+}
+
+// AnalyticsHour defines model for AnalyticsHour.
+type AnalyticsHour struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Hour The start of the hour.
+	//
+	// Examples: 1767225600000
+	Hour Timestamp `json:"hour"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+}
+
+// AnalyticsLink defines model for AnalyticsLink.
+type AnalyticsLink struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Label The link's label, while the link exists (revoked or not); absent when it has none or has been deleted.
+	Label *string `json:"label,omitempty"`
+
+	// PublicId A share link's public ID: it names the link in listings, the access log and the CLI without revealing the token.
+	//
+	// Examples: q4v7m2xkpa
+	PublicId LinkPublicId `json:"publicId"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+
+	// Site A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Site SiteName `json:"site"`
+}
+
+// AnalyticsPath defines model for AnalyticsPath.
+type AnalyticsPath struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Path The path, without the query string.
+	Path string `json:"path"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+
+	// Site A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Site SiteName `json:"site"`
+}
+
+// AnalyticsSite defines model for AnalyticsSite.
+type AnalyticsSite struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+
+	// Site A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
+	//
+	// Examples: docs
+	Site SiteName `json:"site"`
+}
+
+// AnalyticsTag defines model for AnalyticsTag.
+type AnalyticsTag struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+
+	// TagId A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	TagId Id `json:"tagId"`
+}
+
+// AnalyticsVia defines model for AnalyticsVia.
+type AnalyticsVia struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+
+	// Via How the request got in: `public` (no protection), `link` (a share link's token or a session from it), `password`, `email`, `oauth`, or `none` when it was refused.
+	Via AccessVia `json:"via"`
+}
+
 // ApiToken defines model for ApiToken.
 type ApiToken struct {
 	// CreatedAt UTC milliseconds since the Unix epoch.
@@ -398,6 +617,9 @@ type ApproveCliLoginRequest struct {
 	// Examples: BDFH-KMPR
 	UserCode UserCode `json:"userCode"`
 }
+
+// BrowserFamily The browser family of the request's User-Agent: `chrome`, `safari`, `firefox`, `edge`, `tool` (scripts and tools: command-line clients, HTTP libraries, crawlers and other bots, and requests with no User-Agent) or `other`.
+type BrowserFamily string
 
 // CliLogin defines model for CliLogin.
 type CliLogin struct {
@@ -1076,6 +1298,18 @@ type PollCliLoginRequest struct {
 	DeviceCode string `json:"deviceCode"`
 }
 
+// RequestCount Requests answered below 400 (`allowed`) and at 400 or above (`refused`).
+type RequestCount struct {
+	// Allowed A number of requests.
+	Allowed Requests `json:"allowed"`
+
+	// Refused A number of requests.
+	Refused Requests `json:"refused"`
+}
+
+// Requests A number of requests.
+type Requests = int64
+
 // RollbackRequest defines model for RollbackRequest.
 type RollbackRequest struct {
 	// DeployId Omit to return to the deploy active before the current one.
@@ -1460,6 +1694,21 @@ type TooLarge = Error
 // Unauthenticated The body of every error response.
 type Unauthenticated = Error
 
+// GetAnalyticsParams defines parameters for GetAnalytics.
+type GetAnalyticsParams struct {
+	// Days How many days back to count, ending with the current hour.
+	Days *AnalyticsDays `form:"days,omitempty" json:"days,omitempty"`
+
+	// Site Only this site, by name.
+	Site *SiteName `form:"site,omitempty" json:"site,omitempty"`
+
+	// Group Only the sites now in this group, by ID.
+	Group *Id `form:"group,omitempty" json:"group,omitempty"`
+
+	// Tag Only the sites that now have this tag, by ID.
+	Tag *Id `form:"tag,omitempty" json:"tag,omitempty"`
+}
+
 // ListSessionsParams defines parameters for ListSessions.
 type ListSessionsParams struct {
 	// Limit Page size.
@@ -1740,6 +1989,9 @@ func (a PasskeyCredential) MarshalJSON() ([]byte, error) {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// GetAnalytics Count requests over the last 7, 30 or 90 days.
+	// (GET /api/v0/analytics)
+	GetAnalytics(w http.ResponseWriter, r *http.Request, params GetAnalyticsParams)
 	// SendEmailCode Email a sign-in code.
 	// (POST /api/v0/auth/email-code)
 	SendEmailCode(w http.ResponseWriter, r *http.Request)
@@ -1930,6 +2182,78 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetAnalytics operation middleware
+func (siw *ServerInterfaceWrapper) GetAnalytics(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAnalyticsParams
+
+	// ------------- Optional query parameter "days" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "days", r.URL.Query(), &params.Days, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "days"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "days", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "site" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "site", r.URL.Query(), &params.Site, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "site"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "group" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "group", r.URL.Query(), &params.Group, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "group"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "tag" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag", r.URL.Query(), &params.Tag, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tag"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAnalytics(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // SendEmailCode operation middleware
 func (siw *ServerInterfaceWrapper) SendEmailCode(w http.ResponseWriter, r *http.Request) {
@@ -3800,6 +4124,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/tags/{tagId}", wrapper.DeleteTag)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v0/tags/{tagId}", wrapper.UpdateTag)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/organise", wrapper.OrganiseSites)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/analytics", wrapper.GetAnalytics)
 
 	return m
 }
@@ -3843,6 +4168,101 @@ type RateLimitedJSONResponse struct {
 type TooLargeJSONResponse Error
 
 type UnauthenticatedJSONResponse Error
+
+type GetAnalyticsRequestObject struct {
+	Params GetAnalyticsParams
+}
+
+type GetAnalyticsResponseObject interface {
+	VisitGetAnalyticsResponse(w http.ResponseWriter) error
+}
+
+type GetAnalytics200JSONResponse Analytics
+
+func (response GetAnalytics200JSONResponse) VisitGetAnalyticsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAnalytics400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response GetAnalytics400JSONResponse) VisitGetAnalyticsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAnalytics401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetAnalytics401JSONResponse) VisitGetAnalyticsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAnalytics403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetAnalytics403JSONResponse) VisitGetAnalyticsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAnalytics404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetAnalytics404JSONResponse) VisitGetAnalyticsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAnalyticsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetAnalyticsdefaultJSONResponse) VisitGetAnalyticsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type SendEmailCodeRequestObject struct {
 	Body *SendEmailCodeJSONRequestBody
@@ -9200,6 +9620,9 @@ func (response RevokeApiTokendefaultJSONResponse) VisitRevokeApiTokenResponse(w 
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// GetAnalytics Count requests over the last 7, 30 or 90 days.
+	// (GET /api/v0/analytics)
+	GetAnalytics(ctx context.Context, request GetAnalyticsRequestObject) (GetAnalyticsResponseObject, error)
 	// SendEmailCode Email a sign-in code.
 	// (POST /api/v0/auth/email-code)
 	SendEmailCode(ctx context.Context, request SendEmailCodeRequestObject) (SendEmailCodeResponseObject, error)
@@ -9419,6 +9842,32 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// GetAnalytics operation middleware
+func (sh *strictHandler) GetAnalytics(w http.ResponseWriter, r *http.Request, params GetAnalyticsParams) {
+	var request GetAnalyticsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAnalytics(ctx, request.(GetAnalyticsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAnalytics")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAnalyticsResponseObject); ok {
+		if err := validResponse.VisitGetAnalyticsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // SendEmailCode operation middleware

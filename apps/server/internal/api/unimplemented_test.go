@@ -108,6 +108,8 @@ var implemented = map[string]bool{
 	"PinSite":             true,
 	"UnpinSite":           true,
 	"OrganiseSites":       true,
+
+	"GetAnalytics": true,
 }
 
 // pathValues are valid values for every path parameter in the contract.

@@ -37,6 +37,10 @@ type AccessEntry struct {
 	LinkPublicID string // set exactly when Via is ViaLink
 	IP           string // already truncated per configuration
 	UserAgent    string
+	// Browser is the family the writer classified UserAgent as, for the
+	// traffic rollup (V5.4); the log row does not store it. Append counts
+	// "" as BrowserOther. Lists leave it "".
+	Browser Browser
 }
 
 // AccessCursor positions an access-log listing: lists return entries
@@ -56,7 +60,10 @@ const (
 // AccessLog stores access-log entries, written in batches off the request
 // path.
 type AccessLog interface {
-	// Append writes entries in one transaction: all or none.
+	// Append writes entries in one transaction, all or none, and adds them
+	// to the traffic rollup in the same transaction once its backfill has
+	// run (see Traffic). Entries of a site that no longer exists are
+	// logged but not counted.
 	Append(ctx context.Context, entries []AccessEntry) error
 	// ListBySite returns up to limit (1 to MaxAccessListLimit) of
 	// ownerID's site's entries, newest first, before the cursor. A missing
@@ -95,7 +102,7 @@ func (r accessLogRepo) Append(ctx context.Context, entries []AccessEntry) error 
 				return mapErr("append access log", err)
 			}
 		}
-		return nil
+		return addTraffic(ctx, q, entries)
 	})
 }
 

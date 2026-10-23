@@ -471,6 +471,36 @@ Every request for a published site's content (after the access decision, allowed
 
 </details>
 
+### Analytics (V5.4)
+
+Owners see how many requests their sites answer over the last 7, 30 or 90 days: for all their sites, one site, a group or a tag. Analytics reads an hourly rollup of the access log, kept 400 days by default whatever the log's own retention, so it outlasts the entries it counts. Everything is counted and named as requests, never visits or visitors: one person loading a page with its images makes several requests.
+
+| Count                  | What it is                                                                                                      |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Allowed                | Requests answered with a status below 400                                                                       |
+| Refused                | Requests answered with 400 or above: refused by the policy, and also missing files (`404`) and server errors    |
+| Per hour               | Allowed and refused in each UTC hour, so the dashboard can draw days in the viewer's timezone                   |
+| By way in              | `public`, `link`, `password`, `email`, `oauth`, or `none` for a request let in by none of them                  |
+| By site, group and tag | Each site; each group, with the ungrouped sites together; each tag (a site with several tags counts under each) |
+| Top share links        | The 10 links with the most requests, by public ID with their labels                                             |
+| Top paths              | The 10 busiest of the paths the rollup keeps (see below), and every other path together                         |
+| Browsers               | Chrome, Safari, Firefox, Edge, scripts and tools, and other                                                     |
+
+<details>
+<summary>How the rollup is kept, its limits and the API</summary>
+
+- **Written with the log.** The access-log writer adds each batch to the rollup in the same database transaction as the batch's entries, off the request path, so serving never waits on it and the rollup always equals a recount of the logged entries of sites that exist. An entry dropped under pressure is missing from both.
+- **Backfill.** The first start of a server with the rollup counts the access log already stored, once, before it serves; later starts change nothing. Until that has run, batches add to the log only, so no entry is counted twice. Entries of sites that no longer exist are not counted.
+- **What it holds.** Counts per site and UTC hour by way in, share-link public ID, path and browser family. No IP address, User-Agent, token or query string: paths are the access log's, already without their query string and with any token reduced to its public ID.
+- **Top paths cap.** A site keeps at most 50 distinct paths in each hour: the first 50 the writer sees in that hour, which in practice include the busiest. Requests for any other path in that hour, and for any path longer than 256 bytes, count together as other paths. The cap is enforced in the write itself, which adds a new path only while the site has fewer than 50 in the hour; the API answers the 10 busiest of the kept paths over the range and the other-paths total.
+- **Browser families.** Classified from the User-Agent, as the access log stores it, when the entry is written, by matching well-known product tokens with no third-party library. Scripts and tools are command-line clients, HTTP libraries, crawlers, link previews, AI fetchers and other bots (checked first, since many bots also claim to be a browser), and requests with no User-Agent. Edge, Opera, Samsung Internet and similar Chromium browsers are told apart from Chrome by their own tokens; Edge counts as Edge and the others as other. Chrome, Firefox and Edge on iOS count as themselves. The family is a guess from text the client chose: a client can claim to be anything.
+- **Groups and tags as they are now.** Scoping by a group or tag, and the totals by group and tag, use each site's group and tags at the time of reading, so moving a site to another group moves its history with it.
+- **Retention.** Hours older than `WARDLOCK_ANALYTICS_RETENTION_DAYS` (400 by default, or 0 to keep them forever; see [DEPLOYMENT](DEPLOYMENT.md#access-log)) are deleted at start and hourly, one hour at a time, independently of the access log's retention. Like the access log, the rollup of a taken-down site or a suspended owner's sites is never pruned while they are unavailable.
+- **Deleting, teardown and takedown.** Deleting a site, or the operator tearing it down, deletes its rollup rows with it; a new site that reuses the name starts with none. Taking a site down keeps them, and its owner can still read them.
+- **API.** `getAnalytics` (`GET /api/v0/analytics`) takes `days` (7, the default, 30 or 90) and at most one of `site` (by name), `group` and `tag` (by ID). The range is the `days` × 24 whole UTC hours ending with the current one; `from` and `to` give its bounds. Hours with no requests are left out of the hourly list. Readable with either API token scope. Giving more than one scope or another range answers `400 invalid_request`; a missing site, group or tag and another owner's answer the same `404`. There is no CLI command.
+
+</details>
+
 ## Operator controls and abuse reports (A2.13)
 
 The operator of a server can act on abuse from the server host, without the dashboard. A running server picks up each change within about 2 seconds.

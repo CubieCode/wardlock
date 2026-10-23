@@ -62,7 +62,10 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	if err != nil {
 		return err
 	}
-	recorder, stopAccessLog := startAccessLog(ctx, cfg, log, db)
+	recorder, stopAccessLog, err := startAccessLog(ctx, cfg, log, db)
+	if err != nil {
+		return err
+	}
 	defer stopAccessLog()
 	stopGC := startGC(ctx, cfg, log, db, blobs)
 	defer stopGC()
@@ -120,6 +123,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 
 		PasswordSessions: db.PasswordSessions(),
 		AccessLog:        db.AccessLog(),
+		Traffic:          db.Traffic(),
 		EmailCodes:       db.EmailCodes(),
 		Mailer:           mailer,
 		OAuth: access.OAuthConfig{
