@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -400,7 +401,7 @@ func TestConfigRejectsUnknownAndInvalid(t *testing.T) {
 			}
 		})
 	}
-	if cfg, err := parseConfig([]byte(`{}`)); err != nil || cfg != (projectConfig{}) {
+	if cfg, err := parseConfig([]byte(`{}`)); err != nil || !reflect.DeepEqual(cfg, projectConfig{}) {
 		t.Fatalf("{} = %+v, %v", cfg, err)
 	}
 }

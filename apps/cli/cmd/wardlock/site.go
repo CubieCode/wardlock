@@ -130,7 +130,7 @@ func (c *conn) failed(res *http.Response, body []byte) error {
 	case http.StatusUnauthorized:
 		return fmt.Errorf("%w: run wardlock login again, or check WARDLOCK_TOKEN", err)
 	case http.StatusForbidden:
-		return fmt.Errorf("%w: the token may lack the scope this needs (deploy, or manage to tear down); log in again and approve it", err)
+		return fmt.Errorf("%w: the token may lack the scope this needs (deploy, or manage to tear down, change access or organise sites); log in again and approve it", err)
 	}
 	return err
 }

@@ -67,8 +67,8 @@ func TestListSites(t *testing.T) {
 	if err := json.Unmarshal(m["sites"], &sites); err != nil || len(sites) != 3 {
 		t.Fatalf("sites %s (%v)", m["sites"], err)
 	}
-	assertJSONKeys(t, sites[1], "id", "name", "hostname", "url", "createdAt", "unavailable", "tagIds", "pinned", "policy")
-	assertJSONKeys(t, sites[2], "id", "name", "hostname", "url", "createdAt", "unavailable", "tagIds", "pinned", "activeDeployId", "activatedAt", "policy")
+	assertJSONKeys(t, sites[1], "id", "name", "hostname", "url", "createdAt", "unavailable", "tagIds", "pinned", "policy", "tags")
+	assertJSONKeys(t, sites[2], "id", "name", "hostname", "url", "createdAt", "unavailable", "tagIds", "pinned", "activeDeployId", "activatedAt", "policy", "tags")
 	var res siteList
 	if err := json.Unmarshal(out.Bytes(), &res); err != nil || res.Sites[1].Policy != apiclient.PolicyVisibilityProtected {
 		t.Fatalf("%+v %v", res, err)

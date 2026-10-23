@@ -80,6 +80,13 @@ type fakeAPI struct {
 	failDownloads []int
 	withheld      map[string]bool
 	takenDown     map[string]bool
+	// groups and tags are the owner's, by name (organise_test.go);
+	// organised records organiseSites bodies and filed setSiteOrganisation
+	// bodies, as received.
+	groups    []apiclient.Group
+	tags      []apiclient.Tag
+	organised []apiclient.OrganiseSitesRequest
+	filed     []apiclient.SetSiteOrganisationRequest
 	// dlInFlight and maxDlInFlight track download concurrency.
 	dlInFlight, maxDlInFlight int
 }
@@ -183,6 +190,7 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 	handle("POST /api/v0/sites/{site}/rollback", "deploy", f.withSite(f.rollback))
 	f.handleLinks(handle)
 	f.handleDomains(handle)
+	f.handleOrganisation(handle)
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f

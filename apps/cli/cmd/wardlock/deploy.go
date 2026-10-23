@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -76,6 +77,8 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 	immutable := fs.Bool("immutable-assets", false, "cache hashed files under /assets/, such as index-BdK3j2Lp.js, for a year without revalidating (default \"immutableAssets\" from wardlock.json)")
 	pathFlag := fs.String("path", "", "deploy DIR into this part of the site, such as /mockup-x/, keeping the rest (default \"path\" from wardlock.json; '' for the whole site)")
 	yes := fs.Bool("yes", false, "with --path and an empty DIR, remove the path without asking")
+	groupFlag := fs.String("group", "", "after the deploy goes live, put the site in this existing group (default \"group\" from wardlock.json; '' for none)")
+	tagFlags := stringsFlag(fs, "tag", "after the deploy goes live, add this existing tag to the site (repeatable; default \"tags\" from wardlock.json)")
 	pos, err := parseArgs(fs, args)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
@@ -119,8 +122,13 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 	// so they are sent only when given (here or in wardlock.json).
 	useSPA, useImmutable := cfg.Spa, cfg.ImmutableAssets
 	prefix := cfg.Path
+	group, tags := cfg.Group, cfg.Tags
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
+		case "group":
+			group = *groupFlag
+		case "tag":
+			tags = *tagFlags
 		case "spa":
 			useSPA = spa
 		case "immutable-assets":
@@ -139,6 +147,17 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 	if n := utf8.RuneCountInString(*message); n > maxMessageChars {
 		return usageErrorf("--message is %d characters; the limit is %d", n, maxMessageChars)
 	}
+	if group != "" {
+		if group, err = checkGroupName(group); err != nil {
+			return err
+		}
+	}
+	for _, n := range tags {
+		if err := checkTagName(n); err != nil {
+			return err
+		}
+	}
+	tags = uniq(tags)
 
 	shown := displayDir(wd, dir)
 	// Walk the directory a symbolic link names, rather than the link.
@@ -156,9 +175,80 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 		return err
 	}
 
+	// Groups and tags are resolved before anything is uploaded, so an
+	// unknown name changes nothing.
+	file, err := c.resolveFiling(ctx, group, tags)
+	if err != nil {
+		return err
+	}
+
 	d := &deployer{a: a, c: c, root: root, prog: &progress{w: a.stderr, live: a.liveProgress, now: a.now}}
 	return d.run(ctx, deployRequest{path: path, shown: shown, target: t, message: *message, spa: useSPA, immutableAssets: useImmutable,
-		prefix: prefix, yes: *yes, json: g.json})
+		prefix: prefix, yes: *yes, json: g.json, file: file})
+}
+
+// filing is the group and tags a deploy files its site under, by ID.
+type filing struct {
+	groupID string
+	tagIDs  []string
+}
+
+func sameID(a, b *string) bool {
+	return a == nil && b == nil || a != nil && b != nil && *a == *b
+}
+
+func (f filing) empty() bool { return f.groupID == "" && len(f.tagIDs) == 0 }
+
+// resolveFiling looks up the deploy's group and tags by name. A deploy
+// token may read them, and may set them on the site it deploys, but
+// never create them.
+func (c *conn) resolveFiling(ctx context.Context, group string, tags []string) (filing, error) {
+	var f filing
+	if group != "" {
+		grp, err := c.findGroup(ctx, group)
+		if err != nil {
+			return f, err
+		}
+		f.groupID = grp.Id
+	}
+	if len(tags) > 0 {
+		found, err := c.findTags(ctx, tags)
+		if err != nil {
+			return f, err
+		}
+		f.tagIDs = tagIDs(found)
+	}
+	return f, nil
+}
+
+// fileSite applies f to the site after activation and returns it as it
+// is now. The site keeps its group when f names none, and its tags: f's
+// are added to them, never replacing any.
+func (c *conn) fileSite(ctx context.Context, site apiclient.Site, f filing) (apiclient.Site, error) {
+	body := apiclient.SetSiteOrganisationJSONRequestBody{GroupId: site.GroupId, TagIds: slices.Clone(site.TagIds)}
+	if f.groupID != "" {
+		body.GroupId = &f.groupID
+	}
+	for _, id := range f.tagIDs {
+		if !slices.Contains(body.TagIds, id) {
+			body.TagIds = append(body.TagIds, id)
+		}
+	}
+	if body.TagIds == nil {
+		body.TagIds = []string{}
+	}
+	// Nothing to change: the site already has them all.
+	if sameID(body.GroupId, site.GroupId) && len(body.TagIds) == len(site.TagIds) {
+		return site, nil
+	}
+	res, err := c.api.SetSiteOrganisationWithResponse(ctx, site.Name, body, c.auth)
+	if err != nil {
+		return site, c.unreachable(ctx, err)
+	}
+	if res.JSON200 == nil {
+		return site, c.failed(res.HTTPResponse, res.Body)
+	}
+	return *res.JSON200, nil
 }
 
 // cleanPrefix turns --path into the API's form, /dir/: in NFC like file
@@ -193,6 +283,8 @@ type deployRequest struct {
 	// prefix is the path deploy's prefix, /dir/, or "" for the whole site.
 	prefix    string
 	yes, json bool
+	// file is the group and tags to file the site under once live.
+	file filing
 }
 
 type deployer struct {
@@ -289,6 +381,11 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 	}
 	if err != nil {
 		return err
+	}
+	if !r.file.empty() {
+		if act.Site, err = c.fileSite(ctx, act.Site, r.file); err != nil {
+			return fmt.Errorf("deploy %s is live, but its group and tags were not set: %w", shortID(act.Deploy.Id), err)
+		}
 	}
 	if r.json {
 		return writeJSON(a.stdout, deployResult{

@@ -29,6 +29,11 @@ type projectConfig struct {
 	// Path is "path": deploy into this prefix of the site, keeping the
 	// rest (C1.13).
 	Path string `json:"path,omitempty"`
+	// Group is "group": file the deployed site in this existing group
+	// (V5.15).
+	Group string `json:"group,omitempty"`
+	// Tags is "tags": add these existing tags to the deployed site.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // loadConfig reads wardlock.json from dir. A missing file is an empty
