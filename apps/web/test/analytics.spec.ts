@@ -45,6 +45,7 @@ for (const scheme of schemes) {
     const shut = `${prefix}-shut`;
     const quiet = `${prefix}-quiet`;
     const label = 'Board pack';
+    const longPath = `/${'quarterly-board-pack-appendix'.repeat(6)}.html`;
     const api = page.request;
     const main = page.getByRole('navigation', { name: 'Main' });
 
@@ -104,6 +105,11 @@ for (const scheme of schemes) {
       const { url: openUrl } = (await site.json()) as { url: string };
       for (let i = 0; i < 3; i++)
         expect((await request.get(openUrl)).status()).toBe(200);
+      // A long unbroken path (a missing file, so refused) must wrap in Top
+      // pages rather than widen a phone's page.
+      expect(
+        (await request.get(new URL(longPath, openUrl).href)).status(),
+      ).toBe(404);
       const created = await api.post(`${origin}/api/v0/sites/${shut}/links`, {
         data: { label },
         headers,
@@ -136,7 +142,10 @@ for (const scheme of schemes) {
       const refused = page
         .getByText('Refused requests', { exact: true })
         .locator('xpath=..');
-      await expect(refused.locator('dd')).toHaveText(['1', '20% of requests']);
+      await expect(refused.locator('dd')).toHaveText([
+        '2',
+        '33.3% of requests',
+      ]);
 
       const via = page.getByRole('list', { name: 'How visitors got in' });
       await expect(via.locator('.wl-bar-name')).toHaveText([
@@ -144,7 +153,7 @@ for (const scheme of schemes) {
         'Share link',
       ]);
       await expect(
-        page.getByText('1 request refused, not counted here.'),
+        page.getByText('2 requests refused, not counted here.'),
       ).toBeVisible();
       await expect(
         page
@@ -159,6 +168,11 @@ for (const scheme of schemes) {
       await expect(page.getByRole('region', { name: 'By group' })).toHaveCount(
         0,
       );
+      await expect(
+        page
+          .getByRole('list', { name: 'Top pages' })
+          .locator('.wl-bar-name', { hasText: longPath }),
+      ).toBeVisible();
       await expect(page.getByText(/visits?\b/i)).toHaveCount(0);
       await shot('group');
     });
@@ -171,7 +185,7 @@ for (const scheme of schemes) {
       const tip = plot.getByRole('tooltip');
       await expect(tip).toBeVisible();
       await expect(tip).toContainText('Allowed 4');
-      await expect(tip).toContainText('Refused 1');
+      await expect(tip).toContainText('Refused 2');
       await page.keyboard.press('Escape');
       await expect(tip).toBeHidden();
 
@@ -207,7 +221,7 @@ for (const scheme of schemes) {
         page.getByText(`Requests to the ${prefix} group over the last 7 days.`),
       ).toBeVisible();
       await page
-        .getByRole('combobox', { name: 'Sites' })
+        .getByRole('combobox', { name: 'Showing' })
         .selectOption(`t:${tagId}`);
       await expect(page).toHaveURL(`${origin}/analytics?t=${tagId}&days=7`);
       await expect(

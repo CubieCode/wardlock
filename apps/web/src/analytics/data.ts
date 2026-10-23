@@ -62,23 +62,55 @@ export function analyticsHref(scope: Scope, days: AnalyticsDays = defaultDays) {
 
 /** What the totals row shows of the sites in scope, from their summaries. */
 export interface SiteTotals {
-  sites: number;
   workingLinks: number;
+  /** Available sites with no requests in 30 days. */
   quiet: number;
 }
 
-export interface Report {
-  analytics: Analytics;
-  totals: SiteTotals;
+/** The owner's groups and tags, which name the scopes. */
+export interface Organisation {
   groups: Group[];
   tags: Tag[];
 }
 
-export type LoadResult =
-  { kind: 'ready'; report: Report } | { kind: 'missing' };
+/** The scope as one string, as the scope picker's option values hold it. */
+export const scopeValue = (scope: Scope) =>
+  scope.kind === 'group'
+    ? `g:${scope.id}`
+    : scope.kind === 'tag'
+      ? `t:${scope.id}`
+      : scope.kind === 'site'
+        ? `s:${scope.name}`
+        : '';
 
-/** Every summary of the sites in scope, a page of 100 at a time. */
-async function siteTotals(api: ApiClient, scope: Scope): Promise<SiteTotals> {
+export function parseScope(value: string): Scope {
+  const at = value.indexOf(':');
+  const kind = value.slice(0, at);
+  const id = value.slice(at + 1);
+  if (kind === 'g') return { kind: 'group', id };
+  if (kind === 't') return { kind: 'tag', id };
+  if (kind === 's') return { kind: 'site', name: id };
+  return { kind: 'all' };
+}
+
+export async function readOrganisation(api: ApiClient): Promise<Organisation> {
+  const [groups, tags] = await Promise.all([
+    api.GET('/api/v0/groups'),
+    api.GET('/api/v0/tags'),
+  ]);
+  if (!groups.data || !tags.data) throw new Error('could not list groups');
+  return { groups: groups.data.items, tags: tags.data.items };
+}
+
+/**
+ * Working links and quiet sites among the sites in scope, from every summary,
+ * a page of 100 at a time. Quiet sites leave out taken-down ones, as the
+ * `quiet` saved view does.
+ */
+export async function readTotals(
+  api: ApiClient,
+  scope: Scope,
+): Promise<SiteTotals> {
   const filter =
     scope.kind === 'group'
       ? { group: scope.id }
@@ -110,21 +142,20 @@ async function siteTotals(api: ApiClient, scope: Scope): Promise<SiteTotals> {
       ? sites.filter((site) => site.name === scope.name)
       : sites;
   return {
-    sites: inScope.length,
     workingLinks: inScope.reduce((sum, site) => sum + site.workingLinks, 0),
-    quiet: inScope.filter((site) => site.quiet).length,
+    quiet: inScope.filter((site) => site.quiet && !site.unavailable).length,
   };
 }
 
 /**
- * Reads the report for one scope and range. A missing or foreign site, group
- * or tag is `missing`; anything else that fails throws.
+ * Reads the requests for one scope and range. A missing or foreign site,
+ * group or tag is `missing`; anything else that fails throws.
  */
-export async function loadReport(
+export async function readAnalytics(
   api: ApiClient,
   scope: Scope,
   days: AnalyticsDays,
-): Promise<LoadResult> {
+): Promise<Analytics | 'missing'> {
   const query =
     scope.kind === 'group'
       ? { days, group: scope.id }
@@ -133,24 +164,12 @@ export async function loadReport(
         : scope.kind === 'site'
           ? { days, site: scope.name }
           : { days };
-  const analytics = await api.GET('/api/v0/analytics', { params: { query } });
-  if (analytics.response.status === 404) return { kind: 'missing' };
-  if (!analytics.data) throw new Error('could not read analytics');
-  const [totals, groups, tags] = await Promise.all([
-    siteTotals(api, scope),
-    api.GET('/api/v0/groups'),
-    api.GET('/api/v0/tags'),
-  ]);
-  if (!groups.data || !tags.data) throw new Error('could not list groups');
-  return {
-    kind: 'ready',
-    report: {
-      analytics: analytics.data,
-      totals,
-      groups: groups.data.items,
-      tags: tags.data.items,
-    },
-  };
+  const { data, response } = await api.GET('/api/v0/analytics', {
+    params: { query },
+  });
+  if (response.status === 404) return 'missing';
+  if (!data) throw new Error('could not read analytics');
+  return data;
 }
 
 const dayLabel = new Intl.DateTimeFormat('en-NZ', {

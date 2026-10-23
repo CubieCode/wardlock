@@ -12,7 +12,7 @@ import {
   SelectField,
   StackedBars,
 } from '@wardlock/ui';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { tagSlot } from '../shell/navigator.js';
 import { useTitle } from '../shell/page.js';
 import { navigate } from '../shell/router.js';
@@ -20,14 +20,20 @@ import { Breakdown, type BreakdownRow } from './breakdown.js';
 import {
   analyticsHref,
   browserNames,
-  loadReport,
+  parseScope,
   ranges,
+  readAnalytics,
+  readOrganisation,
   readQuery,
+  readTotals,
   requestsPerDay,
+  scopeValue,
   viaNames,
+  type Analytics,
   type AnalyticsDays,
-  type Report,
+  type Organisation,
   type Scope,
+  type SiteTotals,
 } from './data.js';
 import './analytics.css';
 
@@ -39,47 +45,64 @@ const percent = new Intl.NumberFormat('en-NZ', {
 const requests = (n: number) =>
   `${count.format(n)} ${n === 1 ? 'request' : 'requests'}`;
 
-type State =
-  | { kind: 'loading' }
-  | { kind: 'error' }
-  | { kind: 'missing' }
-  | { kind: 'ready'; report: Report };
+interface Report extends Organisation {
+  analytics: Analytics;
+  totals: SiteTotals;
+}
+
+type Result<T> =
+  { kind: 'loading' } | { kind: 'error' } | { kind: 'ready'; value: T };
+
+/**
+ * Reads `input` with `read`, again whenever the input or attempt changes.
+ * `result` is for the current input only: until its answer arrives it is
+ * loading, never an earlier input's answer, however late that comes. `last`
+ * keeps the newest answer of any input.
+ */
+function useRead<T>(
+  input: string,
+  attempt: number,
+  read: (input: string) => Promise<T>,
+) {
+  const key = `${input}#${attempt}`;
+  const [settled, setSettled] = useState<{ key: string; result: Result<T> }>();
+  const [last, setLast] = useState<T>();
+  useEffect(() => {
+    let live = true;
+    const settle = (result: Result<T>) =>
+      live && setSettled({ key: `${input}#${attempt}`, result });
+    read(input).then(
+      (value) => {
+        settle({ kind: 'ready', value });
+        if (live) setLast(value);
+      },
+      () => settle({ kind: 'error' }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [input, attempt, read]);
+  const result: Result<T> =
+    settled?.key === key ? settled.result : { kind: 'loading' };
+  return { result, last };
+}
 
 /** The scope's name in a sentence: "all your sites", "the Clients group". */
-function scopeText(scope: Scope, report: Report) {
+function scopeText(scope: Scope, organisation: Organisation | undefined) {
   switch (scope.kind) {
     case 'all':
       return 'all your sites';
     case 'site':
       return scope.name;
     case 'group': {
-      const name = report.groups.find((g) => g.id === scope.id)?.name;
+      const name = organisation?.groups.find((g) => g.id === scope.id)?.name;
       return name ? `the ${name} group` : 'this group';
     }
     case 'tag': {
-      const name = report.tags.find((t) => t.id === scope.id)?.name;
+      const name = organisation?.tags.find((t) => t.id === scope.id)?.name;
       return name ? `sites tagged ${name}` : 'this tag';
     }
   }
-}
-
-/** The scope picker's value for a scope. */
-const scopeValue = (scope: Scope) =>
-  scope.kind === 'group'
-    ? `g:${scope.id}`
-    : scope.kind === 'tag'
-      ? `t:${scope.id}`
-      : scope.kind === 'site'
-        ? `s:${scope.name}`
-        : '';
-
-function parseScope(value: string): Scope {
-  const [kind, ...rest] = value.split(':');
-  const id = rest.join(':');
-  if (kind === 'g') return { kind: 'group', id };
-  if (kind === 't') return { kind: 'tag', id };
-  if (kind === 's') return { kind: 'site', name: id };
-  return { kind: 'all' };
 }
 
 /**
@@ -95,63 +118,102 @@ export function AnalyticsPage({
 }) {
   useTitle('Analytics');
   const { scope, days } = useMemo(() => readQuery(query), [query]);
-  // Each scope, range and Try again is its own read; until its answer
-  // arrives the page shows it loading, not the last one's numbers.
-  const [attempt, setAttempt] = useState(0);
-  const key = `${analyticsHref(scope, days)}#${attempt}`;
-  const [loaded, setLoaded] = useState<{ key: string; state: State }>();
-  const state: State = loaded?.key === key ? loaded.state : { kind: 'loading' };
+  const scoped = scopeValue(scope);
 
-  useEffect(() => {
-    let live = true;
-    const settle = (next: State) => live && setLoaded({ key, state: next });
-    loadReport(api, scope, days).then(
-      (result) =>
-        settle(
-          result.kind === 'missing'
-            ? { kind: 'missing' }
-            : { kind: 'ready', report: result.report },
-        ),
-      () => settle({ kind: 'error' }),
-    );
-    return () => {
-      live = false;
-    };
-  }, [api, key, scope, days]);
+  // Three reads: the group and tag names once, the site totals per scope
+  // (they do not depend on the range) and the requests per scope and range.
+  // Try again repeats only the reads that failed.
+  const [tries, setTries] = useState({ names: 0, totals: 0, requests: 0 });
+  const names = useRead(
+    'names',
+    tries.names,
+    useCallback(() => readOrganisation(api), [api]),
+  );
+  const totals = useRead(
+    scoped,
+    tries.totals,
+    useCallback((value) => readTotals(api, parseScope(value)), [api]),
+  );
+  const counts = useRead(
+    `${days}:${scoped}`,
+    tries.requests,
+    useCallback(
+      (value) => {
+        const at = value.indexOf(':');
+        return readAnalytics(
+          api,
+          parseScope(value.slice(at + 1)),
+          Number(value.slice(0, at)) as AnalyticsDays,
+        );
+      },
+      [api],
+    ),
+  );
+  const organisation =
+    names.result.kind === 'ready' ? names.result.value : names.last;
 
-  const ready = state.kind === 'ready' ? state.report : undefined;
+  const failed =
+    counts.result.kind === 'error' ||
+    totals.result.kind === 'error' ||
+    (names.result.kind === 'error' && !organisation);
+  const missing =
+    counts.result.kind === 'ready' && counts.result.value === 'missing';
+  const report: Report | undefined =
+    counts.result.kind === 'ready' &&
+    counts.result.value !== 'missing' &&
+    totals.result.kind === 'ready' &&
+    organisation
+      ? {
+          analytics: counts.result.value,
+          totals: totals.result.value,
+          ...organisation,
+        }
+      : undefined;
+  const retry = () =>
+    setTries((n) => ({
+      names: n.names + (names.result.kind === 'error' ? 1 : 0),
+      totals: n.totals + (totals.result.kind === 'error' ? 1 : 0),
+      requests: n.requests + (counts.result.kind === 'error' ? 1 : 0),
+    }));
+  // Scope and range changes both add a history entry, so Back undoes either.
+  const show = (next: Scope, nextDays: AnalyticsDays) =>
+    navigate(analyticsHref(next, nextDays));
+  const known =
+    scope.kind === 'group'
+      ? organisation?.groups.some((g) => g.id === scope.id)
+      : scope.kind === 'tag'
+        ? organisation?.tags.some((t) => t.id === scope.id)
+        : true;
+
   return (
     <div className="analytics">
       <PageHeader
         title="Analytics"
         description={
-          ready
-            ? `Requests to ${scopeText(scope, ready)} over the last ${days} days.`
+          report
+            ? `Requests to ${scopeText(scope, organisation)} over the last ${days} days.`
             : 'Requests to your sites, allowed and refused.'
         }
       />
       <div className="analytics-tools">
         <SelectField
-          label="Sites"
-          value={scopeValue(scope)}
-          disabled={!ready}
-          onChange={(event) =>
-            navigate(analyticsHref(parseScope(event.target.value), days))
-          }
+          label="Showing"
+          value={scoped}
+          onChange={(event) => show(parseScope(event.target.value), days)}
         >
           <option value="">All sites</option>
-          {ready && ready.groups.length > 0 ? (
+          {organisation && organisation.groups.length > 0 ? (
             <optgroup label="Groups">
-              {ready.groups.map((group) => (
+              {organisation.groups.map((group) => (
                 <option key={group.id} value={`g:${group.id}`}>
                   {group.name}
                 </option>
               ))}
             </optgroup>
           ) : null}
-          {ready && ready.tags.length > 0 ? (
+          {organisation && organisation.tags.length > 0 ? (
             <optgroup label="Tags">
-              {ready.tags.map((tag) => (
+              {organisation.tags.map((tag) => (
                 <option key={tag.id} value={`t:${tag.id}`}>
                   {tag.name}
                 </option>
@@ -160,9 +222,20 @@ export function AnalyticsPage({
           ) : null}
           {scope.kind === 'site' ? (
             <optgroup label="Site">
-              <option value={scopeValue(scope)}>{scope.name}</option>
+              <option value={scoped}>{scope.name}</option>
             </optgroup>
           ) : null}
+          {known ? null : (
+            // A group or tag not (yet) among the names, so the picker still
+            // shows what the page is scoped to.
+            <option value={scoped}>
+              {organisation
+                ? scope.kind === 'group'
+                  ? 'Unknown group'
+                  : 'Unknown tag'
+                : 'Loading…'}
+            </option>
+          )}
         </SelectField>
         <SegmentedControl
           label="Time range"
@@ -171,37 +244,34 @@ export function AnalyticsPage({
             value: String(range),
             label: `${range} days`,
           }))}
-          onChange={(value) =>
-            navigate(analyticsHref(scope, Number(value) as AnalyticsDays), {
-              replace: true,
-            })
-          }
+          onChange={(value) => show(scope, Number(value) as AnalyticsDays)}
         />
       </div>
-      {state.kind === 'loading' ? (
-        <p role="status" className="analytics-note">
-          Counting requests…
-        </p>
-      ) : null}
-      {state.kind === 'error' ? (
+      {failed ? (
         <Notice tone="danger">
           <div className="analytics-error">
-            <span>Could not load analytics. Check your connection.</span>
-            <Button type="button" onClick={() => setAttempt((n) => n + 1)}>
+            <span>Could not load analytics.</span>
+            <Button type="button" onClick={retry}>
               Try again
             </Button>
           </div>
         </Notice>
-      ) : null}
-      {state.kind === 'missing' ? (
+      ) : missing ? (
         <EmptyState
           title="Nothing to count here"
-          action={<a href="/analytics">Show all sites</a>}
+          action={
+            <a href={analyticsHref({ kind: 'all' }, days)}>Show all sites</a>
+          }
         >
           That site, group or tag does not exist, or is not yours.
         </EmptyState>
-      ) : null}
-      {ready ? <ReportView scope={scope} days={days} report={ready} /> : null}
+      ) : report ? (
+        <ReportView scope={scope} days={days} report={report} />
+      ) : (
+        <p role="status" className="analytics-note">
+          Counting requests…
+        </p>
+      )}
     </div>
   );
 }
@@ -224,7 +294,7 @@ function ReportView({
     <>
       <section aria-label="Totals">
         <dl className="analytics-kpis">
-          <div className="analytics-kpi analytics-kpi-hero">
+          <div className="analytics-kpi">
             <dt>Allowed requests</dt>
             <dd>{count.format(allowed)}</dd>
             <dd className="analytics-note">
@@ -248,9 +318,7 @@ function ReportView({
           <div className="analytics-kpi">
             <dt>Quiet sites</dt>
             <dd>{count.format(totals.quiet)}</dd>
-            <dd className="analytics-note">
-              Of {count.format(totals.sites)}, no requests in 30 days
-            </dd>
+            <dd className="analytics-note">No requests in 30 days</dd>
           </div>
         </dl>
       </section>

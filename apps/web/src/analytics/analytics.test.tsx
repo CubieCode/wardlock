@@ -148,6 +148,8 @@ function fakeServer(routes: Record<string, Handler> = {}) {
         summary('docs', { groupId, tagIds: [tagId], workingLinks: 2 }),
         summary('docs-old', { quiet: true, tagIds: [tagId] }),
         summary('drafts', { workingLinks: 1, quiet: true }),
+        // Taken down: not quiet, as in the navigator's Quiet view.
+        summary('gone', { quiet: true, unavailable: true }),
       ];
       return Response.json({
         items: sites.filter(
@@ -174,7 +176,9 @@ function fakeServer(routes: Record<string, Handler> = {}) {
     calls
       .filter((url) => url.pathname === '/api/v0/analytics')
       .map((url) => Object.fromEntries(url.searchParams));
-  return { api, analyticsCalls };
+  const summaryCalls = () =>
+    calls.filter((url) => url.pathname === '/api/v0/site-summaries').length;
+  return { api, analyticsCalls, summaryCalls };
 }
 
 const at = (path: string) => window.history.replaceState(null, '', path);
@@ -216,10 +220,7 @@ describe('scope', () => {
     ]);
     expect(figure('Refused requests')).toEqual(['3', '6.7% of requests']);
     expect(figure('Working links')).toEqual(['3', 'Share links that work now']);
-    expect(figure('Quiet sites')).toEqual([
-      '2',
-      'Of 3, no requests in 30 days',
-    ]);
+    expect(figure('Quiet sites')).toEqual(['2', 'No requests in 30 days']);
     expect(cardTitles()).toEqual([
       'Totals',
       'Requests per day',
@@ -241,10 +242,10 @@ describe('scope', () => {
     );
     expect(server.analyticsCalls()).toEqual([{ days: '30', group: groupId }]);
     expect(figure('Working links')[0]).toBe('2');
-    expect(figure('Quiet sites')[1]).toBe('Of 1, no requests in 30 days');
+    expect(figure('Quiet sites')[0]).toBe('0');
     expect(cardTitles()).not.toContain('By group');
     expect(cardTitles()).toContain('By tag');
-    const picker = screen.getByRole('combobox', { name: 'Sites' });
+    const picker = screen.getByRole('combobox', { name: 'Showing' });
     expect((picker as HTMLSelectElement).value).toBe(`g:${groupId}`);
   });
 
@@ -254,7 +255,7 @@ describe('scope', () => {
       'Requests to sites tagged docs over the last 7 days.',
     );
     expect(server.analyticsCalls()).toEqual([{ days: '7', tag: tagId }]);
-    expect(figure('Quiet sites')[1]).toBe('Of 2, no requests in 30 days');
+    expect(figure('Quiet sites')[0]).toBe('1');
     expect(
       within(card('By tag')).getByText(
         'A site counts under each of its tags, so these can add up to more than the total.',
@@ -276,18 +277,18 @@ describe('scope', () => {
     await screen.findByText('Requests to docs over the last 90 days.');
     expect(server.analyticsCalls()).toEqual([{ days: '90', site: 'docs' }]);
     // Search for "docs" also finds docs-old; only the site itself counts.
-    expect(figure('Quiet sites')[1]).toBe('Of 1, no requests in 30 days');
+    expect(figure('Quiet sites')[0]).toBe('0');
     expect(figure('Working links')[0]).toBe('2');
     for (const name of ['By group', 'By tag', 'Top sites'])
       expect(cardTitles()).not.toContain(name);
-    const picker = screen.getByRole('combobox', { name: 'Sites' });
+    const picker = screen.getByRole('combobox', { name: 'Showing' });
     expect((picker as HTMLSelectElement).value).toBe('s:docs');
   });
 
   it('moves between scopes with the picker and bars, keeping the range', async () => {
     const server = await open('/analytics?days=7');
     await screen.findByText(/over the last 7 days/);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sites' }), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Showing' }), {
       target: { value: `t:${tagId}` },
     });
     await screen.findByText(
@@ -305,13 +306,13 @@ describe('scope', () => {
   });
 
   it('says so when the site, group or tag is missing or not the owner’s', async () => {
-    await open(`/analytics?g=${groupId}`, {
+    await open(`/analytics?g=${groupId}&days=7`, {
       'GET /api/v0/analytics': notFound,
     });
     await screen.findByRole('heading', { name: 'Nothing to count here' });
     expect(
       screen.getByRole('link', { name: 'Show all sites' }).getAttribute('href'),
-    ).toBe('/analytics');
+    ).toBe('/analytics?days=7');
   });
 });
 
@@ -336,6 +337,29 @@ describe('range', () => {
     fireEvent.click(screen.getByRole('radio', { name: '30 days' }));
     await screen.findByText(/over the last 30 days/);
     expect(window.location.search).toBe('');
+    // Site totals do not depend on the range: read once.
+    expect(server.summaryCalls()).toBe(1);
+  });
+
+  it('keeps the newest range when an earlier answer arrives later', async () => {
+    const answers = new Map<string, (response: Response) => void>();
+    const server = await open('/analytics', {
+      'GET /api/v0/analytics': (request) =>
+        new Promise((resolve) =>
+          answers.set(new URL(request.url).searchParams.get('days')!, resolve),
+        ),
+    });
+    await waitFor(() => expect(answers.has('30')).toBe(true));
+    fireEvent.click(screen.getByRole('radio', { name: '7 days' }));
+    await waitFor(() => expect(answers.has('7')).toBe(true));
+    answers.get('7')!(Response.json(report(7)));
+    await screen.findByText(/over the last 7 days/);
+    answers.get('30')!(Response.json(report(30)));
+    await waitFor(() => expect(server.analyticsCalls()).toHaveLength(2));
+    // Give the late answer a chance to land; the page stays on 7 days.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByText(/over the last 7 days/)).toBeTruthy();
+    expect(figure('Allowed requests')[1]).toBe('7 days · all your sites');
   });
 
   it('draws one bar per local day of the range', () => {
@@ -372,12 +396,57 @@ describe('states', () => {
             )
           : Response.json(report(30)),
     });
-    await screen.findByText('Could not load analytics. Check your connection.');
+    await screen.findByText('Could not load analytics.');
+    // The picker still names every group and tag, and stays usable.
+    const picker = screen.getByRole('combobox', {
+      name: 'Showing',
+    }) as HTMLSelectElement;
+    expect(picker.disabled).toBe(false);
+    expect([...picker.options].map((o) => o.textContent)).toEqual([
+      'All sites',
+      'Client work',
+      'docs',
+      'drafts',
+    ]);
     fail = false;
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(screen.getByRole('status').textContent).toBe('Counting requests…');
     await screen.findByText(/over the last 30 days/);
     expect(server.analyticsCalls()).toHaveLength(2);
+    // Only the failed read is repeated.
+    expect(server.summaryCalls()).toBe(1);
+  });
+
+  it('says plainly when the site totals cannot be read', async () => {
+    await open('/analytics', {
+      'GET /api/v0/site-summaries': () =>
+        Response.json({ code: 'internal', message: 'No.' }, { status: 500 }),
+    });
+    await screen.findByText('Could not load analytics.');
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
+  it('shows the current scope in the picker while a new one loads', async () => {
+    let answer: (response: Response) => void = () => {};
+    await open(`/analytics?t=${tagId}`, {
+      'GET /api/v0/analytics': (request) =>
+        new URL(request.url).searchParams.get('group')
+          ? new Promise((resolve) => (answer = resolve))
+          : Response.json(report(30)),
+    });
+    await screen.findByText(
+      'Requests to sites tagged docs over the last 30 days.',
+    );
+    const picker = () =>
+      screen.getByRole('combobox', { name: 'Showing' }) as HTMLSelectElement;
+    fireEvent.change(picker(), { target: { value: `g:${groupId}` } });
+    await screen.findByText('Counting requests…');
+    expect(picker().value).toBe(`g:${groupId}`);
+    expect(picker().selectedOptions[0]!.textContent).toBe('Client work');
+    answer(Response.json(report(30)));
+    await screen.findByText(
+      'Requests to the Client work group over the last 30 days.',
+    );
   });
 });
 
