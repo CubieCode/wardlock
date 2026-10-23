@@ -9,7 +9,6 @@ import {
   PageHeader,
   Sparkline,
   StatusTag,
-  Ward,
 } from '@wardlock/ui';
 import { useEffect, useState, type ReactNode } from 'react';
 import { sitesHref } from '../shell/navigator.js';
@@ -21,7 +20,7 @@ import {
   untaggedIcon,
 } from '../shell/icons.js';
 import { useTitle } from '../shell/page.js';
-import { relativeTime, shortId, Time } from '../sites/format.js';
+import { AccessWord, relativeTime, shortId, Time } from '../sites/format.js';
 import {
   expiringTotal,
   groupRows,
@@ -57,21 +56,15 @@ export function OverviewPage({ api }: { api: ApiClient }) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [version, setVersion] = useState<string>();
 
+  // Each attempt loads everything again, the version included; Try again
+  // starts a new one.
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
     api
       .GET('/api/v0/health')
-      .then(({ data }) => live && data && setVersion(data.version))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [api]);
-
-  // Each attempt loads everything again; Try again starts a new one.
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    let live = true;
+      .then(({ data }) => live && setVersion(data?.version))
+      .catch(() => live && setVersion(undefined));
     loadOverview(api).then(
       (data) => live && setState({ kind: 'ready', data }),
       () => live && setState({ kind: 'error' }),
@@ -114,9 +107,9 @@ export function OverviewPage({ api }: { api: ApiClient }) {
           action={<a href="/sites">Go to Sites</a>}
         >
           <p>
-            Deploy a folder with <code>wardlock deploy</code> or create a site
-            on the Sites page. What needs a look, your pinned sites and groups
-            and the latest deploys will show here.
+            Deploy a folder with <code>wardlock deploy</code> to create your
+            first site; it will be listed on the Sites page. What needs a look,
+            your pinned sites and groups and the latest deploys will show here.
           </p>
         </EmptyState>
       )}
@@ -242,7 +235,7 @@ export function NeedsAttention({ data }: { data: OverviewData }) {
         key="expiring"
         icon={clockIcon}
         title={`${plural(links, 'link')} ${links === 1 ? 'expires' : 'expire'} within 48 hours`}
-        detail={`On ${plural(views.expiring, 'site')}. Make a new link before they stop working.`}
+        detail={`On ${plural(views.expiring, 'site')}. Check whether anyone still needs them.`}
         href={sitesHref({ v: 'expiring' })}
         action="Review"
         label="Review sites with links expiring soon"
@@ -260,7 +253,7 @@ export function NeedsAttention({ data }: { data: OverviewData }) {
         key="quiet"
         icon={quietIcon}
         title={`${plural(views.quiet, 'site')} had no requests in 30 days`}
-        detail="Tear down what you no longer need."
+        detail="Check whether you still need them."
         href={sitesHref({ v: 'quiet' })}
         action="Review"
         label="Review sites with no requests in 30 days"
@@ -317,14 +310,7 @@ export function NeedsAttention({ data }: { data: OverviewData }) {
 function Access({ site }: { site: SiteSummary }) {
   return (
     <span className="overview-access">
-      {site.visibility === 'public' ? (
-        <StatusTag tone="public">Public</StatusTag>
-      ) : (
-        <StatusTag tone="ward">
-          <Ward size="sm" />
-          Protected
-        </StatusTag>
-      )}
+      <AccessWord policy={site} />
       {site.unavailable && <StatusTag tone="warning">Taken down</StatusTag>}
     </span>
   );

@@ -234,7 +234,16 @@ describe('overview', () => {
       '1 site is public',
       '1 site taken down',
     ]);
-    expect(within(attention).getByText(/^On 2 sites\./)).toBeTruthy();
+    // Neutral advice: it fits a site made today and a taken-down site's
+    // links alike.
+    expect(
+      within(attention).getByText(
+        'On 2 sites. Check whether anyone still needs them.',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(attention).getByText('Check whether you still need them.'),
+    ).toBeTruthy();
     for (const [name, href] of [
       ['Review sites with links expiring soon', '/sites?v=expiring'] as const,
       ['Review sites with no requests in 30 days', '/sites?v=quiet'],
@@ -306,10 +315,13 @@ describe('overview', () => {
     const pinned = card('Pinned');
     const [docs, old] = within(pinned).getAllByRole('listitem');
     expect(within(docs!).getByRole('link', { name: 'docs' })).toBeTruthy();
+    // The site page's access word: the ward for Protected, coral for Public.
     expect(docs!.textContent).toContain('Protected');
+    expect(docs!.querySelector('.wl-status-tag-ward')).toBeTruthy();
     expect(docs!.textContent).toContain('1,207 requests in 7 days');
     expect(docs!.querySelector('svg.wl-sparkline')).toBeTruthy();
     expect(old!.textContent).toContain('Public');
+    expect(old!.querySelector('.wl-status-tag-public')).toBeTruthy();
     expect(old!.textContent).toContain('Taken down');
     expect(old!.textContent).toContain('0 requests in 7 days');
     expect(within(pinned).queryByText(/pinned sites$/)).toBeNull();
@@ -427,6 +439,10 @@ describe('overview', () => {
       await screen.findByRole('heading', { name: 'No sites yet' }),
     ).toBeTruthy();
     expect(screen.getByText(/You have no sites yet\./)).toBeTruthy();
+    // There is no create-site action in the dashboard: deploy from the CLI.
+    const empty = screen.getByText(/to create your first site/);
+    expect(empty.textContent).toContain('wardlock deploy');
+    expect(empty.textContent).not.toContain('create a site on');
     expect(screen.queryByRole('region')).toBeNull();
     expect(
       screen.getByRole('link', { name: 'Go to Sites' }).getAttribute('href'),
@@ -434,14 +450,20 @@ describe('overview', () => {
   });
 
   it('says what went wrong and tries again', async () => {
-    const fx: Fixture = { ...full, fail: true };
+    const down = () =>
+      Response.json({ code: 'x', message: 'x' }, { status: 503 });
+    const fx: Fixture = { ...full, fail: true, health: down };
     render(<OverviewPage api={fakeServer(fx).api} />);
     expect(screen.getByRole('status').textContent).toBe('Loading your sites…');
     expect(await screen.findByText(/Could not load your sites\./)).toBeTruthy();
+    expect(screen.queryByText(/This server runs/)).toBeNull();
     fx.fail = false;
+    delete fx.health;
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(
       await screen.findByRole('region', { name: 'Needs attention' }),
     ).toBeTruthy();
+    // Try again reads the version again too.
+    expect(await screen.findByText(/This server runs Wardlock/)).toBeTruthy();
   });
 });

@@ -104,7 +104,12 @@ function Lock() {
  * The site page uses it wherever it names a visibility; a taken-down site
  * keeps its word, with Taken down beside it.
  */
-export function AccessWord({ policy }: { policy: Policy | undefined }) {
+export function AccessWord({
+  policy,
+}: {
+  /** A policy, or anything with its visibility, such as a site summary. */
+  policy: Pick<Policy, 'visibility'> | undefined;
+}) {
   if (!policy) return <StatusTag>Access unknown</StatusTag>;
   return policy.visibility === 'public' ? (
     <StatusTag tone="public">Public</StatusTag>
