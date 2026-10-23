@@ -32,6 +32,7 @@ var operations = []operation{
 	{id: "ApproveCliLogin", method: "POST", path: "/api/v0/cli-login/approve", jsonBody: true, security: []string{"sessionCookie"}},
 	{id: "DenyCliLogin", method: "POST", path: "/api/v0/cli-login/deny", jsonBody: true, security: []string{"sessionCookie"}},
 	{id: "PollCliLogin", method: "POST", path: "/api/v0/cli-login/poll", jsonBody: true, security: []string{}},
+	{id: "ListExpiringLinks", method: "GET", path: "/api/v0/expiring-links", jsonBody: false, security: []string{"sessionCookie", "apiToken:deploy", "apiToken:manage"}},
 	{id: "ListGroups", method: "GET", path: "/api/v0/groups", jsonBody: false, security: []string{"sessionCookie", "apiToken:deploy", "apiToken:manage"}},
 	{id: "CreateGroup", method: "POST", path: "/api/v0/groups", jsonBody: true, security: []string{"sessionCookie", "apiToken:manage"}},
 	{id: "DeleteGroup", method: "DELETE", path: "/api/v0/groups/{groupId}", jsonBody: false, security: []string{"sessionCookie", "apiToken:manage"}},

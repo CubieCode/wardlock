@@ -1105,6 +1105,35 @@ type Error struct {
 	Target *string `json:"target,omitempty"`
 }
 
+// ExpiringLink A share link that expires soon, as listExpiringLinks finds them.
+type ExpiringLink struct {
+	// ExpiresAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	ExpiresAt Timestamp `json:"expiresAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Label The link's label; absent when it has none.
+	Label *string `json:"label,omitempty"`
+
+	// Site The name of the site the link opens.
+	//
+	// Examples: docs
+	Site SiteName `json:"site"`
+
+	// UsesLeft Uses the link has left (`maxUses` less uses spent); absent when the link has no use limit.
+	UsesLeft *int32 `json:"usesLeft,omitempty"`
+}
+
+// ExpiringLinkList defines model for ExpiringLinkList.
+type ExpiringLinkList struct {
+	Items []ExpiringLink `json:"items"`
+}
+
 // Group defines model for Group.
 type Group struct {
 	// CreatedAt UTC milliseconds since the Unix epoch.
@@ -2014,6 +2043,12 @@ type GetAnalyticsParams struct {
 	Tag *Id `form:"tag,omitempty" json:"tag,omitempty"`
 }
 
+// ListExpiringLinksParams defines parameters for ListExpiringLinks.
+type ListExpiringLinksParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListSessionsParams defines parameters for ListSessions.
 type ListSessionsParams struct {
 	// Limit Page size.
@@ -2351,6 +2386,9 @@ type ServerInterface interface {
 	// PollCliLogin Poll a CLI device login for its token.
 	// (POST /api/v0/cli-login/poll)
 	PollCliLogin(w http.ResponseWriter, r *http.Request)
+	// ListExpiringLinks List the owner's share links that expire soon.
+	// (GET /api/v0/expiring-links)
+	ListExpiringLinks(w http.ResponseWriter, r *http.Request, params ListExpiringLinksParams)
 	// ListGroups List the owner's groups.
 	// (GET /api/v0/groups)
 	ListGroups(w http.ResponseWriter, r *http.Request)
@@ -2724,6 +2762,39 @@ func (siw *ServerInterfaceWrapper) PollCliLogin(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PollCliLogin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListExpiringLinks operation middleware
+func (siw *ServerInterfaceWrapper) ListExpiringLinks(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListExpiringLinksParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListExpiringLinks(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4604,6 +4675,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/analytics", wrapper.GetAnalytics)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/site-summaries", wrapper.ListSiteSummaries)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/site-counts", wrapper.GetSiteCounts)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/expiring-links", wrapper.ListExpiringLinks)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sign-in-providers", wrapper.ListSignInProviders)
 
 	return m
@@ -5512,6 +5584,87 @@ type PollCliLogindefaultJSONResponse struct {
 }
 
 func (response PollCliLogindefaultJSONResponse) VisitPollCliLoginResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListExpiringLinksRequestObject struct {
+	Params ListExpiringLinksParams
+}
+
+type ListExpiringLinksResponseObject interface {
+	VisitListExpiringLinksResponse(w http.ResponseWriter) error
+}
+
+type ListExpiringLinks200JSONResponse ExpiringLinkList
+
+func (response ListExpiringLinks200JSONResponse) VisitListExpiringLinksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListExpiringLinks400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListExpiringLinks400JSONResponse) VisitListExpiringLinksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListExpiringLinks401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListExpiringLinks401JSONResponse) VisitListExpiringLinksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListExpiringLinks403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListExpiringLinks403JSONResponse) VisitListExpiringLinksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListExpiringLinksdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListExpiringLinksdefaultJSONResponse) VisitListExpiringLinksResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -10360,6 +10513,9 @@ type StrictServerInterface interface {
 	// PollCliLogin Poll a CLI device login for its token.
 	// (POST /api/v0/cli-login/poll)
 	PollCliLogin(ctx context.Context, request PollCliLoginRequestObject) (PollCliLoginResponseObject, error)
+	// ListExpiringLinks List the owner's share links that expire soon.
+	// (GET /api/v0/expiring-links)
+	ListExpiringLinks(ctx context.Context, request ListExpiringLinksRequestObject) (ListExpiringLinksResponseObject, error)
 	// ListGroups List the owner's groups.
 	// (GET /api/v0/groups)
 	ListGroups(ctx context.Context, request ListGroupsRequestObject) (ListGroupsResponseObject, error)
@@ -10875,6 +11031,32 @@ func (sh *strictHandler) PollCliLogin(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(PollCliLoginResponseObject); ok {
 		if err := validResponse.VisitPollCliLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListExpiringLinks operation middleware
+func (sh *strictHandler) ListExpiringLinks(w http.ResponseWriter, r *http.Request, params ListExpiringLinksParams) {
+	var request ListExpiringLinksRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListExpiringLinks(ctx, request.(ListExpiringLinksRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListExpiringLinks")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListExpiringLinksResponseObject); ok {
+		if err := validResponse.VisitListExpiringLinksResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

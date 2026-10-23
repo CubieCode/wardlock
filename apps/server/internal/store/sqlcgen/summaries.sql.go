@@ -13,6 +13,73 @@ import (
 	"database/sql"
 )
 
+const listExpiringLinks = `-- name: ListExpiringLinks :many
+SELECT share_links.id, sites.name AS site_name, share_links.label, share_links.expires_at, share_links.max_uses, share_links.use_count
+FROM share_links JOIN sites ON sites.id = share_links.site_id
+WHERE sites.owner_id = ?1 AND share_links.revoked_at IS NULL
+  AND share_links.expires_at > CAST(?2 AS BIGINT) AND share_links.expires_at <= CAST(?3 AS BIGINT)
+  AND share_links.expires_at - share_links.created_at > CAST(?4 AS BIGINT)
+  AND (share_links.max_uses IS NULL OR share_links.use_count < share_links.max_uses)
+ORDER BY share_links.expires_at, share_links.id
+LIMIT ?5
+`
+
+type ListExpiringLinksParams struct {
+	OwnerID     string
+	Now         int64
+	ExpiringBy  int64
+	MinLifetime int64
+	RowLimit    int64
+}
+
+type ListExpiringLinksRow struct {
+	ID        string
+	SiteName  string
+	Label     sql.NullString
+	ExpiresAt sql.NullInt64
+	MaxUses   sql.NullInt64
+	UseCount  int64
+}
+
+// The owner's expiring links, soonest first: the links ListSiteSummaries
+// counts as expiring_links, with the same conditions, so the list and the
+// counts agree. Keep the two WHERE clauses identical.
+func (q *Queries) ListExpiringLinks(ctx context.Context, arg ListExpiringLinksParams) ([]ListExpiringLinksRow, error) {
+	rows, err := q.db.QueryContext(ctx, listExpiringLinks,
+		arg.OwnerID,
+		arg.Now,
+		arg.ExpiringBy,
+		arg.MinLifetime,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListExpiringLinksRow
+	for rows.Next() {
+		var i ListExpiringLinksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SiteName,
+			&i.Label,
+			&i.ExpiresAt,
+			&i.MaxUses,
+			&i.UseCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOwnerSiteDomains = `-- name: ListOwnerSiteDomains :many
 SELECT domains.site_id, domains.hostname
 FROM domains JOIN sites ON sites.id = domains.site_id

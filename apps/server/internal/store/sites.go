@@ -75,6 +75,9 @@ type Sites interface {
 	// default policy, tags, custom domains, links and requests as w says
 	// (V5.5). It costs the same few queries whatever the number of sites.
 	Summaries(ctx context.Context, ownerID string, w SummaryWindow) ([]SiteSummary, error)
+	// ExpiringLinks returns up to limit of ownerID's links that
+	// Summaries counts as ExpiringLinks under w, soonest expiry first.
+	ExpiringLinks(ctx context.Context, ownerID string, w SummaryWindow, limit int) ([]ExpiringLink, error)
 	// SetActiveDeploy points the site at one of its own deploys. A
 	// taken-down site is ErrNotFound.
 	SetActiveDeploy(ctx context.Context, ownerID, siteID, deployID string) error

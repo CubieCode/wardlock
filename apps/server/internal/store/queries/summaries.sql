@@ -65,6 +65,19 @@ WHERE sites.owner_id = sqlc.arg(owner_id) AND traffic_hours.hour >= sqlc.arg(fro
 GROUP BY traffic_hours.site_id, day
 ORDER BY traffic_hours.site_id, day;
 
+-- The owner's expiring links, soonest first: the links ListSiteSummaries
+-- counts as expiring_links, with the same conditions, so the list and the
+-- counts agree. Keep the two WHERE clauses identical.
+-- name: ListExpiringLinks :many
+SELECT share_links.id, sites.name AS site_name, share_links.label, share_links.expires_at, share_links.max_uses, share_links.use_count
+FROM share_links JOIN sites ON sites.id = share_links.site_id
+WHERE sites.owner_id = sqlc.arg(owner_id) AND share_links.revoked_at IS NULL
+  AND share_links.expires_at > CAST(sqlc.arg(now) AS BIGINT) AND share_links.expires_at <= CAST(sqlc.arg(expiring_by) AS BIGINT)
+  AND share_links.expires_at - share_links.created_at > CAST(sqlc.arg(min_lifetime) AS BIGINT)
+  AND (share_links.max_uses IS NULL OR share_links.use_count < share_links.max_uses)
+ORDER BY share_links.expires_at, share_links.id
+LIMIT sqlc.arg(row_limit);
+
 -- SPDX-FileCopyrightText: 2026 CubieCode
 -- SPDX-License-Identifier: AGPL-3.0-only
 -- (Licence header last: sqlc copies comments above a query into Go docs.)

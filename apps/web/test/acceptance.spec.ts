@@ -90,7 +90,12 @@ for (const scheme of schemes) {
         page.getByRole('heading', { level: 1, name: 'Overview' }),
       ).toBeVisible();
       expect(page.url()).toBe(`${origin}/`);
-      await expect(page.getByText('Connected', { exact: true })).toBeVisible();
+      // A new owner's overview: the greeting and one empty state.
+      await expect(page.getByText(/You have no sites yet\./)).toBeVisible();
+      await expect(page.getByText(/This server runs Wardlock/)).toBeVisible();
+      await expect(
+        page.getByRole('heading', { name: 'No sites yet' }),
+      ).toBeVisible();
       await shot('overview');
       const main = page.getByRole('navigation', { name: 'Main' });
       await expect(

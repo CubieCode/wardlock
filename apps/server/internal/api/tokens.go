@@ -91,6 +91,9 @@ var tokenScopes = map[string][]string{
 	"ListSiteSummaries":   {"deploy", "manage"},
 	"GetSiteCounts":       {"deploy", "manage"},
 	"ListSignInProviders": {"deploy", "manage"},
+
+	// V5.11 read.
+	"ListExpiringLinks": {"deploy", "manage"},
 }
 
 var sessionOnly = map[string]bool{

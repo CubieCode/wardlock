@@ -1207,6 +1207,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/expiring-links': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the owner's share links that expire soon.
+     * @description The links that listSiteSummaries counts in each site's `expiringLinks`, across all the owner's sites, soonest expiry first (ties by ID): working links (not revoked, not expired and not used up) that expire within the next 48 hours, leaving out links whose whole lifetime is an hour or less. Answers the first `limit`; the sum of `expiringLinks` says how many there are in all. Tokens and link URLs are never returned. Not paged.
+     */
+    get: operations['listExpiringLinks'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v0/sign-in-providers': {
     parameters: {
       query?: never;
@@ -2057,6 +2077,23 @@ export interface components {
     SiteSummaryPage: {
       items: components['schemas']['SiteSummary'][];
       nextCursor?: components['schemas']['Cursor'];
+    };
+    /** @description A share link that expires soon, as listExpiringLinks finds them. */
+    ExpiringLink: {
+      id: components['schemas']['Id'];
+      /** @description The name of the site the link opens. */
+      site: components['schemas']['SiteName'];
+      /** @description The link's label; absent when it has none. */
+      label?: string;
+      expiresAt: components['schemas']['Timestamp'];
+      /**
+       * Format: int32
+       * @description Uses the link has left (`maxUses` less uses spent); absent when the link has no use limit.
+       */
+      usesLeft?: number;
+    };
+    ExpiringLinkList: {
+      items: components['schemas']['ExpiringLink'][];
     };
     /**
      * Format: int32
@@ -5307,6 +5344,49 @@ export interface operations {
           'application/json': components['schemas']['SiteCounts'];
         };
       };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      default: components['responses']['Error'];
+    };
+  };
+  listExpiringLinks: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The soonest-expiring links. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e50",
+           *           "site": "docs",
+           *           "label": "Linear ENG-123",
+           *           "expiresAt": 1767312000000,
+           *           "usesLeft": 3
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['ExpiringLinkList'];
+        };
+      };
+      400: components['responses']['BadRequest'];
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       default: components['responses']['Error'];

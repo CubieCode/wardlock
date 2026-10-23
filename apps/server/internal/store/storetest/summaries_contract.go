@@ -82,6 +82,9 @@ func siteSummariesContract(t *testing.T, open Opener) {
 
 		theirs := f.site(other.ID)
 		f.link(other.ID, theirs.ID)
+		theirsExpiring := f.validLink(theirs.ID)
+		theirsExpiring.CreatedAt, theirsExpiring.ExpiresAt = now.Add(-24*time.Hour), now.Add(time.Hour)
+		f.must(f.r.Links.Create(t.Context(), other.ID, theirsExpiring))
 
 		f.backfill()
 		hit := func(siteID string, at time.Time, status int) store.AccessEntry {
@@ -130,6 +133,33 @@ func siteSummariesContract(t *testing.T, open Opener) {
 
 		if got, err := f.r.Sites.Summaries(t.Context(), f.owner().ID, w); err != nil || len(got) != 0 {
 			t.Fatalf("Summaries(owner with no sites) = %v, %v; want none", got, err)
+		}
+
+		// ExpiringLinks lists exactly the links ExpiringLinks counts,
+		// soonest first, and never another owner's.
+		expiring, err := f.r.Sites.ExpiringLinks(t.Context(), o.ID, w, 100)
+		f.must(err)
+		var counted int
+		for _, s := range got {
+			counted += s.ExpiringLinks
+		}
+		if len(expiring) != counted {
+			t.Fatalf("ExpiringLinks() = %d links, summaries count %d", len(expiring), counted)
+		}
+		wantAt := []time.Time{now.Add(time.Hour), now.Add(2 * time.Hour), now.Add(48 * time.Hour)}
+		for i, l := range expiring {
+			if l.SiteName != "bravo" || !l.ExpiresAt.Equal(wantAt[i]) || l.Label != "Linear ENG-1" || l.ID == theirsExpiring.ID {
+				t.Errorf("ExpiringLinks()[%d] = %+v; want bravo's, expiring at %v", i, l, wantAt[i])
+			}
+		}
+		if l := expiring[1]; l.MaxUses != 2 || l.UseCount != 1 || expiring[0].MaxUses != 0 {
+			t.Errorf("uses = %+v and %+v; want 1 of 2 spent, then no limit", l, expiring[0])
+		}
+		if first, err := f.r.Sites.ExpiringLinks(t.Context(), o.ID, w, 1); err != nil || len(first) != 1 || first[0].ID != expiring[0].ID {
+			t.Errorf("ExpiringLinks(limit 1) = %v, %v; want the soonest", first, err)
+		}
+		if theirs, err := f.r.Sites.ExpiringLinks(t.Context(), other.ID, w, 100); err != nil || len(theirs) != 1 || theirs[0].ID != theirsExpiring.ID {
+			t.Errorf("ExpiringLinks(other owner) = %v, %v; want only their own link", theirs, err)
 		}
 	})
 }

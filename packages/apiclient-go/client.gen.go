@@ -1104,6 +1104,35 @@ type Error struct {
 	Target *string `json:"target,omitempty"`
 }
 
+// ExpiringLink A share link that expires soon, as listExpiringLinks finds them.
+type ExpiringLink struct {
+	// ExpiresAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	ExpiresAt Timestamp `json:"expiresAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Label The link's label; absent when it has none.
+	Label *string `json:"label,omitempty"`
+
+	// Site The name of the site the link opens.
+	//
+	// Examples: docs
+	Site SiteName `json:"site"`
+
+	// UsesLeft Uses the link has left (`maxUses` less uses spent); absent when the link has no use limit.
+	UsesLeft *int32 `json:"usesLeft,omitempty"`
+}
+
+// ExpiringLinkList defines model for ExpiringLinkList.
+type ExpiringLinkList struct {
+	Items []ExpiringLink `json:"items"`
+}
+
 // Group defines model for Group.
 type Group struct {
 	// CreatedAt UTC milliseconds since the Unix epoch.
@@ -2013,6 +2042,12 @@ type GetAnalyticsParams struct {
 	Tag *Id `form:"tag,omitempty" json:"tag,omitempty"`
 }
 
+// ListExpiringLinksParams defines parameters for ListExpiringLinks.
+type ListExpiringLinksParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListSessionsParams defines parameters for ListSessions.
 type ListSessionsParams struct {
 	// Limit Page size.
@@ -2553,6 +2588,13 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
 	PollCliLogin(ctx context.Context, body PollCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListExpiringLinks List the owner's share links that expire soon.
+	//
+	// The links that listSiteSummaries counts in each site's `expiringLinks`, across all the owner's sites, soonest expiry first (ties by ID): working links (not revoked, not expired and not used up) that expire within the next 48 hours, leaving out links whose whole lifetime is an hour or less. Answers the first `limit`; the sum of `expiringLinks` says how many there are in all. Tokens and link URLs are never returned. Not paged.
+	//
+	// Corresponds with GET /api/v0/expiring-links (the `ListExpiringLinks` operationId).
+	ListExpiringLinks(ctx context.Context, params *ListExpiringLinksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListGroups List the owner's groups.
 	//
@@ -3445,6 +3487,23 @@ func (c *Client) PollCliLoginWithBody(ctx context.Context, contentType string, b
 // Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
 func (c *Client) PollCliLogin(ctx context.Context, body PollCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPollCliLoginRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListExpiringLinks List the owner's share links that expire soon.
+//
+// The links that listSiteSummaries counts in each site's `expiringLinks`, across all the owner's sites, soonest expiry first (ties by ID): working links (not revoked, not expired and not used up) that expire within the next 48 hours, leaving out links whose whole lifetime is an hour or less. Answers the first `limit`; the sum of `expiringLinks` says how many there are in all. Tokens and link URLs are never returned. Not paged.
+//
+// Corresponds with GET /api/v0/expiring-links (the `ListExpiringLinks` operationId).
+func (c *Client) ListExpiringLinks(ctx context.Context, params *ListExpiringLinksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListExpiringLinksRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -5150,6 +5209,60 @@ func NewPollCliLoginRequestWithBody(server string, contentType string, body io.R
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListExpiringLinksRequest constructs an http.Request for the ListExpiringLinks method
+func NewListExpiringLinksRequest(server string, params *ListExpiringLinksParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/expiring-links")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -7848,6 +7961,15 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v0/cli-login/poll (the `PollCliLogin` operationId).
 	PollCliLoginWithResponse(ctx context.Context, body PollCliLoginJSONRequestBody, reqEditors ...RequestEditorFn) (*PollCliLoginResponse, error)
 
+	// ListExpiringLinksWithResponse List the owner's share links that expire soon.
+	//
+	// The links that listSiteSummaries counts in each site's `expiringLinks`, across all the owner's sites, soonest expiry first (ties by ID): working links (not revoked, not expired and not used up) that expire within the next 48 hours, leaving out links whose whole lifetime is an hour or less. Answers the first `limit`; the sum of `expiringLinks` says how many there are in all. Tokens and link URLs are never returned. Not paged.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/expiring-links (the `ListExpiringLinks` operationId).
+	ListExpiringLinksWithResponse(ctx context.Context, params *ListExpiringLinksParams, reqEditors ...RequestEditorFn) (*ListExpiringLinksResponse, error)
+
 	// ListGroupsWithResponse List the owner's groups.
 	//
 	// Every group, by name ignoring case. Not paged: an owner has at most 100.
@@ -9254,6 +9376,75 @@ func (r PollCliLoginResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PollCliLoginResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListExpiringLinksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ExpiringLinkList
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListExpiringLinksResponse) GetJSON200() *ExpiringLinkList {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListExpiringLinksResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListExpiringLinksResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListExpiringLinksResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListExpiringLinksResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListExpiringLinksResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListExpiringLinksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListExpiringLinksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListExpiringLinksResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -13400,6 +13591,21 @@ func (c *ClientWithResponses) PollCliLoginWithResponse(ctx context.Context, body
 	return ParsePollCliLoginResponse(rsp)
 }
 
+// ListExpiringLinksWithResponse List the owner's share links that expire soon.
+//
+// The links that listSiteSummaries counts in each site's `expiringLinks`, across all the owner's sites, soonest expiry first (ties by ID): working links (not revoked, not expired and not used up) that expire within the next 48 hours, leaving out links whose whole lifetime is an hour or less. Answers the first `limit`; the sum of `expiringLinks` says how many there are in all. Tokens and link URLs are never returned. Not paged.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/expiring-links (the `ListExpiringLinks` operationId).
+func (c *ClientWithResponses) ListExpiringLinksWithResponse(ctx context.Context, params *ListExpiringLinksParams, reqEditors ...RequestEditorFn) (*ListExpiringLinksResponse, error) {
+	rsp, err := c.ListExpiringLinks(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListExpiringLinksResponse(rsp)
+}
+
 // ListGroupsWithResponse List the owner's groups.
 //
 // Every group, by name ignoring case. Not paged: an owner has at most 100.
@@ -15136,6 +15342,60 @@ func ParsePollCliLoginResponse(rsp *http.Response) (*PollCliLoginResponse, error
 			headers.RetryAfter = &value
 		}
 		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListExpiringLinksResponse parses an HTTP response from a ListExpiringLinksWithResponse call
+func ParseListExpiringLinksResponse(rsp *http.Response) (*ListExpiringLinksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListExpiringLinksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ExpiringLinkList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
 	}
 
 	return response, nil

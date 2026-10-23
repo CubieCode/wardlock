@@ -114,6 +114,8 @@ var implemented = map[string]bool{
 	"ListSiteSummaries":   true,
 	"GetSiteCounts":       true,
 	"ListSignInProviders": true,
+
+	"ListExpiringLinks": true,
 }
 
 // pathValues are valid values for every path parameter in the contract.

@@ -162,6 +162,37 @@ func (s *Server) GetSiteCounts(ctx context.Context, _ GetSiteCountsRequestObject
 	return out, nil
 }
 
+// ListExpiringLinks answers the owner's soonest-expiring share links
+// across all their sites (V5.11): the links each summary's expiringLinks
+// counts. Only what the Links tab shows after creation; never a token.
+func (s *Server) ListExpiringLinks(ctx context.Context, req ListExpiringLinksRequestObject) (ListExpiringLinksResponseObject, error) {
+	owner, ok := OwnerID(ctx)
+	if !ok {
+		return ListExpiringLinksdefaultJSONResponse(*unauthenticated), nil
+	}
+	limit, f := pageLimit(req.Params.Limit)
+	if f != nil {
+		return ListExpiringLinksdefaultJSONResponse(*f), nil
+	}
+	links, err := s.Sites.ExpiringLinks(ctx, owner, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := ListExpiringLinks200JSONResponse{Items: make([]ExpiringLink, 0, len(links))}
+	for _, l := range links {
+		item := ExpiringLink{Id: l.ID, Site: l.SiteName, ExpiresAt: l.ExpiresAt.UnixMilli()}
+		if l.Label != "" {
+			item.Label = &l.Label
+		}
+		if l.MaxUses > 0 {
+			left := count32(l.MaxUses - l.UseCount)
+			item.UsesLeft = &left
+		}
+		out.Items = append(out.Items, item)
+	}
+	return out, nil
+}
+
 // count32 is n as the API's int32 counts carry it, capped at MaxInt32.
 func count32(n int) int32 {
 	if n > math.MaxInt32 {

@@ -37,6 +37,26 @@ function deferred() {
   return { promise, release };
 }
 
+const emptyOverview: Record<string, unknown> = {
+  'GET /api/v0/site-counts': {
+    all: 0,
+    views: {
+      pinned: 0,
+      expiring: 0,
+      public: 0,
+      quiet: 0,
+      untagged: 0,
+      down: 0,
+    },
+    groups: [],
+    noGroup: 0,
+    tags: [],
+  },
+  'GET /api/v0/site-summaries': { items: [] },
+  'GET /api/v0/groups': { items: [] },
+  'GET /api/v0/expiring-links': { items: [] },
+};
+
 /** A fake server: `routes["POST /api/v0/setup"]` answers that call. */
 function fakeServer(routes: Record<string, Handler>) {
   const calls: { route: string; body: unknown }[] = [];
@@ -52,6 +72,8 @@ function fakeServer(routes: Record<string, Handler>) {
       if (handler) return handler(body, request);
       if (route === 'GET /api/v0/health')
         return Response.json({ status: 'ok', version: '0.0.0-test' });
+      // The overview of an owner with no sites.
+      if (route in emptyOverview) return Response.json(emptyOverview[route]);
       return Response.json(
         { code: 'not_found', message: 'Not found.' },
         { status: 404 },
@@ -178,7 +200,11 @@ describe('email-code sign-in', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Overview' }),
     ).toBeTruthy();
-    expect(server.calls.at(-2)?.body).toEqual({
+    expect(
+      server.calls.findLast(
+        (c) => c.route === 'POST /api/v0/auth/email-code/verify',
+      )?.body,
+    ).toEqual({
       email: 'owner@example.test',
       code: '482913',
     });
@@ -539,7 +565,9 @@ describe('one-time links', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Overview' }),
     ).toBeTruthy();
-    expect(server.calls.at(-2)?.body).toEqual({
+    expect(
+      server.calls.findLast((c) => c.route === 'POST /api/v0/setup')?.body,
+    ).toEqual({
       code: 'EXAMPLEsetupCode',
       email: 'owner@example.test',
     });
