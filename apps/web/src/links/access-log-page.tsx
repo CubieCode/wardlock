@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ApiClient } from '@wardlock/apiclient-ts';
-import { Button, Notice, PageHeader, StatusBadge } from '@wardlock/ui';
+import { Button, EmptyState, Notice, StatusBadge } from '@wardlock/ui';
 import { useEffect, useState } from 'react';
 import { useTitle } from '../shell/page.js';
+import { siteHref } from '../sites/site-page-tabs.js';
 import {
   expiryText,
   lastOpenedText,
@@ -79,8 +80,12 @@ const columns = [
   visitColumns.browser,
 ];
 
-/** `/sites/:name/links/:linkId`: who opened one share link, newest first. */
-export function LinkAccessLogPage({
+/**
+ * The Links tab at `/sites/:name/links/:linkId`: one share link, what it
+ * grants, and who opened it, newest first. Never its token: that is shown
+ * once, when the link is created or rotated.
+ */
+export function LinkDetail({
   api,
   name,
   publicId,
@@ -108,10 +113,9 @@ export function LinkAccessLogPage({
     };
   }, [api, name, publicId, attempt]);
 
-  const siteHref = `/sites/${encodeURIComponent(name)}`;
   const back = (
     <p className="site-back">
-      <a href={siteHref}>Back to {name}</a>
+      <a href={siteHref(name, 'links')}>All share links</a>
     </p>
   );
 
@@ -119,24 +123,21 @@ export function LinkAccessLogPage({
   if (state.kind === 'not-found')
     return (
       <>
-        <PageHeader
-          title="Link not found"
-          description="There is no share link with this ID on this site in your account."
-        />
-        <p>
-          <a href={siteHref}>Go to {name}</a>
-        </p>
+        {back}
+        <EmptyState title="Link not found">
+          <p>There is no share link with this ID on this site.</p>
+        </EmptyState>
       </>
     );
   if (state.kind === 'error')
     return (
       <>
         {back}
-        <PageHeader title="Link access log" />
-        <Notice tone="danger">
-          Could not load the access log. Check your connection, then try again.
-        </Notice>
-        <div>
+        <div className="sites-error">
+          <Notice tone="danger">
+            Could not load the access log. Check your connection, then try
+            again.
+          </Notice>
           <Button
             type="button"
             onClick={() => {
@@ -154,31 +155,30 @@ export function LinkAccessLogPage({
   return (
     <>
       {back}
-      <PageHeader
-        title={link?.label ?? first.items[0]?.linkLabel ?? `Link ${publicId}`}
-        description={
-          <>
-            Access log of share link <code>{publicId}</code> on {name}, newest
-            first.
-          </>
-        }
-      />
-      <div className="link-summary">
-        {link ? (
-          <>
-            <LinkStatus link={link} />
-            <p>
-              {scopeText(link.path)} · {expiryText(link)} · {usesText(link)} ·{' '}
-              {lastOpenedText(link)}
-            </p>
-          </>
-        ) : (
-          <>
-            <StatusBadge tone="neutral">Revoked</StatusBadge>
-            <p>This link no longer works. Its past visits are kept below.</p>
-          </>
-        )}
-      </div>
+      <section className="link-detail" aria-labelledby="link-detail-title">
+        <h2 id="link-detail-title">
+          {link?.label ?? first.items[0]?.linkLabel ?? `Link ${publicId}`}
+        </h2>
+        <p className="link-muted">
+          Access log of share link <code>{publicId}</code>, newest first.
+        </p>
+        <div className="link-summary">
+          {link ? (
+            <>
+              <LinkStatus link={link} />
+              <p>
+                {scopeText(link.path)} · {expiryText(link)} · {usesText(link)} ·{' '}
+                {lastOpenedText(link)}
+              </p>
+            </>
+          ) : (
+            <>
+              <StatusBadge tone="neutral">Revoked</StatusBadge>
+              <p>This link no longer works. Its past visits are kept below.</p>
+            </>
+          )}
+        </div>
+      </section>
 
       <LinkVisits api={api} name={name} publicId={publicId} first={first} />
     </>

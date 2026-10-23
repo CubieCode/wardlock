@@ -104,7 +104,7 @@ const card = () => screen.getByRole('region', { name: 'Custom domains' });
 const row = (hostname: string) =>
   within(card()).getByRole('listitem', { name: hostname });
 
-beforeEach(() => window.history.replaceState(null, '', '/sites/docs'));
+beforeEach(() => window.history.replaceState(null, '', '/sites/docs/domains'));
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();

@@ -2,36 +2,29 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ApiClient } from '@wardlock/apiclient-ts';
-import {
-  Button,
-  Card,
-  CopyField,
-  EmptyState,
-  Notice,
-  PageHeader,
-  StatusBadge,
-} from '@wardlock/ui';
+import { Button, Notice, PageHeader } from '@wardlock/ui';
 import { useEffect, useRef, useState } from 'react';
 import { DomainsCard } from '../domains/domains.js';
+import { LinkDetail } from '../links/access-log-page.js';
 import { ShareLinksCard } from '../links/share-links.js';
 import { PoliciesCard } from '../policies/policies.js';
 import { useTitle } from '../shell/page.js';
+import { SiteAccessLogTab } from './access-log-page.js';
 import {
   defaultPolicy,
-  fileCount,
-  formatBytes,
-  PolicyBadge,
-  shortId,
-  Time,
   type Activation,
   type Deploy,
   type Policy,
   type Site,
 } from './format.js';
-import { SiteHeading } from './open-site.js';
-import { RollbackDialog } from './rollback.js';
-import { TeardownDialog } from './teardown.js';
+import { DeploysTab } from './site-page-deploys.js';
+import { SiteHeader } from './site-page-header.js';
+import { useOrganise } from './site-page-organise.js';
+import { OverviewTab } from './site-page-overview.js';
+import { SettingsTab } from './site-page-settings.js';
+import { siteTabs, SiteTabs, type SiteTabId } from './site-page-tabs.js';
 import './sites.css';
+import './site-page.css';
 
 interface Loaded {
   site: Site;
@@ -71,13 +64,33 @@ async function loadSite(api: ApiClient, name: string): Promise<Loaded> {
   };
 }
 
-/** `/sites/:name`: one site's address, access, deploy history and teardown. */
-export function SitePage({ api, name }: { api: ApiClient; name: string }) {
+/** The tab's part of the page title; the overview's is the name alone. */
+function pageTitle(name: string, tab: SiteTabId, linkId: string | undefined) {
+  if (linkId) return `Link access log · ${name}`;
+  if (tab === 'overview') return name;
+  return `${siteTabs.find((t) => t.id === tab)!.label} · ${name}`;
+}
+
+/**
+ * `/sites/:name` and its tabs: a header with the site's access, address,
+ * group, tags and pin, then Overview, Links (and one link at
+ * `links/:linkId`), Access, Domains, Deploys, Access log and Settings. The
+ * site is read once and kept while the owner moves between tabs.
+ */
+export function SitePage({
+  api,
+  name,
+  tab,
+  linkId,
+}: {
+  api: ApiClient;
+  name: string;
+  tab: SiteTabId;
+  /** The share link shown on the Links tab, by public ID. */
+  linkId?: string;
+}) {
   const [state, setState] = useState<PageState>({ kind: 'loading' });
-  const [rollbackTo, setRollbackTo] = useState<Deploy | null>(null);
-  const [tearingDown, setTearingDown] = useState(false);
-  const [rolledBack, setRolledBack] = useState<Deploy | null>(null);
-  // Bumped when Open site creates a share link, so the list reloads with it.
+  // Bumped when Open site creates a share link, so link lists reload.
   const [linksVersion, setLinksVersion] = useState(0);
   const [more, setMore] = useState<'idle' | 'loading' | 'error'>('idle');
   // What a failed in-place refresh was for: the deploy history after a
@@ -88,7 +101,11 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
   // Bumped by every in-place refresh, so a page of older deploys that was
   // requested before it cannot overwrite the fresh history.
   const generation = useRef(0);
-  useTitle(state.kind === 'not-found' ? 'Site not found' : name);
+  useTitle(
+    state.kind === 'not-found'
+      ? 'Site not found'
+      : pageTitle(name, tab, linkId),
+  );
 
   // Each attempt loads the page again; Try again starts a new one.
   const [attempt, setAttempt] = useState(0);
@@ -108,6 +125,26 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
     setState({ kind: 'loading' });
     setAttempt((n) => n + 1);
   };
+
+  const setSite = (site: Site) =>
+    setState((current) =>
+      current.kind === 'ready' ? { ...current, site } : current,
+    );
+  const placeholder: Site = {
+    id: '',
+    name,
+    hostname: '',
+    url: '',
+    createdAt: 0,
+    unavailable: false,
+    tagIds: [],
+    pinned: false,
+  };
+  const organise = useOrganise(
+    api,
+    state.kind === 'ready' ? state.site : placeholder,
+    setSite,
+  );
 
   if (state.kind === 'loading') return <p role="status">Loading site…</p>;
   if (state.kind === 'not-found')
@@ -138,9 +175,6 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
     );
 
   const { site, policies, deploys, nextCursor } = state;
-  const policy = defaultPolicy(policies);
-  const pathPolicies = policies.filter((p) => p.path !== '/');
-  const active = deploys.find((d) => d.id === site.activeDeployId);
 
   const loadOlder = async () => {
     if (!nextCursor) return;
@@ -182,8 +216,6 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
   };
 
   const afterRollback = ({ site: now, deploy }: Activation) => {
-    setRollbackTo(null);
-    setRolledBack(deploy);
     // Show the answer straight away, then read every status again in place.
     setState((current) =>
       current.kind === 'ready'
@@ -203,255 +235,91 @@ export function SitePage({ api, name }: { api: ApiClient; name: string }) {
     refresh();
   };
 
+  const accessRefreshFailed = refreshFailed === 'access' && (
+    <div className="sites-error">
+      <Notice tone="danger">
+        Saved, but could not refresh the site details. The access shown here may
+        be out of date.
+      </Notice>
+      <Button type="button" onClick={() => refresh('access')}>
+        Refresh
+      </Button>
+    </div>
+  );
+
+  let body;
+  switch (tab) {
+    case 'overview':
+      body = (
+        <OverviewTab
+          api={api}
+          site={site}
+          policies={policies}
+          deploys={deploys}
+          linksVersion={linksVersion}
+          refreshNotice={accessRefreshFailed}
+        />
+      );
+      break;
+    case 'links':
+      body = linkId ? (
+        <LinkDetail key={linkId} api={api} name={site.name} publicId={linkId} />
+      ) : (
+        <ShareLinksCard key={linksVersion} api={api} site={site} />
+      );
+      break;
+    case 'access':
+      body = (
+        <>
+          {accessRefreshFailed}
+          <PoliciesCard
+            api={api}
+            site={site}
+            onChange={() => refresh('access')}
+          />
+        </>
+      );
+      break;
+    case 'domains':
+      body = <DomainsCard api={api} site={site} />;
+      break;
+    case 'deploys':
+      body = (
+        <DeploysTab
+          api={api}
+          site={site}
+          deploys={deploys}
+          nextCursor={nextCursor}
+          more={more}
+          onOlder={loadOlder}
+          refreshFailed={refreshFailed === 'deploys'}
+          onRefresh={() => refresh()}
+          onRolledBack={afterRollback}
+        />
+      );
+      break;
+    case 'access-log':
+      body = <SiteAccessLogTab api={api} name={site.name} />;
+      break;
+    case 'settings':
+      body = <SettingsTab api={api} site={site} organise={organise} />;
+      break;
+  }
+
   return (
     <>
       <p className="site-back">
         <a href="/sites">All sites</a>
       </p>
-      <SiteHeading
+      <SiteHeader
         api={api}
         site={site}
-        policy={policy}
-        description={
-          <>
-            Created <Time at={site.createdAt} />
-          </>
-        }
+        policy={defaultPolicy(policies)}
+        organise={organise}
         onLinkCreated={() => setLinksVersion((n) => n + 1)}
       />
-      {site.unavailable && (
-        <Notice tone="warning">
-          <strong>The operator of this server has taken this site down.</strong>{' '}
-          Visitors see an unavailable page at every address of the site. Its
-          deploys, domains and access records are kept as they are: you can
-          change who has access, but not deploy, roll back, change its domains,
-          delete a policy or tear it down until the operator restores it.
-        </Notice>
-      )}
-
-      <Card title="Address and access">
-        <CopyField label="Site address" value={site.url} />
-        <div className="site-access">
-          <PolicyBadge policy={policy} />
-          <p>{accessSummary(policy)}</p>
-        </div>
-        {pathPolicies.length > 0 && (
-          <>
-            <h3 className="site-subheading">Paths with their own access</h3>
-            <ul className="site-paths">
-              {pathPolicies.map((p) => (
-                <li key={p.id}>
-                  <code>{p.path}</code>
-                  <PolicyBadge policy={p} />
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-        {refreshFailed === 'access' && (
-          <div className="sites-error">
-            <Notice tone="danger">
-              Saved, but could not refresh the site details. The access shown
-              here may be out of date.
-            </Notice>
-            <Button type="button" onClick={() => refresh('access')}>
-              Refresh
-            </Button>
-          </div>
-        )}
-      </Card>
-
-      <PoliciesCard api={api} site={site} onChange={() => refresh('access')} />
-      <ShareLinksCard key={linksVersion} api={api} site={site} />
-      <DomainsCard api={api} site={site} />
-
-      <Card title="Access log">
-        <p>
-          Every request for this site, allowed or refused, with how each visitor
-          got in.
-        </p>
-        <div>
-          <a
-            className="wl-button wl-button-secondary site-log-link"
-            href={`/sites/${encodeURIComponent(site.name)}/access-log`}
-          >
-            View access log
-          </a>
-        </div>
-      </Card>
-
-      <Card title="Deploys">
-        {rolledBack && (
-          <Notice>
-            Rolled back. Deploy <code>{shortId(rolledBack.id)}</code> is live.
-          </Notice>
-        )}
-        {refreshFailed === 'deploys' && (
-          <div className="sites-error">
-            <Notice tone="danger">
-              Could not refresh the deploy history. The statuses below may be
-              out of date.
-            </Notice>
-            <Button type="button" onClick={() => refresh()}>
-              Refresh
-            </Button>
-          </div>
-        )}
-        {deploys.length === 0 ? (
-          <EmptyState title="No deploys yet">
-            <p>Each deploy of this site is listed here, newest first.</p>
-          </EmptyState>
-        ) : (
-          <ul className="deploy-list" aria-label="Deploy history">
-            {deploys.map((deploy) => (
-              <DeployRow
-                key={deploy.id}
-                deploy={deploy}
-                onRollback={
-                  site.activeDeployId && !site.unavailable
-                    ? () => setRollbackTo(deploy)
-                    : undefined
-                }
-              />
-            ))}
-          </ul>
-        )}
-        {more === 'error' && (
-          <Notice tone="danger">
-            Could not load older deploys. Try again.
-          </Notice>
-        )}
-        {nextCursor ? (
-          <div>
-            <Button
-              type="button"
-              disabled={more === 'loading'}
-              onClick={loadOlder}
-            >
-              {more === 'loading' ? 'Loading…' : 'Show older deploys'}
-            </Button>
-          </div>
-        ) : null}
-      </Card>
-
-      <Card title="Tear down this site">
-        {site.unavailable ? (
-          <p>
-            A site the operator has taken down cannot be torn down here. Ask the
-            operator of this server about it.
-          </p>
-        ) : (
-          <>
-            <p>
-              Deletes the site with its deploys and access settings, stops
-              serving <code>{site.hostname}</code> and frees the name{' '}
-              <strong>{site.name}</strong>.
-            </p>
-            <div>
-              <Button type="button" onClick={() => setTearingDown(true)}>
-                Tear down site
-              </Button>
-            </div>
-          </>
-        )}
-      </Card>
-
-      {rollbackTo && (
-        <RollbackDialog
-          api={api}
-          site={site}
-          live={active}
-          to={rollbackTo}
-          onClose={() => setRollbackTo(null)}
-          onDone={afterRollback}
-        />
-      )}
-      <TeardownDialog
-        api={api}
-        site={site}
-        open={tearingDown}
-        onClose={() => setTearingDown(false)}
-      />
+      <SiteTabs name={site.name} tab={tab} />
+      <div className="site-tab">{body}</div>
     </>
-  );
-}
-
-function accessSummary(policy: Policy | undefined) {
-  if (!policy) return 'Could not read who can open this site.';
-  if (policy.visibility === 'public')
-    return 'Anyone with the address can open this site.';
-  return 'Only visitors with access can open this site.';
-}
-
-/**
- * One deploy: its status word, ID, the path a path deploy replaced,
- * message, time, size and rollback.
- */
-function DeployRow({
-  deploy,
-  onRollback,
-}: {
-  deploy: Deploy;
-  /** Absent when no deploy is live, so there is nothing to roll back from. */
-  onRollback: (() => void) | undefined;
-}) {
-  const id = shortId(deploy.id);
-  return (
-    <li className="deploy-row">
-      <div className="deploy-row-status">
-        {deploy.status === 'active' && (
-          <StatusBadge tone="success">Live</StatusBadge>
-        )}
-        {deploy.status === 'inactive' && (
-          <StatusBadge tone="neutral">Not live</StatusBadge>
-        )}
-        {deploy.status === 'pending' && (
-          <StatusBadge tone="neutral">Not activated</StatusBadge>
-        )}
-      </div>
-      <div className="deploy-row-main">
-        <p className="deploy-row-title">
-          <code>{id}</code>
-          {deploy.path !== undefined && (
-            // Only this part of the site changed; the rest is the deploy
-            // that was live before.
-            <span className="deploy-row-path">
-              <span className="deploy-row-muted">Path</span>{' '}
-              <code>{deploy.path}</code>
-            </span>
-          )}
-          <span className={deploy.message ? undefined : 'deploy-row-muted'}>
-            {deploy.message || 'No message'}
-          </span>
-        </p>
-        <p className="deploy-row-meta">
-          {deploy.activatedAt !== undefined ? (
-            <>
-              {deploy.status === 'active' ? 'Live since' : 'Last live'}{' '}
-              <Time at={deploy.activatedAt} />
-            </>
-          ) : (
-            <>
-              Uploaded <Time at={deploy.createdAt} />
-            </>
-          )}
-          {' · '}
-          {fileCount(deploy.fileCount)}
-          {' · '}
-          {formatBytes(deploy.totalSize)}
-          {deploy.immutableAssets && ' · Immutable assets'}
-        </p>
-      </div>
-      {deploy.status === 'inactive' && onRollback ? (
-        <Button
-          type="button"
-          className="deploy-row-action"
-          aria-label={`Roll back to deploy ${id}`}
-          onClick={onRollback}
-        >
-          Roll back
-        </Button>
-      ) : null}
-    </li>
   );
 }

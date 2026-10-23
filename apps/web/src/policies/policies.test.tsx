@@ -654,20 +654,23 @@ describe('access policies card', () => {
 });
 
 describe('on the site page', () => {
-  it('sits above share links and updates the site’s access summary', async () => {
-    window.history.replaceState(null, '', '/sites/docs');
+  it('sits on the Access tab and updates the header’s access word', async () => {
+    window.history.replaceState(null, '', '/sites/docs/access');
     const { api } = fakeServer([policy('/')]);
     render(<App api={api} />);
     const policies = await screen.findByRole('region', {
       name: 'Access policies',
     });
-    const links = screen.getByRole('region', { name: 'Share links' });
     expect(
-      policies.compareDocumentPosition(links) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    const summary = screen.getByRole('region', { name: 'Address and access' });
-    expect(summary.textContent).toContain('Anyone with the address');
+      screen.getByRole('link', { name: 'Access' }).getAttribute('aria-current'),
+    ).toBe('page');
+    await waitFor(() =>
+      expect(document.title).toBe('Access · docs · Wardlock'),
+    );
+    const word = () =>
+      screen.getByRole('heading', { level: 1 }).parentElement!
+        .previousElementSibling!.textContent;
+    expect(word()).toBe('Public');
 
     await within(policies).findByRole('list', { name: 'Access policies' });
     fireEvent.click(
@@ -676,14 +679,11 @@ describe('on the site page', () => {
     const edit = dialog('Edit the site default for docs');
     fireEvent.click(within(edit).getByRole('radio', { name: 'Protected' }));
     fireEvent.click(within(edit).getByRole('button', { name: 'Save policy' }));
-    await waitFor(() =>
-      expect(summary.textContent).toContain(
-        'Only visitors with access can open this site.',
-      ),
-    );
+    await waitFor(() => expect(word()).toBe('Protected'));
   });
+
   it('says a saved change could not refresh the site details, not the deploys', async () => {
-    window.history.replaceState(null, '', '/sites/docs');
+    window.history.replaceState(null, '', '/sites/docs/access');
     let siteReads = 0;
     const { api } = fakeServer([policy('/')], {
       'GET /api/v0/sites/docs': () =>
@@ -705,15 +705,12 @@ describe('on the site page', () => {
     const edit = dialog('Edit the site default for docs');
     fireEvent.click(within(edit).getByRole('radio', { name: 'Protected' }));
     fireEvent.click(within(edit).getByRole('button', { name: 'Save policy' }));
-    const summary = screen.getByRole('region', { name: 'Address and access' });
-    expect((await within(summary).findByRole('alert')).textContent).toBe(
+    expect((await screen.findByRole('alert')).textContent).toBe(
       'Saved, but could not refresh the site details. The access shown here may be out of date.',
     );
     expect(
       screen.queryByText(/Could not refresh the deploy history/),
     ).toBeNull();
-    expect(
-      within(summary).getByRole('button', { name: 'Refresh' }),
-    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy();
   });
 });

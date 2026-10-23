@@ -112,7 +112,8 @@ function fakeTab() {
   };
 }
 
-beforeEach(() => window.history.replaceState(null, '', '/sites/docs'));
+// The Links tab, where a link that Open site creates appears.
+beforeEach(() => window.history.replaceState(null, '', '/sites/docs/links'));
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();

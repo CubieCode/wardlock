@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ApiClient } from '@wardlock/apiclient-ts';
-import { Button, Notice, PageHeader, StatusBadge } from '@wardlock/ui';
-import { useState, type ReactNode } from 'react';
+import { Button, Notice } from '@wardlock/ui';
+import { useState } from 'react';
 import type { Policy, Site } from './format.js';
 
 /** How long the share link behind Open site keeps working. */
@@ -11,22 +11,21 @@ export const openLinkLifetime = 10 * 60_000;
 export const openLinkLabel = 'Opened from dashboard';
 
 /**
- * The site page's heading with its Open site button. A public site opens at
- * its address; any other site opens through a new short-lived share link,
- * since dashboard sign-in does not reach the site's domain.
+ * The site header's Open site button. A public site opens at its address;
+ * any other site opens through a new short-lived share link, since
+ * dashboard sign-in does not reach the site's domain. A taken-down site has
+ * nothing to open, so the header leaves the button out.
  */
-export function SiteHeading({
+export function OpenSiteButton({
   api,
   site,
   policy,
-  description,
   onLinkCreated,
 }: {
   api: ApiClient;
   site: Site;
   /** The site's `/` policy; unknown is treated as not public. */
   policy: Policy | undefined;
-  description: ReactNode;
   onLinkCreated: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -72,20 +71,11 @@ export function SiteHeading({
   };
 
   return (
-    <>
-      <div className="site-heading">
-        <PageHeader title={site.name} description={description} />
-        {site.unavailable ? (
-          // Visitors see only the unavailable page, so there is nothing to
-          // open.
-          <StatusBadge tone="warning">Taken down</StatusBadge>
-        ) : (
-          <Button type="button" disabled={busy} onClick={open}>
-            {busy ? 'Opening…' : 'Open site'}
-          </Button>
-        )}
-      </div>
+    <div className="site-open">
+      <Button type="button" disabled={busy} onClick={open}>
+        {busy ? 'Opening…' : 'Open site'}
+      </Button>
       {failure && <Notice tone="danger">{failure}</Notice>}
-    </>
+    </div>
   );
 }
