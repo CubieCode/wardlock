@@ -18,7 +18,10 @@ async function check(page: Page, info: TestInfo, name: string) {
       document.documentElement.clientWidth,
   );
   expect(overflow).toBeLessThanOrEqual(0);
-  await page.screenshot({ path: info.outputPath(`${name}.png`) });
+  await page.screenshot({
+    path: info.outputPath(`${name}.png`),
+    animations: 'disabled',
+  });
 }
 
 for (const scheme of schemes) {
@@ -112,7 +115,7 @@ for (const scheme of schemes) {
       const menu = page.getByRole('dialog', { name: 'Account' });
       await expect(menu.getByRole('radio', { name: 'System' })).toBeChecked();
       await expect(html).not.toHaveAttribute('data-theme', /.*/);
-      await menu.getByText(other, { exact: true }).click();
+      await menu.getByRole('radio', { name: other }).check();
       await expect(html).toHaveAttribute('data-theme', other.toLowerCase());
       await shot('theme');
 
@@ -120,7 +123,7 @@ for (const scheme of schemes) {
       await expect(html).toHaveAttribute('data-theme', other.toLowerCase());
       await account.click();
       await expect(menu.getByRole('radio', { name: other })).toBeChecked();
-      await menu.getByText('System', { exact: true }).click();
+      await menu.getByRole('radio', { name: 'System' }).check();
       await expect(html).not.toHaveAttribute('data-theme', /.*/);
       await page.reload();
       await expect(
