@@ -15,6 +15,7 @@ require (
 	github.com/miekg/dns v1.1.73
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/oapi-codegen/runtime v1.7.0
+	github.com/oschwald/maxminddb-golang/v2 v2.8.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.60.0
@@ -43,7 +44,6 @@ require (
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/oschwald/maxminddb-golang/v2 v2.8.0 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/xid v1.6.0 // indirect

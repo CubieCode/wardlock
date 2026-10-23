@@ -1863,7 +1863,7 @@ export interface components {
       ip?: string;
       /** @description The User-Agent header; absent when the request sent none. */
       userAgent?: string;
-      /** @description The country the server's country database places the stored (truncated) IP in, or `unknown` when it has none. Absent when the operator has not turned the lookup on, its database could not be read, or no IP was stored. */
+      /** @description The country the server's country database places the stored (truncated) IP in, or `unknown` when it has none. Absent when its database could not be read or no IP was stored, and from every entry while the operator has the lookup off, even entries recorded while it was on. */
       country?: components['schemas']['RequestCountry'];
     };
     /**
@@ -1930,7 +1930,7 @@ export interface components {
       otherPaths: components['schemas']['RequestCount'];
       /** @description Requests by browser family, each family with requests, by name. */
       browsers: components['schemas']['AnalyticsBrowser'][];
-      /** @description Requests by country, each country with requests, busiest first, `unknown` among them. Present only while the country lookup is on (with `countryLookup`). Requests logged while it was off have no country, so these can add up to less than the total. */
+      /** @description Requests by country, each country with requests, busiest first, `unknown` among them. Every such country is listed, not a top few. Present only while the country lookup is on (with `countryLookup`). Requests logged while it was off have no country, so these can add up to less than the total. */
       countries?: components['schemas']['AnalyticsCountry'][];
       countryLookup?: components['schemas']['CountryLookup'];
     };

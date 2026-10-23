@@ -37,7 +37,7 @@ func write(t *testing.T, path string, n countrytest.Networks) {
 func TestLookup(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "country.mmdb")
 	write(t, path, networks)
-	db := country.Open(path, nil)
+	db := country.Open(path, false, nil)
 	if !db.Loaded() {
 		t.Fatal("Loaded() = false after a good file")
 	}
@@ -80,7 +80,7 @@ func TestMissingOrBadFile(t *testing.T) {
 			path := filepath.Join(dir, strings.ReplaceAll(name, " ", "-")+".mmdb")
 			setup(path)
 			var logs bytes.Buffer
-			db := country.Open(path, slog.New(slog.NewTextHandler(&logs, nil)))
+			db := country.Open(path, false, slog.New(slog.NewTextHandler(&logs, nil)))
 			if db.Loaded() {
 				t.Fatal("Loaded() = true for a bad file")
 			}
@@ -109,7 +109,7 @@ func TestReload(t *testing.T) {
 	path := filepath.Join(dir, "country.mmdb")
 	var logs bytes.Buffer
 	write(t, path, countrytest.Networks{"203.0.113.0/24": "NZ"})
-	db := country.Open(path, slog.New(slog.NewTextHandler(&logs, nil)))
+	db := country.Open(path, false, slog.New(slog.NewTextHandler(&logs, nil)))
 	want := func(step, ip, code string) {
 		t.Helper()
 		if got := db.Lookup(ip); got != code {
@@ -170,7 +170,7 @@ func TestReload(t *testing.T) {
 func TestWatch(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "country.mmdb")
 	write(t, path, countrytest.Networks{"203.0.113.0/24": "NZ"})
-	db := country.Open(path, nil)
+	db := country.Open(path, false, nil)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() { db.Watch(ctx, time.Millisecond); close(done) }()
@@ -201,6 +201,72 @@ func bump(t *testing.T, path string) {
 	}
 	at := info.ModTime().Add(time.Second)
 	if err := os.Chtimes(path, at, at); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestCreditWarning checks a database that does not look like DB-IP's
+// warns at load while the dashboard credits DB-IP, once per type, and
+// never when the operator set their own credit.
+func TestCreditWarning(t *testing.T) {
+	const warning = "does not look like DB-IP"
+	for _, tc := range []struct {
+		name        string
+		creditsDBIP bool
+		typ         string
+		warn        bool
+	}{
+		{"DB-IP's lite database", true, "DBIP-Country-Lite", false},
+		{"DB-IP's paid database", true, "DBIP-Country", false},
+		{"DB-IP spelt with a hyphen", true, "DB-IP Country", false},
+		{"GeoLite2", true, "GeoLite2-Country", true},
+		{"GeoLite2 with the operator's credit", false, "GeoLite2-Country", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "country.mmdb")
+			n := countrytest.Networks{"203.0.113.0/24": "NZ"}
+			writeTyped(t, path, tc.typ, n)
+			var logs bytes.Buffer
+			db := country.Open(path, tc.creditsDBIP, slog.New(slog.NewTextHandler(&logs, nil)))
+			if !db.Loaded() {
+				t.Fatal("database did not load")
+			}
+			if got := strings.Count(logs.String(), warning); got != map[bool]int{false: 0, true: 1}[tc.warn] {
+				t.Fatalf("warned %d times, want warn %v: %s", got, tc.warn, logs.String())
+			}
+			// A reload of the same type, as at each update, warns no more.
+			writeTyped(t, path, tc.typ, countrytest.Networks{"203.0.113.0/24": "AU"})
+			bump(t, path)
+			db.Check()
+			if db.Lookup("203.0.113.0") != "AU" {
+				t.Fatal("database did not reload")
+			}
+			if got := strings.Count(logs.String(), warning); got > 1 {
+				t.Fatalf("warned again on reloading the same type: %s", logs.String())
+			}
+		})
+	}
+
+	// Switching from DB-IP's database to another type warns then.
+	path := filepath.Join(t.TempDir(), "country.mmdb")
+	writeTyped(t, path, "DBIP-Country-Lite", countrytest.Networks{"203.0.113.0/24": "NZ"})
+	var logs bytes.Buffer
+	db := country.Open(path, true, slog.New(slog.NewTextHandler(&logs, nil)))
+	writeTyped(t, path, "GeoLite2-Country", countrytest.Networks{"203.0.113.0/24": "NZ"})
+	bump(t, path)
+	db.Check()
+	if got := strings.Count(logs.String(), warning); got != 1 || !strings.Contains(logs.String(), "level=WARN") || !strings.Contains(logs.String(), "type=GeoLite2-Country") {
+		t.Fatalf("switch to GeoLite2 logged %q, want one warning", logs.String())
+	}
+	if strings.Contains(logs.String(), "203.0.113") {
+		t.Fatalf("logs hold an IP: %s", logs.String())
+	}
+}
+
+func writeTyped(t *testing.T, path, typ string, n countrytest.Networks) {
+	t.Helper()
+	if err := os.WriteFile(path, countrytest.BuildTyped(typ, n), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

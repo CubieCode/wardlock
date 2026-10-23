@@ -80,38 +80,57 @@ func TestAnalyticsCountries(t *testing.T) {
 	}
 }
 
-// TestAccessLogCountry checks an entry's country is listed when it has
-// one, unknown included, and left out otherwise.
+// TestAccessLogCountry checks site and link access logs list an entry's
+// country, unknown included, while the lookup is on, and leave every
+// country out while it is off, even for entries recorded with one.
 func TestAccessLogCountry(t *testing.T) {
 	hs := newHarness(t, deploys.DefaultLimits())
 	docs := hs.createSite(hs.ownerA, "docs")
+	link := hs.createLink(hs.ownerA, "docs", map[string]any{}).ShareLink.PublicId
 	base := time.Now().Add(-time.Hour).UTC()
 	var entries []store.AccessEntry
 	for i, c := range []string{"NZ", store.CountryUnknown, ""} {
-		e := logEntry(base, time.Duration(i)*time.Second, docs.Id, store.ViaPublic, "", "/", http.StatusOK)
+		e := logEntry(base, time.Duration(i)*time.Second, docs.Id, store.ViaLink, link, "/", http.StatusOK)
 		e.Country = c
 		entries = append(entries, e)
 	}
 	if err := hs.db.AccessLog().Append(t.Context(), entries); err != nil {
 		t.Fatal(err)
 	}
-	res := hs.do(hs.ownerA, http.MethodGet, "/sites/docs/access-log", nil)
-	res.want(t, http.StatusOK, "")
-	var page api.AccessLogPage
-	res.decode(t, &page)
-	var got []string
-	for _, e := range page.Items {
-		if e.Country == nil {
-			got = append(got, "-")
+	for _, tc := range []struct {
+		name   string
+		on     bool
+		want   string
+		fields int
+	}{
+		// Newest first.
+		{"on", true, "[- unknown NZ]", 2},
+		{"off", false, "[- - -]", 0},
+	} {
+		if tc.on {
+			hs.srv.Countries = &api.CountryLookupConfig{Attribution: "IP Geolocation by DB-IP (https://db-ip.com)"}
 		} else {
-			got = append(got, *e.Country)
+			hs.srv.Countries = nil
 		}
-	}
-	// Newest first.
-	if fmt.Sprint(got) != "[- unknown NZ]" {
-		t.Fatalf("countries = %v, want [- unknown NZ]", got)
-	}
-	if n := strings.Count(string(res.body), `"country"`); n != 2 {
-		t.Fatalf("body has %d country fields, want 2: %s", n, res.body)
+		for _, path := range []string{"/sites/docs/access-log", "/sites/docs/links/" + link + "/access-log"} {
+			res := hs.do(hs.ownerA, http.MethodGet, path, nil)
+			res.want(t, http.StatusOK, "")
+			var page api.AccessLogPage
+			res.decode(t, &page)
+			var got []string
+			for _, e := range page.Items {
+				if e.Country == nil {
+					got = append(got, "-")
+				} else {
+					got = append(got, *e.Country)
+				}
+			}
+			if fmt.Sprint(got) != tc.want {
+				t.Fatalf("%s %s: countries = %v, want %s", tc.name, path, got, tc.want)
+			}
+			if n := strings.Count(string(res.body), `"country"`); n != tc.fields {
+				t.Fatalf("%s %s: body has %d country fields, want %d: %s", tc.name, path, n, tc.fields, res.body)
+			}
+		}
 	}
 }

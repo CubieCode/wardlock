@@ -67,7 +67,7 @@ func startCountries(ctx context.Context, cfg platform.Config, log *slog.Logger) 
 	if cfg.Country.DB == "" {
 		return nil
 	}
-	db := country.Open(cfg.Country.DB, log)
+	db := country.Open(cfg.Country.DB, cfg.Country.Attribution == platform.DefaultCountryAttribution, log)
 	go db.Watch(ctx, country.DefaultCheckInterval)
 	return db
 }

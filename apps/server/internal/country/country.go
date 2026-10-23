@@ -21,6 +21,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,8 +43,9 @@ const (
 // DB looks countries up in the database at its path. Lookups are safe
 // from any goroutine and never touch the file.
 type DB struct {
-	path string
-	log  *slog.Logger
+	path        string
+	creditsDBIP bool
+	log         *slog.Logger
 
 	reader atomic.Pointer[maxminddb.Reader]
 
@@ -52,16 +54,22 @@ type DB struct {
 	mu     sync.Mutex
 	stamp  os.FileInfo
 	failed bool
+	// loadedType is the database type last loaded, so a credit warning
+	// is logged once per type rather than on every reload.
+	loadedType string
 }
 
 // Open loads the database at path. A missing or bad file is not an error:
 // it logs a warning and the DB looks nothing up until Check finds a good
-// file there.
-func Open(path string, log *slog.Logger) *DB {
+// file there. creditsDBIP says the dashboard credits DB-IP (the operator
+// set no attribution of their own); a loaded database whose type does not
+// look like DB-IP's, such as GeoLite2's, then logs a warning, so the
+// operator can set the credit its licence requires.
+func Open(path string, creditsDBIP bool, log *slog.Logger) *DB {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	d := &DB{path: path, log: log}
+	d := &DB{path: path, creditsDBIP: creditsDBIP, log: log}
 	d.Check()
 	return d
 }
@@ -158,10 +166,23 @@ func (d *DB) Check() {
 	}
 	d.reader.Store(r)
 	d.failed = false
+	typ := r.Metadata.DatabaseType
 	d.log.Info("country database loaded",
 		slog.String("path", d.path),
-		slog.String("type", r.Metadata.DatabaseType),
+		slog.String("type", typ),
 		slog.Time("built", r.Metadata.BuildTime().UTC()))
+	if d.creditsDBIP && !IsDBIP(typ) && typ != d.loadedType {
+		d.log.Warn("country database does not look like DB-IP's but the dashboard credits DB-IP; set WARDLOCK_COUNTRY_DB_ATTRIBUTION to the credit its licence requires",
+			slog.String("path", d.path), slog.String("type", typ))
+	}
+	d.loadedType = typ
+}
+
+// IsDBIP reports whether a database type (its metadata's database_type,
+// such as DBIP-Country-Lite) names DB-IP.
+func IsDBIP(databaseType string) bool {
+	t := strings.ToLower(databaseType)
+	return strings.Contains(t, "dbip") || strings.Contains(t, "db-ip")
 }
 
 // fail stops lookups and warns. Serving carries on; entries are logged

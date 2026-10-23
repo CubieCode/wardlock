@@ -406,7 +406,7 @@ func (e SiteView) Valid() bool {
 
 // AccessLogEntry defines model for AccessLogEntry.
 type AccessLogEntry struct {
-	// Country The country the server's country database places the stored (truncated) IP in, or `unknown` when it has none. Absent when the operator has not turned the lookup on, its database could not be read, or no IP was stored.
+	// Country The country the server's country database places the stored (truncated) IP in, or `unknown` when it has none. Absent when its database could not be read or no IP was stored, and from every entry while the operator has the lookup off, even entries recorded while it was on.
 	//
 	// Examples: NZ
 	Country *RequestCountry `json:"country,omitempty"`
@@ -478,7 +478,7 @@ type Analytics struct {
 	// Browsers Requests by browser family, each family with requests, by name.
 	Browsers []AnalyticsBrowser `json:"browsers"`
 
-	// Countries Requests by country, each country with requests, busiest first, `unknown` among them. Present only while the country lookup is on (with `countryLookup`). Requests logged while it was off have no country, so these can add up to less than the total.
+	// Countries Requests by country, each country with requests, busiest first, `unknown` among them. Every such country is listed, not a top few. Present only while the country lookup is on (with `countryLookup`). Requests logged while it was off have no country, so these can add up to less than the total.
 	Countries *[]AnalyticsCountry `json:"countries,omitempty"`
 
 	// CountryLookup The operator's country lookup, present only while it is on.

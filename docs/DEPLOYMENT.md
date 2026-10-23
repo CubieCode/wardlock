@@ -764,6 +764,8 @@ mv /var/lib/wardlock/dbip-country-lite.mmdb.new /var/lib/wardlock/dbip-country-l
 | `WARDLOCK_COUNTRY_DB_ATTRIBUTION` | DB-IP's credit | the credit the dashboard shows beside countries, one line of at most 300 bytes; https URLs show as links |
 | `WARDLOCK_SERVER_COUNTRY`         | (unset)        | ISO 3166-1 alpha-2 code of the country to draw the server in on the dashboard's map, such as `NZ`        |
 
+Leave `WARDLOCK_COUNTRY_DB_ATTRIBUTION` unset only for DB-IP's data. While it is unset, a loaded file whose type (`database_type` in its metadata, such as `GeoLite2-Country`) does not name DB-IP logs `country database does not look like DB-IP's but the dashboard credits DB-IP` with the type, once per type, so another database's data is not credited to DB-IP; set the credit its licence requires (see Licences and attribution below).
+
 <details>
 <summary>Downloading and updating</summary>
 
@@ -781,7 +783,7 @@ mv /var/lib/wardlock/dbip-country-lite.mmdb.new /var/lib/wardlock/dbip-country-l
 
 - **DB-IP IP to Country Lite** (the default). Licensed under [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/): free to use, including commercially, "provided you give attribution to DB-IP.com", and web applications "must include a link back to DB-IP.com on pages that display or use results from the database" ([DB-IP's download page](https://db-ip.com/db/download/ip-to-country-lite)). CC BY 4.0 section 3(a) also asks for a notice naming the licence with a link to it ([legal code](https://creativecommons.org/licenses/by/4.0/legalcode.en)). Wardlock's default credit covers both: `IP Geolocation by DB-IP (https://db-ip.com), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)`, shown beside every country breakdown in the dashboard. Leave `WARDLOCK_COUNTRY_DB_ATTRIBUTION` unset when you use DB-IP.
 - **MaxMind GeoLite2 Country** (an alternative with the same layout). Not CC-licensed: the [GeoLite End User License Agreement](https://www.maxmind.com/en/geolite2/eula) governs it. It needs a free MaxMind account and licence key to download (at most 30 downloads a day), grants use for "your own internal business purposes", forbids sharing the data with third parties without MaxMind's consent and using it to identify a specific household, individual or street address, and requires you to use updates promptly and destroy old versions within 30 days of a new release ([GeoLite2 developer page](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data/)). Its required notice is `This product includes GeoLite Data created by MaxMind, available from https://www.maxmind.com.`; set exactly that as `WARDLOCK_COUNTRY_DB_ATTRIBUTION`. Check that your use fits the EULA, especially on a public instance whose owners see the results.
-- **Others.** Any MMDB with a `country.iso_code` field works. Set `WARDLOCK_COUNTRY_DB_ATTRIBUTION` to whatever its licence requires; Wardlock cannot check it for you.
+- **Others.** Any MMDB with a `country.iso_code` field works. Set `WARDLOCK_COUNTRY_DB_ATTRIBUTION` to whatever its licence requires; Wardlock cannot check it for you beyond warning when the credit is DB-IP's and the file's type does not name DB-IP.
 - **Keep the file out of repositories.** It is data you downloaded under its own licence, and a GeoLite2 file may not be shared at all; Wardlock's own tests use small synthetic databases instead.
 
 </details>

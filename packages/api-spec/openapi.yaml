@@ -2589,9 +2589,9 @@ paths:
         the viewer's timezone, and in total by way in, site, group, tag,
         browser family, the busiest share links and the busiest paths, and,
         when the operator has turned on the country lookup, by country with
-        the credit the country database's licence requires. Every count is of requests, split into `allowed` (answered with a
-        status below 400) and `refused` (400 and above); none is a count
-        of visitors. The range is the `days` × 24 whole UTC hours ending
+        the credit the country database's licence requires. Every count
+        is of requests, split into `allowed` (answered with a status below
+        400) and `refused` (400 and above); none is a count of visitors. The range is the `days` × 24 whole UTC hours ending
         with the current one. Give at most one of `site`, `group` and
         `tag` to narrow it; groups and tags are read as they are now, so
         a site's history moves with it. Giving more than one answers
@@ -4615,8 +4615,9 @@ components:
           description: >-
             The country the server's country database places the stored
             (truncated) IP in, or `unknown` when it has none. Absent when
-            the operator has not turned the lookup on, its database could
-            not be read, or no IP was stored.
+            its database could not be read or no IP was stored, and from
+            every entry while the operator has the lookup off, even
+            entries recorded while it was on.
           $ref: '#/components/schemas/RequestCountry'
     RequestCountry:
       type: string
@@ -4768,10 +4769,10 @@ components:
             $ref: '#/components/schemas/AnalyticsBrowser'
         countries:
           type: array
-          maxItems: 300
           description: >-
             Requests by country, each country with requests, busiest first,
-            `unknown` among them. Present only while the country lookup is
+            `unknown` among them. Every such country is listed, not a top
+            few. Present only while the country lookup is
             on (with `countryLookup`). Requests logged while it was off have
             no country, so these can add up to less than the total.
           items:

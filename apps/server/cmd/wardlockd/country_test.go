@@ -4,11 +4,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,5 +103,22 @@ func TestCountryWiring(t *testing.T) {
 	}
 	if c := countryLookup(cfg); c == nil || c.Attribution != platform.DefaultCountryAttribution || c.ServerCountry != "NZ" {
 		t.Fatalf("countryLookup() = %+v", c)
+	}
+
+	// The synthetic file is not DB-IP's: the default credit warns, the
+	// operator's own does not.
+	for _, tc := range []struct {
+		attribution string
+		warn        bool
+	}{
+		{platform.DefaultCountryAttribution, true},
+		{"This product includes GeoLite Data created by MaxMind, available from https://www.maxmind.com.", false},
+	} {
+		var logs bytes.Buffer
+		cfg.Country.Attribution = tc.attribution
+		startCountries(t.Context(), cfg, slog.New(slog.NewTextHandler(&logs, nil)))
+		if got := strings.Contains(logs.String(), "WARDLOCK_COUNTRY_DB_ATTRIBUTION"); got != tc.warn {
+			t.Fatalf("attribution %q: warned %v, want %v: %s", tc.attribution, got, tc.warn, logs.String())
+		}
 	}
 }

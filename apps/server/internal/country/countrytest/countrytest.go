@@ -25,9 +25,19 @@ import (
 // assigned to a region.
 type Networks map[string]string
 
-// Build returns an IPv6 database (ip_version 6) holding networks.
-// Prefixes must not overlap. It panics on a bad prefix: it is test code.
+// Type is the database_type Build writes.
+const Type = "Wardlock-Test-Country"
+
+// Build returns an IPv6 database (ip_version 6) of type Type holding
+// networks. Prefixes must not overlap. It panics on a bad prefix: it is
+// test code.
 func Build(networks Networks) []byte {
+	return BuildTyped(Type, networks)
+}
+
+// BuildTyped is Build with the given database_type, such as
+// DBIP-Country-Lite or GeoLite2-Country.
+func BuildTyped(databaseType string, networks Networks) []byte {
 	t := &tree{nodes: []node{{empty, empty}}}
 	var records [][]byte
 	for _, p := range slices.Sorted(maps.Keys(networks)) {
@@ -75,7 +85,7 @@ func Build(networks Networks) []byte {
 		"binary_format_major_version", uintv(5, 2),
 		"binary_format_minor_version", uintv(5, 0),
 		"build_epoch", uintv(9, 1_790_000_000),
-		"database_type", str("Wardlock-Test-Country"),
+		"database_type", str(databaseType),
 		"description", mapOf("en", str("Synthetic test data")),
 		"ip_version", uintv(5, 6),
 		"languages", array(str("en")),

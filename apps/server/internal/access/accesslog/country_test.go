@@ -35,7 +35,7 @@ func openCountries(t *testing.T, log *slog.Logger) *country.DB {
 	if err := countrytest.Write(path, testNetworks); err != nil {
 		t.Fatal(err)
 	}
-	db := country.Open(path, log)
+	db := country.Open(path, false, log)
 	if !db.Loaded() {
 		t.Fatal("synthetic country database did not load")
 	}
