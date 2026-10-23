@@ -8,7 +8,8 @@ import { App } from './app.js';
 import { api } from './api.js';
 import { applyTheme, readTheme } from './shell/theme.js';
 
-// Before the first paint, so a forced theme never flashes the other one.
+// public/theme.js has already done this before the first paint; this covers
+// a page where that script did not run.
 applyTheme(readTheme());
 
 createRoot(document.getElementById('root')!).render(

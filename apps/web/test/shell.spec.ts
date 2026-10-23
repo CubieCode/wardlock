@@ -53,19 +53,15 @@ for (const scheme of schemes) {
       ).toHaveCount(0);
     });
 
-    await test.step('the navigator shows All sites with its count', async () => {
+    await test.step('the navigator shows All sites with its count, on wide screens', async () => {
       if (mobile) {
+        // Until the navigator has filters, the Sites tab is All sites and
+        // Jump to finds the rest: no navigator, Browse sites or drawer.
         await expect(page.getByRole('complementary')).toHaveCount(0);
+        await expect(
+          page.getByRole('button', { name: 'Browse sites' }),
+        ).toHaveCount(0);
         await shot('bottom-bar');
-        const browse = page.getByRole('button', { name: 'Browse sites' });
-        await browse.click();
-        const drawer = page.getByRole('dialog', { name: 'Browse sites' });
-        const all = drawer.getByRole('link', { name: /^All sites \d+$/ });
-        await expect(all).toHaveAttribute('aria-current', 'page');
-        await shot('drawer');
-        await page.keyboard.press('Escape');
-        await expect(drawer).toHaveCount(0);
-        await expect(browse).toBeFocused();
       } else {
         const navigator = page.getByRole('complementary', {
           name: 'Sites navigator',
@@ -118,6 +114,12 @@ for (const scheme of schemes) {
       await menu.getByRole('radio', { name: other }).check();
       await expect(html).toHaveAttribute('data-theme', other.toLowerCase());
       await shot('theme');
+
+      // public/theme.js applies it before the app's own script runs.
+      await page.route('**/assets/*.js', (route) => route.abort());
+      await page.reload();
+      await expect(html).toHaveAttribute('data-theme', other.toLowerCase());
+      await page.unroute('**/assets/*.js');
 
       await page.reload();
       await expect(html).toHaveAttribute('data-theme', other.toLowerCase());

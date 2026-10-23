@@ -13,9 +13,12 @@ import {
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app.js';
+import { SessionProvider } from '../auth/session.js';
 import { JumpTo } from './jump-to.js';
 import { SitesNavigator, type NavigatorState } from './navigator.js';
-import { readTheme, themeStorageKey } from './theme.js';
+import { shellRoutes } from './routes.js';
+import { Shell } from './shell.js';
+import { readTheme, setTheme, themeStorageKey } from './theme.js';
 
 type SiteSummary = components['schemas']['SiteSummary'];
 type SiteCounts = components['schemas']['SiteCounts'];
@@ -134,9 +137,17 @@ function narrow(matches: boolean) {
   })) as unknown as typeof window.matchMedia;
 }
 
+/** Pretends to be on a Mac. */
+function apple() {
+  vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+  );
+}
+
 beforeEach(() => {
   at('/');
   window.localStorage.clear();
+  setTheme('system'); // Forgets a choice storage refused in an earlier test.
   delete document.documentElement.dataset.theme;
   // jsdom has no matchMedia: the shell is wide.
   // @ts-expect-error -- removed per test
@@ -315,10 +326,15 @@ describe('sites navigator', () => {
 });
 
 describe('jump to', () => {
-  it('opens on Ctrl+K and ⌘K, searches sites on the server and goes to the choice', async () => {
+  it('opens on Ctrl+K, searches sites on the server and goes to the choice', async () => {
     const server = fakeServer();
     render(<App api={server.api} />);
     await screen.findByRole('heading', { level: 1, name: 'Overview' });
+    expect(
+      screen
+        .getByRole('button', { name: 'Jump to' })
+        .getAttribute('aria-keyshortcuts'),
+    ).toBe('Control+K');
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true });
     const input = screen.getByRole('combobox', { name: 'Jump to' });
@@ -341,10 +357,75 @@ describe('jump to', () => {
     await waitFor(() => expect(window.location.pathname).toBe('/sites/drafts'));
     expect(screen.queryByRole('combobox')).toBeNull();
 
-    fireEvent.keyDown(document, { key: 'K', metaKey: true });
+    fireEvent.keyDown(document, { key: 'K', ctrlKey: true });
+    expect(screen.getByRole('combobox', { name: 'Jump to' })).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true });
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('takes only the platform’s shortcut, once per press', async () => {
+    render(<App api={fakeServer().api} />);
+    await screen.findByRole('heading', { level: 1, name: 'Overview' });
+    for (const ignored of [
+      { metaKey: true },
+      { ctrlKey: true, metaKey: true },
+      { ctrlKey: true, shiftKey: true },
+      { ctrlKey: true, repeat: true },
+      { ctrlKey: true, isComposing: true },
+    ]) {
+      fireEvent.keyDown(document, { key: 'k', ...ignored });
+      expect(screen.queryByRole('combobox')).toBeNull();
+    }
+  });
+
+  it('opens on ⌘K, not Ctrl+K, on Apple platforms', async () => {
+    apple();
+    render(<App api={fakeServer().api} />);
+    await screen.findByRole('heading', { level: 1, name: 'Overview' });
+    const jump = screen.getByRole('button', { name: 'Jump to' });
+    expect(jump.getAttribute('aria-keyshortcuts')).toBe('Meta+K');
+    expect(jump.textContent).toContain('⌘K');
+
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true });
+    expect(screen.queryByRole('combobox')).toBeNull();
+    fireEvent.keyDown(document, { key: 'k', metaKey: true, repeat: true });
+    expect(screen.queryByRole('combobox')).toBeNull();
+    fireEvent.keyDown(document, { key: 'k', metaKey: true });
     expect(screen.getByRole('combobox', { name: 'Jump to' })).toBeTruthy();
     fireEvent.keyDown(document, { key: 'k', metaKey: true });
     expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('keeps Enter on the highlighted page when sites arrive above it', async () => {
+    let answer: (response: Response) => void = () => {};
+    const server = fakeServer({
+      'GET /api/v0/site-summaries': (request) =>
+        new URL(request.url).searchParams.get('q')
+          ? new Promise((resolve) => (answer = resolve))
+          : Response.json({ items: [] }),
+    });
+    render(<App api={server.api} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Jump to' }));
+    const input = screen.getByRole('combobox', { name: 'Jump to' });
+    await screen.findByRole('option', { name: 'Overview' });
+    fireEvent.change(input, { target: { value: 'pass' } });
+    const passkeys = screen.getByRole('option', { name: 'Passkeys' });
+    expect(passkeys.getAttribute('aria-selected')).toBe('true');
+
+    await waitFor(() =>
+      expect(
+        server.calls.some((url) => url.searchParams.get('q') === 'pass'),
+      ).toBe(true),
+    );
+    answer(Response.json({ items: [summary('passport')] }));
+    await screen.findByRole('option', { name: /passport/ });
+    expect(
+      screen
+        .getByRole('option', { name: 'Passkeys' })
+        .getAttribute('aria-selected'),
+    ).toBe('true');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(window.location.pathname).toBe('/passkeys'));
   });
 
   it('moves with the arrows, closes on Escape and returns focus to the opener', async () => {
@@ -448,6 +529,21 @@ describe('theme', () => {
     expect(window.localStorage.getItem(themeStorageKey)).toBeNull();
   });
 
+  it('reports the applied choice when storage refuses to keep it', async () => {
+    window.localStorage.setItem(themeStorageKey, 'dark');
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('full');
+    });
+    render(<App api={fakeServer().api} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Account' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Light' }));
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(readTheme()).toBe('light');
+    expect(
+      screen.getByRole<HTMLInputElement>('radio', { name: 'Light' }).checked,
+    ).toBe(true);
+  });
+
   it('falls back to System when storage cannot be read, and still applies a choice', async () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('blocked');
@@ -472,10 +568,11 @@ describe('theme', () => {
 });
 
 describe('below 48rem', () => {
-  it('puts the places in a bottom bar and the navigator in a drawer', async () => {
+  it('puts the places in a bottom bar and leaves out the navigator', async () => {
     narrow(true);
     at('/sites');
-    render(<App api={fakeServer().api} />);
+    const server = fakeServer();
+    render(<App api={server.api} />);
     const bar = await screen.findByRole('navigation', { name: 'Main' });
     expect(
       within(bar)
@@ -484,14 +581,42 @@ describe('below 48rem', () => {
     ).toEqual(['Overview', 'Sites', 'Passkeys']);
     expect(within(bar).getByRole('button', { name: 'Jump to' })).toBeTruthy();
     expect(within(bar).getByRole('button', { name: 'Account' })).toBeTruthy();
+    await screen.findByRole('heading', { level: 1, name: 'Sites' });
+    // Until it has filters, All sites is just the Sites tab.
     expect(screen.queryByRole('complementary')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Browse sites' })).toBeNull();
+    expect(
+      server.calls.some((url) => url.pathname === '/api/v0/site-counts'),
+    ).toBe(false);
+  });
 
+  it('with filters, opens the navigator in a drawer', async () => {
+    narrow(true);
+    at('/sites');
+    const { api } = fakeServer();
+    render(
+      <SessionProvider api={api}>
+        <Shell
+          api={api}
+          me={me as never}
+          pathname="/sites"
+          route={shellRoutes.find((route) => route.path === '/sites')}
+          filters
+        >
+          <h1>Sites</h1>
+        </Shell>
+      </SessionProvider>,
+    );
+    expect(screen.queryByRole('complementary')).toBeNull();
     const browse = screen.getByRole('button', { name: 'Browse sites' });
     browse.focus();
     fireEvent.click(browse);
     const drawer = screen.getByRole('dialog', { name: 'Browse sites' });
     expect(
       await within(drawer).findByRole('link', { name: 'All sites 12' }),
+    ).toBeTruthy();
+    expect(
+      within(drawer).getByRole('link', { name: 'Client work 9' }),
     ).toBeTruthy();
     fireEvent.click(within(drawer).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).toBeNull();

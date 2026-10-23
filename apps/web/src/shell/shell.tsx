@@ -23,6 +23,9 @@ import { AccountMenu } from './account-menu.js';
 import { filterIcon, searchIcon } from './icons.js';
 import { JumpTo } from './jump-to.js';
 import {
+  isJumpShortcut,
+  navigatorFilters,
+  shortcutKeys,
   shortcutLabel,
   SitesNavigator,
   useNavigatorData,
@@ -35,7 +38,9 @@ import './shell.css';
 /**
  * The signed-in frame: the rail (a bottom bar below 48rem) with each built
  * screen, Jump to and the account menu; the sites navigator beside the sites
- * pages (a drawer below 48rem); and the jump-to palette on ⌘K or Ctrl+K.
+ * list; and the jump-to palette on ⌘K (Apple) or Ctrl+K. Below 48rem the
+ * navigator opens in a drawer, but only once it has filters to offer: until
+ * then All sites is just the Sites tab, and Jump to finds the rest.
  */
 export function Shell({
   api,
@@ -43,6 +48,7 @@ export function Shell({
   pathname,
   route,
   children,
+  filters = navigatorFilters,
 }: {
   api: ApiClient;
   me: Me;
@@ -50,22 +56,24 @@ export function Shell({
   /** The screen shown; undefined for a page that is not found. */
   route: ShellRoute | undefined;
   children: ReactNode;
+  /** Whether the sites list honours the navigator's filters (V5.8). */
+  filters?: boolean;
 }) {
   const wide = useWide();
   const [jumping, setJumping] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const withNavigator = Boolean(route?.navigator);
-  const navigator = useNavigatorData(api, withNavigator);
+  const withDrawer = withNavigator && filters && !wide;
+  // Narrow screens show the navigator only in the drawer.
+  const navigator = useNavigatorData(
+    api,
+    withNavigator && (wide || filters),
+    filters,
+  );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (
-        event.key.toLowerCase() !== 'k' ||
-        !(event.metaKey || event.ctrlKey) ||
-        event.altKey ||
-        event.shiftKey
-      )
-        return;
+      if (!isJumpShortcut(event)) return;
       // Leave another open dialog (a confirmation) in charge.
       if (document.querySelector('dialog[open]:not(.wl-palette)')) return;
       event.preventDefault();
@@ -92,7 +100,7 @@ export function Shell({
       icon={searchIcon}
       label="Jump to"
       shortcut={shortcutLabel()}
-      aria-keyshortcuts="Meta+K Control+K"
+      aria-keyshortcuts={shortcutKeys()}
       onClick={openJump}
     />
   );
@@ -100,6 +108,7 @@ export function Shell({
     <SitesNavigator
       state={navigator.state}
       onRetry={navigator.retry}
+      filters={filters}
       onJump={() => {
         setDrawer(false);
         openJump();
@@ -142,7 +151,7 @@ export function Shell({
                 <Mark />
                 Wardlock
               </a>
-              {withNavigator ? (
+              {withDrawer ? (
                 <button
                   type="button"
                   className="shell-browse"
@@ -163,7 +172,7 @@ export function Shell({
       >
         {children}
       </RailLayout>
-      {withNavigator && !wide ? (
+      {withDrawer ? (
         <Drawer
           open={drawer}
           onClose={() => setDrawer(false)}
@@ -172,7 +181,9 @@ export function Shell({
           {navigatorContent}
         </Drawer>
       ) : null}
-      {jumping ? <JumpTo api={api} onClose={() => setJumping(false)} /> : null}
+      {jumping ? (
+        <JumpTo api={api} filters={filters} onClose={() => setJumping(false)} />
+      ) : null}
     </>
   );
 }

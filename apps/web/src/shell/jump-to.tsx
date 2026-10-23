@@ -127,8 +127,14 @@ export function JumpTo({
   const pending =
     sites.kind === 'loading' ||
     (sites.kind === 'ready' && sites.query !== search);
+  // Nothing until the first answer (it is not delayed), so the highlight
+  // starts on the first result rather than on a page the sites then push
+  // down: the palette keeps the highlight on its option as results change.
   const groups = useMemo(
-    () => results(search, sites, filters ? named : undefined),
+    () =>
+      sites.kind === 'loading'
+        ? []
+        : results(search, sites, filters ? named : undefined),
     [search, sites, filters, named],
   );
 

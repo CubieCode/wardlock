@@ -10,16 +10,21 @@ export type Theme = 'system' | 'light' | 'dark';
 
 export const themeStorageKey = 'wardlock-theme';
 const changeEvent = 'wardlock:theme';
-// What this page chose when storage refused it; gone on reload.
+// What this page chose when storage refused to keep it; gone on reload.
 let unstored: Theme | undefined;
 
-/** The stored theme, or System when there is none or it cannot be read. */
+/**
+ * The theme in use: this page's choice if storage refused to keep it,
+ * otherwise the stored one, or System when there is none or it cannot be
+ * read.
+ */
 export function readTheme(): Theme {
+  if (unstored) return unstored;
   try {
     const value = window.localStorage.getItem(themeStorageKey);
     return value === 'light' || value === 'dark' ? value : 'system';
   } catch {
-    return unstored ?? 'system';
+    return 'system';
   }
 }
 
@@ -38,6 +43,7 @@ export function setTheme(theme: Theme) {
   try {
     if (theme === 'system') window.localStorage.removeItem(themeStorageKey);
     else window.localStorage.setItem(themeStorageKey, theme);
+    unstored = undefined;
   } catch {
     unstored = theme; // Applied for this page only.
   }
@@ -49,6 +55,7 @@ function subscribe(onChange: () => void) {
   // Another tab changing the setting fires "storage" here.
   const onStorage = (event: StorageEvent) => {
     if (event.key !== themeStorageKey && event.key !== null) return;
+    unstored = undefined; // The other tab's choice is the stored one.
     applyTheme(readTheme());
     onChange();
   };

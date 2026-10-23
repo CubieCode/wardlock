@@ -311,7 +311,27 @@ export function tagSlot(colour: number): TagSlot {
     : 0;
 }
 
+/** Apple platforms take ⌘K for jump-to; everything else Ctrl+K. */
+function applePlatform() {
+  return /Mac|iPhone|iPad/.test(navigator.userAgent);
+}
+
 /** The jump-to shortcut as this platform writes it. */
 export function shortcutLabel() {
-  return /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘K' : 'Ctrl K';
+  return applePlatform() ? '⌘K' : 'Ctrl K';
+}
+
+/** The jump-to shortcut in `aria-keyshortcuts` form. */
+export function shortcutKeys() {
+  return applePlatform() ? 'Meta+K' : 'Control+K';
+}
+
+/** Whether a key press is this platform's jump-to shortcut, and only that. */
+export function isJumpShortcut(event: KeyboardEvent) {
+  if (event.repeat || event.isComposing || event.key.toLowerCase() !== 'k')
+    return false;
+  if (event.altKey || event.shiftKey) return false;
+  return applePlatform()
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey;
 }

@@ -1890,6 +1890,13 @@
   display: none;
 }
 
+/* A touch screen usually has no keyboard to press a shortcut on. */
+@media (pointer: coarse) {
+  .wl-rail-shortcut {
+    display: none;
+  }
+}
+
 /* A bulk bar or toast sits above the bottom bar on small screens. */
 @media (max-width: 47.99rem) {
   .wl-rail-layout .wl-bulk-bar {

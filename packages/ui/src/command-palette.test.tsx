@@ -117,6 +117,47 @@ describe('CommandPalette', () => {
     expect(input.getAttribute('aria-activedescendant')).toBe(options[0]!.id);
   });
 
+  it('keeps the highlight on its option when results arrive above it', () => {
+    const onSelect = vi.fn();
+    const page = {
+      label: 'Pages',
+      items: [{ id: 'passkeys', label: 'Passkeys' }],
+    };
+    const late = {
+      label: 'Places',
+      items: [{ id: 'passkey-docs', label: 'passkey-docs' }],
+    };
+    const palette = (groups: CommandGroup[]) => (
+      <CommandPalette
+        open
+        onClose={() => {}}
+        label="Jump to"
+        query="pass"
+        onQueryChange={() => {}}
+        groups={groups}
+        onSelect={(item) => onSelect(item.id)}
+      />
+    );
+    const { rerender } = render(palette([page]));
+    const input = screen.getByRole('combobox');
+    rerender(palette([late, page]));
+    const passkeys = screen.getByRole('option', { name: 'Passkeys' });
+    expect(passkeys.getAttribute('aria-selected')).toBe('true');
+    expect(input.getAttribute('aria-activedescendant')).toBe(passkeys.id);
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledWith('passkeys');
+
+    // When the highlighted option goes, the first one takes over.
+    rerender(palette([late]));
+    expect(
+      screen
+        .getByRole('option', { name: 'passkey-docs' })
+        .getAttribute('aria-selected'),
+    ).toBe('true');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelect).toHaveBeenLastCalledWith('passkey-docs');
+  });
+
   it('says when nothing matches', () => {
     render(<Host />);
     open();

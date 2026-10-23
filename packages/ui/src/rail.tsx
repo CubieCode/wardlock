@@ -184,7 +184,7 @@ export function RailButton({
 }
 
 /**
- * A panel that slides in from the start edge over the page, for content that
+ * A panel that slides in from the left edge over the page, for content that
  * sits beside the page on wide screens (a navigator). A native modal
  * `<dialog>`: the page behind is inert and focus stays inside; the caller
  * owns `open`. Escape, the Close button, a click on the backdrop and

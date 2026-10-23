@@ -59,6 +59,13 @@
   margin-left: auto;
 }
 
+/* A touch screen usually has no keyboard to press the shortcut on. */
+@media (pointer: coarse) {
+  .shell-jump .wl-kbd {
+    display: none;
+  }
+}
+
 .shell-nav-row {
   gap: var(--space-2);
   padding: 0 var(--space-2);
