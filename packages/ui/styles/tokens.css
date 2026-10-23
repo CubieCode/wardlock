@@ -2,55 +2,93 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 
 /*
- * Wardlock design tokens. Components and the dashboard use the semantic
- * layer (--color-*, --text-*, --space-*, ...). Colour literals belong only
- * in this file (packages/ui/src/tokens.test.ts enforces it).
+ * Wardlock design tokens (Constellation). Components and the dashboard use
+ * the semantic layer (--color-*, --text-*, --space-*, ...). Colour literals
+ * belong only in this file (packages/ui/src/tokens.test.ts enforces it).
  *
- * Themes: every colour role is light-dark(<light>, <dark>). The page follows
- * the system preference; data-theme="light" or "dark" on <html> forces one.
+ * Themes: every colour role is light-dark(<light>, <dark>). Dark is the
+ * reference look and light has equal standing. The page follows the system
+ * preference; data-theme="light" or "dark" on <html> forces one.
  */
 :root {
   color-scheme: light dark;
 
-  /* Surfaces */
-  --color-canvas: light-dark(#f6f6f3, #12171d);
-  --color-surface: light-dark(#ffffff, #1a2028);
-  --color-surface-muted: light-dark(#eeeeea, #222a33);
+  /* Canvas: the page, drawn with a faint dot grid */
+  --color-canvas: light-dark(#eef0f6, #0b0b12);
+  --color-canvas-dot: light-dark(#c9cddb, #262636);
+
+  /* Surfaces: panels, cards, the sidebar; muted for wells and hovers */
+  --color-surface: light-dark(#ffffff, #13131d);
+  --color-surface-muted: light-dark(#f5f6fa, #1a1a27);
 
   /* Text */
-  --color-text: light-dark(#1b2430, #e8ebee);
-  --color-text-muted: light-dark(#4f5a66, #a7b0ba);
-  --color-text-on-primary: light-dark(#ffffff, #0f1a1f);
+  --color-text: light-dark(#14141f, #ecebff);
+  --color-text-muted: light-dark(#585b70, #9a99b8);
+  --color-text-on-primary: light-dark(#ffffff, #0b0b12);
 
   /* Borders */
-  --color-border: light-dark(#d9dad4, #2e3742);
-  --color-border-strong: light-dark(#7d858e, #6b7682);
+  --color-border: light-dark(#d7dae6, #2a2a3d);
+  --color-border-strong: light-dark(#7a7d93, #6c6b8a);
 
-  /* Actions */
-  --color-primary: light-dark(#1f4f5c, #7fc1cf);
-  --color-primary-hover: light-dark(#183f4a, #9fd2dc);
-  --color-accent: light-dark(#a8741f, #d7a756);
+  /* Primary (violet): actions, links, the current place */
+  --color-primary: light-dark(#5b3fe0, #a18cff);
+  --color-primary-hover: light-dark(#4a2fc4, #b9a9ff);
+  --color-primary-soft: light-dark(#ece8ff, #221d44);
+  /* Drawn as a soft halo at partial opacity, never as a fill */
+  --color-primary-glow: light-dark(#5b3fe0, #8b6cff);
+
+  /* The ward (brass): marks protection. Coral marks public. */
+  --color-ward: light-dark(#7f5c0f, #f0c46e);
+  --color-ward-surface: light-dark(#fbf0d9, #2b2312);
+  --color-ward-border: light-dark(#d9bd7f, #5c4b22);
+  --color-public: light-dark(#b23a1f, #ff9c80);
+  --color-public-surface: light-dark(#fde6df, #3a1f1a);
+  --color-public-border: light-dark(#eba895, #6e3a2e);
+
   --color-focus: light-dark(#2f6fb0, #8fbfff);
 
   /* Behind a modal dialog; drawn at partial opacity */
-  --color-backdrop: light-dark(#1b2430, #05080b);
+  --color-backdrop: light-dark(#14141f, #030306);
 
-  /* Status: text, surface and border are used together */
-  --color-success: light-dark(#1e6b3a, #8fd3a5);
-  --color-success-surface: light-dark(#e6f2ea, #16271d);
-  --color-success-border: light-dark(#9ccaa9, #2f5a3d);
-  --color-warning: light-dark(#7d5200, #e8c06d);
-  --color-warning-surface: light-dark(#fbf1dc, #2a2213);
-  --color-warning-border: light-dark(#e2c27c, #5e4a1d);
-  --color-danger: light-dark(#a3302a, #f0a39c);
-  --color-danger-surface: light-dark(#fbe9e7, #2d1816);
-  --color-danger-border: light-dark(#e6a29c, #6a2f2a);
+  /* Status: text, surface and border are used together, always with a word */
+  --color-success: light-dark(#1b6b3e, #7fe0a6);
+  --color-success-surface: light-dark(#dff3e6, #12291c);
+  --color-success-border: light-dark(#94c9a7, #2f5a3d);
+  --color-warning: light-dark(#8a4b00, #f5ad66);
+  --color-warning-surface: light-dark(#fdeedb, #2f2010);
+  --color-warning-border: light-dark(#e7b47a, #634421);
+  --color-danger: light-dark(#a3283f, #ff9aac);
+  --color-danger-surface: light-dark(#fbe7eb, #2f1520);
+  --color-danger-border: light-dark(#e79cab, #6c2c3c);
+  --color-neutral: light-dark(#585b70, #a3a2c0);
+  --color-neutral-surface: light-dark(#e8e9f0, #1f1f2c);
+  --color-neutral-border: light-dark(#c3c5d3, #3a3a52);
+
+  /*
+   * Tag slots: 0 is neutral, 1-8 are the categorical order (blue, orange,
+   * aqua, yellow, magenta, green, violet, red) validated by the dataviz
+   * palette checks in both themes. A tag colour is always beside its name.
+   */
+  --color-tag-0: light-dark(#6f7288, #7d7d99);
+  --color-tag-1: light-dark(#2a78d6, #3987e5);
+  --color-tag-2: light-dark(#e25f2a, #d95926);
+  --color-tag-3: light-dark(#16946a, #199e70);
+  --color-tag-4: light-dark(#b07800, #c98500);
+  --color-tag-5: light-dark(#d5578a, #d55181);
+  --color-tag-6: light-dark(#008300, #008300);
+  --color-tag-7: light-dark(#6250d6, #9085e9);
+  --color-tag-8: light-dark(#e34948, #e66767);
+
+  /* Chart pair: requests allowed and refused */
+  --color-chart-allowed: light-dark(#6250d6, #9085e9);
+  --color-chart-refused: light-dark(#e34948, #e66767);
 
   /* Typography: system fonts, so the dashboard makes no third-party requests */
   --font-sans:
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --font-mono:
     ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Menlo, Consolas, monospace;
+  --text-xs: 0.75rem;
   --text-sm: 0.875rem;
   --text-base: 1rem;
   --text-lg: 1.125rem;
@@ -60,6 +98,7 @@
   --font-weight-medium: 500;
   --font-weight-bold: 650;
   --line-height: 1.5;
+  --letter-spacing-caps: 0.08em;
 
   /* Spacing: 4px grid */
   --space-1: 0.25rem;
@@ -71,9 +110,12 @@
   --space-12: 3rem;
 
   /* Shape and size */
-  --radius-control: 6px;
-  --radius-card: 10px;
+  --radius-control: 10px;
+  --radius-card: 16px;
   --radius-pill: 999px;
+  --dot-grid-size: 22px;
+  --glow: 0 0 22px -6px
+    color-mix(in srgb, var(--color-primary-glow) 45%, transparent);
   --focus-ring: 3px solid var(--color-focus);
   --touch-target: 44px;
   --content-width: 64rem;

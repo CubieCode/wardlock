@@ -11,7 +11,10 @@ import {
 } from 'react';
 import { cx } from './cx.js';
 
-/** The key-in-ward mark used beside the product name. Decorative. */
+/**
+ * The mark used beside the product name: a keyhole inside the ward, the
+ * brass diamond. Decorative.
+ */
 export function Mark({ size = 24 }: { size?: number }) {
   return (
     <svg
@@ -22,11 +25,13 @@ export function Mark({ size = 24 }: { size?: number }) {
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
+      strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
     >
-      <circle cx="12" cy="9" r="4" />
-      <path d="M12 13v8M12 17h3M12 20h2" />
+      <path className="wl-mark-ward" d="M12 2.5 21.5 12 12 21.5 2.5 12Z" />
+      <circle cx="12" cy="10.5" r="2" />
+      <path d="M12 12.5v3.5" />
     </svg>
   );
 }

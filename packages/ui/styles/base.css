@@ -7,9 +7,16 @@
   box-sizing: border-box;
 }
 
+/* The canvas: a faint dot grid behind every frame. */
 body {
   margin: 0;
-  background: var(--color-canvas);
+  background-color: var(--color-canvas);
+  background-image: radial-gradient(
+    circle,
+    var(--color-canvas-dot) 1px,
+    transparent 1.5px
+  );
+  background-size: var(--dot-grid-size) var(--dot-grid-size);
   color: var(--color-text);
   font-family: var(--font-sans);
   font-size: var(--text-base);
@@ -30,6 +37,11 @@ p {
 
 a {
   color: var(--color-primary);
+  text-underline-offset: 0.15em;
+}
+
+a:hover {
+  color: var(--color-primary-hover);
 }
 
 code {
