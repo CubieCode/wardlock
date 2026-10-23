@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"slices"
 
 	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/store"
@@ -178,4 +179,26 @@ func (s *Server) DeletePolicy(ctx context.Context, req DeletePolicyRequestObject
 		return DeletePolicydefaultJSONResponse(*f), nil
 	}
 	return DeletePolicy204Response{}, nil
+}
+
+// signInProviderOrder is the order listSignInProviders answers in.
+var signInProviderOrder = []SignInProviderId{SignInProviderIdGithub, SignInProviderIdGoogle, SignInProviderIdOidc}
+
+// ListSignInProviders lists the OAuth and OIDC providers the operator
+// configured, by ID and button name only: never a client ID, secret or
+// issuer.
+func (s *Server) ListSignInProviders(ctx context.Context, _ ListSignInProvidersRequestObject) (ListSignInProvidersResponseObject, error) {
+	if _, ok := OwnerID(ctx); !ok {
+		return ListSignInProvidersdefaultJSONResponse(*unauthenticated), nil
+	}
+	out := ListSignInProviders200JSONResponse{Items: []SignInProvider{}}
+	for _, p := range s.Access.SignInProviders() {
+		if id := SignInProviderId(p.ID); slices.Contains(signInProviderOrder, id) {
+			out.Items = append(out.Items, SignInProvider{Id: id, Name: p.Name})
+		}
+	}
+	slices.SortStableFunc(out.Items, func(a, b SignInProvider) int {
+		return slices.Index(signInProviderOrder, a.Id) - slices.Index(signInProviderOrder, b.Id)
+	})
+	return out, nil
 }

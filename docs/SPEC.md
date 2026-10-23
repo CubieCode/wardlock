@@ -92,6 +92,7 @@ Signed-in owners manage everything from the dashboard on the dashboard host. Onl
 - A site is created by its first deploy (the CLI creates it before uploading) or from the dashboard. Names are unique per instance; a name held by another owner's site is reported as taken (site names are public through DNS).
 - **Custom domains** (C1.9): a site can also be served at domains its owner controls; see Custom domains.
 - **Groups, tags and pins** (V5.3): owners can file sites in a group, tag them and pin them; see [Groups, tags and pins](#groups-tags-and-pins-v53).
+- **Summaries** (V5.5): one read lists the owner's sites with their policy, links and recent requests, filtered by group, tag, saved view or search; see [Site summaries](#site-summaries-v55).
 - **Teardown** deletes the site, its deploys, links, policies, custom domains and tag assignments, and frees the name. Blobs no longer referenced are removed by garbage collection (C1.8).
 - **Unavailable** (A2.13): a site the operator has taken down, or whose owner is suspended, serves only the unavailable page and keeps its deploys; the API Site object's read-only `unavailable` is `true`. See [Operator controls](#operator-controls-and-abuse-reports-a213).
 
@@ -130,6 +131,60 @@ An owner can organise their sites so that 50 or more stay easy to find. All thre
 - **Updates.** `updateGroup` and `updateTag` change only the fields sent; an empty group note removes it. Recolouring a tag frees its old slot for the next new tag.
 - **Bulk rules.** `sites` names 1–500 sites, each once; at least one change must be given. A tag cannot be both added and removed, and `groupId` cannot be sent with `ungroup`. Adding a tag a site has, or removing one it lacks, changes nothing for that site. If any named site, group or tag is missing or another owner's, or any site would pass 20 tags, nothing changes. `prior` lists the sites in the order named; undoing sends the inverse (for example, one request per distinct prior group).
 - **Teardown and takedown.** Deleting or tearing down a site deletes its tag rows; the tags stay. An owner can still organise a site the operator has taken down, since it changes nothing visitors see.
+
+</details>
+
+## Site summaries (V5.5)
+
+One owner-scoped read gives the dashboard's sites list, navigator, jump-to, map and overview what they show of each site, so no screen fetches each site's policies or links on its own. Another counts the sites in each saved view, group and tag for the navigator. Both are reads: either API token scope may call them, and a page costs the same few database queries whatever its size.
+
+Each summary has the Site object's fields and also:
+
+| Field          | What it is                                                                                                                                                     |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Default policy | The visibility (`public` or `protected`) and methods of the site's `/` policy; a site that has not stored one is public                                        |
+| Working links  | Share links that work now: not revoked, not expired and not used up                                                                                            |
+| Expiring links | Working links that expire within the next 48 hours, leaving out links whose whole lifetime is an hour or less (such as the Open site button's 10-minute links) |
+| Requests       | Requests (allowed and refused) on each of the last 7 UTC days, oldest first; the last is today so far                                                          |
+| Quiet          | No requests in the last 30 UTC days (today and the 29 days before)                                                                                             |
+| Live deploy    | The active deploy's ID, short ID (its last eight characters), message and activation time                                                                      |
+
+Days are UTC days, midnight to midnight UTC, whatever the viewer's timezone: requests come from the analytics rollup's UTC hours (see [Analytics](#analytics-v54)).
+
+**Saved views.** A site is in a view when:
+
+| View       | The site                                                                 |
+| ---------- | ------------------------------------------------------------------------ |
+| `pinned`   | Is pinned                                                                |
+| `expiring` | Has at least one expiring link (as defined above)                        |
+| `public`   | Is not taken down, and its default policy is public                      |
+| `quiet`    | Is not taken down, and had no requests in the last 30 UTC days           |
+| `untagged` | Has no tags                                                              |
+| `down`     | Is taken down by the operator (`unavailable`; owners are never told why) |
+
+**Search.** The search text is split at spaces into words, and a site must match every word, ignoring case:
+
+| Word           | Matches a site that                                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `tag:NAME`     | Has the tag named exactly NAME                                                                                                        |
+| `group:NAME`   | Is in a group whose name, with each run of spaces written as one `-`, starts with NAME (`group:client-w` finds "Client Work")         |
+| `group:none`   | Is in no group                                                                                                                        |
+| `is:public`    | Is in the `public` view                                                                                                               |
+| `is:protected` | Is not taken down, and its default policy is protected                                                                                |
+| `is:down`      | Is taken down                                                                                                                         |
+| `is:pinned`    | Is pinned                                                                                                                             |
+| Any other word | Contains it in its name, its hostname (`<name>.<base domain>`), one of its custom domains, one of its tags' names or its group's name |
+
+<details>
+<summary>API, filters, sorting, paging and counts</summary>
+
+- **Operations** (see `packages/api-spec/openapi.yaml`): `listSiteSummaries` (`GET /api/v0/site-summaries`) and `getSiteCounts` (`GET /api/v0/site-counts`), readable with a dashboard session or either API token scope. There is no CLI command for either; `wardlock list` keeps using `listSites`.
+- **Filters.** `group` (a group's ID, or `none` for the ungrouped sites), `tag` (a tag's ID), `view` (a saved view) and `q` (the search, at most 200 characters) combine: a site must match all of them. A `group` or `tag` that is missing and one that is another owner's answer the same `404 not_found`; a `tag:` or `group:` word naming nothing simply matches no site, and so does an `is:` word with any other value. A word of just `tag:`, `group:` or `is:` with nothing after the colon is free text. Search words are compared after Unicode NFC normalisation and lowercasing, as group names are.
+- **Sorting.** `sort` is `deploy` (the default: the live deploy's activation, newest first, with the sites that have nothing live last), `name`, `requests` (the sum of the 7 days, most first) or `links` (working links, most first). Every order breaks ties by name.
+- **Paging.** `limit` is 1 to 100 (default 50); `nextCursor` names the last site of the page and its place in the order, so the next page starts after it even when sites were added or removed meanwhile. A cursor belongs to the sort it was issued for: another sort's, or one the server did not issue, answers `400 invalid_request` with target `cursor`. An unknown `view` or `sort`, or a `q` longer than 200 characters, answers `400 invalid_request` with that target.
+- **Counts.** `getSiteCounts` answers how many sites `listSiteSummaries` would list for all sites, each saved view, each group (every group, in `listGroups` order, with `0` when empty), no group and each tag (every tag, in `listTags` order). Counts ignore the search, and a taken-down site counts in `all`, its group and its tags as it does in the list.
+- **Cost.** The server reads every one of the owner's sites with their policies, links, tags, custom domains and request counts in four queries, plus the owner's groups and tags, then filters, counts, sorts and pages in memory; a page of 1 or 100 costs the same.
+- **Owner isolation.** Only the signed-in owner's sites, groups and tags are read; another owner's never match a filter, a search word or a count.
 
 </details>
 
@@ -387,6 +442,7 @@ A share link is `https://<site host><path>?t=<token>`.
 ## OAuth and OIDC (A2.5)
 
 - Providers: GitHub, Google and generic OIDC, configured by the operator. A policy enabling OAuth uses the policy's shared allowlist.
+- **Listing providers** (V5.5): `listSignInProviders` (`GET /api/v0/sign-in-providers`) answers the providers the operator configured, in the order GitHub, Google, OIDC, each as its ID (`github`, `google`, `oidc`) and the name its login button shows (`GitHub`, `Google`, or `WARDLOCK_OIDC_NAME`, by default `single sign-on`), so the dashboard offers only those. It never includes a client ID, secret or issuer URL, and answers an empty list when none is configured. It is a read: a dashboard session or either API token scope may call it.
 - All provider redirects go to the central auth origin `auth.<base domain>`, because providers cannot register wildcard redirect URIs. After sign-in it hands a single-use, short-lived, site-bound code to `https://<site>/.wardlock/callback`, which the edge exchanges for a host-only site cookie. PKCE and `state` are used on every flow.
 
 <details>

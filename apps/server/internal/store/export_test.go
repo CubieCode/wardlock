@@ -5,7 +5,11 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"sync/atomic"
 	"time"
+
+	"wardlock.nz/server/internal/store/sqlcgen"
 )
 
 // Test-only access to raw SQL; production code goes through sqlc queries.
@@ -36,4 +40,32 @@ func (db *DB) SetBackupFaultForTest(fault func(tmp string) error) { db.backupFau
 func (db *DB) MigrateToForTest(ctx context.Context, upTo int64) error {
 	_, err := db.migrate(ctx, time.Now, upTo)
 	return err
+}
+
+// CountQueriesForTest makes every later sqlc query outside a transaction
+// add one to the returned counter.
+func (db *DB) CountQueriesForTest() *atomic.Int64 {
+	c := &countingDB{DBTX: db.sql, n: &atomic.Int64{}}
+	db.q = sqlcgen.New(c)
+	return c.n
+}
+
+type countingDB struct {
+	sqlcgen.DBTX
+	n *atomic.Int64
+}
+
+func (c *countingDB) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
+	c.n.Add(1)
+	return c.DBTX.ExecContext(ctx, q, args...)
+}
+
+func (c *countingDB) QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error) {
+	c.n.Add(1)
+	return c.DBTX.QueryContext(ctx, q, args...)
+}
+
+func (c *countingDB) QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row {
+	c.n.Add(1)
+	return c.DBTX.QueryRowContext(ctx, q, args...)
 }

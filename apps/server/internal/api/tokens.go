@@ -86,6 +86,11 @@ var tokenScopes = map[string][]string{
 	"OrganiseSites":       {"manage"},
 
 	"GetAnalytics": {"deploy", "manage"},
+
+	// V5.5 reads.
+	"ListSiteSummaries":   {"deploy", "manage"},
+	"GetSiteCounts":       {"deploy", "manage"},
+	"ListSignInProviders": {"deploy", "manage"},
 }
 
 var sessionOnly = map[string]bool{
