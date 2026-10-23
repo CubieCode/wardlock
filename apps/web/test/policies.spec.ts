@@ -309,12 +309,12 @@ for (const scheme of schemes) {
       const checker = card.getByRole('textbox', { name: 'Check a path' });
       await checker.fill('/docs/index.html');
       await expect(card.getByRole('status').last()).toHaveText(
-        '/docs/index.html follows the policy for /docs/: public.',
+        '/docs/index.html follows the policy for /docs/: Public.',
       );
       await shot('paths');
       await checker.fill('/docs/../index.html');
       await expect(card.getByRole('status').last()).toHaveText(
-        '/index.html follows the site default: protected (password, email code and GitHub, Google or single sign-on).',
+        '/index.html follows the site default: Protected (password, email code and GitHub, Google or single sign-on).',
       );
 
       await asVisitor(browser, page, scheme, async (v) => {

@@ -2,26 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ApiClient } from '@wardlock/apiclient-ts';
-import { CopyField, Notice, StatusTag, Ward } from '@wardlock/ui';
-import { Time, type Policy, type Site } from './format.js';
+import { CopyField, Notice, StatusTag } from '@wardlock/ui';
+import { AccessWord, Time, type Policy, type Site } from './format.js';
 import { OpenSiteButton } from './open-site.js';
 import { Organisation, type Organise } from './site-page-organise.js';
-
-/**
- * Who can open the site, as a word: the ward marks Protected, coral marks
- * Public. A taken-down site keeps its word, with Taken down beside it.
- */
-export function AccessWord({ policy }: { policy: Policy | undefined }) {
-  if (!policy) return <StatusTag>Access unknown</StatusTag>;
-  return policy.visibility === 'public' ? (
-    <StatusTag tone="public">Public</StatusTag>
-  ) : (
-    <StatusTag tone="ward">
-      <Ward size="sm" />
-      Protected
-    </StatusTag>
-  );
-}
 
 /**
  * The site page's header: access, name with its pin, address, group and

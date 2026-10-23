@@ -277,6 +277,34 @@ describe('access policies card', () => {
     ).toContain('Policies do not combine');
   });
 
+  it('names each visibility with the site page’s access word', async () => {
+    const { api } = fakeServer([
+      policy('/', { visibility: 'protected', methods: ['password'] }),
+      policy('/assets/'),
+    ]);
+    await card(api);
+    const rows = within(
+      screen.getByRole('list', { name: 'Access policies' }),
+    ).getAllByRole('listitem');
+    // The ward marks Protected and the public colour marks Public, as in the
+    // header and on the Overview.
+    const word = (row: HTMLElement, text: string) =>
+      within(row).getByText(text, { selector: '.wl-status-tag' });
+    expect(word(rows[0]!, 'Protected').className).toContain(
+      'wl-status-tag-ward',
+    );
+    expect(word(rows[0]!, 'Protected').querySelector('.wl-ward')).toBeTruthy();
+    expect(word(rows[1]!, 'Public').className).toContain(
+      'wl-status-tag-public',
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: 'Check a path' }), {
+      target: { value: '/assets/x' },
+    });
+    expect(
+      document.querySelector('.policy-check-result .wl-status-tag-public'),
+    ).toBeTruthy();
+  });
+
   it('says which policy decides a typed path', async () => {
     const { api } = fakeServer([
       policy('/', { visibility: 'protected', methods: ['password'] }),
@@ -288,20 +316,20 @@ describe('access policies card', () => {
       document.querySelector('.policy-check-result')!.textContent;
     fireEvent.change(field, { target: { value: 'assets/logo.svg' } });
     expect(result()).toBe(
-      '/assets/logo.svg follows the policy for /assets/: public.',
+      '/assets/logo.svg follows the policy for /assets/: Public.',
     );
     fireEvent.change(field, { target: { value: '/assetsx?x=1' } });
     expect(result()).toBe(
-      '/assetsx follows the site default: protected (password).',
+      '/assetsx follows the site default: Protected (password).',
     ); // Cleaned as the server cleans it, so dot segments cannot borrow
     // another folder's policy.
     fireEvent.change(field, { target: { value: '/assets/../admin/x' } });
     expect(result()).toBe(
-      '/admin/x follows the site default: protected (password).',
+      '/admin/x follows the site default: Protected (password).',
     );
     fireEvent.change(field, { target: { value: '//assets//logo.svg' } });
     expect(result()).toBe(
-      '/assets/logo.svg follows the policy for /assets/: public.',
+      '/assets/logo.svg follows the policy for /assets/: Public.',
     );
     fireEvent.change(field, { target: { value: '/x/../.Wardlock/login' } });
     expect(result()).toBe(

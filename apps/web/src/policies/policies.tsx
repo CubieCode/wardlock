@@ -4,7 +4,7 @@
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import { Button, Card, Notice, TextField } from '@wardlock/ui';
 import { useEffect, useState } from 'react';
-import { PolicyBadge, type Policy, type Site } from '../sites/format.js';
+import { AccessWord, type Policy, type Site } from '../sites/format.js';
 import { DeletePolicyDialog } from './delete.js';
 import { PolicyDialog } from './edit.js';
 import {
@@ -228,7 +228,7 @@ function PolicyRow({
         <p className="policy-row-title">
           <code>{policy.path}</code>
           {isDefault && <span>Site default</span>}
-          <PolicyBadge policy={policy} />
+          <AccessWord policy={policy} />
         </p>
         <p className="policy-row-meta">
           {isDefault
@@ -297,11 +297,8 @@ function PathCheck({ policies }: { policies: Policy[] }) {
                 the policy for <code>{policy.path}</code>
               </>
             )}
-            :{' '}
-            {policy.visibility === 'public'
-              ? 'public'
-              : `protected (${methodsText(policy)})`}
-            .
+            : <AccessWord policy={policy} />
+            {policy.visibility === 'public' ? '' : ` (${methodsText(policy)})`}.
           </>
         )}
       </p>

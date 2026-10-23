@@ -8,13 +8,13 @@ import { DomainStatus, type Domain } from '../domains/format.js';
 import { expiryText, LinkStatus, type ShareLink } from '../links/format.js';
 import { methodsText } from '../policies/format.js';
 import {
+  AccessWord,
   shortId,
   Time,
   type Deploy,
   type Policy,
   type Site,
 } from './format.js';
-import { AccessWord } from './site-page-header.js';
 import { deployFacts } from './site-page-deploys.js';
 import { siteHref } from './site-page-tabs.js';
 

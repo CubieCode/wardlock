@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { components } from '@wardlock/apiclient-ts';
-import { StatusBadge } from '@wardlock/ui';
+import { StatusBadge, StatusTag, Ward } from '@wardlock/ui';
 
 export type Site = components['schemas']['Site'];
 export type Deploy = components['schemas']['Deploy'];
@@ -95,6 +95,24 @@ function Lock() {
       <rect x="3" y="7" width="10" height="7" rx="1.5" />
       <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
     </svg>
+  );
+}
+
+/**
+ * Who can open a site or path, as a word: the ward marks Protected, coral marks
+ * Public.
+ * The site page uses it wherever it names a visibility; a taken-down site
+ * keeps its word, with Taken down beside it.
+ */
+export function AccessWord({ policy }: { policy: Policy | undefined }) {
+  if (!policy) return <StatusTag>Access unknown</StatusTag>;
+  return policy.visibility === 'public' ? (
+    <StatusTag tone="public">Public</StatusTag>
+  ) : (
+    <StatusTag tone="ward">
+      <Ward size="sm" />
+      Protected
+    </StatusTag>
   );
 }
 
