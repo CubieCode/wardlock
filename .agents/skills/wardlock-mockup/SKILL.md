@@ -51,6 +51,8 @@ pnpm --filter @wardlock/web exec playwright screenshot --full-page --viewport-si
 
 Take all four (desktop and mobile, light and dark) into a SHOTS directory beside DIR, never inside it, and look at each image. Fix overflow, clipped text, poor contrast and anything that does not match the references' intent, then check again.
 
+A full-page screenshot is as wide as the page, so a mobile image wider than 390px means the page scrolls sideways; check each image's width as well as looking at it. In a CSS grid or flex layout the usual cause is a child that will not shrink below its content (a row of tabs, a table): give the column `minmax(0, 1fr)` or the child `min-width: 0`, and let only that element scroll.
+
 ## 5. Publish
 
 Follow [wardlock-publish](../../../skills/wardlock-publish/SKILL.md) exactly, with these choices:
