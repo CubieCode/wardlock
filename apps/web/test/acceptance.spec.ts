@@ -20,10 +20,12 @@ async function check(page: Page, info: TestInfo, name: string) {
   });
 }
 
-/** Opens the small-screen menu when the sidebar is collapsed. */
-async function openMenu(page: Page) {
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (await menu.isVisible()) await menu.click();
+/** Opens the account menu from the rail, or the bottom bar below 48rem. */
+async function openAccount(page: Page) {
+  await page
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('button', { name: 'Account' })
+    .click();
 }
 
 async function signInWithCode(
@@ -89,24 +91,22 @@ for (const scheme of schemes) {
       expect(page.url()).toBe(`${origin}/`);
       await expect(page.getByText('Connected', { exact: true })).toBeVisible();
       await shot('overview');
-      await openMenu(page);
+      const main = page.getByRole('navigation', { name: 'Main' });
       await expect(
-        page.getByRole('navigation', { name: 'Main' }).getByRole('link'),
+        main.getByRole('link', { name: 'Overview' }),
+      ).toHaveAttribute('aria-current', 'page');
+      await expect(
+        main.getByRole('link', { name: /^(Overview|Sites|Passkeys)$/ }),
       ).toHaveText(['Overview', 'Sites', 'Passkeys']);
+      await openAccount(page);
       await expect(page.getByText(email, { exact: true })).toBeVisible();
       await shot('navigation');
-      const menu = page.getByRole('button', { name: 'Close' });
-      if (await menu.isVisible()) {
-        // The open menu holds focus; Escape closes it and returns focus.
-        await expect(
-          page.getByRole('link', { name: 'Overview' }),
-        ).toBeFocused();
-        await page.keyboard.press('Escape');
-        const reopen = page.getByRole('button', { name: 'Menu' });
-        await expect(reopen).toBeFocused();
-        await expect(reopen).toHaveAttribute('aria-expanded', 'false');
-        await reopen.click();
-      }
+      // Escape closes the account menu and returns focus to its button.
+      await page.keyboard.press('Escape');
+      const account = main.getByRole('button', { name: 'Account' });
+      await expect(account).toBeFocused();
+      await expect(account).toHaveAttribute('aria-expanded', 'false');
+      await account.click();
     });
 
     await test.step('signing out returns to sign-in', async () => {

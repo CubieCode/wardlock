@@ -63,7 +63,12 @@ test('the setup URL creates the first owner', async ({
   await expect(
     page.getByRole('heading', { level: 1, name: 'Overview' }),
   ).toBeVisible();
+  await page
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('button', { name: 'Account' })
+    .click();
   await expect(page.getByText('first-owner@example.test')).toBeVisible();
+  await page.keyboard.press('Escape');
 
   for (const project of projects)
     for (const scheme of schemes)

@@ -19,10 +19,8 @@ async function check(page: Page, info: TestInfo, name: string) {
   });
 }
 
-/** Follows a sidebar link, opening the small-screen menu first if needed. */
+/** Follows a link in the rail, or the bottom bar below 48rem. */
 async function goTo(page: Page, name: string) {
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (await menu.isVisible()) await menu.click();
   await page
     .getByRole('navigation', { name: 'Main' })
     .getByRole('link', { name })
@@ -30,8 +28,10 @@ async function goTo(page: Page, name: string) {
 }
 
 async function signOut(page: Page) {
-  const menu = page.getByRole('button', { name: 'Menu' });
-  if (await menu.isVisible()) await menu.click();
+  await page
+    .getByRole('navigation', { name: 'Main' })
+    .getByRole('button', { name: 'Account' })
+    .click();
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByText('You have signed out.')).toBeVisible();
 }

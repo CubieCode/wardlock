@@ -62,6 +62,14 @@ export {
   type StackedBarsPoint,
 } from './charts.js';
 export {
+  BottomBar,
+  Drawer,
+  Rail,
+  RailButton,
+  RailItem,
+  RailLayout,
+} from './rail.js';
+export {
   CommandPalette,
   type CommandGroup,
   type CommandItem,

@@ -39,3 +39,22 @@
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
+
+/* Shows the rail and bottom bar in place rather than at the screen's edges. */
+.gallery-rail .wl-rail {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  width: var(--rail-width);
+  height: 22rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.gallery-bottom-bar .wl-bottom-bar {
+  position: static;
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
