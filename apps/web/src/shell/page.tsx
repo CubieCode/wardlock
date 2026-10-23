@@ -4,10 +4,13 @@
 import { useEffect, useLayoutEffect } from 'react';
 import { navigate } from './router.js';
 
-/** Sets the tab title. Titles never carry codes, tokens or addresses. */
-export function useTitle(title: string) {
+/**
+ * Sets the tab title. Titles never carry codes, tokens or addresses. Null
+ * leaves the title to a part of the page that sets its own.
+ */
+export function useTitle(title: string | null) {
   useEffect(() => {
-    document.title = `${title} · Wardlock`;
+    if (title !== null) document.title = `${title} · Wardlock`;
   }, [title]);
 }
 

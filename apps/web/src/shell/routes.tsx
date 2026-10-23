@@ -4,10 +4,9 @@
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import type { ReactNode } from 'react';
 import { PasskeysPage } from '../auth/passkeys.js';
-import { LinkAccessLogPage } from '../links/access-log-page.js';
 import { OverviewPage } from '../overview/overview.js';
-import { SiteAccessLogPage } from '../sites/access-log-page.js';
 import { SitePage } from '../sites/site-page.js';
+import { siteTabs } from '../sites/site-page-tabs.js';
 import { SitesPage } from '../sites/sites-page.js';
 
 export interface RouteContext {
@@ -42,27 +41,24 @@ export const shellRoutes: ShellRoute[] = [
     nav: 'Sites',
     render: ({ api }) => <SitesPage api={api} />,
   },
-  {
-    path: '/sites/:name',
-    // A key per site, so moving between sites starts from a fresh page.
+  // One entry per tab. The same key for every tab of a site keeps the page,
+  // and the site it read, while the owner moves between tabs; another site
+  // starts from a fresh page.
+  ...siteTabs.map((tab): ShellRoute => ({
+    path: tab.path ? `/sites/:name/${tab.path}` : '/sites/:name',
     render: ({ api, params }) => (
-      <SitePage key={params.name} api={api} name={params.name!} />
+      <SitePage key={params.name} api={api} name={params.name!} tab={tab.id} />
     ),
-  },
-  {
-    path: '/sites/:name/access-log',
-    render: ({ api, params }) => (
-      <SiteAccessLogPage key={params.name} api={api} name={params.name!} />
-    ),
-  },
+  })),
   {
     path: '/sites/:name/links/:linkId',
     render: ({ api, params }) => (
-      <LinkAccessLogPage
-        key={`${params.name}/${params.linkId}`}
+      <SitePage
+        key={params.name}
         api={api}
         name={params.name!}
-        publicId={params.linkId!}
+        tab="links"
+        linkId={params.linkId!}
       />
     ),
   },

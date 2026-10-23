@@ -116,7 +116,7 @@ function expectNoToken() {
   expect(document.title).not.toContain('wl_');
 }
 
-beforeEach(() => at('/sites/docs'));
+beforeEach(() => at('/sites/docs/links'));
 afterEach(cleanup);
 
 describe('share links on the site page', () => {
@@ -448,6 +448,7 @@ describe('link access log', () => {
     delete refused.ip;
     delete refused.userAgent;
     const { api, calls } = fakeServer({
+      ...sitePage([]),
       [`GET ${base}/links`]: () =>
         Response.json({
           items: [link('q4v7m2xkpa', { label: 'Linear ENG-123' })],
@@ -462,7 +463,7 @@ describe('link access log', () => {
     });
     render(<App api={api} />);
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Linear ENG-123' }),
+      await screen.findByRole('heading', { level: 2, name: 'Linear ENG-123' }),
     ).toBeTruthy();
     await waitFor(() =>
       expect(document.title).toBe('Link access log · docs · Wardlock'),
@@ -492,20 +493,30 @@ describe('link access log', () => {
       `GET ${base}/links/q4v7m2xkpa/access-log?cursor=next`,
     );
     expect(
-      screen.getByRole('link', { name: 'Back to docs' }).getAttribute('href'),
-    ).toBe('/sites/docs');
+      screen
+        .getByRole('link', { name: 'All share links' })
+        .getAttribute('href'),
+    ).toBe('/sites/docs/links');
+    // The page stays the site's, on its Links tab.
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'docs' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: 'Links' }).getAttribute('aria-current'),
+    ).toBe('page');
     expectNoToken();
   });
 
   it('keeps a revoked link’s history and says it no longer works', async () => {
     const { api } = fakeServer({
+      ...sitePage([]),
       [`GET ${base}/links`]: () => Response.json({ items: [] }),
       [`GET ${base}/links/q4v7m2xkpa/access-log`]: () =>
         Response.json({ items: [entry(1)] }),
     });
     render(<App api={api} />);
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Link q4v7m2xkpa' }),
+      await screen.findByRole('heading', { level: 2, name: 'Link q4v7m2xkpa' }),
     ).toBeTruthy();
     expect(screen.getByText('Revoked')).toBeTruthy();
     expect(screen.getByText(/This link no longer works/)).toBeTruthy();
@@ -513,19 +524,21 @@ describe('link access log', () => {
 
   it('names a revoked link by the label its visits carry', async () => {
     const { api } = fakeServer({
+      ...sitePage([]),
       [`GET ${base}/links`]: () => Response.json({ items: [] }),
       [`GET ${base}/links/q4v7m2xkpa/access-log`]: () =>
         Response.json({ items: [entry(1, { linkLabel: 'Linear ENG-123' })] }),
     });
     render(<App api={api} />);
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Linear ENG-123' }),
+      await screen.findByRole('heading', { level: 2, name: 'Linear ENG-123' }),
     ).toBeTruthy();
     expect(screen.getByText('Revoked')).toBeTruthy();
   });
 
   it('shows an empty state for a link nobody has opened', async () => {
     const { api } = fakeServer({
+      ...sitePage([]),
       [`GET ${base}/links`]: () =>
         Response.json({ items: [link('q4v7m2xkpa')] }),
       [`GET ${base}/links/q4v7m2xkpa/access-log`]: () =>
@@ -538,10 +551,10 @@ describe('link access log', () => {
   });
 
   it('treats a missing or foreign link as not found', async () => {
-    const { api } = fakeServer({});
+    const { api } = fakeServer(sitePage([]));
     render(<App api={api} />);
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Link not found' }),
+      await screen.findByRole('heading', { name: 'Link not found' }),
     ).toBeTruthy();
     await waitFor(() =>
       expect(document.title).toBe('Link not found · Wardlock'),
@@ -551,6 +564,7 @@ describe('link access log', () => {
   it('offers a retry when the log cannot load', async () => {
     let fail = true;
     const { api } = fakeServer({
+      ...sitePage([]),
       [`GET ${base}/links`]: () => Response.json({ items: [] }),
       [`GET ${base}/links/q4v7m2xkpa/access-log`]: () =>
         fail

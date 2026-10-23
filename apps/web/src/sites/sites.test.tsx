@@ -13,6 +13,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../app.js';
 import type { Deploy, Policy, Site } from './format.js';
+import type { Group, Tag } from './site-page-organise.js';
 import type { AccessLogEntry } from './visits.js';
 
 const me = {
@@ -107,6 +108,18 @@ function oneSite(
     [`GET ${base}/policies`]: () => Response.json({ items: policies }),
     [`GET ${base}/links`]: () => Response.json({ items: [] }),
     [`GET ${base}/domains`]: () => Response.json({ items: [] }),
+    ...organisation(),
+  };
+}
+
+/** The owner's groups and tags, which the site header reads. */
+function organisation(
+  groups: Group[] = [],
+  tags: Tag[] = [],
+): Record<string, Handler> {
+  return {
+    'GET /api/v0/groups': () => Response.json({ items: groups }),
+    'GET /api/v0/tags': () => Response.json({ items: tags }),
   };
 }
 
@@ -237,7 +250,7 @@ describe('site detail', () => {
     activatedAt: live.activatedAt!,
   });
 
-  it('shows the address, access and deploy history', async () => {
+  it('shows the header and an overview of access, links, domains and the live deploy', async () => {
     at('/sites/docs');
     const { api } = fakeServer(
       oneSite(
@@ -250,6 +263,7 @@ describe('site detail', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'docs' }),
     ).toBeTruthy();
+    expect(document.title).toBe('docs · Wardlock');
     expect(
       (
         screen.getByRole('textbox', {
@@ -257,13 +271,69 @@ describe('site detail', () => {
         }) as HTMLInputElement
       ).value,
     ).toBe('https://docs.sites.example.test/');
-    // The access policies card further down lists /assets/ too once its own
-    // load finishes, so look for the path in this card only.
-    const access = screen.getByRole('region', { name: 'Address and access' });
+    // The access word, and when the site went live.
+    expect(screen.getAllByText('Protected')[0]!.className).toContain(
+      'wl-status-tag-ward',
+    );
+    expect(screen.getAllByText(/^Live since/)[0]!.textContent).toBe(
+      'Live since 1 hour ago',
+    );
+    // Overview is the current tab, and every tab is a link to its address.
+    const tabs = screen.getByRole('navigation', { name: 'Site sections' });
+    expect(
+      within(tabs)
+        .getAllByRole('link')
+        .map((tab) => [tab.textContent, tab.getAttribute('href')]),
+    ).toEqual([
+      ['Overview', '/sites/docs'],
+      ['Links', '/sites/docs/links'],
+      ['Access', '/sites/docs/access'],
+      ['Domains', '/sites/docs/domains'],
+      ['Deploys', '/sites/docs/deploys'],
+      ['Access log', '/sites/docs/access-log'],
+      ['Settings', '/sites/docs/settings'],
+    ]);
+    expect(
+      within(tabs)
+        .getByRole('link', { name: 'Overview' })
+        .getAttribute('aria-current'),
+    ).toBe('page');
+    const access = screen.getByRole('region', { name: 'Who can open it' });
     expect(
       within(access).getByText('Only visitors with access can open this site.'),
     ).toBeTruthy();
     expect(within(access).getByText('/assets/')).toBeTruthy();
+    expect(
+      within(access)
+        .getByRole('link', { name: 'Manage access' })
+        .getAttribute('href'),
+    ).toBe('/sites/docs/access');
+    expect(
+      await within(
+        screen.getByRole('region', { name: 'Share links' }),
+      ).findByText('No share links yet.'),
+    ).toBeTruthy();
+    const domains = screen.getByRole('region', { name: 'Domains' });
+    expect(within(domains).getByText('docs.sites.example.test')).toBeTruthy();
+    expect(within(domains).getByText('Default')).toBeTruthy();
+    const deployCard = screen.getByRole('region', { name: 'Live deploy' });
+    expect(deployCard.textContent).toContain('00000003');
+    expect(deployCard.textContent).toContain('Fix typo on the install page');
+    expect(deployCard.textContent).toContain('Immutable assets');
+    expect(
+      screen.getByRole('link', { name: 'Sites' }).getAttribute('aria-current'),
+    ).toBe('page');
+  });
+
+  it('shows the deploy history on the Deploys tab', async () => {
+    at('/sites/docs');
+    const { api } = fakeServer(oneSite(docs, [pending, live, earlier]));
+    render(<App api={api} />);
+    fireEvent.click(await screen.findByRole('link', { name: 'Deploys' }));
+    expect(window.location.pathname).toBe('/sites/docs/deploys');
+    await waitFor(() =>
+      expect(document.title).toBe('Deploys · docs · Wardlock'),
+    );
     const rows = within(
       screen.getByRole('list', { name: 'Deploy history' }),
     ).getAllByRole('listitem');
@@ -291,14 +361,10 @@ describe('site detail', () => {
         name: 'Roll back to deploy 00000002',
       }),
     ).toBeTruthy();
+    // The site stays loaded: moving between tabs reads it only once.
     expect(
-      screen.getByRole('link', { name: 'Sites' }).getAttribute('aria-current'),
-    ).toBe('page');
-    expect(
-      screen
-        .getByRole('link', { name: 'View access log' })
-        .getAttribute('href'),
-    ).toBe('/sites/docs/access-log');
+      screen.getByRole('heading', { level: 1, name: 'docs' }),
+    ).toBeTruthy();
   });
 
   it('explains a taken-down site and offers no action it would refuse', async () => {
@@ -315,39 +381,61 @@ describe('site detail', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'docs' }),
     ).toBeTruthy();
-    expect(screen.getByText('Taken down').className).toContain(
-      'wl-badge-warning',
-    );
+    // The badge sits beside the access word, which stays.
+    const word = screen.getByText('Taken down');
+    expect(word.className).toContain('wl-status-tag-warning');
+    expect(word.parentElement!.textContent).toBe('ProtectedTaken down');
     expect(
       screen.getByText(/operator of this server has taken this site down/)
         .textContent,
     ).toContain('The operator of this server has taken this site down.');
-    // Nothing to open, roll back to or tear down.
+    // Nothing to open.
     expect(screen.queryByRole('button', { name: 'Open site' })).toBeNull();
+    // Organising it changes nothing visitors see, so it stays.
+    expect(screen.getByRole('button', { name: 'Pin site' })).toBeTruthy();
+
+    // Nothing to roll back to.
+    fireEvent.click(screen.getByRole('link', { name: 'Deploys' }));
+    await screen.findByRole('list', { name: 'Deploy history' });
     expect(screen.queryByRole('button', { name: /Roll back/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Tear down site' })).toBeNull();
-    // Domains are frozen and no policy may be deleted; editing stays.
+
+    // Domains are frozen.
+    fireEvent.click(screen.getByRole('link', { name: 'Domains' }));
     expect(
       await screen.findByText(/its domains stay as they are/),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Add domain' })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^Delete / })).toBeNull();
+
+    // No policy may be deleted; editing stays.
+    fireEvent.click(screen.getByRole('link', { name: 'Access' }));
     expect(
       (await screen.findAllByRole('button', { name: /^Edit/ })).length,
     ).toBeGreaterThan(0);
-    const teardown = screen.getByRole('region', {
+    expect(screen.queryByRole('button', { name: /^Delete / })).toBeNull();
+
+    // And it cannot be torn down.
+    fireEvent.click(screen.getByRole('link', { name: 'Settings' }));
+    const teardown = await screen.findByRole('region', {
       name: 'Tear down this site',
     });
     expect(teardown.textContent).toContain('Ask the operator of this server');
-    // Access can still be changed.
+    expect(screen.queryByRole('button', { name: 'Tear down site' })).toBeNull();
+    // The notice stays on every tab.
     expect(
-      screen.getByRole('region', { name: 'Address and access' }),
+      screen.getByText(/operator of this server has taken this site down/),
     ).toBeTruthy();
   });
 
   it('shows the same not-found page for missing and foreign sites', async () => {
     const texts: string[] = [];
-    for (const path of ['/sites/missing', '/sites/someone-elses']) {
+    for (const path of [
+      '/sites/missing',
+      '/sites/someone-elses',
+      '/sites/missing/links',
+      '/sites/someone-elses/links/q4v7m2xkpa',
+      '/sites/someone-elses/access-log',
+      '/sites/missing/settings',
+    ]) {
       at(path);
       const { api } = fakeServer({});
       const { unmount } = render(<App api={api} />);
@@ -358,12 +446,14 @@ describe('site detail', () => {
       );
       unmount();
     }
-    expect(texts[0]).toBe(texts[1]);
+    // Every tab of either answers the same page, naming neither.
+    expect(new Set(texts).size).toBe(1);
     expect(texts[0]).not.toContain('missing');
+    expect(texts[0]).not.toContain('someone');
   });
 
   it('rolls back after confirming and shows the new live deploy', async () => {
-    at('/sites/docs');
+    at('/sites/docs/deploys');
     let deploys = [live, earlier];
     let current = docs;
     let body: unknown;
@@ -372,6 +462,7 @@ describe('site detail', () => {
       'GET /api/v0/sites/docs/deploys': () => Response.json({ items: deploys }),
       'GET /api/v0/sites/docs/policies': () =>
         Response.json({ items: [policy('/', 'public')] }),
+      ...organisation(),
       'POST /api/v0/sites/docs/rollback': (_, sent) => {
         body = sent;
         const now2 = Date.now();
@@ -418,7 +509,7 @@ describe('site detail', () => {
   });
 
   it('keeps the rollback dialog open and explains a refused rollback', async () => {
-    at('/sites/docs');
+    at('/sites/docs/deploys');
     const { api } = fakeServer({
       ...oneSite(docs, [live, earlier]),
       'POST /api/v0/sites/docs/rollback': () =>
@@ -447,7 +538,7 @@ describe('site detail', () => {
   });
 
   it('keeps the page after a rollback when the refresh fails', async () => {
-    at('/sites/docs');
+    at('/sites/docs/deploys');
     let down = false;
     const routes = oneSite(docs, [live, earlier]);
     const { api } = fakeServer({
@@ -499,7 +590,7 @@ describe('site detail', () => {
   });
 
   it('drops a page of older deploys that a rollback refresh overtook', async () => {
-    at('/sites/docs');
+    at('/sites/docs/deploys');
     const older = deploy('00000001', { message: 'Very first' });
     let releaseOlder!: () => void;
     const olderGate = new Promise<void>((resolve) => (releaseOlder = resolve));
@@ -547,7 +638,7 @@ describe('site detail', () => {
   });
 
   it('tears down only after the name is typed, then returns to the list', async () => {
-    at('/sites/docs');
+    at('/sites/docs/settings');
     let deleted = false;
     const { api } = fakeServer({
       ...oneSite(docs, [live]),
@@ -586,7 +677,7 @@ describe('site detail', () => {
   });
 
   it('cancelling a teardown deletes nothing and clears the typed name', async () => {
-    at('/sites/docs');
+    at('/sites/docs/settings');
     let deleted = false;
     const { api } = fakeServer({
       ...oneSite(docs, [live]),
@@ -639,6 +730,7 @@ describe('site access log', () => {
     const refused = entry(5, { status: 401, via: 'none' });
     delete refused.ip;
     const { api, calls } = fakeServer({
+      ...oneSite(site('docs'), []),
       [`GET ${base}`]: (request) =>
         new URL(request.url).searchParams.get('cursor') === 'next'
           ? Response.json({ items: [entry(6, { via: 'oauth' })] })
@@ -659,8 +751,13 @@ describe('site access log', () => {
     });
     render(<App api={api} />);
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Access log' }),
+      await screen.findByRole('heading', { level: 1, name: 'docs' }),
     ).toBeTruthy();
+    expect(
+      screen
+        .getByRole('link', { name: 'Access log' })
+        .getAttribute('aria-current'),
+    ).toBe('page');
     await waitFor(() =>
       expect(document.title).toBe('Access log · docs · Wardlock'),
     );
@@ -700,15 +797,13 @@ describe('site access log', () => {
       screen.queryByRole('button', { name: 'Show older visits' }),
     ).toBeNull();
     expect(calls).toContain(`GET ${base}?cursor=next`);
-    expect(
-      screen.getByRole('link', { name: 'Back to docs' }).getAttribute('href'),
-    ).toBe('/sites/docs');
     expect(document.body.innerHTML).not.toContain('wl_');
   });
 
   it('says when older visits fail to load and lets the owner try again', async () => {
     let fail = true;
     const { api } = fakeServer({
+      ...oneSite(site('docs'), []),
       [`GET ${base}`]: (request) =>
         new URL(request.url).searchParams.get('cursor')
           ? fail
@@ -734,6 +829,7 @@ describe('site access log', () => {
 
   it('shows an empty state for a site nobody has visited', async () => {
     const { api } = fakeServer({
+      ...oneSite(site('docs'), []),
       [`GET ${base}`]: () => Response.json({ items: [] }),
     });
     render(<App api={api} />);
@@ -757,13 +853,14 @@ describe('site access log', () => {
   it('offers a retry when the log cannot load', async () => {
     let fail = true;
     const { api } = fakeServer({
+      ...oneSite(site('docs'), []),
       [`GET ${base}`]: () =>
         fail
           ? Response.json({ code: 'internal', message: 'x' }, { status: 500 })
           : Response.json({ items: [entry(1)] }),
     });
     render(<App api={api} />);
-    expect(await screen.findByRole('status')).toBeTruthy();
+    expect(await screen.findByText('Loading access log…')).toBeTruthy();
     await screen.findByText(/Could not load the access log/);
     fail = false;
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));

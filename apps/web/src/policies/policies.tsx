@@ -4,7 +4,7 @@
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import { Button, Card, Notice, TextField } from '@wardlock/ui';
 import { useEffect, useState } from 'react';
-import { PolicyBadge, type Policy, type Site } from '../sites/format.js';
+import { AccessWord, type Policy, type Site } from '../sites/format.js';
 import { DeletePolicyDialog } from './delete.js';
 import { PolicyDialog } from './edit.js';
 import {
@@ -13,6 +13,7 @@ import {
   governing,
   methodsText,
   requestPath,
+  type SignInProvider,
   reserved,
 } from './format.js';
 import './policies.css';
@@ -52,10 +53,13 @@ export function PoliciesCard({
   api,
   site,
   onChange,
+  providers,
 }: {
   api: ApiClient;
   site: Site;
   onChange?: () => void;
+  /** The configured sign-in providers; absent while unknown. */
+  providers?: SignInProvider[] | undefined;
 }) {
   const [state, setState] = useState<ListState>({ kind: 'loading' });
   const [open, setOpen] = useState<Open>({ kind: 'none' });
@@ -184,6 +188,7 @@ export function PoliciesCard({
           site={site}
           policy={open.kind === 'edit' ? open.policy : undefined}
           policies={policies}
+          providers={providers}
           onClose={close}
           onSaved={(policy) =>
             saved(policy, open.kind === 'edit' ? open.policy : undefined)
@@ -228,7 +233,7 @@ function PolicyRow({
         <p className="policy-row-title">
           <code>{policy.path}</code>
           {isDefault && <span>Site default</span>}
-          <PolicyBadge policy={policy} />
+          <AccessWord policy={policy} />
         </p>
         <p className="policy-row-meta">
           {isDefault
@@ -297,11 +302,8 @@ function PathCheck({ policies }: { policies: Policy[] }) {
                 the policy for <code>{policy.path}</code>
               </>
             )}
-            :{' '}
-            {policy.visibility === 'public'
-              ? 'public'
-              : `protected (${methodsText(policy)})`}
-            .
+            : <AccessWord policy={policy} />
+            {policy.visibility === 'public' ? '' : ` (${methodsText(policy)})`}.
           </>
         )}
       </p>

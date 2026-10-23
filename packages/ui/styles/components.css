@@ -757,6 +757,24 @@
   color: var(--color-text);
 }
 
+/* On touch screens the remove button keeps its size but takes taps across a
+   touch target centred on it, so the chip stays compact. */
+@media (pointer: coarse) {
+  .wl-tag-chip-remove {
+    position: relative;
+  }
+
+  .wl-tag-chip-remove::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    transform: translate(-50%, -50%);
+  }
+}
+
 /* Ward: the brass diamond */
 .wl-ward {
   display: inline-block;

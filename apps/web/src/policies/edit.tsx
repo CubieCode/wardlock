@@ -15,6 +15,8 @@ import {
 import { useId, useState, type FormEvent } from 'react';
 import type { Policy, Site } from '../sites/format.js';
 import {
+  providerNames,
+  type SignInProvider,
   bytes,
   characters,
   methods,
@@ -71,6 +73,7 @@ export function PolicyDialog({
   site,
   policy,
   policies,
+  providers,
   onClose,
   onSaved,
 }: {
@@ -80,6 +83,11 @@ export function PolicyDialog({
   policy: Policy | undefined;
   /** Every policy of the site, to refuse a path that already has one. */
   policies: Policy[];
+  /**
+   * The sign-in providers the operator configured; absent while unknown,
+   * when the server's answer to a save decides.
+   */
+  providers?: SignInProvider[] | undefined;
   onClose: () => void;
   onSaved: (saved: Policy) => void;
 }) {
@@ -115,6 +123,24 @@ export function PolicyDialog({
       policy.allowlist.domains.length +
       (policy.allowlist.githubOrgs?.length ?? 0)
     : 0;
+
+  // Sign in is offered only where a provider is set up, or to switch it
+  // off on a policy that still has it.
+  const offered = methods.filter(
+    (m) =>
+      m !== 'oauth' ||
+      providers === undefined ||
+      providers.length > 0 ||
+      policy?.methods.includes('oauth'),
+  );
+  const label = (method: PolicyMethod) =>
+    method === 'oauth' && providers && providers.length > 0
+      ? `Sign in with ${providerNames(providers)}`
+      : methodText[method].label;
+  const hint = (method: PolicyMethod) =>
+    method === 'oauth' && providers?.length === 0
+      ? 'No sign-in providers are set up on this server, so this way in cannot be saved. Clear it to save the policy.'
+      : methodText[method].hint;
 
   const toggle = (method: PolicyMethod, checked: boolean) =>
     setChosen((current) =>
@@ -299,11 +325,11 @@ export function PolicyDialog({
             hint="Visitors need any one of these, not all of them."
             error={errors.methods}
           >
-            {methods.map((method) => (
+            {offered.map((method) => (
               <div key={method} className="policy-method">
                 <Checkbox
-                  label={methodText[method].label}
-                  hint={methodText[method].hint}
+                  label={label(method)}
+                  hint={hint(method)}
                   checked={on(method)}
                   onChange={(event) => toggle(method, event.target.checked)}
                 />

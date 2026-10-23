@@ -15,6 +15,7 @@ import {
 } from '@playwright/test';
 import { firstOwnerState, schemes } from './mail.js';
 import { createSite, protect, publish } from './publish.js';
+import { siteTab } from './site-page.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 if (!origin) throw new Error('Run through pnpm browser:test');
@@ -73,6 +74,8 @@ for (const scheme of schemes) {
       await publish(page.request, site, 'Quarterly plan');
       await protect(page.request, site);
       await page.goto(`${origin}/sites/${site}`);
+      await shot('overview');
+      await siteTab(page, 'Links');
       await expect(
         page.getByRole('heading', { name: 'No share links yet' }),
       ).toBeVisible();
@@ -137,7 +140,7 @@ for (const scheme of schemes) {
         .getByRole('link', { name: `Access log of “${label}”` })
         .click();
       await expect(
-        page.getByRole('heading', { level: 1, name: label }),
+        page.getByRole('heading', { level: 2, name: label }),
       ).toBeVisible();
       // Entries are written in batches about once a second.
       const table = page.getByRole('table', { name: /Visits through link/ });
@@ -149,7 +152,7 @@ for (const scheme of schemes) {
       await expect(visitRow).toContainText('/');
       await expect(visitRow).toContainText('Opened · 200');
       await shot('access-log');
-      await page.getByRole('link', { name: `Back to ${site}` }).click();
+      await page.getByRole('link', { name: 'All share links' }).click();
       await expect(row()).toContainText('Last opened');
     });
 

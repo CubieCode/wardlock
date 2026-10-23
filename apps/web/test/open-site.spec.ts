@@ -45,7 +45,8 @@ for (const scheme of schemes) {
       await createSite(page.request, site);
       await publish(page.request, site, 'Launch notes');
       await protect(page.request, site);
-      await page.goto(`${origin}/sites/${site}`);
+      // The Links tab, where the link Open site makes appears.
+      await page.goto(`${origin}/sites/${site}/links`);
       await expect(
         page.getByRole('heading', { name: 'No share links yet' }),
       ).toBeVisible();

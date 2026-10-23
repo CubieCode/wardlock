@@ -127,7 +127,8 @@ for (const scheme of schemes) {
     const rows = card
       .getByRole('list', { name: 'Access policies' })
       .getByRole('listitem');
-    const summary = page.getByRole('region', { name: 'Address and access' });
+    // The site header's access word, above the tabs.
+    const accessWord = page.locator('.site-header-access');
     const editDefault = async () => {
       await card.getByRole('button', { name: 'Edit the site default' }).click();
       const dialog = page.getByRole('dialog', {
@@ -147,8 +148,9 @@ for (const scheme of schemes) {
     await test.step('the owner sees the public default', async () => {
       await createSite(page.request, site);
       await publishSite(page.request, site);
-      await page.goto(`${origin}/sites/${site}`);
+      await page.goto(`${origin}/sites/${site}/access`);
       await expect(rows).toHaveCount(1);
+      await expect(accessWord).toHaveText('Public');
       await expect(rows.first()).toContainText('Site default');
       await expect(rows.first()).toContainText('Public');
       await expect(card).toContainText('longest path that matches it');
@@ -173,7 +175,7 @@ for (const scheme of schemes) {
       await expect(rows.first()).toContainText(
         'Ways in: share links and password.',
       );
-      await expect(summary).toContainText('Only visitors with access');
+      await expect(accessWord).toHaveText('Protected');
       await expectNoPassword(page);
       await shot('protected');
 
@@ -262,11 +264,15 @@ for (const scheme of schemes) {
     });
 
     await test.step('sign-in lists the providers for a GitHub organisation', async () => {
+      // The test server configures GitHub and Google, and no OIDC provider;
+      // the editor names exactly those.
+      await expect(
+        page
+          .getByRole('list', { name: 'Sign-in providers' })
+          .getByRole('listitem'),
+      ).toHaveText(['GitHub', 'Google']);
       const dialog = await editDefault();
-      await method(
-        dialog,
-        'Sign in with GitHub, Google or single sign-on',
-      ).check();
+      await method(dialog, 'Sign in with GitHub or Google').check();
       await dialog
         .getByRole('textbox', { name: 'GitHub organisations' })
         .fill('example-org');
@@ -307,12 +313,12 @@ for (const scheme of schemes) {
       const checker = card.getByRole('textbox', { name: 'Check a path' });
       await checker.fill('/docs/index.html');
       await expect(card.getByRole('status').last()).toHaveText(
-        '/docs/index.html follows the policy for /docs/: public.',
+        '/docs/index.html follows the policy for /docs/: Public.',
       );
       await shot('paths');
       await checker.fill('/docs/../index.html');
       await expect(card.getByRole('status').last()).toHaveText(
-        '/index.html follows the site default: protected (password, email code and GitHub, Google or single sign-on).',
+        '/index.html follows the site default: Protected (password, email code and GitHub, Google or single sign-on).',
       );
 
       await asVisitor(browser, page, scheme, async (v) => {

@@ -75,7 +75,7 @@ for (const scheme of schemes) {
       await createSite(page.request, site);
       await createSite(page.request, other);
       await publish(page.request, site, 'Field guide');
-      await page.goto(`${origin}/sites/${site}`);
+      await page.goto(`${origin}/sites/${site}/domains`);
       await expect(
         card.getByRole('heading', { name: 'No custom domains yet' }),
       ).toBeVisible();
@@ -242,7 +242,7 @@ for (const scheme of schemes) {
     });
 
     await test.step('a hostname another site holds is domain_taken', async () => {
-      await page.goto(`${origin}/sites/${other}`);
+      await page.goto(`${origin}/sites/${other}/domains`);
       await expect(
         card.getByRole('heading', { name: 'No custom domains yet' }),
       ).toBeVisible();
@@ -263,7 +263,7 @@ for (const scheme of schemes) {
     });
 
     await test.step('removing asks first and reminds about the DNS record', async () => {
-      await page.goto(`${origin}/sites/${site}`);
+      await page.goto(`${origin}/sites/${site}/domains`);
       await row.getByRole('button', { name: `Remove ${hostname}` }).click();
       const dialog = page.getByRole('dialog', { name: `Remove ${hostname}?` });
       await expect(dialog).toBeVisible();

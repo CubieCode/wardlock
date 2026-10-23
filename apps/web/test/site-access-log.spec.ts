@@ -9,6 +9,7 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { firstOwnerState, schemes } from './mail.js';
 import { createSite, protect, publish } from './publish.js';
+import { siteTab } from './site-page.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 if (!origin) throw new Error('Run through pnpm browser:test');
@@ -48,10 +49,9 @@ for (const scheme of schemes) {
       await publish(page.request, site, 'Board papers');
       await protect(page.request, site);
       await page.goto(`${origin}/sites/${site}`);
-      await page.getByRole('link', { name: 'View access log' }).click();
-      await expect(
-        page.getByRole('heading', { level: 1, name: 'Access log' }),
-      ).toBeVisible();
+      await siteTab(page, 'Access log');
+      // The tab keeps the log's own address.
+      await expect(page).toHaveURL(`${origin}/sites/${site}/access-log`);
       await expect(page).toHaveTitle(`Access log · ${site} · Wardlock`);
       await expect(
         page.getByRole('heading', { name: 'No visits yet' }),
@@ -94,11 +94,12 @@ for (const scheme of schemes) {
         .getByRole('link', { name: label })
         .click();
       await expect(
-        page.getByRole('heading', { level: 1, name: label }),
+        page.getByRole('heading', { level: 2, name: label }),
       ).toBeVisible();
-      await page.getByRole('link', { name: `Back to ${site}` }).click();
+      await expect(page).toHaveURL(new RegExp(`/sites/${site}/links/\\w+$`));
+      await page.getByRole('link', { name: 'All share links' }).click();
       await expect(
-        page.getByRole('heading', { level: 1, name: site }),
+        page.getByRole('list', { name: 'Share links' }),
       ).toBeVisible();
     });
   });

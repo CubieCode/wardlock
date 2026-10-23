@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { firstOwnerState, messageWith, schemes } from './mail.js';
 import { createSite, protect, publish } from './publish.js';
+import { siteTab } from './site-page.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 const wardlockd = process.env.WARDLOCK_ACCEPTANCE_WARDLOCKD;
@@ -137,17 +138,38 @@ for (const scheme of schemes) {
           },
         ),
       ).toBeVisible();
-      await expect(
-        page.getByRole('button', { name: 'Tear down site' }),
-      ).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Open site' })).toHaveCount(
         0,
       );
+      await check(page, info, `dashboard-taken-down-${scheme}`);
+      // Nothing to roll back to.
+      await siteTab(page, 'Deploys');
+      await expect(
+        page.getByRole('list', { name: 'Deploy history' }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole('button', { name: /^Roll back/ }),
+      ).toHaveCount(0);
+      await check(page, info, `dashboard-taken-down-deploys-${scheme}`);
       // Its domains are frozen: no field to add one.
+      await siteTab(page, 'Domains');
+      await expect(
+        page.getByText(/its domains stay as they are/),
+      ).toBeVisible();
       await expect(
         page.getByRole('button', { name: 'Add domain' }),
       ).toHaveCount(0);
-      await check(page, info, `dashboard-taken-down-${scheme}`);
+      // And it cannot be torn down.
+      await siteTab(page, 'Settings');
+      await expect(
+        page.getByText('Ask the operator of this server about it.', {
+          exact: false,
+        }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole('button', { name: 'Tear down site' }),
+      ).toHaveCount(0);
+      await check(page, info, `dashboard-taken-down-settings-${scheme}`);
     });
 
     await test.step('restoring serves the site again', async () => {
