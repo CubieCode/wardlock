@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import type { components } from '@wardlock/apiclient-ts';
+import type { ApiClient, components } from '@wardlock/apiclient-ts';
 import {
   Button,
   Card,
@@ -11,8 +11,12 @@ import {
   Table,
   type TableColumn,
 } from '@wardlock/ui';
-import { useState, type ReactNode } from 'react';
-import { CountryCell } from '../analytics/country.js';
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  Attribution,
+  CountryCell,
+  type CountryLookup,
+} from '../analytics/country.js';
 import './sites.css';
 
 export type AccessLogEntry = components['schemas']['AccessLogEntry'];
@@ -67,11 +71,33 @@ export const visitColumns = {
 } satisfies Record<string, TableColumn<AccessLogEntry>>;
 
 /**
- * The Country column, only when an entry has a country: the server sends
- * none while its country lookup is off, so then nothing mentions countries.
+ * The site's country lookup, from one small analytics read beside the log:
+ * present only while the server's lookup is on. Undefined while it loads,
+ * while the lookup is off and if the read fails, so the log never waits on
+ * it and then mentions no country.
  */
-export const countryColumns = (entries: AccessLogEntry[]) =>
-  entries.some((e) => e.country) ? [visitColumns.country] : [];
+export function useCountryLookup(api: ApiClient, site: string) {
+  // Kept with its site, so another site's lookup is never shown.
+  const [read, setRead] = useState<{
+    site: string;
+    lookup: CountryLookup | undefined;
+  }>();
+  useEffect(() => {
+    let live = true;
+    api.GET('/api/v0/analytics', { params: { query: { site, days: 7 } } }).then(
+      ({ data }) => live && setRead({ site, lookup: data?.countryLookup }),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, site]);
+  return read?.site === site ? read.lookup : undefined;
+}
+
+/** The Country column, only while the lookup is on. */
+export const countryColumns = (lookup: CountryLookup | undefined) =>
+  lookup ? [visitColumns.country] : [];
 
 /**
  * One page of entries and the cursor of the next, with a loader for older
@@ -109,6 +135,7 @@ export function VisitsCard({
   more,
   onOlder,
   empty,
+  lookup,
 }: {
   caption: string;
   columns: TableColumn<AccessLogEntry>[];
@@ -118,18 +145,23 @@ export function VisitsCard({
   onOlder: () => void;
   /** What the empty state says will appear here. */
   empty: ReactNode;
+  /** The country lookup, whose credit goes under the table. */
+  lookup?: CountryLookup | undefined;
 }) {
   return (
     <Card title="Visits">
       {entries.length === 0 ? (
         <EmptyState title="No visits yet">{empty}</EmptyState>
       ) : (
-        <Table
-          caption={caption}
-          columns={columns}
-          rows={entries}
-          rowKey={(e) => e.id}
-        />
+        <>
+          <Table
+            caption={caption}
+            columns={columns}
+            rows={entries}
+            rowKey={(e) => e.id}
+          />
+          {lookup ? <Attribution text={lookup.attribution} /> : null}
+        </>
       )}
       {more === 'error' && (
         <Notice tone="danger">Could not load older visits. Try again.</Notice>

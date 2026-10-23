@@ -16,11 +16,13 @@ import {
 } from './format.js';
 import {
   countryColumns,
+  useCountryLookup,
   useOlderVisits,
   visitColumns,
   VisitsCard,
   type AccessLogPage,
 } from '../sites/visits.js';
+import type { CountryLookup } from '../analytics/country.js';
 import './links.css';
 
 interface Loaded {
@@ -89,6 +91,8 @@ export function LinkDetail({
 }) {
   const [state, setState] = useState<PageState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  // The link's site's lookup.
+  const lookup = useCountryLookup(api, name);
   useTitle(
     state.kind === 'not-found' ? 'Link not found' : `Link access log · ${name}`,
   );
@@ -173,7 +177,13 @@ export function LinkDetail({
         </div>
       </section>
 
-      <LinkVisits api={api} name={name} publicId={publicId} first={first} />
+      <LinkVisits
+        api={api}
+        name={name}
+        publicId={publicId}
+        first={first}
+        lookup={lookup}
+      />
     </>
   );
 }
@@ -183,11 +193,13 @@ function LinkVisits({
   name,
   publicId,
   first,
+  lookup,
 }: {
   api: ApiClient;
   name: string;
   publicId: string;
   first: AccessLogPage;
+  lookup: CountryLookup | undefined;
 }) {
   const { entries, nextCursor, more, loadOlder } = useOlderVisits(
     first,
@@ -203,7 +215,7 @@ function LinkVisits({
     visitColumns.path,
     visitColumns.result,
     visitColumns.ip,
-    ...countryColumns(entries),
+    ...countryColumns(lookup),
     visitColumns.browser,
   ];
   return (
@@ -214,6 +226,7 @@ function LinkVisits({
       nextCursor={nextCursor}
       more={more}
       onOlder={loadOlder}
+      lookup={lookup}
       empty={
         <p>
           Each request that comes in through this link is listed here, with its

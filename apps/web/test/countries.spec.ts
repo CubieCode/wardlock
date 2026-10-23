@@ -6,7 +6,8 @@
 // NZ, with the server drawn in NZ (scripts/browser-acceptance.mjs). A site
 // gets public, refused and share-link requests; the analytics page shows
 // "Where requests come from" with its map, list, credit and table, the
-// bubbles answer the keyboard, and both access logs show a Country column.
+// bubbles answer the keyboard, and both access logs show a Country column
+// and the credit.
 // The off and Unknown states are covered by the component tests, since this
 // server's lookup is on. No token may be on the page or in a screenshot.
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
@@ -126,13 +127,16 @@ for (const scheme of schemes) {
       await shot('table');
     });
 
-    await test.step('the access logs have a Country column', async () => {
+    await test.step('the access logs have a Country column and the credit', async () => {
       await page.goto(`${origin}/sites/${site}/access-log`);
       const log = page.getByRole('table', { name: `Visits to ${site}` });
       await expect(
         log.getByRole('columnheader', { name: 'Country' }),
       ).toHaveCount(1);
       await expect(log.getByRole('row').nth(1)).toContainText('New Zealand');
+      await expect(
+        page.getByRole('link', { name: 'https://example.test/countries' }),
+      ).toHaveAttribute('href', 'https://example.test/countries');
       await shot('site-log');
 
       await page.goto(`${origin}/sites/${site}/links/${publicId}`);
@@ -145,6 +149,9 @@ for (const scheme of schemes) {
       await expect(linkLog.getByRole('row').nth(1)).toContainText(
         'New Zealand',
       );
+      await expect(
+        page.getByRole('link', { name: 'https://example.test/countries' }),
+      ).toHaveAttribute('href', 'https://example.test/countries');
       await shot('link-log');
     });
   });

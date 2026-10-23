@@ -442,35 +442,77 @@ describe('link access log', () => {
 
   beforeEach(() => at('/sites/docs/links/q4v7m2xkpa'));
 
-  it('shows each visit’s country only while the server looks them up', async () => {
-    for (const country of ['AU', undefined] as const) {
-      const { api } = fakeServer({
+  it('shows each visit’s country and the credit only while the lookup is on', async () => {
+    const attribution =
+      'Synthetic country data (https://example.test/countries)';
+    for (const lookup of ['on', 'off', 'failed'] as const) {
+      const { api, calls } = fakeServer({
         ...sitePage([]),
         [`GET ${base}/links`]: () =>
           Response.json({ items: [link('q4v7m2xkpa')] }),
+        'GET /api/v0/analytics': () =>
+          lookup === 'failed'
+            ? Response.json({ code: 'internal', message: 'x' }, { status: 500 })
+            : Response.json({
+                days: 7,
+                from: now - 7 * day,
+                to: now,
+                total: { allowed: 1, refused: 0 },
+                hours: [],
+                via: [],
+                sites: [],
+                groups: [],
+                tags: [],
+                links: [],
+                paths: [],
+                otherPaths: { allowed: 0, refused: 0 },
+                browsers: [],
+                ...(lookup === 'on'
+                  ? { countries: [], countryLookup: { attribution } }
+                  : {}),
+              }),
         [`GET ${base}/links/q4v7m2xkpa/access-log`]: () =>
-          Response.json({ items: [entry(1, country ? { country } : {})] }),
+          Response.json({
+            items: [entry(1, lookup === 'off' ? {} : { country: 'AU' })],
+          }),
       });
       render(<App api={api} />);
       const table = await screen.findByRole('table', {
         name: 'Visits through link q4v7m2xkpa',
       });
-      const headers = within(table)
-        .getAllByRole('columnheader')
-        .map((th) => th.textContent);
-      if (country) {
-        expect(headers).toEqual([
-          'Time',
-          'Path',
-          'Result',
-          'IP address',
-          'Country',
-          'Browser or client',
-        ]);
+      const headers = () =>
+        within(table)
+          .getAllByRole('columnheader')
+          .map((th) => th.textContent);
+      // The link's site's lookup.
+      await waitFor(() =>
+        expect(calls.map((c) => c.route)).toContain(
+          'GET /api/v0/analytics?site=docs&days=7',
+        ),
+      );
+      if (lookup === 'on') {
+        await waitFor(() =>
+          expect(headers()).toEqual([
+            'Time',
+            'Path',
+            'Result',
+            'IP address',
+            'Country',
+            'Browser or client',
+          ]),
+        );
         expect(within(table).getByText('Australia')).toBeTruthy();
+        expect(
+          screen
+            .getByRole('link', { name: 'https://example.test/countries' })
+            .getAttribute('href'),
+        ).toBe('https://example.test/countries');
       } else {
-        expect(headers).not.toContain('Country');
-        expect(document.body.textContent).not.toMatch(/countr/i);
+        // Let the read settle before checking nothing changed.
+        if (lookup === 'off') await screen.findByText('1 request in 7 days');
+        else await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(headers()).not.toContain('Country');
+        expect(document.body.textContent).not.toMatch(/countr|Australia/i);
       }
       cleanup();
     }
