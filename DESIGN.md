@@ -12,7 +12,7 @@ Calm, trustworthy and plain, drawn as a constellation. People use Wardlock to ha
 <summary>What Constellation means in practice</summary>
 
 - **Dark first, light equal.** The reference look is a near-black canvas with a faint dot grid; the light theme is the same design on a pale canvas, never an afterthought. Both meet the same contrast rules.
-- **The hub and its wires.** Where a screen shows structure (the server, its groups, their sites), the server is drawn as a hub node and children hang off it on dashed connectors. Below the mobile breakpoint the wires collapse to plain indentation.
+- **The hub and its wires.** Where a screen shows structure (the server, its groups, their sites), the server is drawn as a hub node and children hang off it on dashed connectors. Below the mobile breakpoint the wires collapse to plain indentation; the sites list drops them altogether for plain section headings over compact rows.
 - **The ward.** A small brass diamond marks protection, echoing the mark. It is decorative: the policy word beside it carries the meaning.
 - **Restraint.** One soft violet glow marks the current place or the main action; everything else stays flat.
 

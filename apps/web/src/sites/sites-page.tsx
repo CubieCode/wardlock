@@ -7,6 +7,7 @@ import {
   Button,
   Checkbox,
   cx,
+  Dialog,
   EmptyState,
   HubLayout,
   Notice,
@@ -91,6 +92,22 @@ const sorts: { value: SiteSort; label: string }[] = [
   { value: 'requests', label: 'Requests' },
   { value: 'links', label: 'Links' },
 ];
+/** Below 48rem the View sheet's choices, and the line saying which apply. */
+const groupingWords: Record<GroupBy, string> = {
+  group: 'By group',
+  tag: 'By tag',
+  access: 'By access',
+  none: 'Not grouped',
+};
+const sortChoices: Record<SiteSort, { label: string; words: string }> = {
+  deploy: { label: 'Last deploy, newest first', words: 'last deploy first' },
+  name: { label: 'Name, A to Z', words: 'name A to Z' },
+  requests: {
+    label: 'Requests in 7 days, most first',
+    words: 'most requests first',
+  },
+  links: { label: 'Share links, most first', words: 'most links first' },
+};
 const densities: { value: Density; label: string }[] = [
   { value: 'comfortable', label: 'Comfortable' },
   { value: 'compact', label: 'Compact' },
@@ -217,6 +234,8 @@ const SectionView = memo(function SectionView({
   actions,
   onCollapse,
   onExpand,
+  phone,
+  choosing,
 }: {
   section: Section;
   sectionCount: number;
@@ -232,6 +251,10 @@ const SectionView = memo(function SectionView({
   actions: ListActions;
   onCollapse: (key: string) => void;
   onExpand: (key: string) => void;
+  /** Below 48rem: a plain heading with its count over compact rows. */
+  phone: boolean;
+  /** Select boxes show; below 48rem only after Select. */
+  choosing: boolean;
 }) {
   const { key, title, sites } = section;
   const id = `sites-section-${key.replace(/[^a-z0-9-]/gi, '-')}`;
@@ -241,59 +264,74 @@ const SectionView = memo(function SectionView({
   const shown = shownSites(section, sectionCount, cap, expanded);
   const links = sites.reduce((sum, site) => sum + site.workingLinks, 0);
   const requests = sites.reduce((sum, site) => sum + weekRequests(site), 0);
+  const heading = (
+    <h2 id={`${id}-title`} className="sites-section-title">
+      {section.slot !== undefined ? (
+        <span
+          className="wl-tag-dot"
+          style={{ background: `var(--color-tag-${section.slot})` }}
+          aria-hidden="true"
+        />
+      ) : null}
+      {section.href && !current ? <a href={section.href}>{title}</a> : title}
+    </h2>
+  );
+  const selectAll = (
+    <Checkbox
+      label={capped ? `Select the first ${maxSelection}` : 'Select all'}
+      aria-label={
+        capped
+          ? `Select the first ${maxSelection} in ${title}`
+          : `Select all in ${title}`
+      }
+      className="sites-section-select"
+      checked={chosen === Math.min(names.length, maxSelection)}
+      indeterminate={
+        chosen > 0 && chosen < Math.min(names.length, maxSelection)
+      }
+      onChange={(event) => actions.select(names, event.target.checked)}
+    />
+  );
+  // Below 48rem a section never collapses: three rows, then Show all.
+  const folded = collapsed && !phone;
   return (
     <Wire>
       <section className="sites-section" aria-labelledby={`${id}-title`}>
-        <div className="sites-section-head">
-          <button
-            type="button"
-            className="sites-section-toggle"
-            aria-expanded={!collapsed}
-            aria-controls={`${id}-rows`}
-            aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${title}`}
-            onClick={() => onCollapse(key)}
-          >
-            <span aria-hidden="true">›</span>
-          </button>
-          <h2 id={`${id}-title`} className="sites-section-title">
-            {section.slot !== undefined ? (
-              <span
-                className="wl-tag-dot"
-                style={{ background: `var(--color-tag-${section.slot})` }}
-                aria-hidden="true"
-              />
-            ) : null}
-            {section.href && !current ? (
-              <a href={section.href}>{title}</a>
-            ) : (
-              title
-            )}
-          </h2>
-          <span className="sites-section-meta">
-            <span>{plural(sites.length, 'site')}</span>
-            <span>{plural(links, 'link')}</span>
-            <span>{plural(requests, 'request')}</span>
-            {section.note ? (
-              <span className="sites-section-note">{section.note}</span>
-            ) : null}
-          </span>
-          <Checkbox
-            label={capped ? `Select the first ${maxSelection}` : 'Select all'}
-            aria-label={
-              capped
-                ? `Select the first ${maxSelection} in ${title}`
-                : `Select all in ${title}`
-            }
-            className="sites-section-select"
-            checked={chosen === Math.min(names.length, maxSelection)}
-            indeterminate={
-              chosen > 0 && chosen < Math.min(names.length, maxSelection)
-            }
-            onChange={(event) => actions.select(names, event.target.checked)}
-          />
-        </div>
-        <div id={`${id}-rows`} hidden={collapsed}>
-          {collapsed ? null : (
+        {phone ? (
+          <div className="sites-section-head">
+            {heading}
+            <span className="sites-section-count">
+              <span className="wl-visually-hidden">, </span>
+              {plural(sites.length, 'site')}
+            </span>
+            {choosing ? selectAll : null}
+          </div>
+        ) : (
+          <div className="sites-section-head">
+            <button
+              type="button"
+              className="sites-section-toggle"
+              aria-expanded={!collapsed}
+              aria-controls={`${id}-rows`}
+              aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${title}`}
+              onClick={() => onCollapse(key)}
+            >
+              <span aria-hidden="true">›</span>
+            </button>
+            {heading}
+            <span className="sites-section-meta">
+              <span>{plural(sites.length, 'site')}</span>
+              <span>{plural(links, 'link')}</span>
+              <span>{plural(requests, 'request')}</span>
+              {section.note ? (
+                <span className="sites-section-note">{section.note}</span>
+              ) : null}
+            </span>
+            {selectAll}
+          </div>
+        )}
+        <div id={`${id}-rows`} hidden={folded}>
+          {folded ? null : (
             <>
               <HubLayout label={`Sites in ${title}`}>
                 {shown.map((site) => (
@@ -305,6 +343,8 @@ const SectionView = memo(function SectionView({
                     tags={tags}
                     groups={groups}
                     actions={actions}
+                    phone={phone}
+                    choosing={choosing}
                   />
                 ))}
               </HubLayout>
@@ -346,6 +386,7 @@ function SitesList({ api }: { api: ApiClient }) {
   const meta = useMeta(api);
   const flash = useFlash();
   const wide = useSyncExternalStore(subscribeWide, wideSnapshot);
+  const phone = !wide;
   const cap = wide ? 5 : 3;
   const title = listTitle(query, meta.state);
   useTitle(title);
@@ -413,6 +454,20 @@ function SitesList({ api }: { api: ApiClient }) {
     () => (ready ?? []).filter((site) => selected.has(site.name)),
     [ready, selected],
   );
+
+  // Below 48rem select boxes show only after Select, or while any site is
+  // selected; Cancel clears the selection and hides them.
+  const [selecting, setSelecting] = useState(false);
+  const choosing = !phone || selecting || targets.length > 0;
+  const selectButton = useRef<HTMLButtonElement>(null);
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  // Select and Cancel swap places, so focus follows to the other one.
+  const focusNext = useRef<RefObject<HTMLButtonElement | null> | null>(null);
+  useLayoutEffect(() => {
+    focusNext.current?.current?.focus();
+    focusNext.current = null;
+  });
+  const [viewing, setViewing] = useState(false);
 
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -662,7 +717,7 @@ function SitesList({ api }: { api: ApiClient }) {
   const unseen = useMemo(() => {
     const seen = new Set<string>();
     for (const section of sections)
-      if (!collapsed.has(section.key))
+      if (phone || !collapsed.has(section.key))
         for (const site of shownSites(
           section,
           sections.length,
@@ -671,7 +726,7 @@ function SitesList({ api }: { api: ApiClient }) {
         ))
           seen.add(site.name);
     return targets.filter((site) => !seen.has(site.name)).length;
-  }, [sections, collapsed, expanded, cap, targets]);
+  }, [sections, collapsed, expanded, cap, targets, phone]);
   const bulkNote = [
     targets.length >= maxSelection
       ? `${maxSelection} is the most at once`
@@ -680,6 +735,11 @@ function SitesList({ api }: { api: ApiClient }) {
   ]
     .filter(Boolean)
     .join(' · ');
+
+  const everyName = (ready ?? []).map((site) => site.name);
+  const allChosen =
+    everyName.length > 0 &&
+    targets.length === Math.min(everyName.length, maxSelection);
 
   const chips = filterChips(query, meta.state);
   const isFiltered = filtered(query);
@@ -707,67 +767,179 @@ function SitesList({ api }: { api: ApiClient }) {
         <ViewSwitch current="list" query={query} />
       </div>
       {flash ? <Notice>{flash}</Notice> : null}
-      <div className="sites-tools">
-        <div className="sites-search">
-          <label htmlFor="sites-search" className="wl-visually-hidden">
-            Search sites
-          </label>
-          <input
-            ref={search}
-            id="sites-search"
-            type="search"
-            className="wl-input"
-            value={text}
-            placeholder="Search, or try tag:client group:docs is:public"
-            autoComplete="off"
-            spellCheck={false}
-            aria-keyshortcuts="/"
-            maxLength={200}
-            onChange={(event) => setText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') go({ ...query, q: text }, true);
+      {phone && choosing ? (
+        <div className="sites-choosing" role="toolbar" aria-label="Selection">
+          <button
+            ref={cancelButton}
+            type="button"
+            className="sites-text-button"
+            onClick={() => {
+              setChosen(new Set());
+              setSelecting(false);
+              focusNext.current = selectButton;
             }}
-          />
-          <kbd className="wl-kbd sites-search-key" aria-hidden="true">
-            /
-          </kbd>
+          >
+            Cancel
+          </button>
+          <strong className="sites-choosing-count" aria-live="polite">
+            {targets.length ? `${targets.length} selected` : 'Select sites'}
+          </strong>
+          <button
+            type="button"
+            className="sites-text-button"
+            onClick={() => actions.select(everyName, !allChosen)}
+          >
+            {allChosen ? 'Deselect all' : 'Select all'}
+          </button>
         </div>
-        <SelectField
-          label="Group by"
-          className="sites-tool"
-          value={query.by}
-          onChange={(event) =>
-            go({ ...query, by: event.target.value as GroupBy }, true)
+      ) : (
+        <div className="sites-tools">
+          <div className="sites-search">
+            <label htmlFor="sites-search" className="wl-visually-hidden">
+              Search sites
+            </label>
+            <input
+              ref={search}
+              id="sites-search"
+              type="search"
+              className="wl-input"
+              value={text}
+              placeholder={
+                phone
+                  ? 'Search, or tag:docs'
+                  : 'Search, or try tag:client group:docs is:public'
+              }
+              autoComplete="off"
+              spellCheck={false}
+              aria-keyshortcuts="/"
+              maxLength={200}
+              onChange={(event) => setText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') go({ ...query, q: text }, true);
+              }}
+            />
+            <kbd className="wl-kbd sites-search-key" aria-hidden="true">
+              /
+            </kbd>
+          </div>
+          {phone ? (
+            <Button
+              type="button"
+              className="sites-view-button"
+              aria-haspopup="dialog"
+              onClick={() => setViewing(true)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+                <circle cx="16" cy="7" r="2" />
+                <circle cx="8" cy="17" r="2" />
+              </svg>
+              View
+            </Button>
+          ) : (
+            <>
+              <SelectField
+                label="Group by"
+                className="sites-tool"
+                value={query.by}
+                onChange={(event) =>
+                  go({ ...query, by: event.target.value as GroupBy }, true)
+                }
+              >
+                {groupings.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                label="Sort"
+                className="sites-tool"
+                value={query.sort}
+                onChange={(event) =>
+                  go({ ...query, sort: event.target.value as SiteSort }, true)
+                }
+              >
+                {sorts.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </SelectField>
+              <SegmentedControl
+                label="Density"
+                value={query.d}
+                options={densities}
+                onChange={(d) => go({ ...query, d }, true)}
+              />
+            </>
+          )}
+        </div>
+      )}
+      {phone && !choosing ? (
+        <div className="sites-applied">
+          <span>
+            {groupingWords[query.by]} · {sortChoices[query.sort].words}
+          </span>
+          <button
+            ref={selectButton}
+            type="button"
+            className="sites-text-button"
+            onClick={() => {
+              setSelecting(true);
+              focusNext.current = cancelButton;
+            }}
+          >
+            Select
+          </button>
+        </div>
+      ) : null}
+      {phone ? (
+        <Dialog
+          open={viewing}
+          title="View"
+          onClose={() => setViewing(false)}
+          actions={
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => setViewing(false)}
+            >
+              Done
+            </Button>
           }
         >
-          {groupings.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField
-          label="Sort"
-          className="sites-tool"
-          value={query.sort}
-          onChange={(event) =>
-            go({ ...query, sort: event.target.value as SiteSort }, true)
-          }
-        >
-          {sorts.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </SelectField>
-        <SegmentedControl
-          label="Density"
-          value={query.d}
-          options={densities}
-          onChange={(d) => go({ ...query, d }, true)}
-        />
-      </div>
-      {chips.length ? (
+          <fieldset className="sites-view-set">
+            <legend>Group by</legend>
+            {groupings.map((option) => (
+              <label key={option.value} className="sites-view-option">
+                {option.label}
+                <input
+                  type="radio"
+                  name="sites-by"
+                  checked={query.by === option.value}
+                  onChange={() => go({ ...query, by: option.value }, true)}
+                />
+              </label>
+            ))}
+          </fieldset>
+          <fieldset className="sites-view-set">
+            <legend>Sort</legend>
+            {sorts.map((option) => (
+              <label key={option.value} className="sites-view-option">
+                {sortChoices[option.value].label}
+                <input
+                  type="radio"
+                  name="sites-sort"
+                  checked={query.sort === option.value}
+                  onChange={() => go({ ...query, sort: option.value }, true)}
+                />
+              </label>
+            ))}
+          </fieldset>
+        </Dialog>
+      ) : null}
+      {chips.length && !(phone && choosing) ? (
         <div className="sites-chips" role="group" aria-label="Filters">
           {chips.map((chip) => (
             <span key={chip.key} className="sites-chip">
@@ -857,6 +1029,7 @@ function SitesList({ api }: { api: ApiClient }) {
           className={cx(
             'sites-list',
             query.d === 'compact' ? 'sites-list-compact' : null,
+            phone ? 'sites-list-phone' : null,
           )}
           aria-busy={list.pending}
         >
@@ -889,10 +1062,12 @@ function SitesList({ api }: { api: ApiClient }) {
           </div>
           <HubLayout
             hub={
-              <span className="sites-hub">
-                <b className="sites-mono">wardlockd</b>
-                <span>{description}</span>
-              </span>
+              phone ? undefined : (
+                <span className="sites-hub">
+                  <b className="sites-mono">wardlockd</b>
+                  <span>{description}</span>
+                </span>
+              )
             }
             label="Sections"
           >
@@ -912,6 +1087,8 @@ function SitesList({ api }: { api: ApiClient }) {
                 actions={actions}
                 onCollapse={onCollapse}
                 onExpand={onExpand}
+                phone={phone}
+                choosing={choosing}
               />
             ))}
           </HubLayout>

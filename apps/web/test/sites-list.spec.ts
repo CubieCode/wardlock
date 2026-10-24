@@ -129,15 +129,33 @@ for (const scheme of schemes) {
       await expect(rows.getByRole('listitem').first()).toContainText(
         'Protected',
       );
-      await expect(rows.getByRole('listitem').first()).toContainText(
-        'Release 0',
-      );
-      await expect(rows.getByRole('listitem').first()).toContainText(
-        '2 linksSoon, 1 expiring within 48 hours',
-      );
+      // On mobile a row is compact: no deploy message, and "1 expiring".
+      if (mobile) {
+        await expect(rows.getByRole('listitem').first()).toContainText(
+          '2 links1 expiring within 48 hours',
+        );
+        await expect(page.getByText('By group · name A to Z')).toBeVisible();
+      } else {
+        await expect(rows.getByRole('listitem').first()).toContainText(
+          'Release 0',
+        );
+        await expect(rows.getByRole('listitem').first()).toContainText(
+          '2 linksSoon, 1 expiring within 48 hours',
+        );
+      }
       await expect(sections.filter({ hasText: 'No group' })).toHaveCount(1);
       await shot('list');
-      if (!mobile) {
+      if (mobile) {
+        await page.getByRole('button', { name: 'View', exact: true }).click();
+        const sheet = page.getByRole('dialog', { name: 'View' });
+        await sheet.getByRole('radio', { name: 'Access' }).check();
+        await expect(page).toHaveURL(/by=access/);
+        await shot('view-sheet');
+        await sheet.getByRole('radio', { name: 'Group' }).check();
+        await expect(page).not.toHaveURL(/by=access/);
+        await sheet.getByRole('button', { name: 'Done' }).click();
+        await expect(sheet).toBeHidden();
+      } else {
         await page.getByRole('radio', { name: 'Compact' }).check();
         await expect(page).toHaveURL(/d=compact/);
         await shot('compact');
@@ -148,19 +166,22 @@ for (const scheme of schemes) {
         .getByRole('button', { name: `Show all 20 in Alpha ${label}` })
         .click();
       await expect(rows.getByRole('listitem')).toHaveCount(20);
-      // Collapsing hides the rows and says so.
-      const toggle = section.getByRole('button', {
-        name: `Collapse Alpha ${label}`,
-      });
-      await toggle.click();
-      await expect(rows).toHaveCount(0);
-      await expect(
-        section.getByRole('button', { name: `Expand Alpha ${label}` }),
-      ).toHaveAttribute('aria-expanded', 'false');
-      await section
-        .getByRole('button', { name: `Expand Alpha ${label}` })
-        .click();
-      await expect(rows.getByRole('listitem')).toHaveCount(20);
+      // Collapsing hides the rows and says so; on mobile sections never
+      // collapse.
+      if (!mobile) {
+        const toggle = section.getByRole('button', {
+          name: `Collapse Alpha ${label}`,
+        });
+        await toggle.click();
+        await expect(rows).toHaveCount(0);
+        await expect(
+          section.getByRole('button', { name: `Expand Alpha ${label}` }),
+        ).toHaveAttribute('aria-expanded', 'false');
+        await section
+          .getByRole('button', { name: `Expand Alpha ${label}` })
+          .click();
+        await expect(rows.getByRole('listitem')).toHaveCount(20);
+      }
     });
 
     await test.step('the navigator filters by group, with a chip and Clear all', async () => {
@@ -230,6 +251,18 @@ for (const scheme of schemes) {
     await test.step('bulk tagging Gamma, then Undo', async () => {
       await page.goto(`${origin}/sites?g=${gamma.id}&sort=name`);
       const section = page.getByRole('region', { name: `Gamma ${label}` });
+      // On mobile select boxes show only after Select.
+      if (mobile) {
+        await expect(
+          section.getByRole('checkbox', {
+            name: `Select all in Gamma ${label}`,
+          }),
+        ).toHaveCount(0);
+        await page.getByRole('button', { name: 'Select', exact: true }).click();
+        await expect(
+          page.getByRole('toolbar', { name: 'Selection' }),
+        ).toContainText('Select sites');
+      }
       await section
         .getByRole('checkbox', { name: `Select all in Gamma ${label}` })
         .check();
@@ -300,30 +333,49 @@ for (const scheme of schemes) {
           has: page.getByRole('link', { name: name(40), exact: true }),
         })
         .last();
-      await row.getByRole('button', { name: `Pin ${name(40)}` }).click();
-      await expect(
-        row.getByRole('button', { name: `Pin ${name(40)}` }),
-      ).toHaveAttribute('aria-pressed', 'true');
-      // Undo by keyboard: focus stays on the star.
-      await expect(page.getByRole('status')).toContainText(
-        'Control Z undoes it.',
-      );
-      await shot('undo-toast');
-      await page.keyboard.press('Control+z');
-      await expect(page.getByRole('status').getByText('Undone.')).toBeVisible();
-      await expect(
-        row.getByRole('button', { name: `Pin ${name(40)}` }),
-      ).toHaveAttribute('aria-pressed', 'false');
-      await expect(
-        row.getByRole('button', { name: `Pin ${name(40)}` }),
-      ).toBeFocused();
-      await row.getByRole('button', { name: `Pin ${name(40)}` }).click();
-      await expect(
-        row.getByRole('button', { name: `Pin ${name(40)}` }),
-      ).toHaveAttribute('aria-pressed', 'true');
-      await row
-        .getByRole('button', { name: `Actions for ${name(40)}` })
-        .click();
+      const more = row.getByRole('button', { name: `Actions for ${name(40)}` });
+      if (mobile) {
+        // Cancel leaves choosing; the row's ⋯ menu pins on mobile.
+        await page.getByRole('button', { name: 'Cancel' }).click();
+        await more.click();
+        await page.getByRole('menuitem', { name: 'Pin', exact: true }).click();
+        await expect(row.getByRole('img', { name: 'Pinned' })).toBeVisible();
+        await expect(page.getByRole('status')).toContainText(
+          'Control Z undoes it.',
+        );
+        await shot('undo-toast');
+        await page.keyboard.press('Control+z');
+        await expect(
+          page.getByRole('status').getByText('Undone.'),
+        ).toBeVisible();
+        await expect(row.getByRole('img', { name: 'Pinned' })).toHaveCount(0);
+        await expect(more).toBeFocused();
+      } else {
+        await row.getByRole('button', { name: `Pin ${name(40)}` }).click();
+        await expect(
+          row.getByRole('button', { name: `Pin ${name(40)}` }),
+        ).toHaveAttribute('aria-pressed', 'true');
+        // Undo by keyboard: focus stays on the star.
+        await expect(page.getByRole('status')).toContainText(
+          'Control Z undoes it.',
+        );
+        await shot('undo-toast');
+        await page.keyboard.press('Control+z');
+        await expect(
+          page.getByRole('status').getByText('Undone.'),
+        ).toBeVisible();
+        await expect(
+          row.getByRole('button', { name: `Pin ${name(40)}` }),
+        ).toHaveAttribute('aria-pressed', 'false');
+        await expect(
+          row.getByRole('button', { name: `Pin ${name(40)}` }),
+        ).toBeFocused();
+        await row.getByRole('button', { name: `Pin ${name(40)}` }).click();
+        await expect(
+          row.getByRole('button', { name: `Pin ${name(40)}` }),
+        ).toHaveAttribute('aria-pressed', 'true');
+      }
+      await more.click();
       await page.getByRole('menuitem', { name: 'Edit tags…' }).click();
       const tags = page.getByRole('dialog', { name: `Tags for ${name(40)}` });
       await tags
