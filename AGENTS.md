@@ -28,6 +28,7 @@ Commands:
 
 - `pnpm install --frozen-lockfile`, then `pnpm check`: the definition-of-done gate. It runs ESLint and Prettier, the ROADMAP board check, typecheck, Vitest, the TS and Go builds, the licence/boundary check, the codegen drift check, and for every Go module gofmt, `go vet`, golangci-lint, `go test -race` and govulncheck (`scripts/check-go.sh`). The first run builds the pinned Go tools into `.local/bin`.
 - `pnpm dev`: wardlockd plus the dashboard's Vite dev server, proxied through wardlockd, on this lane's `.env` ports with data in `.local/data`.
+- `pnpm demo`: a throwaway wardlockd in `.local/demo` (wiped each run, never `.local/data`) seeded with synthetic sites and 90 days of traffic, for looking at and screenshotting the dashboard; Ctrl+C stops it.
 - `pnpm codegen` after editing `openapi.yaml`, a migration or a query. `pnpm format` before final checks. `pnpm build` builds the dashboard and the binaries into `.local/bin`. `pnpm browser:test` runs Playwright acceptance against a real server (install the browser once: `pnpm --filter @wardlock/web exec playwright install chromium`).
 - `pnpm roadmap:board` after changing any Status or PR line in ROADMAP.md: it regenerates the status board and folds finished items. `pnpm check` runs it with `--check` and fails while the board is stale.
 - Go tests sit next to code as `*_test.go`; TS tests as `*.test.ts(x)`; browser specs under `apps/web/test/`.

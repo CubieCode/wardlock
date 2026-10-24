@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "demo": "bash scripts/demo.sh",
     "build": "turbo build && bash scripts/build-go.sh",
     "lint": "eslint . && prettier --check .",
     "typecheck": "turbo typecheck && tsc -p tsconfig.tools.json",
