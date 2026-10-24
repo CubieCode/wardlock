@@ -4,9 +4,12 @@ import { describe, expect, it } from 'vitest';
 import {
   dotCap,
   dotRadius,
+  labelSize,
   layoutMap,
   maxDot,
   minDot,
+  sizeCap,
+  titleSize,
   type MapLayout,
 } from './map-layout.js';
 import type { Group } from './site-page-organise.js';
@@ -70,7 +73,7 @@ function clustersApart(layout: MapLayout) {
   const extent = layout.hubs.map((hub) => ({
     hub,
     r: Math.max(
-      22,
+      layout.metrics.hub,
       ...hub.dots.map((d) => Math.hypot(d.x - hub.x, d.y - hub.y) + d.r),
     ),
   }));
@@ -206,7 +209,7 @@ describe('map layout', () => {
     }
   });
 
-  it('draws at most the cap per hub, pinned, matching and busiest first', () => {
+  it('draws at most the cap per hub, pinned and busiest first', () => {
     const sites = Array.from({ length: dotCap + 20 }, (_, i) =>
       site(`s-${String(i).padStart(3, '0')}`, {
         requests: [i, 0, 0, 0, 0, 0, 0],
@@ -218,15 +221,155 @@ describe('map layout', () => {
     const [hub] = layout.hubs;
     expect(hub!.dots).toHaveLength(dotCap);
     expect(hub!.hidden).toBe(20);
+    // The one match has no dot, and the overflow counts it.
+    expect(hub!.hiddenMatching).toBe(1);
     const drawn = new Set(hub!.dots.map((d) => d.site.name));
-    // Pinned and matching sites are drawn, though both are among the quietest.
+    // Pinned is drawn, though among the quietest; matching changes nothing.
     expect(drawn.has('s-000')).toBe(true);
-    expect(drawn.has('s-001')).toBe(true);
+    expect(drawn.has('s-001')).toBe(false);
     // Then the busiest: the quietest of the rest are left out.
     expect(drawn.has('s-002')).toBe(false);
     expect(drawn.has(`s-0${dotCap + 19}`)).toBe(true);
     expect(hub!.sites).toHaveLength(dotCap + 20);
   });
+
+  it('moves no dot when a filter is applied', () => {
+    const groups = [docs, work, empty];
+    const sites = many(300, groups).map((s, i) =>
+      i % 17 ? s : { ...s, pinned: true },
+    );
+    const place = (layout: MapLayout) =>
+      layout.hubs.flatMap((hub) =>
+        hub.dots.map((d) => [d.site.id, d.x, d.y, d.r, d.label?.text]),
+      );
+    for (const width of [1100, 340]) {
+      const before = layoutMap(sites, groups, undefined, { width });
+      const some = new Set(
+        sites.filter((_, i) => i % 5 === 0).map((s) => s.id),
+      );
+      const after = layoutMap(sites, groups, some, { width });
+      expect(place(after)).toEqual(place(before));
+      expect(after.hubs.map((h) => [h.x, h.y])).toEqual(
+        before.hubs.map((h) => [h.x, h.y]),
+      );
+      expect(after.width).toBe(before.width);
+      expect(after.height).toBe(before.height);
+    }
+  });
+
+  it('sizes dots against the 90th percentile, so one outlier changes little', () => {
+    const sites = Array.from({ length: 20 }, (_, i) =>
+      site(`p-${i}`, {
+        requests: [i === 19 ? 100000 : 10 + i, 0, 0, 0, 0, 0, 0],
+      }),
+    );
+    expect(sizeCap(sites)).toBe(27);
+    expect(sizeCap([site('none')])).toBe(0);
+    const layout = layoutMap(sites, []);
+    const r = Object.fromEntries(
+      layout.hubs[0]!.dots.map((d) => [d.site.name, d.r]),
+    );
+    expect(r['p-19']).toBe(maxDot);
+    expect(r['p-18']).toBe(maxDot);
+    expect(r['p-0']).toBeGreaterThan(minDot + (maxDot - minDot) / 2);
+  });
+
+  it.each([
+    [3, 1100],
+    [12, 1100],
+    [20, 1100],
+    [3, 340],
+    [12, 340],
+    [20, 340],
+  ])(
+    'fits 300 sites in %i groups into %ipx, with labels clear of hubs and each other',
+    (count, width) => {
+      const groups = Array.from({ length: count }, (_, i): Group => ({
+        id: id(9100 + i),
+        name: `A group with a longish name ${i}`,
+        createdAt: 0,
+      }));
+      const sites = many(300, groups).map((s, i) =>
+        i % 4 ? s : { ...s, pinned: true, name: `pinned-site-name-${i}` },
+      );
+      const layout = layoutMap(sites, groups, undefined, { width });
+      expect(layout.width).toBe(width);
+      expect(apart(layout)).toBe(true);
+      expect(clustersApart(layout)).toBe(true);
+      const box = (x: number, y: number, w: number, h: number) => ({
+        x1: x,
+        y1: y,
+        x2: x + w,
+        y2: y + h,
+      });
+      const labels = layout.hubs.flatMap((hub) =>
+        hub.dots.flatMap((d) => {
+          if (!d.label) return [];
+          const w = d.label.text.length * labelSize * 0.62;
+          const x =
+            d.label.anchor === 'start'
+              ? d.label.x
+              : d.label.anchor === 'end'
+                ? d.label.x - w
+                : d.label.x - w / 2;
+          return [box(x, d.label.y - labelSize * 0.8, w, labelSize)];
+        }),
+      );
+      expect(labels.length).toBeGreaterThan(0);
+      const hits = (a: ReturnType<typeof box>, b: ReturnType<typeof box>) =>
+        a.x1 < b.x2 && b.x1 < a.x2 && a.y1 < b.y2 && b.y1 < a.y2;
+      const hubs = layout.hubs.map((hub) =>
+        box(
+          hub.x - layout.metrics.hub,
+          hub.y - layout.metrics.hub,
+          2 * layout.metrics.hub,
+          2 * layout.metrics.hub,
+        ),
+      );
+      const titles = layout.hubs.map((hub) => {
+        const w = hub.titleText.length * titleSize * 0.62;
+        return box(
+          hub.titleAt.x - w / 2,
+          hub.titleAt.y - titleSize,
+          w,
+          titleSize,
+        );
+      });
+      for (const [i, a] of labels.entries()) {
+        for (const h of hubs) expect(hits(a, h)).toBe(false);
+        for (const t of titles) expect(hits(a, t)).toBe(false);
+        for (const b of labels.slice(i + 1)) expect(hits(a, b)).toBe(false);
+      }
+      for (const [i, a] of titles.entries())
+        for (const b of titles.slice(i + 1)) expect(hits(a, b)).toBe(false);
+      // No wire runs through another group's cluster.
+      const near = (
+        p: { x: number; y: number },
+        a: { x: number; y: number },
+        b: { x: number; y: number },
+      ) => {
+        const vx = b.x - a.x;
+        const vy = b.y - a.y;
+        const t = Math.max(
+          0,
+          Math.min(
+            1,
+            ((p.x - a.x) * vx + (p.y - a.y) * vy) / (vx * vx + vy * vy || 1),
+          ),
+        );
+        return Math.hypot(p.x - a.x - t * vx, p.y - a.y - t * vy);
+      };
+      for (const hub of layout.hubs)
+        for (const other of layout.hubs)
+          if (other !== hub)
+            for (const [k, point] of hub.wire.slice(1).entries())
+              expect(near(other, hub.wire[k]!, point)).toBeGreaterThan(other.r);
+      for (const t of titles) {
+        expect(t.x1).toBeGreaterThanOrEqual(0);
+        expect(t.x2).toBeLessThanOrEqual(width);
+      }
+    },
+  );
 
   it('dims sites outside the filters, and hubs with none inside', () => {
     const sites = [

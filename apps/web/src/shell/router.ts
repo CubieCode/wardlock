@@ -54,9 +54,18 @@ export function useLinkInterception() {
         event.altKey
       )
         return;
+      // Attributes, not properties: an SVG <a> keeps `href` and `target` as
+      // SVGAnimatedString objects, which are always truthy.
       const link = (event.target as Element | null)?.closest?.('a');
-      if (!link || link.target || link.hasAttribute('download')) return;
-      const url = new URL(link.href, window.location.href);
+      const href = link?.getAttribute('href');
+      if (
+        !link ||
+        typeof href !== 'string' ||
+        link.getAttribute('target') ||
+        link.hasAttribute('download')
+      )
+        return;
+      const url = new URL(href, window.location.href);
       if (url.origin !== window.location.origin) return;
       event.preventDefault();
       navigate(url.pathname + url.search + url.hash);

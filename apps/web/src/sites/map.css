@@ -98,18 +98,18 @@
   background: var(--color-surface);
 }
 
-/* A picture wider than half its size scrolls sideways; vertical scrolling
-   always reaches the page. */
+/* The picture is laid out for the frame's width; only a cluster too big for
+   a phone scrolls sideways, and vertical scrolling always reaches the page. */
 .map-scroll {
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
-  padding: var(--space-2);
 }
 
+/* Drawn at 1:1, so these text sizes are what the reader sees. */
 .map-svg {
   display: block;
-  height: auto;
+  max-width: none;
   margin: 0 auto;
   font-family: var(--font-mono);
 }
@@ -117,6 +117,10 @@
 .map-svg text {
   fill: var(--color-text);
   text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--color-surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
 }
 
 .map-svg a {
@@ -125,6 +129,7 @@
 }
 
 .map-wire {
+  fill: none;
   stroke: color-mix(in srgb, var(--color-primary) 55%, transparent);
   stroke-width: 1.5;
   stroke-dasharray: 5 5;
@@ -161,13 +166,15 @@
   stroke-width: 3;
 }
 
-.map-hub-count {
-  font-size: 13px;
+.map-svg .map-hub-count {
+  font-size: 12px;
   font-weight: var(--font-weight-bold);
+  stroke: none;
+  pointer-events: none;
 }
 
 .map-svg .map-hub-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: var(--font-weight-bold);
 }
 
@@ -186,10 +193,12 @@
   stroke: var(--color-focus);
 }
 
-/* A surface ring parts touching dots. */
+/* A surface ring parts touching dots. Protected is a diamond and public a
+   circle (map-page.tsx), so the colour is never the only cue. */
 .map-dot {
   stroke: var(--color-surface);
   stroke-width: 1.5;
+  stroke-linejoin: round;
 }
 
 .map-dot-protected {
@@ -200,22 +209,28 @@
   fill: var(--color-public);
 }
 
+/* Taken down: the same shape as a dashed outline in its access colour. */
 .map-dot-down {
   fill: var(--color-surface);
-  stroke: var(--color-border-strong);
-  stroke-dasharray: 2 2;
+  stroke-dasharray: 2 1.5;
+}
+
+.map-dot-down.map-dot-protected {
+  stroke: var(--color-ward);
+}
+
+.map-dot-down.map-dot-public {
+  stroke: var(--color-public);
 }
 
 .map-dot-key {
   fill: var(--color-text-muted);
 }
 
+/* Labels never take a click from the dot or hub beneath them. */
 .map-svg .map-label {
-  font-size: 11px;
-  paint-order: stroke;
-  stroke: var(--color-surface);
-  stroke-width: 3px;
-  stroke-linejoin: round;
+  font-size: 12px;
+  pointer-events: none;
 }
 
 .map-server circle {
@@ -225,14 +240,16 @@
   filter: drop-shadow(0 0 14px var(--color-primary-soft));
 }
 
-.map-server-name {
-  font-size: 13px;
+.map-svg .map-server-name {
+  font-size: 14px;
   font-weight: var(--font-weight-bold);
+  stroke: none;
 }
 
 .map-svg .map-server-count {
-  font-size: 11px;
+  font-size: 12px;
   fill: var(--color-text-muted);
+  stroke: none;
 }
 
 .map-dim {

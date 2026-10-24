@@ -250,9 +250,9 @@ describe('sites map', () => {
     ).toEqual([
       'Protected',
       'Public',
-      'Taken down',
+      'Dashed: taken down',
       'Group has protected sites',
-      'Size: requests in 7 days (largest 1,200)',
+      'Size: requests in 7 days (largest: 1,200 or more)',
       'Names on pinned sites',
     ]);
     const work = screen.getByRole('list', { name: 'Sites in Client work' });
@@ -334,7 +334,12 @@ describe('sites map', () => {
     expect(tip?.textContent).toBe(
       'portalProtected1,200 requests in 7 daysPinned',
     );
-    fireEvent.keyDown(document, { key: 'Escape' });
+    // Escape elsewhere, such as in the search, is not the map's.
+    fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Search sites' }), {
+      key: 'Escape',
+    });
+    expect(document.querySelector('.map-tip')).not.toBeNull();
+    fireEvent.keyDown(portal, { key: 'Escape' });
     expect(document.querySelector('.map-tip')).toBeNull();
     fireEvent.focus(within(map()).getByRole('link', { name: 'Docs: 1 site' }));
     expect(document.querySelector('.map-tip')?.textContent).toContain(

@@ -27,9 +27,12 @@ import { navigate, useLocation } from '../shell/router.js';
 import { AccessWord } from './format.js';
 import { useMapSites } from './map-data.js';
 import {
+  defaultWidth,
+  dotCap,
   layoutMap,
   maxDot,
   minDot,
+  serverRadius,
   type MapDot,
   type MapHub,
   type MapLayout,
@@ -84,6 +87,45 @@ const siteHref = (site: SiteSummary) =>
 /** The map filtered to one group, keeping how the list is drawn. */
 const hubHref = (hub: MapHub, query: ListQuery) =>
   mapHref({ ...unfiltered(query), g: hub.group });
+
+/**
+ * A site's mark: a diamond, like the ward, when protected and a circle when
+ * public, so access never rests on colour alone; taken down keeps the shape
+ * as a dashed outline. A diamond has the area of the circle of radius `r`.
+ */
+export function DotMark({
+  visibility,
+  down,
+  x,
+  y,
+  r,
+  className,
+}: {
+  visibility: SiteSummary['visibility'];
+  down: boolean;
+  x: number;
+  y: number;
+  r: number;
+  className?: string;
+}) {
+  const classes = cx(
+    'map-dot',
+    `map-dot-${visibility}`,
+    down ? 'map-dot-down' : null,
+    className,
+  );
+  if (visibility === 'public')
+    return <circle className={classes} cx={x} cy={y} r={r} />;
+  const h = round1(r * 1.2533);
+  return (
+    <polygon
+      className={classes}
+      points={`${x},${round1(y - h)} ${round1(x + h)},${y} ${x},${round1(y + h)} ${round1(x - h)},${y}`}
+    />
+  );
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
 
 interface Tip {
   key: string;
@@ -148,7 +190,8 @@ function MapPicture({
   const scroller = useRef<HTMLDivElement>(null);
   const [tip, setTip] = useState<Tip | null>(null);
 
-  // A picture wider than the frame starts with the server in the middle.
+  // A picture wider than the frame (a cluster too big for a phone) starts
+  // with the server in the middle.
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el) el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2;
@@ -177,10 +220,18 @@ function MapPicture({
   const hide = (key: string) =>
     setTip((current) => (current?.key === key ? null : current));
 
+  // Escape hides the tooltip: from the map, or from anywhere while the
+  // pointer shows it and nothing else has focus.
   useEffect(() => {
     if (!tip) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setTip(null);
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const target = event.target as Node | null;
+      if (
+        target === document.body ||
+        (target && frame.current?.contains(target))
+      )
+        setTip(null);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -193,32 +244,26 @@ function MapPicture({
     onBlur: () => hide(key),
   });
 
-  const { server } = layout;
+  const { server, metrics } = layout;
   return (
     <div className="map-frame" ref={frame}>
       <div className="map-scroll" ref={scroller}>
         <svg
           className="map-svg"
+          // Drawn at the size it was laid out for, never scaled, so its text
+          // keeps the stylesheet's sizes.
+          width={layout.width}
+          height={layout.height}
           viewBox={`0 0 ${layout.width} ${layout.height}`}
-          // Never larger than life, and below half size it scrolls sideways
-          // instead of shrinking past reading.
-          style={{
-            width: `min(100%, ${layout.width}px)`,
-            aspectRatio: `${layout.width} / ${layout.height}`,
-            minWidth: `${Math.round(layout.width * 0.5)}px`,
-          }}
           role="group"
           aria-label={`Map of ${plural(layout.sites, 'site')} in ${plural(layout.hubs.length, 'group')} around wardlockd`}
         >
           <g aria-hidden="true">
             {layout.hubs.map((hub) => (
               <g key={hub.key} className={cx(hub.dim ? 'map-dim' : null)}>
-                <line
+                <polyline
                   className="map-wire"
-                  x1={hub.wire.x1}
-                  y1={hub.wire.y1}
-                  x2={hub.wire.x2}
-                  y2={hub.wire.y2}
+                  points={hub.wire.map((p) => `${p.x},${p.y}`).join(' ')}
                 />
                 {hub.dots.map((dot) => (
                   <line
@@ -268,7 +313,7 @@ function MapPicture({
                   )}
                   cx={hub.x}
                   cy={hub.y}
-                  r={22}
+                  r={metrics.hub}
                 />
                 <text className="map-hub-count" x={hub.x} y={hub.y + 4}>
                   {number(hub.sites.length)}
@@ -277,9 +322,8 @@ function MapPicture({
                   className="map-hub-title"
                   x={hub.titleAt.x}
                   y={hub.titleAt.y}
-                  textAnchor={hub.titleAt.anchor}
                 >
-                  {hub.title}
+                  {hub.titleText}
                 </text>
               </a>
               {hub.dots.map((dot) => (
@@ -304,19 +348,22 @@ function MapPicture({
                     cy={dot.y}
                     r={dot.r + 4}
                   />
-                  <circle
-                    className={`map-dot map-dot-${dot.access}`}
-                    cx={dot.x}
-                    cy={dot.y}
+                  <DotMark
+                    visibility={dot.site.visibility}
+                    down={dot.site.unavailable}
+                    x={dot.x}
+                    y={dot.y}
                     r={dot.r}
                   />
-                  {dot.site.pinned ? (
+                  {dot.label ? (
                     <text
                       className="map-label"
-                      x={dot.x}
-                      y={dot.y + dot.r + 12}
+                      x={dot.label.x}
+                      y={dot.label.y}
+                      // A style: map.css centres text, over any attribute.
+                      style={{ textAnchor: dot.label.anchor }}
                     >
-                      {dot.site.name}
+                      {dot.label.text}
                     </text>
                   ) : null}
                 </a>
@@ -324,7 +371,7 @@ function MapPicture({
             </g>
           ))}
           <g className="map-server" aria-hidden="true">
-            <circle cx={server.x} cy={server.y} r={44} />
+            <circle cx={server.x} cy={server.y} r={serverRadius} />
             <text className="map-server-name" x={server.x} y={server.y - 2}>
               wardlockd
             </text>
@@ -378,21 +425,22 @@ function Legend({
     <ul className="map-legend" aria-label="Legend">
       <li>
         <Swatch>
-          <circle className="map-dot map-dot-protected" cx={12} cy={12} r={6} />
+          <DotMark visibility="protected" down={false} x={12} y={12} r={6} />
         </Swatch>
         Protected
       </li>
       <li>
         <Swatch>
-          <circle className="map-dot map-dot-public" cx={12} cy={12} r={6} />
+          <DotMark visibility="public" down={false} x={12} y={12} r={6} />
         </Swatch>
         Public
       </li>
       <li>
-        <Swatch>
-          <circle className="map-dot map-dot-down" cx={12} cy={12} r={6} />
+        <Swatch wide>
+          <DotMark visibility="protected" down x={9} y={12} r={6} />
+          <DotMark visibility="public" down x={27} y={12} r={6} />
         </Swatch>
-        Taken down
+        Dashed: taken down
       </li>
       <li>
         <Swatch>
@@ -414,18 +462,20 @@ function Legend({
         </Swatch>
         Size: requests in 7 days
         {layout.maxRequests > 0
-          ? ` (largest ${number(layout.maxRequests)})`
+          ? ` (largest: ${number(layout.maxRequests)} or more)`
           : ''}
       </li>
       <li>Names on pinned sites</li>
       {filtering ? (
         <li>
           <Swatch>
-            <circle
-              className="map-dot map-dot-protected map-dim"
-              cx={12}
-              cy={12}
+            <DotMark
+              visibility="protected"
+              down={false}
+              x={12}
+              y={12}
               r={6}
+              className="map-dim"
             />
           </Swatch>
           Faded: outside the filters
@@ -448,8 +498,17 @@ function SitesByGroup({
   summaryRef: RefObject<HTMLElement | null>;
 }) {
   const filtering = matches !== undefined;
+  // Below 48rem dots are smaller than a fingertip, so the list starts open.
+  const [open, setOpen] = useState(
+    () => window.matchMedia?.('(max-width: 47.99rem)').matches ?? false,
+  );
   return (
-    <details className="map-list" id="map-sites">
+    <details
+      className="map-list"
+      id="map-sites"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary ref={summaryRef}>
         Sites by group <span>({number(layout.sites)})</span>
       </summary>
@@ -495,6 +554,21 @@ function SitesByGroup({
   );
 }
 
+/** The element's content width, kept up to date; 0 until measured. */
+function useWidth(element: HTMLElement | null) {
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    if (!element) return;
+    const read = () => setWidth(Math.floor(element.clientWidth));
+    read();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(read);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element]);
+  return width;
+}
+
 /**
  * `/sites?view=map`: every site around the server, by group, coloured by access
  * and sized by requests. The list's filters and search fade the sites they
@@ -535,12 +609,17 @@ export function MapPage({ api }: { api: ApiClient }) {
   );
   const ready = data.state.kind === 'ready' ? data.state : undefined;
   const filtering = ready?.matches !== undefined;
+  const [body, setBody] = useState<HTMLDivElement | null>(null);
+  const width = useWidth(body);
   const layout = useMemo(
     () =>
       ready && meta.state.kind === 'ready'
-        ? layoutMap(ready.sites, groups, ready.matches)
+        ? layoutMap(ready.sites, groups, ready.matches, {
+            // Inside the frame's border.
+            width: width ? width - 2 : defaultWidth,
+          })
         : undefined,
-    [ready, meta.state.kind, groups],
+    [ready, meta.state.kind, groups, width],
   );
 
   const summary = useRef<HTMLElement>(null);
@@ -555,6 +634,11 @@ export function MapPage({ api }: { api: ApiClient }) {
       : plural(ready.sites.length, 'site')
     : undefined;
   const overflow = layout?.hubs.filter((hub) => hub.hidden > 0) ?? [];
+  const openList = () => {
+    const list = summary.current?.parentElement;
+    if (list instanceof HTMLDetailsElement) list.open = true;
+    summary.current?.focus();
+  };
 
   return (
     <div className="sites-page map-page">
@@ -652,7 +736,7 @@ export function MapPage({ api }: { api: ApiClient }) {
           </p>
         </EmptyState>
       ) : (
-        <div className="map-body" aria-busy={data.pending}>
+        <div className="map-body" aria-busy={data.pending} ref={setBody}>
           {filtering && ready?.matches?.size === 0 ? (
             <p className="map-note" role="status">
               No sites match. Search looks at names, addresses, domains, tags
@@ -664,9 +748,7 @@ export function MapPage({ api }: { api: ApiClient }) {
             href="#map-sites"
             onClick={(event) => {
               event.preventDefault();
-              const list = summary.current?.parentElement;
-              if (list instanceof HTMLDetailsElement) list.open = true;
-              summary.current?.focus();
+              openList();
             }}
           >
             Skip the map
@@ -674,14 +756,28 @@ export function MapPage({ api }: { api: ApiClient }) {
           <MapPicture layout={layout} query={query} filtering={filtering} />
           {overflow.length ? (
             <p className="map-note">
+              A group draws at most {number(dotCap)} dots, pinned and busiest
+              first. Not drawn:{' '}
               {overflow
                 .map(
                   (hub) =>
-                    `${hub.title} draws ${number(hub.dots.length)} of its ${number(hub.sites.length)} sites`,
+                    `${hub.title} ${number(hub.hidden)} more` +
+                    (filtering
+                      ? `, ${number(hub.hiddenMatching)} matching`
+                      : ''),
                 )
                 .join('; ')}
-              : pinned, matching and busiest first. Sites by group lists every
-              site.
+              :{' '}
+              <a
+                href="#map-sites"
+                onClick={(event) => {
+                  event.preventDefault();
+                  openList();
+                }}
+              >
+                see the list
+              </a>
+              .
             </p>
           ) : null}
           <Legend layout={layout} filtering={filtering} />

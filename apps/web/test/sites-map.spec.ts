@@ -132,8 +132,10 @@ for (const scheme of schemes) {
         await expect(dot(0)).toHaveAttribute('data-access', 'protected');
         await expect(dot(4)).toHaveAttribute('data-access', 'public');
         await expect(dot(5)).toHaveAttribute('data-access', 'down');
-        // Pinned sites carry their names.
-        await expect(dot(1)).toHaveText(name(1));
+        // Pinned sites carry their names where there is room: on a phone a
+        // long name that would reach past the edge stays in the link's name.
+        if (info.project.name !== 'mobile')
+          await expect(dot(1)).toHaveText(name(1));
         await expect(dot(4)).toHaveText('');
         await shot('search');
       });
@@ -181,7 +183,12 @@ for (const scheme of schemes) {
         await expect(map).toBeVisible();
         await expect(dot(5)).toHaveAttribute('data-access', 'down');
         await shot('default');
-        await page.locator('summary', { hasText: 'Sites by group' }).click();
+        // Below 48rem the list starts open, since dots are smaller than a
+        // fingertip.
+        if (info.project.name === 'mobile')
+          await expect(page.locator('#map-sites')).toHaveAttribute('open');
+        else
+          await page.locator('summary', { hasText: 'Sites by group' }).click();
         const list = page.getByRole('list', {
           name: `Sites in North ${label}`,
         });
@@ -195,12 +202,20 @@ for (const scheme of schemes) {
         await shot('text-list');
       });
 
-      await test.step('a hub filters the map to its group; List keeps it', async () => {
-        // From the keyboard: a pinned site's label can lie over the hub.
+      // A marker on the window survives client-side navigation only.
+      const mark = () =>
+        page.evaluate(() => Object.assign(window, { mapMarker: true }));
+      const marked = () => page.evaluate(() => 'mapMarker' in window);
+
+      await test.step('a hub filters the map to its group without a reload; List keeps it', async () => {
+        await mark();
+        // The hub's circle, by pointer: labels never take its clicks.
         await map
           .getByRole('link', { name: `North ${label}: 20 sites` })
-          .press('Enter');
+          .locator('.map-hub-mark')
+          .click();
         await expect(page).toHaveURL(`${origin}/sites?g=${north.id}&view=map`);
+        expect(await marked()).toBe(true);
         await expect(
           page.getByRole('group', { name: 'Filters' }),
         ).toContainText(`Group: North ${label}`);
@@ -214,6 +229,17 @@ for (const scheme of schemes) {
         await expect(
           page.getByRole('heading', { level: 1, name: `North ${label}` }),
         ).toBeVisible();
+      });
+
+      await test.step('a dot opens its site without a reload', async () => {
+        await page.goto(`${origin}/sites?view=map&q=${prefix}`);
+        await mark();
+        await dot(4).locator('.map-dot').click();
+        await expect(page).toHaveURL(`${origin}/sites/${name(4)}`);
+        await expect(
+          page.getByRole('heading', { level: 1, name: name(4) }),
+        ).toBeVisible();
+        expect(await marked()).toBe(true);
       });
     } finally {
       admin('restore-site', name(5));
