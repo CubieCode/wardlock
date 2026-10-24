@@ -1138,7 +1138,7 @@ export interface paths {
     put?: never;
     /**
      * Change the group, tags or pin of many sites at once.
-     * @description Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+     * @description Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
      */
     post: operations['organiseSites'];
     delete?: never;
@@ -1600,6 +1600,8 @@ export interface components {
       ungroup?: boolean;
       /** @description Pin (true) or unpin (false) every site; a pinned site stays pinned since it was first pinned. */
       pinned?: boolean;
+      /** @description Only with `pinned: true`: pin each site that is not pinned as of this time rather than now, so undoing an unpin puts the site back in its place among the pins. Not in the future. */
+      pinnedAt?: components['schemas']['Timestamp'];
     };
     SiteOrganisation: {
       site: components['schemas']['SiteName'];
@@ -1608,6 +1610,8 @@ export interface components {
       /** @description In tag-name order. */
       tagIds: components['schemas']['Id'][];
       pinned: boolean;
+      /** @description When the site was pinned; absent when it was not. */
+      pinnedAt?: components['schemas']['Timestamp'];
     };
     OrganiseSitesResult: {
       /** @description Each site's group, tags and pin before the change, in the order named. */
@@ -5013,7 +5017,8 @@ export interface operations {
            *           "tagIds": [
            *             "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e81"
            *           ],
-           *           "pinned": true
+           *           "pinned": true,
+           *           "pinnedAt": 1767139260000
            *         }
            *       ]
            *     }

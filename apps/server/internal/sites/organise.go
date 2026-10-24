@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -305,6 +306,9 @@ type Bulk struct {
 	GroupID  string
 	// Pinned, when not nil, pins (true) or unpins (false) the sites.
 	Pinned *bool
+	// PinnedAt, with Pinned true, is the time a site that is not pinned is
+	// pinned at instead of now (to undo an unpin). Never in the future.
+	PinnedAt time.Time
 }
 
 // Organise applies b to up to MaxOrganiseSites of the owner's sites, all
@@ -348,10 +352,21 @@ func (s *Service) Organise(ctx context.Context, ownerID string, siteNames []stri
 		SetGroup: b.SetGroup, GroupID: b.GroupID,
 		MaxTagsPerSite: MaxTagsPerSite,
 	}
+	if !b.PinnedAt.IsZero() {
+		if b.Pinned == nil || !*b.Pinned {
+			return nil, invalid("pinnedAt", "pinnedAt goes with pinned: true.")
+		}
+		if b.PinnedAt.After(s.now()) {
+			return nil, invalid("pinnedAt", "pinnedAt must not be in the future.")
+		}
+	}
 	if b.Pinned != nil {
 		c.SetPinned = true
 		if *b.Pinned {
 			c.PinnedAt = s.now()
+			if !b.PinnedAt.IsZero() {
+				c.PinnedAt = b.PinnedAt
+			}
 		}
 	}
 	return s.organise(ctx, ownerID, siteNames, c, "addTagIds")

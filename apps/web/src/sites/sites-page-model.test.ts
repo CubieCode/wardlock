@@ -265,6 +265,21 @@ describe('undo', () => {
     );
   });
 
+  it('re-pins each unpinned site at its own time, keeping the pin order', () => {
+    const pins = [
+      { site: 'a', tagIds: [], pinned: true, pinnedAt: 1000 },
+      { site: 'b', tagIds: [], pinned: true, pinnedAt: 2000 },
+      { site: 'c', tagIds: [], pinned: true, pinnedAt: 1000 },
+      { site: 'd', tagIds: [], pinned: false },
+    ];
+    expect(
+      inverse({ sites: ['a', 'b', 'c', 'd'], pinned: false }, pins),
+    ).toEqual([
+      { pinned: true, pinnedAt: 1000, sites: ['a', 'c'] },
+      { pinned: true, pinnedAt: 2000, sites: ['b'] },
+    ]);
+  });
+
   it('shows a change on the summaries before the list is read again', () => {
     const order = (ids: string[]) => ids.toSorted();
     const [a, b] = applyChange(

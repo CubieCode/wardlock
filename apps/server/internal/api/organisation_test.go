@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"wardlock.nz/server/internal/api"
 	"wardlock.nz/server/internal/deploys"
@@ -369,6 +370,62 @@ func TestOrganiseSitesBulk(t *testing.T) {
 		tooMany[i] = fmt.Sprintf("s%d", i)
 	}
 	hs.do(a, http.MethodPost, "/organise", api.OrganiseSitesRequest{Sites: tooMany, Pinned: ptr(true)}).want(t, http.StatusBadRequest, "invalid_request")
+}
+
+// TestOrganiseSitesPinnedAt checks the prior pin time is answered and that
+// sending it back re-pins a site where it was, never in the future.
+func TestOrganiseSitesPinnedAt(t *testing.T) {
+	hs := newHarness(t, deploys.DefaultLimits())
+	a := hs.ownerA
+	hs.createSite(a, "first")
+	hs.createSite(a, "later")
+	hs.do(a, http.MethodPut, "/sites/first/pin", nil).want(t, http.StatusOK, "")
+	hs.advance(time.Hour)
+	hs.do(a, http.MethodPut, "/sites/later/pin", nil).want(t, http.StatusOK, "")
+	prior := func(body api.OrganiseSitesRequest) []api.SiteOrganisation {
+		t.Helper()
+		res := hs.do(a, http.MethodPost, "/organise", body)
+		res.want(t, http.StatusOK, "")
+		var out api.OrganiseSitesResult
+		res.decode(t, &out)
+		return out.Prior
+	}
+
+	// Unpinning answers when each site was pinned.
+	p := prior(api.OrganiseSitesRequest{Sites: []string{"first", "later"}, Pinned: ptr(false)})
+	if p[0].PinnedAt == nil || p[1].PinnedAt == nil || *p[1].PinnedAt-*p[0].PinnedAt < time.Hour.Milliseconds() {
+		t.Fatalf("prior pins %+v", p)
+	}
+	pinned, laterPinned := *p[0].PinnedAt, *p[1].PinnedAt
+	hs.advance(time.Hour)
+	prior(api.OrganiseSitesRequest{Sites: []string{"first"}, Pinned: ptr(true), PinnedAt: &pinned})
+	prior(api.OrganiseSitesRequest{Sites: []string{"later"}, Pinned: ptr(true)})
+	// Pinning again changes nothing and answers each site's time: first is
+	// back at its own, later was pinned anew.
+	p = prior(api.OrganiseSitesRequest{Sites: []string{"first", "later"}, Pinned: ptr(true)})
+	if *p[0].PinnedAt != pinned || *p[1].PinnedAt <= laterPinned {
+		t.Fatalf("after re-pinning %d, %d; want %d, then after %d", *p[0].PinnedAt, *p[1].PinnedAt, pinned, laterPinned)
+	}
+	// An unpinned site answers no time.
+	prior(api.OrganiseSitesRequest{Sites: []string{"first"}, Pinned: ptr(false)})
+	p = prior(api.OrganiseSitesRequest{Sites: []string{"first"}, Pinned: ptr(false)})
+	if p[0].Pinned || p[0].PinnedAt != nil {
+		t.Fatalf("unpinned prior %+v", p)
+	}
+
+	future := hs.now().Add(time.Minute).UnixMilli()
+	for name, body := range map[string]api.OrganiseSitesRequest{
+		"without pinned": {Sites: []string{"first"}, PinnedAt: &pinned, AddTagIds: &[]string{}},
+		"with unpin":     {Sites: []string{"first"}, PinnedAt: &pinned, Pinned: ptr(false)},
+		"in the future":  {Sites: []string{"first"}, PinnedAt: &future, Pinned: ptr(true)},
+	} {
+		if res := hs.do(a, http.MethodPost, "/organise", body); res.status != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400; body %s", name, res.status, res.body)
+		}
+	}
+	if s := hs.getSite(a, "first"); s.Pinned {
+		t.Fatalf("a refused pin changed first %+v", s)
+	}
 }
 
 // TestOrganiseSitesBulkLimits fills 500 sites in one request, and checks a

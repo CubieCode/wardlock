@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"wardlock.nz/server/internal/sites"
 	"wardlock.nz/server/internal/store"
@@ -287,6 +288,7 @@ func (s *Server) OrganiseSites(ctx context.Context, req OrganiseSitesRequestObje
 		if p.GroupID != "" {
 			o.GroupId = &p.GroupID
 		}
+		o.PinnedAt = optionalMillis(p.PinnedAt)
 		out.Prior[i] = o
 	}
 	return out, nil
@@ -305,6 +307,9 @@ func sitesBulk(body *OrganiseSitesRequest) sites.Bulk {
 	}
 	if deref(body.Ungroup) {
 		b.SetGroup = true
+	}
+	if body.PinnedAt != nil {
+		b.PinnedAt = time.UnixMilli(*body.PinnedAt)
 	}
 	return b
 }

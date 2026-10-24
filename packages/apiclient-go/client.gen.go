@@ -1286,6 +1286,11 @@ type OrganiseSitesRequest struct {
 	// Pinned Pin (true) or unpin (false) every site; a pinned site stays pinned since it was first pinned.
 	Pinned *bool `json:"pinned,omitempty"`
 
+	// PinnedAt Only with `pinned: true`: pin each site that is not pinned as of this time rather than now, so undoing an unpin puts the site back in its place among the pins. Not in the future.
+	//
+	// Examples: 1767225600000
+	PinnedAt *Timestamp `json:"pinnedAt,omitempty"`
+
 	// RemoveTagIds Tags to remove from every site that has them.
 	RemoveTagIds *[]Id `json:"removeTagIds,omitempty"`
 
@@ -1736,6 +1741,11 @@ type SiteOrganisation struct {
 	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
 	GroupId *Id  `json:"groupId,omitempty"`
 	Pinned  bool `json:"pinned"`
+
+	// PinnedAt When the site was pinned; absent when it was not.
+	//
+	// Examples: 1767225600000
+	PinnedAt *Timestamp `json:"pinnedAt,omitempty"`
 
 	// Site A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
 	//
@@ -2660,7 +2670,7 @@ type ClientInterface interface {
 
 	// OrganiseSitesWithBody Change the group, tags or pin of many sites at once.
 	//
-	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -2669,7 +2679,7 @@ type ClientInterface interface {
 
 	// OrganiseSites Change the group, tags or pin of many sites at once.
 	//
-	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -3658,7 +3668,7 @@ func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*htt
 
 // OrganiseSitesWithBody Change the group, tags or pin of many sites at once.
 //
-// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 //
 // Takes any type of body and a specified content type.
 //
@@ -3677,7 +3687,7 @@ func (c *Client) OrganiseSitesWithBody(ctx context.Context, contentType string, 
 
 // OrganiseSites Change the group, tags or pin of many sites at once.
 //
-// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 //
 // Takes a body of the `application/json` content type.
 //
@@ -8042,7 +8052,7 @@ type ClientWithResponsesInterface interface {
 
 	// OrganiseSitesWithBodyWithResponse Change the group, tags or pin of many sites at once.
 	//
-	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -8051,7 +8061,7 @@ type ClientWithResponsesInterface interface {
 
 	// OrganiseSitesWithResponse Change the group, tags or pin of many sites at once.
 	//
-	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -13726,7 +13736,7 @@ func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors 
 
 // OrganiseSitesWithBodyWithResponse Change the group, tags or pin of many sites at once.
 //
-// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -13741,7 +13751,7 @@ func (c *ClientWithResponses) OrganiseSitesWithBodyWithResponse(ctx context.Cont
 
 // OrganiseSitesWithResponse Change the group, tags or pin of many sites at once.
 //
-// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse.
+// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
