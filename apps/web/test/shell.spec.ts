@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { firstOwnerState, schemes } from './mail.js';
-import { barPlaces, railPlaces } from './places.js';
+import { barPlaces, jumpPages, railPlaces } from './places.js';
 import { createSite } from './publish.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
@@ -107,7 +107,7 @@ for (const scheme of schemes) {
       ).toBeFocused();
       await expect(
         page.getByRole('group', { name: 'Pages' }).getByRole('option'),
-      ).toHaveText(railPlaces);
+      ).toHaveText(jumpPages);
       await page.keyboard.press('Escape');
       await expect(page.getByRole('combobox')).toHaveCount(0);
       await expect(jump).toBeFocused();

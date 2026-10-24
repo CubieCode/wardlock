@@ -15,13 +15,14 @@ export type ListState =
   | { kind: 'error'; missing: boolean }
   | { kind: 'ready'; sites: SiteSummary[] };
 
-class Missing extends Error {}
+/** The filter names a group or tag that is not the owner's. */
+export class Missing extends Error {}
 
 /**
  * Every site matching the filters, read a page of 100 at a time in the
  * server's order. The server filters and sorts; the list groups.
  */
-async function loadSites(
+export async function loadSites(
   api: ApiClient,
   { g, t, v, q, sort }: Pick<ListQuery, 'g' | 't' | 'v' | 'q' | 'sort'>,
 ) {

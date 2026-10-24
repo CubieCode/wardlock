@@ -32,6 +32,8 @@ import { savedViews, sitesChanged } from '../shell/navigator.js';
 import { useTitle } from '../shell/page.js';
 import { navigate, useLocation } from '../shell/router.js';
 import { useFlash } from './flash.js';
+import { MapPage } from './map-page.js';
+import { isMap, ViewSwitch } from './map-switch.js';
 import type { Group, Tag } from './site-page-organise.js';
 import { useMeta, useSites, type MetaState } from './sites-page-data.js';
 import {
@@ -113,7 +115,7 @@ function listTitle(query: ListQuery, meta: MetaState) {
 }
 
 /** The filters from the navigator and the search's tokens, as chips. */
-function filterChips(query: ListQuery, meta: MetaState) {
+export function filterChips(query: ListQuery, meta: MetaState) {
   const ready = meta.kind === 'ready' ? meta : undefined;
   const chips: { key: string; label: string; without: ListQuery }[] = [];
   if (query.g)
@@ -152,7 +154,7 @@ const isTyping = (target: EventTarget | null) =>
     ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 
 /** `/` focuses the search, unless the owner is typing or a dialog is open. */
-function useSlashFocus(input: RefObject<HTMLInputElement | null>) {
+export function useSlashFocus(input: RefObject<HTMLInputElement | null>) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (
@@ -329,9 +331,15 @@ const SectionView = memo(function SectionView({
 /**
  * `/sites`: the owner's sites in sections on wires, filtered by the
  * navigator and the search, with multi-select and bulk organising. Every
- * filter and view setting lives in the address.
+ * filter and view setting lives in the address; `view=map` shows the same
+ * sites as the sites map.
  */
 export function SitesPage({ api }: { api: ApiClient }) {
+  const { params } = useLocation();
+  return isMap(params) ? <MapPage api={api} /> : <SitesList api={api} />;
+}
+
+function SitesList({ api }: { api: ApiClient }) {
   const { params } = useLocation();
   const query = useMemo(() => readQuery(params), [params]);
   const list = useSites(api, query);
@@ -694,7 +702,10 @@ export function SitesPage({ api }: { api: ApiClient }) {
     <div
       className={cx('sites-page', targets.length ? 'sites-page-bulk' : null)}
     >
-      <PageHeader title={title} description={description} />
+      <div className="map-head">
+        <PageHeader title={title} description={description} />
+        <ViewSwitch current="list" query={query} />
+      </div>
       {flash ? <Notice>{flash}</Notice> : null}
       <div className="sites-tools">
         <div className="sites-search">

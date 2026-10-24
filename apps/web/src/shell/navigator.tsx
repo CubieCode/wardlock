@@ -46,7 +46,10 @@ export const savedViews: { view: SiteView; label: string; icon: ReactNode }[] =
  */
 export function sitesHref(
   filter?: Partial<
-    Record<'g' | 't' | 'v' | 'q' | 'by' | 'sort' | 'd', string | undefined>
+    Record<
+      'g' | 't' | 'v' | 'q' | 'by' | 'sort' | 'd' | 'view',
+      string | undefined
+    >
   >,
 ) {
   const query = new URLSearchParams();
@@ -159,12 +162,14 @@ export function SitesNavigator({
     g === (filter.g ?? null) &&
     t === (filter.t ?? null) &&
     v === (filter.v ?? null);
-  // On the list, a filter keeps how the owner has it drawn.
+  // On the list, a filter keeps how the owner has it drawn, and on the map
+  // (V5.9) stays on the map.
   const drawn = onList
     ? {
         by: params.get('by') ?? undefined,
         sort: params.get('sort') ?? undefined,
         d: params.get('d') ?? undefined,
+        view: params.get('view') === 'map' ? 'map' : undefined,
       }
     : {};
   const href = (filter: { g?: string; t?: string; v?: string }) =>
