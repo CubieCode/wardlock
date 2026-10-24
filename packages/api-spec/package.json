@@ -9,7 +9,7 @@
     "lint": "REDOCLY_TELEMETRY=off REDOCLY_SUPPRESS_UPDATE_NOTICE=true redocly lint --config lint.redocly.yaml --format=stylish openapi.yaml"
   },
   "devDependencies": {
-    "@redocly/cli": "2.63.0",
+    "@redocly/cli": "2.67.1",
     "openapi-typescript": "^7.13.0"
   }
 }
