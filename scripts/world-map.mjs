@@ -8,6 +8,10 @@
 // pinned files, checked against their SHA-256, so it is not part of
 // `pnpm codegen`:
 //   node scripts/world-map.mjs
+// The file it writes records the SHA-256 of this script and of its own
+// contents. `pnpm check:codegen` runs the offline check, which fails when
+// this script changed since the file was written or the file was edited:
+//   node scripts/world-map.mjs --check
 //
 // The projection is equirectangular, centred on 150°E so the Pacific sits in
 // the middle, cropped to latitudes 75°N to 56°S (Antarctica left out). Land
@@ -16,7 +20,7 @@
 // ISO 3166-1 alpha-2 code.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -85,6 +89,42 @@ function ringPath(ring) {
   return points.length < 3 ? '' : `M${points.join('L')}Z`;
 }
 
+const script = fileURLToPath(import.meta.url);
+const out = join(dirname(script), '../apps/web/src/analytics/world.gen.ts');
+const sha256 = (/** @type {string | Buffer} */ data) =>
+  createHash('sha256').update(data).digest('hex');
+/** The header line holding the hashes, and the same line before they are known. */
+const stampLine =
+  /^\/\/ Stamp: generator ([0-9a-f]{64}), contents ([0-9a-f]{64})$/m;
+const unstamped = '// Stamp: generator -, contents -';
+const stamp = (
+  /** @type {string} */ generator,
+  /** @type {string} */ contents,
+) => `// Stamp: generator ${generator}, contents ${contents}`;
+
+/**
+ * Fails unless world.gen.ts was written by this exact script and has not
+ * been edited since. Needs no network.
+ */
+function check() {
+  const text = readFileSync(out, 'utf8');
+  const found = stampLine.exec(text);
+  const problem = !found
+    ? 'has no stamp'
+    : found[1] !== sha256(readFileSync(script))
+      ? 'was written by an older scripts/world-map.mjs'
+      : found[2] !== sha256(text.replace(stampLine, unstamped))
+        ? 'was edited by hand'
+        : '';
+  if (problem) {
+    console.error(
+      `apps/web/src/analytics/world.gen.ts ${problem}. Run node scripts/world-map.mjs and commit the result.`,
+    );
+    process.exit(1);
+  }
+  console.log('The world map data is up to date.');
+}
+
 /** @param {keyof typeof checksums} file */
 async function download(file) {
   const response = await fetch(`${base}/${file}`);
@@ -137,10 +177,6 @@ async function main() {
     Object.entries(points).sort(([a], [b]) => a.localeCompare(b)),
   );
 
-  const out = join(
-    dirname(fileURLToPath(import.meta.url)),
-    '../apps/web/src/analytics/world.gen.ts',
-  );
   writeFileSync(
     out,
     `// SPDX-FileCopyrightText: 2026 CubieCode
@@ -150,6 +186,7 @@ async function main() {
 // Source: Natural Earth ${release} (public domain, naturalearthdata.com),
 // ${landFile} for land and ${countriesFile} for label points.
 // Equirectangular, centred on ${centre}°E, latitudes ${north}°N to ${-south}°S.
+${unstamped}
 
 /** The map's size in SVG units. */
 export const mapWidth = ${width};
@@ -166,6 +203,15 @@ export const countryPoints: Record<string, readonly [number, number]> = ${JSON.s
   execFileSync('pnpm', ['exec', 'prettier', '--write', out], {
     stdio: 'inherit',
   });
+  // Stamped after formatting, so the hash covers the committed text.
+  const text = readFileSync(out, 'utf8');
+  writeFileSync(
+    out,
+    text.replace(unstamped, stamp(sha256(readFileSync(script)), sha256(text))),
+  );
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) await main();
+if (process.argv[1] === script) {
+  if (process.argv[2] === '--check') check();
+  else await main();
+}

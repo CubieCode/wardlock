@@ -17,6 +17,7 @@ import {
   CountryCell,
   type CountryLookup,
 } from '../analytics/country.js';
+import { readWeek } from './week-analytics.js';
 import './sites.css';
 
 export type AccessLogEntry = components['schemas']['AccessLogEntry'];
@@ -84,8 +85,8 @@ export function useCountryLookup(api: ApiClient, site: string) {
   }>();
   useEffect(() => {
     let live = true;
-    api.GET('/api/v0/analytics', { params: { query: { site, days: 7 } } }).then(
-      ({ data }) => live && setRead({ site, lookup: data?.countryLookup }),
+    readWeek(api, site).then(
+      (data) => live && setRead({ site, lookup: data.countryLookup }),
       () => undefined,
     );
     return () => {

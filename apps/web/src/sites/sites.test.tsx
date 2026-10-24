@@ -850,7 +850,7 @@ describe('site access log', () => {
   });
 
   it('mentions no country while the lookup is off', async () => {
-    const { api } = fakeServer({
+    const { api, calls } = fakeServer({
       ...oneSite(site('docs'), []),
       'GET /api/v0/analytics': analytics(),
       [`GET ${base}`]: () => Response.json({ items: [entry(1), entry(2)] }),
@@ -861,6 +861,9 @@ describe('site access log', () => {
     });
     // The header's 7-day count comes from the same read.
     await screen.findByText(/3 requests in 7 days/);
+    expect(
+      calls.filter((c) => c.startsWith('GET /api/v0/analytics')),
+    ).toHaveLength(1);
     expect(headersOf(table)).not.toContain('Country');
     expect(document.body.textContent).not.toMatch(/countr/i);
   });

@@ -5,6 +5,7 @@
 // Source: Natural Earth v5.1.2 (public domain, naturalearthdata.com),
 // ne_110m_land.geojson for land and ne_50m_admin_0_countries.geojson for label points.
 // Equirectangular, centred on 150°E, latitudes 75°N to 56°S.
+// Stamp: generator 12f4f88f3083d97d788d4a39e3f0a27cf02445fa45c5c5254601a4f9225cc799, contents 64480838281c00b2bdc4ce3dfd6520135591abcd63b973a070bf1499f8f040b3
 
 /** The map's size in SVG units. */
 export const mapWidth = 720;
