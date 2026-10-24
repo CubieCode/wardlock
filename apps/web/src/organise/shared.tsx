@@ -1,15 +1,21 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { Button, Dialog, Notice, TextField } from '@wardlock/ui';
+import { Button, Dialog, Notice, TextAreaField, TextField } from '@wardlock/ui';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { failure, unreachable } from '../auth/messages.js';
 
 /** What an apiclient call answers, as far as these screens need it. */
 interface Answer<T> {
   data?: T;
-  error?: { message: string };
+  error?: { message: string; target?: string | undefined };
   response: Response;
+}
+
+/** A refusal in words, and the field it is about when the server says. */
+export interface Refusal {
+  error: string;
+  target?: string | undefined;
 }
 
 /**
@@ -19,7 +25,7 @@ interface Answer<T> {
  */
 export async function attempt<T>(
   call: () => Promise<Answer<T>>,
-): Promise<{ data: T | undefined } | { error: string }> {
+): Promise<{ data: T | undefined } | Refusal> {
   let answer: Answer<T>;
   try {
     answer = await call();
@@ -31,7 +37,7 @@ export async function attempt<T>(
   if (response.status === 404)
     return { error: 'It no longer exists. Reload the page to see the rest.' };
   if (error?.message && [400, 409, 413].includes(response.status))
-    return { error: error.message };
+    return { error: error.message, target: error.target };
   return { error: failure(response) };
 }
 
@@ -85,14 +91,16 @@ export function SitesLink({
 }
 
 /**
- * A name field with Save and Cancel, for creating or renaming. `onSubmit`
- * answers null when it worked, or the error to show under the field.
- * Escape cancels.
+ * A name field, and with `note` a note field under it, with Save and
+ * Cancel, for creating or editing. `onSubmit` answers null when it worked,
+ * or the refusal to show: under the note when the server names `note`,
+ * otherwise under the name. Escape cancels.
  */
 export function NameForm({
   label,
   hint,
   initial = '',
+  note,
   submitLabel,
   busyLabel,
   onSubmit,
@@ -101,15 +109,18 @@ export function NameForm({
   label: string;
   hint: string;
   initial?: string;
+  note?: { label: string; hint: string; initial?: string | undefined };
   submitLabel: string;
   busyLabel: string;
-  onSubmit: (name: string) => Promise<string | null>;
+  onSubmit: (name: string, note: string) => Promise<string | Refusal | null>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(initial);
+  const [noteText, setNoteText] = useState(note?.initial ?? '');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Refusal | null>(null);
   const form = useRef<HTMLFormElement>(null);
+  const onNote = note !== undefined && error?.target === 'note';
 
   return (
     <form
@@ -120,13 +131,21 @@ export function NameForm({
         if (busy) return;
         setBusy(true);
         setError(null);
-        void onSubmit(name.trim()).then((problem) => {
+        void onSubmit(name.trim(), noteText.trim()).then((problem) => {
           // On success the form is gone; only a refusal comes back here.
           if (problem === null) return;
+          const refusal =
+            typeof problem === 'string' ? { error: problem } : problem;
           setBusy(false);
-          setError(problem);
-          // Back to the field to fix the name; Save was disabled meanwhile.
-          form.current?.querySelector('input')?.focus();
+          setError(refusal);
+          // Back to the field to fix; Save was disabled meanwhile.
+          form.current
+            ?.querySelector<HTMLElement>(
+              note !== undefined && refusal.target === 'note'
+                ? 'textarea'
+                : 'input',
+            )
+            ?.focus();
         });
       }}
       onKeyDown={(event) => {
@@ -138,13 +157,24 @@ export function NameForm({
       <TextField
         label={label}
         hint={hint}
-        error={error ?? undefined}
+        error={error && !onNote ? error.error : undefined}
         value={name}
         autoComplete="off"
         // The form appears because the owner asked for it.
         autoFocus
         onChange={(event) => setName(event.target.value)}
       />
+      {note ? (
+        <TextAreaField
+          label={note.label}
+          hint={note.hint}
+          error={onNote ? error?.error : undefined}
+          value={noteText}
+          rows={2}
+          maxLength={200}
+          onChange={(event) => setNoteText(event.target.value)}
+        />
+      ) : null}
       <div className="organise-form-actions">
         <Button type="submit" variant="primary" disabled={busy}>
           {busy ? busyLabel : submitLabel}

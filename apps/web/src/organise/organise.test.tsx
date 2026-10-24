@@ -263,7 +263,7 @@ describe('groups', () => {
       />,
     );
     fireEvent.click(await screen.findByRole('button', { name: 'New group' }));
-    fireEvent.change(screen.getByRole('textbox'), {
+    fireEvent.change(screen.getByRole('textbox', { name: 'New group name' }), {
       target: { value: 'Blog' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Create group' }));
@@ -275,7 +275,9 @@ describe('groups', () => {
   it('cancels creating with Escape', async () => {
     render(<OrganisePage api={fakeServer().api} />);
     fireEvent.click(await screen.findByRole('button', { name: 'New group' }));
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'New group name' }), {
+      key: 'Escape',
+    });
     expect(screen.queryByRole('textbox')).toBeNull();
     await waitFor(() =>
       expect(document.activeElement).toBe(
@@ -284,7 +286,7 @@ describe('groups', () => {
     );
   });
 
-  it('renames a group and shows a refused rename inline', async () => {
+  it('edits a group and shows a refused name inline', async () => {
     let taken = true;
     const server = fakeServer({
       [`PATCH /api/v0/groups/${clients}`]: (body) =>
@@ -301,9 +303,13 @@ describe('groups', () => {
     });
     render(<OrganisePage api={server.api} />);
     await screen.findByRole('list', { name: 'Groups' });
-    fireEvent.click(screen.getByRole('button', { name: 'Rename Client work' }));
-    const field = screen.getByRole('textbox', { name: 'Rename Client work' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Client work' }));
+    const field = screen.getByRole('textbox', { name: 'Name of Client work' });
     expect((field as HTMLInputElement).value).toBe('Client work');
+    expect(
+      (screen.getByRole('textbox', { name: /^Note/ }) as HTMLTextAreaElement)
+        .value,
+    ).toBe('Previews for clients');
     fireEvent.change(field, { target: { value: 'Archive' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect((await screen.findByRole('alert')).textContent).toBe(
@@ -316,6 +322,7 @@ describe('groups', () => {
     await screen.findByRole('link', { name: '9 sites in Agency' });
     expect(server.last(`PATCH /api/v0/groups/${clients}`)?.body).toEqual({
       name: 'Agency',
+      note: 'Previews for clients',
     });
     // Renamed groups move to their place by name.
     expect(
@@ -325,9 +332,80 @@ describe('groups', () => {
     ).toEqual(['9 sites in Agency', '1 site in Archive']);
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        screen.getByRole('button', { name: 'Rename Agency' }),
+        screen.getByRole('button', { name: 'Edit Agency' }),
       ),
     );
+  });
+
+  it('changes, removes and adds a note, showing a refused note under it', async () => {
+    let refuseNote = true;
+    const server = fakeServer({
+      [`PATCH /api/v0/groups/${clients}`]: (body) => {
+        const { name, note } = body as { name: string; note: string };
+        if (refuseNote)
+          return Response.json(
+            {
+              code: 'invalid_request',
+              message: 'The note must not contain control characters.',
+              target: 'note',
+            },
+            { status: 400 },
+          );
+        return Response.json({
+          ...groups[1],
+          name,
+          ...(note ? { note } : { note: undefined }),
+        });
+      },
+      'POST /api/v0/groups': (body) =>
+        Response.json(
+          {
+            id: '01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e99',
+            createdAt: created,
+            ...(body as object),
+          },
+          { status: 201 },
+        ),
+    });
+    render(<OrganisePage api={server.api} />);
+    await screen.findByRole('list', { name: 'Groups' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Client work' }));
+    const note = screen.getByRole('textbox', { name: /^Note/ });
+    fireEvent.change(note, { target: { value: 'Drafts' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe(
+      'The note must not contain control characters.',
+    );
+    // The refusal is about the note, so it sits under the note.
+    expect(note.getAttribute('aria-describedby')).toContain(alert.id);
+    await waitFor(() => expect(document.activeElement).toBe(note));
+
+    refuseNote = false;
+    fireEvent.change(note, { target: { value: '  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('button', { name: 'Edit Client work' });
+    // An empty note removes it.
+    expect(server.last(`PATCH /api/v0/groups/${clients}`)?.body).toEqual({
+      name: 'Client work',
+      note: '',
+    });
+    expect(screen.queryByText('Previews for clients')).toBeNull();
+
+    // A new group can have a note from the start, and none is sent without.
+    fireEvent.click(screen.getByRole('button', { name: 'New group' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'New group name' }), {
+      target: { value: 'Blog' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /^Note/ }), {
+      target: { value: 'Posts in progress' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create group' }));
+    expect(await screen.findByText('Posts in progress')).toBeTruthy();
+    expect(server.last('POST /api/v0/groups')?.body).toEqual({
+      name: 'Blog',
+      note: 'Posts in progress',
+    });
   });
 
   /** Opens a delete confirmation and waits for its fresh count. */
@@ -451,7 +529,7 @@ describe('groups', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete group' }));
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        screen.getByRole('button', { name: 'Rename Client work' }),
+        screen.getByRole('button', { name: 'Edit Client work' }),
       ),
     );
 
@@ -480,7 +558,7 @@ describe('groups', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete group' }));
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        screen.getByRole('button', { name: 'Rename Archive' }),
+        screen.getByRole('button', { name: 'Edit Archive' }),
       ),
     );
   });
