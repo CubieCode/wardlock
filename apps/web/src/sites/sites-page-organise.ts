@@ -85,10 +85,14 @@ export function inverse(
         p.pinned === change.pinned
           ? []
           : [
+              // Re-pinned at its old time, so it goes back to its place.
               {
                 site: p.site,
-                key: String(p.pinned),
-                change: { pinned: p.pinned },
+                key: `${p.pinned}:${p.pinnedAt ?? ''}`,
+                change: {
+                  pinned: p.pinned,
+                  ...(p.pinnedAt !== undefined ? { pinnedAt: p.pinnedAt } : {}),
+                },
               },
             ],
       ),

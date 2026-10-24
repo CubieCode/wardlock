@@ -1287,6 +1287,11 @@ type OrganiseSitesRequest struct {
 	// Pinned Pin (true) or unpin (false) every site; a pinned site stays pinned since it was first pinned.
 	Pinned *bool `json:"pinned,omitempty"`
 
+	// PinnedAt Only with `pinned: true`: pin each site that is not pinned as of this time rather than now, so undoing an unpin puts the site back in its place among the pins. Not in the future.
+	//
+	// Examples: 1767225600000
+	PinnedAt *Timestamp `json:"pinnedAt,omitempty"`
+
 	// RemoveTagIds Tags to remove from every site that has them.
 	RemoveTagIds *[]Id `json:"removeTagIds,omitempty"`
 
@@ -1737,6 +1742,11 @@ type SiteOrganisation struct {
 	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
 	GroupId *Id  `json:"groupId,omitempty"`
 	Pinned  bool `json:"pinned"`
+
+	// PinnedAt When the site was pinned; absent when it was not.
+	//
+	// Examples: 1767225600000
+	PinnedAt *Timestamp `json:"pinnedAt,omitempty"`
 
 	// Site A DNS label: 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.
 	//

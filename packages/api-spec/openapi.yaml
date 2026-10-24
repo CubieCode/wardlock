@@ -2535,7 +2535,8 @@ paths:
         A tag in both `addTagIds` and `removeTagIds`, or `groupId` with
         `ungroup`, answers `400 invalid_request`. The answer gives each
         site's group, tags and pin from before the change, in the order
-        named, so a client can undo by sending the inverse.
+        named, so a client can undo by sending the inverse (with
+        `pinnedAt` to re-pin a site where it was).
       tags: [organisation]
       security:
         - sessionCookie: []
@@ -2566,6 +2567,7 @@ paths:
                     groupId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e71
                     tagIds: [01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e81]
                     pinned: true
+                    pinnedAt: 1767139260000
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -4079,6 +4081,12 @@ components:
         pinned:
           type: boolean
           description: Pin (true) or unpin (false) every site; a pinned site stays pinned since it was first pinned.
+        pinnedAt:
+          description: >-
+            Only with `pinned: true`: pin each site that is not pinned as of
+            this time rather than now, so undoing an unpin puts the site back
+            in its place among the pins. Not in the future.
+          $ref: '#/components/schemas/Timestamp'
     SiteOrganisation:
       type: object
       additionalProperties: false
@@ -4097,6 +4105,9 @@ components:
             $ref: '#/components/schemas/Id'
         pinned:
           type: boolean
+        pinnedAt:
+          description: When the site was pinned; absent when it was not.
+          $ref: '#/components/schemas/Timestamp'
     OrganiseSitesResult:
       type: object
       additionalProperties: false
