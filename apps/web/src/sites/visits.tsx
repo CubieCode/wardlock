@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import type { components } from '@wardlock/apiclient-ts';
+import type { ApiClient, components } from '@wardlock/apiclient-ts';
 import {
   Button,
   Card,
@@ -11,7 +11,12 @@ import {
   Table,
   type TableColumn,
 } from '@wardlock/ui';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  Attribution,
+  CountryCell,
+  type CountryLookup,
+} from '../analytics/country.js';
 import './sites.css';
 
 export type AccessLogEntry = components['schemas']['AccessLogEntry'];
@@ -49,11 +54,50 @@ export const visitColumns = {
     mono: true,
     nowrap: true,
   },
+  country: {
+    header: 'Country',
+    nowrap: true,
+    cell: (e) =>
+      e.country ? (
+        <CountryCell country={e.country} />
+      ) : (
+        <span className="visit-muted">Not recorded</span>
+      ),
+  },
   browser: {
     header: 'Browser or client',
     cell: (e) => e.userAgent ?? <span className="visit-muted">None sent</span>,
   },
 } satisfies Record<string, TableColumn<AccessLogEntry>>;
+
+/**
+ * The site's country lookup, from one small analytics read beside the log:
+ * present only while the server's lookup is on. Undefined while it loads,
+ * while the lookup is off and if the read fails, so the log never waits on
+ * it and then mentions no country.
+ */
+export function useCountryLookup(api: ApiClient, site: string) {
+  // Kept with its site, so another site's lookup is never shown.
+  const [read, setRead] = useState<{
+    site: string;
+    lookup: CountryLookup | undefined;
+  }>();
+  useEffect(() => {
+    let live = true;
+    api.GET('/api/v0/analytics', { params: { query: { site, days: 7 } } }).then(
+      ({ data }) => live && setRead({ site, lookup: data?.countryLookup }),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [api, site]);
+  return read?.site === site ? read.lookup : undefined;
+}
+
+/** The Country column, only while the lookup is on. */
+export const countryColumns = (lookup: CountryLookup | undefined) =>
+  lookup ? [visitColumns.country] : [];
 
 /**
  * One page of entries and the cursor of the next, with a loader for older
@@ -82,7 +126,7 @@ export function useOlderVisits(
   return { ...page, more, loadOlder };
 }
 
-/** The "Visits" card: a table of entries, or an empty state, and paging. */
+/** The "Requests" card: a table of entries, or an empty state, and paging. */
 export function VisitsCard({
   caption,
   columns,
@@ -91,6 +135,7 @@ export function VisitsCard({
   more,
   onOlder,
   empty,
+  lookup,
 }: {
   caption: string;
   columns: TableColumn<AccessLogEntry>[];
@@ -100,26 +145,31 @@ export function VisitsCard({
   onOlder: () => void;
   /** What the empty state says will appear here. */
   empty: ReactNode;
+  /** The country lookup, whose credit goes under the table. */
+  lookup?: CountryLookup | undefined;
 }) {
   return (
-    <Card title="Visits">
+    <Card title="Requests">
       {entries.length === 0 ? (
-        <EmptyState title="No visits yet">{empty}</EmptyState>
+        <EmptyState title="No requests yet">{empty}</EmptyState>
       ) : (
-        <Table
-          caption={caption}
-          columns={columns}
-          rows={entries}
-          rowKey={(e) => e.id}
-        />
+        <>
+          <Table
+            caption={caption}
+            columns={columns}
+            rows={entries}
+            rowKey={(e) => e.id}
+          />
+          {lookup ? <Attribution text={lookup.attribution} /> : null}
+        </>
       )}
       {more === 'error' && (
-        <Notice tone="danger">Could not load older visits. Try again.</Notice>
+        <Notice tone="danger">Could not load older requests. Try again.</Notice>
       )}
       {nextCursor ? (
         <div>
           <Button type="button" disabled={more === 'loading'} onClick={onOlder}>
-            {more === 'loading' ? 'Loading…' : 'Show older visits'}
+            {more === 'loading' ? 'Loading…' : 'Show older requests'}
           </Button>
         </div>
       ) : null}

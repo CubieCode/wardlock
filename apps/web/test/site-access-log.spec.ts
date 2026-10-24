@@ -54,7 +54,7 @@ for (const scheme of schemes) {
       await expect(page).toHaveURL(`${origin}/sites/${site}/access-log`);
       await expect(page).toHaveTitle(`Access log · ${site} · Wardlock`);
       await expect(
-        page.getByRole('heading', { name: 'No visits yet' }),
+        page.getByRole('heading', { name: 'No requests yet' }),
       ).toBeVisible();
       await shot('empty');
     });
@@ -75,7 +75,7 @@ for (const scheme of schemes) {
       expect(opened.status()).toBe(200);
 
       // Entries are written in batches about once a second.
-      const table = page.getByRole('table', { name: `Visits to ${site}` });
+      const table = page.getByRole('table', { name: `Requests for ${site}` });
       await expect(async () => {
         await page.reload();
         await expect(table.getByRole('row')).toHaveCount(3, { timeout: 1000 });
@@ -90,7 +90,7 @@ for (const scheme of schemes) {
 
     await test.step('the link’s label leads to its own log', async () => {
       await page
-        .getByRole('table', { name: `Visits to ${site}` })
+        .getByRole('table', { name: `Requests for ${site}` })
         .getByRole('link', { name: label })
         .click();
       await expect(

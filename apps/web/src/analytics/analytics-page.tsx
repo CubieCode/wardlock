@@ -17,6 +17,7 @@ import { tagSlot } from '../shell/navigator.js';
 import { useTitle } from '../shell/page.js';
 import { navigate } from '../shell/router.js';
 import { Breakdown, type BreakdownRow } from './breakdown.js';
+import { CountriesCard } from './countries-card.js';
 import {
   analyticsHref,
   browserNames,
@@ -420,6 +421,13 @@ function Charts({
           periodHeader="Day"
         />
       </Card>
+      {analytics.countryLookup && analytics.countries ? (
+        <CountriesCard
+          countries={analytics.countries}
+          lookup={analytics.countryLookup}
+          total={total}
+        />
+      ) : null}
       <div className="analytics-grid">
         <Breakdown
           title="How visitors got in"

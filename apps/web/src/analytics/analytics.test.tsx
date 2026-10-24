@@ -540,3 +540,189 @@ describe('charts', () => {
     ).toBeTruthy();
   });
 });
+
+describe('countries', () => {
+  const attribution =
+    'IP Geolocation by DB-IP (https://db-ip.com), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)';
+  const known = [
+    'NZ',
+    'AU',
+    'US',
+    'GB',
+    'DE',
+    'JP',
+    'CA',
+    'FR',
+    'NL',
+    'SG',
+  ].map((country, i) => ({ country, allowed: 20 - i, refused: 0 }));
+  const withCountries = (extra: Partial<Analytics> = {}) => ({
+    'GET /api/v0/analytics': () =>
+      Response.json(
+        report(30, {
+          countries: [...known, { country: 'unknown', allowed: 0, refused: 4 }],
+          countryLookup: { attribution, serverCountry: 'NZ' },
+          ...extra,
+        }),
+      ),
+  });
+
+  it('shows the map, the busiest countries, the rest folded in and Unknown', async () => {
+    await open('/analytics', withCountries());
+    const geo = await screen.findByRole('region', {
+      name: 'Where requests come from',
+    });
+    const list = within(geo).getByRole('list', { name: 'Requests by country' });
+    const rows = within(list)
+      .getAllByRole('listitem')
+      .map((item) => item.firstChild?.textContent);
+    expect(rows).toEqual([
+      'New Zealand',
+      'Australia',
+      'United States',
+      'United Kingdom',
+      'Germany',
+      'Japan',
+      'Canada',
+      'France',
+      '2 more countries',
+      'Unknown',
+    ]);
+    expect(
+      within(geo).getByText(/^Unknown: The country database has no country/),
+    ).toBeTruthy();
+    // The map loads on demand, with a focusable bubble per country.
+    const bubble = await within(geo).findByRole('img', {
+      name: 'New Zealand: 20 requests · 12.6%',
+    });
+    expect(bubble.getAttribute('tabindex')).toBe('0');
+    fireEvent.focus(bubble);
+    expect(within(geo).getByRole('tooltip').textContent).toBe(
+      'New Zealand20 requests · 12.6%',
+    );
+    fireEvent.keyDown(bubble, { key: 'Escape' });
+    expect(within(geo).queryByRole('tooltip')).toBeNull();
+    expect(
+      within(geo).getByRole('img', { name: 'Your server, in New Zealand' }),
+    ).toBeTruthy();
+    expect(within(geo).getByText('Your server')).toBeTruthy();
+  });
+
+  it('lists every country and Unknown in the table view', async () => {
+    await open('/analytics', withCountries());
+    const geo = await screen.findByRole('region', {
+      name: 'Where requests come from',
+    });
+    const table = within(geo).getByRole('table', {
+      name: 'Requests by country',
+    });
+    const rows = within(table).getAllByRole('row');
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'CountryAllowedRefusedShare',
+      'New Zealand20012.6%',
+      'Australia19011.9%',
+      'United States18011.3%',
+      'United Kingdom17010.7%',
+      'Germany16010.1%',
+      'Japan1509.4%',
+      'Canada1408.8%',
+      'France1308.2%',
+      'Netherlands1207.5%',
+      'Singapore1106.9%',
+      'Unknown042.5%',
+    ]);
+  });
+
+  it('draws no hub without a server country', async () => {
+    await open('/analytics', withCountries({ countryLookup: { attribution } }));
+    const geo = await screen.findByRole('region', {
+      name: 'Where requests come from',
+    });
+    await within(geo).findByRole('img', { name: /^New Zealand:/ });
+    expect(within(geo).queryByRole('img', { name: /Your server/ })).toBeNull();
+    expect(within(geo).queryByText('Your server')).toBeNull();
+    expect(geo.querySelector('.country-lines')).toBeNull();
+  });
+
+  it('names no server in the legend when its country has no point on the map', async () => {
+    await open(
+      '/analytics',
+      // Gibraltar is too small for Natural Earth's label points.
+      withCountries({ countryLookup: { attribution, serverCountry: 'GI' } }),
+    );
+    const geo = await screen.findByRole('region', {
+      name: 'Where requests come from',
+    });
+    await within(geo).findByRole('img', { name: /^New Zealand:/ });
+    expect(within(geo).getByText('Bubble area: requests')).toBeTruthy();
+    expect(within(geo).queryByRole('img', { name: /Your server/ })).toBeNull();
+    expect(within(geo).queryByText('Your server')).toBeNull();
+  });
+
+  it('credits the database as given, linking only its https URLs', async () => {
+    await open(
+      '/analytics',
+      withCountries({
+        countryLookup: {
+          attribution:
+            'Data from Example (https://example.test/geo). Mirror: http://example.test/ and javascript:alert(1)',
+        },
+      }),
+    );
+    const geo = await screen.findByRole('region', {
+      name: 'Where requests come from',
+    });
+    const credit = geo.querySelector('.country-credit')!;
+    expect(credit.textContent).toBe(
+      'Data from Example (https://example.test/geo). Mirror: http://example.test/ and javascript:alert(1)',
+    );
+    expect(
+      [...credit.querySelectorAll('a')].map((a) => a.getAttribute('href')),
+    ).toEqual(['https://example.test/geo']);
+  });
+
+  it('says how many requests have no country when only Unknown or none are counted', async () => {
+    await open(
+      '/analytics',
+      withCountries({
+        countries: [{ country: 'unknown', allowed: 2, refused: 0 }],
+      }),
+    );
+    const geo = await screen.findByRole('region', {
+      name: 'Where requests come from',
+    });
+    expect(
+      within(geo).getByText(
+        '43 requests logged while the country lookup was off have no country and are not counted here.',
+      ),
+    ).toBeTruthy();
+    expect(
+      within(geo)
+        .getAllByRole('listitem')
+        .map((item) => item.firstChild?.textContent),
+    ).toEqual(['Unknown']);
+  });
+
+  it('says so, and why, when no request in the range has a country', async () => {
+    await open('/analytics', withCountries({ countries: [] }));
+    const geo = await screen.findByRole('region', {
+      name: 'Where requests come from',
+    });
+    expect(
+      within(geo).getByText('No requests in this range have a country.'),
+    ).toBeTruthy();
+    expect(
+      within(geo).getByText(
+        '45 requests logged while the country lookup was off have no country and are not counted here.',
+      ),
+    ).toBeTruthy();
+    expect(within(geo).queryByRole('table')).toBeNull();
+  });
+
+  it('shows nothing about countries while the lookup is off', async () => {
+    await open('/analytics');
+    await screen.findByRole('region', { name: 'Requests per day' });
+    expect(cardTitles()).not.toContain('Where requests come from');
+    expect(document.body.textContent).not.toMatch(/countr/i);
+  });
+});

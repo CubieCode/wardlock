@@ -156,7 +156,7 @@ for (const scheme of schemes) {
       // A tab's address opens straight to it.
       await page.reload();
       await expect(
-        page.getByRole('heading', { name: 'No visits yet' }),
+        page.getByRole('heading', { name: 'No requests yet' }),
       ).toBeVisible();
     });
 

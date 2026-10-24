@@ -143,7 +143,7 @@ for (const scheme of schemes) {
         page.getByRole('heading', { level: 2, name: label }),
       ).toBeVisible();
       // Entries are written in batches about once a second.
-      const table = page.getByRole('table', { name: /Visits through link/ });
+      const table = page.getByRole('table', { name: /Requests through link/ });
       await expect(async () => {
         await page.reload();
         await expect(table).toBeVisible({ timeout: 1000 });

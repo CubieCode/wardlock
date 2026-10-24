@@ -15,11 +15,14 @@ import {
   type ShareLink,
 } from './format.js';
 import {
+  countryColumns,
+  useCountryLookup,
   useOlderVisits,
   visitColumns,
   VisitsCard,
   type AccessLogPage,
 } from '../sites/visits.js';
+import type { CountryLookup } from '../analytics/country.js';
 import './links.css';
 
 interface Loaded {
@@ -72,14 +75,6 @@ async function load(
   return { link, first: log.data };
 }
 
-const columns = [
-  visitColumns.time,
-  visitColumns.path,
-  visitColumns.result,
-  visitColumns.ip,
-  visitColumns.browser,
-];
-
 /**
  * The Links tab at `/sites/:name/links/:linkId`: one share link, what it
  * grants, and who opened it, newest first. Never its token: that is shown
@@ -96,6 +91,8 @@ export function LinkDetail({
 }) {
   const [state, setState] = useState<PageState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  // The link's site's lookup.
+  const lookup = useCountryLookup(api, name);
   useTitle(
     state.kind === 'not-found' ? 'Link not found' : `Link access log · ${name}`,
   );
@@ -174,13 +171,21 @@ export function LinkDetail({
           ) : (
             <>
               <StatusBadge tone="neutral">Revoked</StatusBadge>
-              <p>This link no longer works. Its past visits are kept below.</p>
+              <p>
+                This link no longer works. Its past requests are kept below.
+              </p>
             </>
           )}
         </div>
       </section>
 
-      <LinkVisits api={api} name={name} publicId={publicId} first={first} />
+      <LinkVisits
+        api={api}
+        name={name}
+        publicId={publicId}
+        first={first}
+        lookup={lookup}
+      />
     </>
   );
 }
@@ -190,11 +195,13 @@ function LinkVisits({
   name,
   publicId,
   first,
+  lookup,
 }: {
   api: ApiClient;
   name: string;
   publicId: string;
   first: AccessLogPage;
+  lookup: CountryLookup | undefined;
 }) {
   const { entries, nextCursor, more, loadOlder } = useOlderVisits(
     first,
@@ -205,14 +212,23 @@ function LinkVisits({
         })
       ).data,
   );
+  const columns = [
+    visitColumns.time,
+    visitColumns.path,
+    visitColumns.result,
+    visitColumns.ip,
+    ...countryColumns(lookup),
+    visitColumns.browser,
+  ];
   return (
     <VisitsCard
-      caption={`Visits through link ${publicId}`}
+      caption={`Requests through link ${publicId}`}
       columns={columns}
       entries={entries}
       nextCursor={nextCursor}
       more={more}
       onOlder={loadOlder}
+      lookup={lookup}
       empty={
         <p>
           Each request that comes in through this link is listed here, with its

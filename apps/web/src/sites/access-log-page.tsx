@@ -5,12 +5,15 @@ import type { ApiClient } from '@wardlock/apiclient-ts';
 import { Button, Notice, type TableColumn } from '@wardlock/ui';
 import { useEffect, useState } from 'react';
 import {
+  countryColumns,
+  useCountryLookup,
   useOlderVisits,
   visitColumns,
   VisitsCard,
   type AccessLogEntry,
   type AccessLogPage,
 } from './visits.js';
+import type { CountryLookup } from '../analytics/country.js';
 import './sites.css';
 
 type LogState =
@@ -63,6 +66,7 @@ export function SiteAccessLogTab({
 }) {
   const [state, setState] = useState<LogState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  const lookup = useCountryLookup(api, name);
 
   useEffect(() => {
     let live = true;
@@ -99,7 +103,7 @@ export function SiteAccessLogTab({
       <p className="site-tab-lead">
         Every request for {name}, allowed or refused, newest first.
       </p>
-      <SiteVisits api={api} name={name} first={state.page} />
+      <SiteVisits api={api} name={name} first={state.page} lookup={lookup} />
     </>
   );
 }
@@ -108,10 +112,12 @@ function SiteVisits({
   api,
   name,
   first,
+  lookup,
 }: {
   api: ApiClient;
   name: string;
   first: AccessLogPage;
+  lookup: CountryLookup | undefined;
 }) {
   const { entries, nextCursor, more, loadOlder } = useOlderVisits(
     first,
@@ -123,15 +129,17 @@ function SiteVisits({
     visitColumns.result,
     { header: 'Got in with', cell: (e) => <Via site={name} entry={e} /> },
     visitColumns.ip,
+    ...countryColumns(lookup),
   ];
   return (
     <VisitsCard
-      caption={`Visits to ${name}`}
+      caption={`Requests for ${name}`}
       columns={columns}
       entries={entries}
       nextCursor={nextCursor}
       more={more}
       onOlder={loadOlder}
+      lookup={lookup}
       empty={
         <p>
           Each request for this site is listed here, with its time, path,

@@ -442,6 +442,82 @@ describe('link access log', () => {
 
   beforeEach(() => at('/sites/docs/links/q4v7m2xkpa'));
 
+  it('shows each visit’s country and the credit only while the lookup is on', async () => {
+    const attribution =
+      'Synthetic country data (https://example.test/countries)';
+    for (const lookup of ['on', 'off', 'failed'] as const) {
+      const { api, calls } = fakeServer({
+        ...sitePage([]),
+        [`GET ${base}/links`]: () =>
+          Response.json({ items: [link('q4v7m2xkpa')] }),
+        'GET /api/v0/analytics': () =>
+          lookup === 'failed'
+            ? Response.json({ code: 'internal', message: 'x' }, { status: 500 })
+            : Response.json({
+                days: 7,
+                from: now - 7 * day,
+                to: now,
+                total: { allowed: 1, refused: 0 },
+                hours: [],
+                via: [],
+                sites: [],
+                groups: [],
+                tags: [],
+                links: [],
+                paths: [],
+                otherPaths: { allowed: 0, refused: 0 },
+                browsers: [],
+                ...(lookup === 'on'
+                  ? { countries: [], countryLookup: { attribution } }
+                  : {}),
+              }),
+        [`GET ${base}/links/q4v7m2xkpa/access-log`]: () =>
+          Response.json({
+            items: [entry(1, lookup === 'off' ? {} : { country: 'AU' })],
+          }),
+      });
+      render(<App api={api} />);
+      const table = await screen.findByRole('table', {
+        name: 'Requests through link q4v7m2xkpa',
+      });
+      const headers = () =>
+        within(table)
+          .getAllByRole('columnheader')
+          .map((th) => th.textContent);
+      // The link's site's lookup.
+      await waitFor(() =>
+        expect(calls.map((c) => c.route)).toContain(
+          'GET /api/v0/analytics?site=docs&days=7',
+        ),
+      );
+      if (lookup === 'on') {
+        await waitFor(() =>
+          expect(headers()).toEqual([
+            'Time',
+            'Path',
+            'Result',
+            'IP address',
+            'Country',
+            'Browser or client',
+          ]),
+        );
+        expect(within(table).getByText('Australia')).toBeTruthy();
+        expect(
+          screen
+            .getByRole('link', { name: 'https://example.test/countries' })
+            .getAttribute('href'),
+        ).toBe('https://example.test/countries');
+      } else {
+        // Let the read settle before checking nothing changed.
+        if (lookup === 'off') await screen.findByText('1 request in 7 days');
+        else await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(headers()).not.toContain('Country');
+        expect(document.body.textContent).not.toMatch(/countr|Australia/i);
+      }
+      cleanup();
+    }
+  });
+
   it('shows the visits newest first and loads older ones', async () => {
     // A refused request with no IP recorded and no User-Agent sent.
     const refused = entry(2, { status: 401 });
@@ -469,7 +545,7 @@ describe('link access log', () => {
       expect(document.title).toBe('Link access log · docs · Wardlock'),
     );
     const table = screen.getByRole('table', {
-      name: 'Visits through link q4v7m2xkpa',
+      name: 'Requests through link q4v7m2xkpa',
     });
     let rows = within(table).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(2);
@@ -480,14 +556,16 @@ describe('link access log', () => {
     expect(rows[1]!.textContent).toContain('Refused · 401');
     expect(rows[1]!.textContent).toContain('Not recorded');
     expect(rows[1]!.textContent).toContain('None sent');
-    fireEvent.click(screen.getByRole('button', { name: 'Show older visits' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Show older requests' }),
+    );
     await waitFor(() =>
       expect(within(table).getAllByRole('row')).toHaveLength(4),
     );
     rows = within(table).getAllByRole('row').slice(1);
     expect(rows[2]!.textContent).toContain('/page-3');
     expect(
-      screen.queryByRole('button', { name: 'Show older visits' }),
+      screen.queryByRole('button', { name: 'Show older requests' }),
     ).toBeNull();
     expect(calls.map((c) => c.route)).toContain(
       `GET ${base}/links/q4v7m2xkpa/access-log?cursor=next`,
@@ -546,7 +624,7 @@ describe('link access log', () => {
     });
     render(<App api={api} />);
     expect(
-      await screen.findByRole('heading', { name: 'No visits yet' }),
+      await screen.findByRole('heading', { name: 'No requests yet' }),
     ).toBeTruthy();
   });
 

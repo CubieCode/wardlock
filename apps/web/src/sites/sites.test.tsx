@@ -663,7 +663,7 @@ describe('site access log', () => {
     await waitFor(() =>
       expect(document.title).toBe('Access log · docs · Wardlock'),
     );
-    const table = screen.getByRole('table', { name: 'Visits to docs' });
+    const table = screen.getByRole('table', { name: 'Requests for docs' });
     let rows = within(table).getAllByRole('row').slice(1);
     expect(rows.map((row) => row.textContent)).toEqual([
       expect.stringContaining('Share link Linear ENG-123'),
@@ -689,20 +689,22 @@ describe('site access log', () => {
         .getAttribute('href'),
     ).toBe('/sites/docs/links/b3c4d5e6f7');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show older visits' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Show older requests' }),
+    );
     await waitFor(() =>
       expect(within(table).getAllByRole('row')).toHaveLength(7),
     );
     rows = within(table).getAllByRole('row').slice(1);
     expect(rows[5]!.textContent).toContain('Account sign-in');
     expect(
-      screen.queryByRole('button', { name: 'Show older visits' }),
+      screen.queryByRole('button', { name: 'Show older requests' }),
     ).toBeNull();
     expect(calls).toContain(`GET ${base}?cursor=next`);
     expect(document.body.innerHTML).not.toContain('wl_');
   });
 
-  it('says when older visits fail to load and lets the owner try again', async () => {
+  it('says when older requests fail to load and lets the owner try again', async () => {
     let fail = true;
     const { api } = fakeServer({
       ...oneSite(site('docs'), []),
@@ -715,17 +717,19 @@ describe('site access log', () => {
     });
     render(<App api={api} />);
     const older = await screen.findByRole('button', {
-      name: 'Show older visits',
+      name: 'Show older requests',
     });
     fireEvent.click(older);
     expect(
-      await screen.findByText('Could not load older visits. Try again.'),
+      await screen.findByText('Could not load older requests. Try again.'),
     ).toBeTruthy();
     fail = false;
-    fireEvent.click(screen.getByRole('button', { name: 'Show older visits' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Show older requests' }),
+    );
     await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(3));
     expect(
-      screen.queryByText('Could not load older visits. Try again.'),
+      screen.queryByText('Could not load older requests. Try again.'),
     ).toBeNull();
   });
 
@@ -736,7 +740,7 @@ describe('site access log', () => {
     });
     render(<App api={api} />);
     expect(
-      await screen.findByRole('heading', { name: 'No visits yet' }),
+      await screen.findByRole('heading', { name: 'No requests yet' }),
     ).toBeTruthy();
     expect(screen.queryByRole('table')).toBeNull();
   });
@@ -767,5 +771,117 @@ describe('site access log', () => {
     fail = false;
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('table')).toBeTruthy();
+  });
+
+  /** The site's analytics, with this country lookup or none. */
+  const analytics =
+    (countryLookup?: { attribution: string }): Handler =>
+    () =>
+      Response.json({
+        days: 7,
+        from: now - 7 * 24 * hour,
+        to: now,
+        total: { allowed: 3, refused: 0 },
+        hours: [],
+        via: [],
+        sites: [],
+        groups: [],
+        tags: [],
+        links: [],
+        paths: [],
+        otherPaths: { allowed: 0, refused: 0 },
+        browsers: [],
+        ...(countryLookup ? { countries: [], countryLookup } : {}),
+      });
+  const headersOf = (table: HTMLElement) =>
+    within(table)
+      .getAllByRole('columnheader')
+      .map((th) => th.textContent);
+
+  it('shows each visit’s country and the database’s credit while the lookup is on', async () => {
+    const { api, calls } = fakeServer({
+      ...oneSite(site('docs'), []),
+      'GET /api/v0/analytics': analytics({
+        attribution:
+          'Synthetic country data (https://example.test/countries). Mirror: ftp://example.test/countries',
+      }),
+      [`GET ${base}`]: () =>
+        Response.json({
+          items: [
+            entry(1, { country: 'NZ' }),
+            entry(2, { country: 'unknown' }),
+            // Logged while the lookup was off.
+            entry(3),
+          ],
+        }),
+    });
+    render(<App api={api} />);
+    const table = await screen.findByRole('table', {
+      name: 'Requests for docs',
+    });
+    await waitFor(() =>
+      expect(headersOf(table)).toEqual([
+        'Time',
+        'Path',
+        'Result',
+        'Got in with',
+        'IP address',
+        'Country',
+      ]),
+    );
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows.map((row) => row.lastElementChild?.textContent)).toEqual([
+      'NZNew Zealand',
+      'Unknown',
+      'Not recorded',
+    ]);
+    expect(calls).toContain('GET /api/v0/analytics?site=docs&days=7');
+    const credit = screen.getByText(/^Synthetic country data/);
+    expect(credit.textContent).toBe(
+      'Synthetic country data (https://example.test/countries). Mirror: ftp://example.test/countries',
+    );
+    expect(
+      within(credit)
+        .getAllByRole('link')
+        .map((a) => a.getAttribute('href')),
+    ).toEqual(['https://example.test/countries']);
+  });
+
+  it('mentions no country while the lookup is off', async () => {
+    const { api } = fakeServer({
+      ...oneSite(site('docs'), []),
+      'GET /api/v0/analytics': analytics(),
+      [`GET ${base}`]: () => Response.json({ items: [entry(1), entry(2)] }),
+    });
+    render(<App api={api} />);
+    const table = await screen.findByRole('table', {
+      name: 'Requests for docs',
+    });
+    // The header's 7-day count comes from the same read.
+    await screen.findByText(/3 requests in 7 days/);
+    expect(headersOf(table)).not.toContain('Country');
+    expect(document.body.textContent).not.toMatch(/countr/i);
+  });
+
+  it('shows the log without countries when the lookup cannot be read', async () => {
+    const { api, calls } = fakeServer({
+      ...oneSite(site('docs'), []),
+      'GET /api/v0/analytics': () =>
+        Response.json({ code: 'internal', message: 'x' }, { status: 500 }),
+      [`GET ${base}`]: () =>
+        Response.json({ items: [entry(1, { country: 'NZ' })] }),
+    });
+    render(<App api={api} />);
+    const table = await screen.findByRole('table', {
+      name: 'Requests for docs',
+    });
+    await waitFor(() =>
+      expect(calls).toContain('GET /api/v0/analytics?site=docs&days=7'),
+    );
+    // Let the failed read settle before checking nothing changed.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(within(table).getAllByRole('row')).toHaveLength(2);
+    expect(headersOf(table)).not.toContain('Country');
+    expect(document.body.textContent).not.toMatch(/countr|New Zealand/i);
   });
 });
