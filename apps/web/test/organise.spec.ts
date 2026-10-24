@@ -204,14 +204,19 @@ for (const scheme of schemes) {
     });
 
     const renamed = `Agency ${lane}`;
-    await test.step('renames a group', async () => {
-      await page.getByRole('button', { name: `Rename ${groupName}` }).click();
-      const field = page.getByRole('textbox', { name: `Rename ${groupName}` });
+    await test.step('renames a group and gives it a note', async () => {
+      await page.getByRole('button', { name: `Edit ${groupName}` }).click();
+      const field = page.getByRole('textbox', { name: `Name of ${groupName}` });
       await expect(field).toHaveValue(groupName);
+      await page
+        .getByRole('textbox', { name: 'Note (optional)' })
+        .fill('Previews for the agency');
       await field.fill(renamed);
-      await page.keyboard.press('Enter');
+      await shot('edit-group');
+      await field.press('Enter');
+      await expect(groupRow(renamed)).toContainText('Previews for the agency');
       await expect(
-        page.getByRole('button', { name: `Rename ${renamed}` }),
+        page.getByRole('button', { name: `Edit ${renamed}` }),
       ).toBeFocused();
       await expect(
         page.getByRole('link', { name: `2 sites in ${renamed}` }),

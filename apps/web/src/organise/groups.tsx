@@ -19,15 +19,19 @@ import {
 export type Group = components['schemas']['Group'];
 
 const nameHint = 'Up to 40 characters, different from your other groups.';
+const noteField = {
+  label: 'Note (optional)',
+  hint: 'Up to 200 characters, shown under the group’s name in the sites list.',
+};
 
-/** The owner's groups, with New group, Rename and Delete. */
+/** The owner's groups, with New group, Edit (name and note) and Delete. */
 export function GroupsCard({
   api,
   groups,
   counts,
   recount,
   onCreated,
-  onRenamed,
+  onEdited,
   onDeleted,
 }: {
   api: ApiClient;
@@ -37,7 +41,7 @@ export function GroupsCard({
   /** Reads the site counts again. */
   recount: () => Promise<void>;
   onCreated: (group: Group) => void;
-  onRenamed: (group: Group) => void;
+  onEdited: (group: Group) => void;
   onDeleted: (id: string) => void;
 }) {
   const [creating, setCreating] = useState(false);
@@ -79,7 +83,7 @@ export function GroupsCard({
               group={group}
               count={counts[group.id] ?? 0}
               recount={recount}
-              onRenamed={onRenamed}
+              onEdited={onEdited}
               onDeleted={deleted}
             />
           ))}
@@ -89,14 +93,17 @@ export function GroupsCard({
         <NameForm
           label="New group name"
           hint={nameHint}
+          note={noteField}
           submitLabel="Create group"
           busyLabel="Creating…"
           onCancel={() => setCreating(false)}
-          onSubmit={async (name) => {
+          onSubmit={async (name, note) => {
             const result = await attempt(() =>
-              api.POST('/api/v0/groups', { body: { name } }),
+              api.POST('/api/v0/groups', {
+                body: note ? { name, note } : { name },
+              }),
             );
-            if ('error' in result) return result.error;
+            if ('error' in result) return result;
             if (result.data) onCreated(result.data);
             setCreating(false);
             return null;
@@ -129,42 +136,44 @@ function GroupRow({
   group,
   count,
   recount,
-  onRenamed,
+  onEdited,
   onDeleted,
 }: {
   api: ApiClient;
   group: Group;
   count: number;
   recount: () => Promise<void>;
-  onRenamed: (group: Group) => void;
+  onEdited: (group: Group) => void;
   onDeleted: (group: Group, how: Removal) => void;
 }) {
-  const [renaming, setRenaming] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const renameButton = useRef<HTMLButtonElement>(null);
-  useFocusOnReturn(renameButton, renaming);
+  const editButton = useRef<HTMLButtonElement>(null);
+  useFocusOnReturn(editButton, editing);
   const path = { groupId: group.id };
 
-  if (renaming)
+  if (editing)
     return (
       <li className="organise-row organise-row-editing">
         <NameForm
-          label={`Rename ${group.name}`}
+          label={`Name of ${group.name}`}
           hint={nameHint}
           initial={group.name}
+          note={{ ...noteField, initial: group.note }}
           submitLabel="Save"
           busyLabel="Saving…"
-          onCancel={() => setRenaming(false)}
-          onSubmit={async (name) => {
+          onCancel={() => setEditing(false)}
+          onSubmit={async (name, note) => {
+            // An empty note removes it.
             const result = await attempt(() =>
               api.PATCH('/api/v0/groups/{groupId}', {
                 params: { path },
-                body: { name },
+                body: { name, note },
               }),
             );
-            if ('error' in result) return result.error;
-            if (result.data) onRenamed(result.data);
-            setRenaming(false);
+            if ('error' in result) return result;
+            if (result.data) onEdited(result.data);
+            setEditing(false);
             return null;
           }}
         />
@@ -187,12 +196,12 @@ function GroupRow({
       />
       <span className="organise-actions">
         <Button
-          ref={renameButton}
+          ref={editButton}
           type="button"
-          aria-label={`Rename ${group.name}`}
-          onClick={() => setRenaming(true)}
+          aria-label={`Edit ${group.name}`}
+          onClick={() => setEditing(true)}
         >
-          Rename
+          Edit
         </Button>
         <Button
           type="button"
