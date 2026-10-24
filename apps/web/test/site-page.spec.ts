@@ -158,6 +158,16 @@ for (const scheme of schemes) {
       await expect(
         page.getByRole('heading', { name: 'No requests yet' }),
       ).toBeVisible();
+      // The current tab is scrolled into view in its row, even on a phone
+      // where Access log starts off-screen.
+      const tabs = page.getByRole('navigation', { name: 'Site sections' });
+      const current = tabs.getByRole('link', { name: 'Access log' });
+      await expect(async () => {
+        const row = (await tabs.boundingBox())!;
+        const tab = (await current.boundingBox())!;
+        expect(tab.x).toBeGreaterThanOrEqual(row.x);
+        expect(tab.x + tab.width).toBeLessThanOrEqual(row.x + row.width);
+      }).toPass();
     });
 
     await test.step('Settings files the site in a group and removes the tag', async () => {

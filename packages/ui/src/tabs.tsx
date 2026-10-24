@@ -1,13 +1,20 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { useId, type AnchorHTMLAttributes, type ReactNode } from 'react';
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  type AnchorHTMLAttributes,
+  type ReactNode,
+} from 'react';
 import { cx } from './cx.js';
 
 /**
  * A row of page tabs. Each tab is a link to its own address, so it is a
  * labelled navigation landmark rather than an ARIA tablist. On narrow screens
- * the row scrolls sideways inside itself.
+ * the row scrolls sideways inside itself, bringing the current tab into view
+ * when it is partly hidden (only the row scrolls, never the page).
  */
 export function Tabs({
   label,
@@ -17,8 +24,19 @@ export function Tabs({
   /** `Tab`s. */
   children: ReactNode;
 }) {
+  const row = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const nav = row.current;
+    const tab = nav?.querySelector('[aria-current="page"]');
+    if (!nav || !tab) return;
+    const outer = nav.getBoundingClientRect();
+    const inner = tab.getBoundingClientRect();
+    if (inner.left >= outer.left && inner.right <= outer.right) return;
+    // Centred where the row allows, so the tabs either side show too.
+    nav.scrollLeft += inner.left - outer.left - (outer.width - inner.width) / 2;
+  });
   return (
-    <nav className="wl-tabs" aria-label={label}>
+    <nav ref={row} className="wl-tabs" aria-label={label}>
       <ul>{children}</ul>
     </nav>
   );
