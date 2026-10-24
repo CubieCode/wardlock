@@ -22,6 +22,7 @@ playwright-report/
 /apps/cli/cmd/wardlock/wardlock
 /apps/server/wardlockd
 /apps/server/cmd/wardlockd/wardlockd
+/apps/server/cmd/wardlock-demo/wardlock-demo
 *.exe
 # Local workspace checksums; each module's go.sum is the committed record.
 go.work.sum
