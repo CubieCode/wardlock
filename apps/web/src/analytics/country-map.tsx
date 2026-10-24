@@ -18,7 +18,7 @@ const labelled = 5;
 /**
  * A bubble map of requests by country, centred on the Pacific: one bubble
  * per country, its area in proportion to its requests, at the country's
- * label point. With `server`, a hub in that country with a line to each
+ * label point, moved in from the edge where it would cross the frame. With `server`, a hub in that country with a line to each
  * bubble; without it, no hub. Countries with no point (rare codes) are left
  * off the map; the list and table beside it still have them. Each bubble is
  * focusable and shows its tooltip on focus or hover; Escape hides it. The
@@ -36,12 +36,23 @@ export default function CountryMap({
   server?: string | undefined;
 }) {
   const [active, setActive] = useState<string | null>(null);
-  const placed = countries.flatMap((country) => {
-    const point = countryPoints[country.code];
-    return point && country.value > 0 ? [{ ...country, point }] : [];
-  });
-  const max = Math.max(1, ...placed.map((c) => c.value));
+  const counted = countries.filter(
+    (country) => countryPoints[country.code] && country.value > 0,
+  );
+  const max = Math.max(1, ...counted.map((c) => c.value));
   const radius = (value: number) => 3 + Math.sqrt(value / max) * 18;
+  // A bubble near the map's edge (Iceland, Brazil) is moved in just enough
+  // to stay inside the frame.
+  const inside = (at: number, r: number, size: number) =>
+    Math.min(Math.max(at, r), size - r);
+  const placed = counted.map((country) => {
+    const [x, y] = countryPoints[country.code]!;
+    const r = radius(country.value);
+    return {
+      ...country,
+      point: [inside(x, r, mapWidth), inside(y, r, mapHeight)] as const,
+    };
+  });
   // Largest first, so smaller bubbles stay on top and reachable.
   const drawn = [...placed].sort((a, b) => b.value - a.value);
   const hub = server ? countryPoints[server] : undefined;

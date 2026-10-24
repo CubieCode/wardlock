@@ -12,7 +12,9 @@ import {
 } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { App } from '../app.js';
+import CountryMap from './country-map.js';
 import { readQuery, requestsPerDay, type Analytics } from './data.js';
+import { countryPoints, mapHeight, mapWidth } from './world.gen.js';
 
 type SiteSummary = components['schemas']['SiteSummary'];
 
@@ -724,5 +726,36 @@ describe('countries', () => {
     await screen.findByRole('region', { name: 'Requests per day' });
     expect(cardTitles()).not.toContain('Where requests come from');
     expect(document.body.textContent).not.toMatch(/countr/i);
+  });
+});
+
+describe('country map', () => {
+  it('moves a bubble near the edge inside the frame', () => {
+    // Greenland's label point is 1.4 units from the top; Brazil's 39 from
+    // the right.
+    render(
+      <CountryMap
+        countries={[
+          { code: 'GL', value: 10, detail: '10 requests' },
+          { code: 'BR', value: 10, detail: '10 requests' },
+          { code: 'NZ', value: 1, detail: '1 request' },
+        ]}
+      />,
+    );
+    const circles = screen.getAllByRole('img', { name: /requests?$/ });
+    expect(circles).toHaveLength(3);
+    for (const circle of circles) {
+      const at = (a: string) => Number(circle.getAttribute(a));
+      const [cx, cy, r] = [at('cx'), at('cy'), at('r')];
+      expect(cx - r).toBeGreaterThanOrEqual(0);
+      expect(cy - r).toBeGreaterThanOrEqual(0);
+      expect(cx + r).toBeLessThanOrEqual(mapWidth);
+      expect(cy + r).toBeLessThanOrEqual(mapHeight);
+    }
+    // A bubble well inside keeps its point.
+    const nz = screen.getByRole('img', { name: /^New Zealand/ });
+    expect([nz.getAttribute('cx'), nz.getAttribute('cy')]).toEqual(
+      countryPoints.NZ!.map(String),
+    );
   });
 });

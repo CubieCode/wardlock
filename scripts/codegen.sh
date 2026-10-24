@@ -2,7 +2,8 @@
 # SPDX-FileCopyrightText: 2026 CubieCode
 # SPDX-License-Identifier: MIT
 #
-# Regenerates all committed generated code: OpenAPI bindings and sqlc.
+# Regenerates all committed generated code: OpenAPI bindings and sqlc. The
+# check also confirms the world map data (scripts/world-map.mjs) is current.
 #   scripts/codegen.sh          regenerate
 #   scripts/codegen.sh --check  regenerate, then fail if anything changed
 #                               (the CI drift check; commit the result)
@@ -35,4 +36,6 @@ if [[ "${1:-}" == --check ]]; then
     exit 1
   fi
   echo "Generated code is up to date."
+  # Its sources are downloaded, so it is checked by its stamp, not rebuilt.
+  node scripts/world-map.mjs --check
 fi

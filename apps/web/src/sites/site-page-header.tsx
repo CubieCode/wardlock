@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { AccessWord, Time, type Policy, type Site } from './format.js';
 import { OpenSiteButton } from './open-site.js';
 import { Organisation, type Organise } from './site-page-organise.js';
+import { readWeek } from './week-analytics.js';
 
 /**
  * The site page's header: access, name with its pin, address, group and
@@ -110,12 +111,10 @@ function WeekRequests({ api, name }: { api: ApiClient; name: string }) {
   } | null>(null);
   useEffect(() => {
     let live = true;
-    api
-      .GET('/api/v0/analytics', { params: { query: { site: name, days: 7 } } })
-      .then(
-        ({ data }) => live && data && setTotal(data.total),
-        () => undefined,
-      );
+    readWeek(api, name).then(
+      (data) => live && setTotal(data.total),
+      () => undefined,
+    );
     return () => {
       live = false;
     };
