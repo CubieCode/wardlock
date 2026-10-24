@@ -195,7 +195,7 @@ describe('groups', () => {
     render(<OrganisePage api={server.api} />);
     fireEvent.click(await screen.findByRole('button', { name: 'New group' }));
     const field = screen.getByRole('textbox', { name: 'New group name' });
-    expect(document.activeElement).toBe(field);
+    await waitFor(() => expect(document.activeElement).toBe(field));
     fireEvent.change(field, { target: { value: '  Blog ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create group' }));
     await waitFor(() =>
@@ -212,8 +212,10 @@ describe('groups', () => {
       '9 sites in Client work',
     ]);
     expect(screen.queryByRole('textbox')).toBeNull();
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'New group' }),
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'New group' }),
+      ),
     );
   });
 
@@ -275,8 +277,10 @@ describe('groups', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'New group' }));
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
     expect(screen.queryByRole('textbox')).toBeNull();
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'New group' }),
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'New group' }),
+      ),
     );
   });
 
@@ -319,8 +323,10 @@ describe('groups', () => {
         .getAllByRole('link')
         .map((link) => link.getAttribute('aria-label')),
     ).toEqual(['9 sites in Agency', '1 site in Archive']);
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Rename Agency' }),
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Rename Agency' }),
+      ),
     );
   });
 
@@ -727,8 +733,10 @@ describe('tags', () => {
       expect(within(list('Tags')).getAllByRole('listitem')).toHaveLength(1),
     );
     expect(server.last(`DELETE /api/v0/tags/${docs}`)).toBeTruthy();
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Colour of preview' }),
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Colour of preview' }),
+      ),
     );
   });
 
