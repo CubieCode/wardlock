@@ -375,9 +375,9 @@ describe('jump to', () => {
     ).toBe('Control+K');
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true });
-    const input = screen.getByRole('combobox', { name: 'Jump to' });
-    expect(document.activeElement).toBe(input);
-    const list = screen.getByRole('listbox', { name: 'Jump to' });
+    const input = await screen.findByRole('combobox', { name: 'Jump to' });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    const list = await screen.findByRole('listbox', { name: 'Jump to' });
     expect(
       await within(
         await within(list).findByRole('group', { name: 'Sites' }),
@@ -395,12 +395,14 @@ describe('jump to', () => {
 
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(window.location.pathname).toBe('/sites/drafts'));
-    expect(screen.queryByRole('combobox')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
 
     fireEvent.keyDown(document, { key: 'K', ctrlKey: true });
-    expect(screen.getByRole('combobox', { name: 'Jump to' })).toBeTruthy();
+    expect(
+      await screen.findByRole('combobox', { name: 'Jump to' }),
+    ).toBeTruthy();
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true });
-    expect(screen.queryByRole('combobox')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
   });
 
   it('takes only the platform’s shortcut, once per press', async () => {
@@ -431,9 +433,11 @@ describe('jump to', () => {
     fireEvent.keyDown(document, { key: 'k', metaKey: true, repeat: true });
     expect(screen.queryByRole('combobox')).toBeNull();
     fireEvent.keyDown(document, { key: 'k', metaKey: true });
-    expect(screen.getByRole('combobox', { name: 'Jump to' })).toBeTruthy();
+    expect(
+      await screen.findByRole('combobox', { name: 'Jump to' }),
+    ).toBeTruthy();
     fireEvent.keyDown(document, { key: 'k', metaKey: true });
-    expect(screen.queryByRole('combobox')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
   });
 
   it('keeps Enter on the highlighted page when sites arrive above it', async () => {
@@ -446,7 +450,7 @@ describe('jump to', () => {
     });
     render(<App api={server.api} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Jump to' }));
-    const input = screen.getByRole('combobox', { name: 'Jump to' });
+    const input = await screen.findByRole('combobox', { name: 'Jump to' });
     await screen.findByRole('option', { name: 'Overview' });
     fireEvent.change(input, { target: { value: 'pass' } });
     const passkeys = screen.getByRole('option', { name: 'Passkeys' });
@@ -473,7 +477,7 @@ describe('jump to', () => {
     const opener = await screen.findByRole('button', { name: 'Jump to' });
     opener.focus();
     fireEvent.click(opener);
-    const input = screen.getByRole('combobox', { name: 'Jump to' });
+    const input = await screen.findByRole('combobox', { name: 'Jump to' });
     await within(
       await screen.findByRole('group', { name: 'Sites' }),
     ).findByRole('option', { name: /docs/ });
@@ -494,8 +498,8 @@ describe('jump to', () => {
         .getByRole('dialog', { name: 'Jump to' })
         .dispatchEvent(new Event('cancel', { cancelable: true }));
     });
-    expect(screen.queryByRole('combobox')).toBeNull();
-    expect(document.activeElement).toBe(opener);
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
   });
 
   it('says when the sites search fails and still offers pages', async () => {
