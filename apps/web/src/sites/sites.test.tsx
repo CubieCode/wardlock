@@ -663,7 +663,9 @@ describe('site access log', () => {
     await waitFor(() =>
       expect(document.title).toBe('Access log · docs · Wardlock'),
     );
-    const table = screen.getByRole('table', { name: 'Requests for docs' });
+    const table = await screen.findByRole('table', {
+      name: 'Requests for docs',
+    });
     let rows = within(table).getAllByRole('row').slice(1);
     expect(rows.map((row) => row.textContent)).toEqual([
       expect.stringContaining('Share link Linear ENG-123'),

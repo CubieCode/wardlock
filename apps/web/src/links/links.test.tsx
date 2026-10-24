@@ -544,7 +544,7 @@ describe('link access log', () => {
     await waitFor(() =>
       expect(document.title).toBe('Link access log · docs · Wardlock'),
     );
-    const table = screen.getByRole('table', {
+    const table = await screen.findByRole('table', {
       name: 'Requests through link q4v7m2xkpa',
     });
     let rows = within(table).getAllByRole('row').slice(1);
