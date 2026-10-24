@@ -126,7 +126,7 @@ export function useOlderVisits(
   return { ...page, more, loadOlder };
 }
 
-/** The "Visits" card: a table of entries, or an empty state, and paging. */
+/** The "Requests" card: a table of entries, or an empty state, and paging. */
 export function VisitsCard({
   caption,
   columns,
@@ -149,9 +149,9 @@ export function VisitsCard({
   lookup?: CountryLookup | undefined;
 }) {
   return (
-    <Card title="Visits">
+    <Card title="Requests">
       {entries.length === 0 ? (
-        <EmptyState title="No visits yet">{empty}</EmptyState>
+        <EmptyState title="No requests yet">{empty}</EmptyState>
       ) : (
         <>
           <Table
@@ -164,12 +164,12 @@ export function VisitsCard({
         </>
       )}
       {more === 'error' && (
-        <Notice tone="danger">Could not load older visits. Try again.</Notice>
+        <Notice tone="danger">Could not load older requests. Try again.</Notice>
       )}
       {nextCursor ? (
         <div>
           <Button type="button" disabled={more === 'loading'} onClick={onOlder}>
-            {more === 'loading' ? 'Loading…' : 'Show older visits'}
+            {more === 'loading' ? 'Loading…' : 'Show older requests'}
           </Button>
         </div>
       ) : null}

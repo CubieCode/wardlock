@@ -108,8 +108,14 @@
   }
 }
 
+.country-map-column {
+  display: grid;
+  gap: var(--space-2);
+}
+
 .country-map {
   position: relative;
+  container-type: inline-size;
   aspect-ratio: 720 / 262;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
@@ -155,19 +161,39 @@
   stroke-width: 2.5;
 }
 
-.country-labels text {
-  fill: var(--color-text);
+.country-labels span {
+  position: absolute;
+  transform: translate(-50%, 2px);
+  color: var(--color-text);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--text-xs);
   font-weight: var(--font-weight-bold);
-  paint-order: stroke;
-  stroke: var(--color-surface-muted);
-  stroke-width: 3px;
+  line-height: 1;
+  pointer-events: none;
+  text-shadow:
+    0 0 2px var(--color-surface-muted),
+    0 0 2px var(--color-surface-muted),
+    0 0 2px var(--color-surface-muted);
+}
+
+.country-labels .above {
+  transform: translate(-50%, calc(-100% - 2px));
+}
+
+/* On a narrow map the labels would crowd the bubbles; the list and the
+   tooltips name the countries. */
+@container (max-width: 30rem) {
+  .country-labels {
+    display: none;
+  }
 }
 
 .country-map .country-tip {
   bottom: auto;
-  transform: translate(-50%, calc(-100% - var(--space-1)));
+  top: 0;
+  left: 0;
+  transform: none;
+  max-width: 100%;
   pointer-events: none;
 }
 

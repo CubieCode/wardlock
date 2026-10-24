@@ -5,7 +5,8 @@
 // Writes apps/web/src/analytics/world.gen.ts, the land outline and country
 // points the analytics country map draws, from Natural Earth (public domain).
 // Run it by hand when the projection or the source changes; it downloads two
-// pinned files, so it is not part of `pnpm codegen`:
+// pinned files, checked against their SHA-256, so it is not part of
+// `pnpm codegen`:
 //   node scripts/world-map.mjs
 //
 // The projection is equirectangular, centred on 150°E so the Pacific sits in
@@ -14,6 +15,7 @@
 // in two. Each country's point is Natural Earth's label point, keyed by its
 // ISO 3166-1 alpha-2 code.
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +24,13 @@ const release = 'v5.1.2';
 const base = `https://raw.githubusercontent.com/nvkelso/natural-earth-vector/${release}/geojson`;
 const landFile = 'ne_110m_land.geojson';
 const countriesFile = 'ne_50m_admin_0_countries.geojson';
+/** SHA-256 of each pinned file; a download that differs is refused. */
+const checksums = {
+  [landFile]:
+    '9e0729ee253ca7d7a5c4ae9395fb1902264c5377c52e224d13dd85010e2835d9',
+  [countriesFile]:
+    '3e458fc036ad0a66411f2c1e6cac49c5d7bfb81cb1123bc513b22511a2b7fdeb',
+};
 
 const width = 720;
 const centre = 150;
@@ -54,7 +63,9 @@ function clip(ring, inside) {
     if (ain) out.push(a);
     if (ain !== bin) {
       const t = (seam - ax) / (bx - ax);
-      out.push([seam - (ain ? 1e-9 : -1e-9), ay + t * (by - ay)]);
+      // Just inside the side being kept, so it projects to that map edge.
+      const edge = inside(seam) ? seam + 1e-9 : seam - 1e-9;
+      out.push([edge, ay + t * (by - ay)]);
     }
   }
   return out;
@@ -74,11 +85,15 @@ function ringPath(ring) {
   return points.length < 3 ? '' : `M${points.join('L')}Z`;
 }
 
-/** @param {string} file */
+/** @param {keyof typeof checksums} file */
 async function download(file) {
   const response = await fetch(`${base}/${file}`);
   if (!response.ok) throw new Error(`${file}: HTTP ${response.status}`);
-  return /** @type {any} */ (await response.json());
+  const body = Buffer.from(await response.arrayBuffer());
+  const sum = createHash('sha256').update(body).digest('hex');
+  if (sum !== checksums[file])
+    throw new Error(`${file}: SHA-256 ${sum}, expected ${checksums[file]}`);
+  return /** @type {any} */ (JSON.parse(body.toString('utf8')));
 }
 
 async function main() {

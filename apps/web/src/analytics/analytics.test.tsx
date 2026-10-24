@@ -644,6 +644,21 @@ describe('countries', () => {
     expect(geo.querySelector('.country-lines')).toBeNull();
   });
 
+  it('names no server in the legend when its country has no point on the map', async () => {
+    await open(
+      '/analytics',
+      // Gibraltar is too small for Natural Earth's label points.
+      withCountries({ countryLookup: { attribution, serverCountry: 'GI' } }),
+    );
+    const geo = await screen.findByRole('region', {
+      name: 'Where requests come from',
+    });
+    await within(geo).findByRole('img', { name: /^New Zealand:/ });
+    expect(within(geo).getByText('Bubble area: requests')).toBeTruthy();
+    expect(within(geo).queryByRole('img', { name: /Your server/ })).toBeNull();
+    expect(within(geo).queryByText('Your server')).toBeNull();
+  });
+
   it('credits the database as given, linking only its https URLs', async () => {
     await open(
       '/analytics',
@@ -688,13 +703,18 @@ describe('countries', () => {
     ).toEqual(['Unknown']);
   });
 
-  it('says so when no request in the range has a country', async () => {
+  it('says so, and why, when no request in the range has a country', async () => {
     await open('/analytics', withCountries({ countries: [] }));
     const geo = await screen.findByRole('region', {
       name: 'Where requests come from',
     });
     expect(
       within(geo).getByText('No requests in this range have a country.'),
+    ).toBeTruthy();
+    expect(
+      within(geo).getByText(
+        '45 requests logged while the country lookup was off have no country and are not counted here.',
+      ),
     ).toBeTruthy();
     expect(within(geo).queryByRole('table')).toBeNull();
   });

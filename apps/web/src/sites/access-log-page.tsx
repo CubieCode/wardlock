@@ -133,7 +133,7 @@ function SiteVisits({
   ];
   return (
     <VisitsCard
-      caption={`Visits to ${name}`}
+      caption={`Requests for ${name}`}
       columns={columns}
       entries={entries}
       nextCursor={nextCursor}

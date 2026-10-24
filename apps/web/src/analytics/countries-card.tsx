@@ -114,28 +114,18 @@ export function CountriesCard({
         </p>
       ) : (
         <>
-          <div className="country-legend" aria-hidden="true">
-            <span>
-              <i className="country-key-bubble" />
-              Bubble area: requests
-            </span>
-            {lookup.serverCountry ? (
-              <span>
-                <i className="country-key-hub" />
-                Your server
-              </span>
-            ) : null}
-          </div>
           <div className="country-grid">
             <Suspense fallback={<div className="country-map" />}>
-              <CountryMap
-                server={lookup.serverCountry}
-                countries={known.map((row) => ({
-                  code: row.code,
-                  value: row.value,
-                  detail: `${requests(row.value)} · ${share(row.value)}`,
-                }))}
-              />
+              <div className="country-map-column">
+                <CountryMap
+                  server={lookup.serverCountry}
+                  countries={known.map((row) => ({
+                    code: row.code,
+                    value: row.value,
+                    detail: `${requests(row.value)} · ${share(row.value)}`,
+                  }))}
+                />
+              </div>
             </Suspense>
             <div className="country-list">
               <BarList
@@ -159,7 +149,7 @@ export function CountriesCard({
           </details>
         </>
       )}
-      {uncounted > 0 && counted > 0 ? (
+      {uncounted > 0 ? (
         <p className="analytics-note">
           {requests(uncounted)} logged while the country lookup was off have no
           country and are not counted here.

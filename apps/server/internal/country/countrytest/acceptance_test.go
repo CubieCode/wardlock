@@ -15,11 +15,12 @@ import (
 var update = flag.Bool("update", false, "rewrite testdata/acceptance.mmdb")
 
 // The database `pnpm browser:test` gives its server (V5.14): every request
-// a browser spec makes comes from 127.0.0.1, which it places in NZ. The
-// country is made up; loopback is in no country.
+// a browser spec makes comes from 127.0.0.1, which it places in NZ, and a
+// spec that connects from 127.0.1.1 lands in Iceland, at the map's left
+// edge. The countries are made up; loopback is in no country.
 const acceptanceFile = "testdata/acceptance.mmdb"
 
-var acceptanceNetworks = countrytest.Networks{"127.0.0.0/24": "NZ"}
+var acceptanceNetworks = countrytest.Networks{"127.0.0.0/24": "NZ", "127.0.1.0/24": "IS"}
 
 func TestAcceptanceDatabase(t *testing.T) {
 	want := countrytest.Build(acceptanceNetworks)

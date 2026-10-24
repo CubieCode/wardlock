@@ -171,7 +171,9 @@ export function LinkDetail({
           ) : (
             <>
               <StatusBadge tone="neutral">Revoked</StatusBadge>
-              <p>This link no longer works. Its past visits are kept below.</p>
+              <p>
+                This link no longer works. Its past requests are kept below.
+              </p>
             </>
           )}
         </div>
@@ -220,7 +222,7 @@ function LinkVisits({
   ];
   return (
     <VisitsCard
-      caption={`Visits through link ${publicId}`}
+      caption={`Requests through link ${publicId}`}
       columns={columns}
       entries={entries}
       nextCursor={nextCursor}

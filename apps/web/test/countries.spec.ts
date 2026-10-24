@@ -8,8 +8,11 @@
 // "Where requests come from" with its map, list, credit and table, the
 // bubbles answer the keyboard, and both access logs show a Country column
 // and the credit.
+// A request from 127.0.1.1, which the database places in Iceland at the
+// map's left edge, checks that an edge bubble's tooltip stays on the page.
 // The off and Unknown states are covered by the component tests, since this
 // server's lookup is on. No token may be on the page or in a screenshot.
+import { request as httpRequest } from 'node:http';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { firstOwnerState, schemes } from './mail.js';
 import { createSite, protect, publish } from './publish.js';
@@ -33,6 +36,28 @@ async function check(page: Page, info: TestInfo, name: string) {
   await page.screenshot({
     path: info.outputPath(`${name}.png`),
     fullPage: true,
+  });
+}
+
+/** GETs a URL connecting from 127.0.1.1 (Iceland in the test database). */
+function getFromIceland(url: string) {
+  const { hostname, port, pathname } = new URL(url);
+  return new Promise<number>((resolve, reject) => {
+    httpRequest(
+      {
+        host: '127.0.0.1',
+        port,
+        path: pathname,
+        headers: { Host: `${hostname}:${port}` },
+        localAddress: '127.0.1.1',
+      },
+      (response) => {
+        response.resume();
+        resolve(response.statusCode ?? 0);
+      },
+    )
+      .on('error', reject)
+      .end();
   });
 }
 
@@ -129,7 +154,7 @@ for (const scheme of schemes) {
 
     await test.step('the access logs have a Country column and the credit', async () => {
       await page.goto(`${origin}/sites/${site}/access-log`);
-      const log = page.getByRole('table', { name: `Visits to ${site}` });
+      const log = page.getByRole('table', { name: `Requests for ${site}` });
       await expect(
         log.getByRole('columnheader', { name: 'Country' }),
       ).toHaveCount(1);
@@ -141,7 +166,7 @@ for (const scheme of schemes) {
 
       await page.goto(`${origin}/sites/${site}/links/${publicId}`);
       const linkLog = page.getByRole('table', {
-        name: `Visits through link ${publicId}`,
+        name: `Requests through link ${publicId}`,
       });
       await expect(
         linkLog.getByRole('columnheader', { name: 'Country' }),
@@ -154,5 +179,36 @@ for (const scheme of schemes) {
       ).toHaveAttribute('href', 'https://example.test/countries');
       await shot('link-log');
     });
+  });
+
+  test(`countries: an edge bubble's tooltip stays on the page (${scheme})`, async ({
+    page,
+  }, info) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    const site = `edge-${info.project.name}-${scheme}`;
+    const api = page.request;
+    await createSite(api, site);
+    await publish(api, site, 'Field notes');
+    const read = await api.get(`${origin}/api/v0/sites/${site}`);
+    const { url: siteUrl } = (await read.json()) as { url: string };
+    expect(await getFromIceland(siteUrl)).toBe(200);
+
+    await page.goto(`${origin}/analytics?site=${site}`);
+    const geo = page.getByRole('region', { name: 'Where requests come from' });
+    const bubble = geo.getByRole('img', { name: /^Iceland: 1 request/ });
+    await expect(async () => {
+      await page.reload();
+      await expect(bubble).toBeVisible({ timeout: 1000 });
+    }).toPass();
+    await bubble.focus();
+    const map = geo.locator('.country-map');
+    const tip = map.getByRole('tooltip');
+    await expect(tip).toContainText('Iceland');
+    const inner = (await tip.boundingBox())!;
+    const outer = (await map.boundingBox())!;
+    expect(inner.x).toBeGreaterThanOrEqual(outer.x);
+    expect(inner.x + inner.width).toBeLessThanOrEqual(outer.x + outer.width);
+    expect(inner.y).toBeGreaterThanOrEqual(outer.y);
+    await check(page, info, `countries-edge-tip-${scheme}`);
   });
 }

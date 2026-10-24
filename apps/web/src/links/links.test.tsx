@@ -478,7 +478,7 @@ describe('link access log', () => {
       });
       render(<App api={api} />);
       const table = await screen.findByRole('table', {
-        name: 'Visits through link q4v7m2xkpa',
+        name: 'Requests through link q4v7m2xkpa',
       });
       const headers = () =>
         within(table)
@@ -545,7 +545,7 @@ describe('link access log', () => {
       expect(document.title).toBe('Link access log · docs · Wardlock'),
     );
     const table = screen.getByRole('table', {
-      name: 'Visits through link q4v7m2xkpa',
+      name: 'Requests through link q4v7m2xkpa',
     });
     let rows = within(table).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(2);
@@ -556,14 +556,16 @@ describe('link access log', () => {
     expect(rows[1]!.textContent).toContain('Refused · 401');
     expect(rows[1]!.textContent).toContain('Not recorded');
     expect(rows[1]!.textContent).toContain('None sent');
-    fireEvent.click(screen.getByRole('button', { name: 'Show older visits' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Show older requests' }),
+    );
     await waitFor(() =>
       expect(within(table).getAllByRole('row')).toHaveLength(4),
     );
     rows = within(table).getAllByRole('row').slice(1);
     expect(rows[2]!.textContent).toContain('/page-3');
     expect(
-      screen.queryByRole('button', { name: 'Show older visits' }),
+      screen.queryByRole('button', { name: 'Show older requests' }),
     ).toBeNull();
     expect(calls.map((c) => c.route)).toContain(
       `GET ${base}/links/q4v7m2xkpa/access-log?cursor=next`,
@@ -622,7 +624,7 @@ describe('link access log', () => {
     });
     render(<App api={api} />);
     expect(
-      await screen.findByRole('heading', { name: 'No visits yet' }),
+      await screen.findByRole('heading', { name: 'No requests yet' }),
     ).toBeTruthy();
   });
 
