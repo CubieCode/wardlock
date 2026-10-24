@@ -1140,3 +1140,114 @@ describe('follow-ups', () => {
     ).toBe('200');
   });
 });
+
+describe('below 48rem', () => {
+  beforeEach(() => {
+    window.matchMedia = ((q: string) => ({
+      matches: !q.includes('min-width'),
+      media: q,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+  });
+  afterEach(() => {
+    // @ts-expect-error jsdom has none; the other tests expect that.
+    delete window.matchMedia;
+  });
+
+  it('shows compact rows under plain section headings, without wires or select boxes', async () => {
+    await open();
+    expect(screen.queryByText('wardlockd')).toBeNull();
+    const head = section('Client work');
+    expect(
+      within(head).getByText('7 sites', { selector: '.sites-section-count' }),
+    ).toBeTruthy();
+    expect(within(head).queryByRole('button', { name: /Collapse/ })).toBeNull();
+    expect(within(head).queryByRole('checkbox')).toBeNull();
+    const portal = row('portal');
+    expect(within(portal).getByText('Protected')).toBeTruthy();
+    expect(within(portal).getByText('3 links')).toBeTruthy();
+    expect(portal.textContent).toContain('1 expiring within 48 hours');
+    expect(portal.textContent).toContain('1.2K requests in 7 days');
+    expect(within(portal).getByRole('img', { name: 'Pinned' })).toBeTruthy();
+    expect(within(portal).getByText('client')).toBeTruthy();
+    expect(within(portal).getByText('+1')).toBeTruthy();
+    // The address, ways in and deploy message stay on the site page.
+    expect(within(portal).queryByText('portal.sites.example.test')).toBeNull();
+    expect(within(portal).queryByText('share links · password')).toBeNull();
+    expect(within(portal).queryByText('Add March invoices')).toBeNull();
+    expect(
+      within(portal).getByRole('button', { name: 'Actions for portal' }),
+    ).toBeTruthy();
+    expect(within(row('scratch')).getByText('Public')).toBeTruthy();
+    expect(within(row('scratch')).queryByText('No links')).toBeNull();
+    expect(within(row('scratch')).getByText('Not deployed yet')).toBeTruthy();
+    expect(within(row('gone')).getByText('Taken down')).toBeTruthy();
+  });
+
+  it('shows select boxes after Select, and Cancel clears the selection', async () => {
+    await open();
+    expect(
+      screen.queryByRole('checkbox', { name: 'Select portal' }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Select' }));
+    const bar = screen.getByRole('toolbar', { name: 'Selection' });
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(bar).getByRole('button', { name: 'Cancel' }),
+      ),
+    );
+    expect(within(bar).getByText('Select sites')).toBeTruthy();
+    expect(
+      within(row('portal')).queryByRole('button', {
+        name: 'Actions for portal',
+      }),
+    ).toBeNull();
+    fireEvent.click(
+      within(row('portal')).getByRole('checkbox', { name: 'Select portal' }),
+    );
+    expect(within(bar).getByText('1 selected')).toBeTruthy();
+    expect(
+      screen.getByRole('toolbar', { name: 'Bulk actions' }).textContent,
+    ).toContain('1 selected');
+    fireEvent.click(within(bar).getByRole('button', { name: 'Select all' }));
+    expect(within(bar).getByText('10 selected')).toBeTruthy();
+    fireEvent.click(within(bar).getByRole('button', { name: 'Deselect all' }));
+    expect(within(bar).getByText('Select sites')).toBeTruthy();
+    fireEvent.click(
+      within(section('Docs')).getByRole('checkbox', {
+        name: 'Select all in Docs',
+      }),
+    );
+    expect(within(bar).getByText('1 selected')).toBeTruthy();
+    fireEvent.click(within(bar).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('toolbar', { name: 'Selection' })).toBeNull();
+    expect(screen.queryByRole('toolbar', { name: 'Bulk actions' })).toBeNull();
+    expect(
+      screen.queryByRole('checkbox', { name: 'Select portal' }),
+    ).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Select' }),
+      ),
+    );
+  });
+
+  it('sets Group by and Sort in the View sheet and says which apply', async () => {
+    const server = await open();
+    expect(screen.getByText('By group · last deploy first')).toBeTruthy();
+    expect(screen.queryByRole('combobox', { name: 'Group by' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+    const sheet = screen.getByRole('dialog', { name: 'View' });
+    fireEvent.click(within(sheet).getByRole('radio', { name: 'Access' }));
+    fireEvent.click(within(sheet).getByRole('radio', { name: 'Name, A to Z' }));
+    await waitFor(() => expect(query().get('sort')).toBe('name'));
+    expect(query().get('by')).toBe('access');
+    await waitFor(() =>
+      expect(server.summaries().at(-1)!.searchParams.get('sort')).toBe('name'),
+    );
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Done' }));
+    expect(screen.queryByRole('dialog', { name: 'View' })).toBeNull();
+    expect(screen.getByText('By access · name A to Z')).toBeTruthy();
+  });
+});

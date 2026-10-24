@@ -150,6 +150,79 @@ function DeployCell({ site }: { site: SiteSummary }) {
   );
 }
 
+/** The row's tags: at most three chips, the rest as "+N". */
+function RowTags({ siteTags }: { siteTags: Tag[] }) {
+  return (
+    <div className="sites-row-tags">
+      {siteTags.slice(0, shownTags).map((tag) => (
+        <TagChip key={tag.id} label={tag.name} slot={tagSlot(tag.colour)} />
+      ))}
+      {siteTags.length > shownTags ? (
+        <span
+          className="sites-row-extra"
+          title={siteTags
+            .slice(shownTags)
+            .map((tag) => tag.name)
+            .join(', ')}
+        >
+          +{siteTags.length - shownTags}
+          <span className="wl-visually-hidden"> more tags</span>
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Below 48rem, the facts that fit one line: the access word with its mark,
+ * working links, how many expire soon and the 7-day requests.
+ */
+function PhoneFacts({ site }: { site: SiteSummary }) {
+  const total = weekRequests(site);
+  const links = site.workingLinks;
+  return (
+    <span className="sites-row-facts">
+      {site.visibility === 'public' ? (
+        <span className="sites-row-word sites-row-public">
+          <span className="sites-row-dot" aria-hidden="true" />
+          Public
+        </span>
+      ) : (
+        <span className="sites-row-word sites-row-protected">
+          <Ward size="sm" />
+          Protected
+        </span>
+      )}
+      {site.unavailable ? (
+        <StatusTag tone="danger">Taken down</StatusTag>
+      ) : null}
+      {site.visibility === 'protected' || links > 0 ? (
+        <span>
+          {links === 0
+            ? 'No links'
+            : `${links} ${links === 1 ? 'link' : 'links'}`}
+        </span>
+      ) : null}
+      {site.expiringLinks > 0 ? (
+        <span className="sites-row-expiring">
+          {site.expiringLinks} expiring
+          <span className="wl-visually-hidden"> within 48 hours</span>
+        </span>
+      ) : null}
+      <span
+        className="sites-row-count"
+        title={`${fullNumber.format(total)} requests in 7 days`}
+      >
+        <svg viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M2.5 10V6.5M6 10V2M9.5 10V5" />
+        </svg>
+        {compactNumber.format(total)}
+        <span className="wl-visually-hidden"> requests in 7 days</span>
+      </span>
+    </span>
+  );
+}
+
 type MenuMode = 'menu' | 'tags' | 'group';
 
 /** The row's ⋯ menu; Edit tags and Move to group open their pickers in place. */
@@ -276,7 +349,10 @@ function RowMenu({
 /**
  * One site on its wire: select box, name with its pin, address, up to three
  * tags, who can open it, working links, 7-day requests, the live deploy and
- * its ⋯ menu.
+ * its ⋯ menu. With `phone` (below 48rem) it is a compact row instead: the
+ * name, a star when pinned and when it went live; the access word, links and
+ * requests; the tags. Its select box shows only while the owner is choosing
+ * sites, and its ⋯ menu only while not.
  */
 export const SiteRow = memo(function SiteRow({
   site,
@@ -285,6 +361,8 @@ export const SiteRow = memo(function SiteRow({
   tags,
   groups,
   actions,
+  phone = false,
+  choosing = true,
 }: {
   site: SiteSummary;
   selected: boolean;
@@ -292,12 +370,80 @@ export const SiteRow = memo(function SiteRow({
   tags: Tag[];
   groups: Group[];
   actions: ListActions;
+  phone?: boolean;
+  choosing?: boolean;
 }) {
   const kind = access(site);
   const siteTags = site.tagIds.flatMap((id) => {
     const tag = tagsById.get(id);
     return tag ? [tag] : [];
   });
+  const check = (
+    <Checkbox
+      hideLabel
+      label={`Select ${site.name}`}
+      className="sites-row-check"
+      checked={selected}
+      onChange={(event) => actions.select([site.name], event.target.checked)}
+    />
+  );
+  const name = (
+    <a
+      className="sites-row-name"
+      title={site.name}
+      href={`/sites/${encodeURIComponent(site.name)}`}
+    >
+      {site.name}
+    </a>
+  );
+  if (phone)
+    return (
+      <Wire>
+        <div
+          className={cx(
+            'sites-row sites-row-phone',
+            selected ? 'sites-row-selected' : null,
+          )}
+          data-site={site.name}
+        >
+          {choosing ? check : null}
+          <div className="sites-row-main">
+            <span className="sites-row-title">
+              {name}
+              {site.pinned ? (
+                <span
+                  className="sites-row-pinned"
+                  role="img"
+                  aria-label="Pinned"
+                >
+                  <Star filled />
+                </span>
+              ) : null}
+              <span className="sites-row-when">
+                {site.liveDeploy ? (
+                  <>
+                    <span className="wl-visually-hidden">Live deploy </span>
+                    <Time at={site.liveDeploy.activatedAt} />
+                  </>
+                ) : (
+                  'Not deployed yet'
+                )}
+              </span>
+            </span>
+            <PhoneFacts site={site} />
+            {siteTags.length ? <RowTags siteTags={siteTags} /> : null}
+          </div>
+          {choosing ? null : (
+            <RowMenu
+              site={site}
+              tags={tags}
+              groups={groups}
+              actions={actions}
+            />
+          )}
+        </div>
+      </Wire>
+    );
   return (
     <Wire
       tone={kind === 'public' ? 'public' : 'default'}
@@ -307,24 +453,10 @@ export const SiteRow = memo(function SiteRow({
         className={cx('sites-row', selected ? 'sites-row-selected' : null)}
         data-site={site.name}
       >
-        <Checkbox
-          hideLabel
-          label={`Select ${site.name}`}
-          className="sites-row-check"
-          checked={selected}
-          onChange={(event) =>
-            actions.select([site.name], event.target.checked)
-          }
-        />
+        {check}
         <div className="sites-row-site">
           <span className="sites-row-title">
-            <a
-              className="sites-row-name"
-              title={site.name}
-              href={`/sites/${encodeURIComponent(site.name)}`}
-            >
-              {site.name}
-            </a>
+            {name}
             <button
               type="button"
               className="sites-pin"
@@ -343,23 +475,7 @@ export const SiteRow = memo(function SiteRow({
             {site.hostname}
           </span>
         </div>
-        <div className="sites-row-tags">
-          {siteTags.slice(0, shownTags).map((tag) => (
-            <TagChip key={tag.id} label={tag.name} slot={tagSlot(tag.colour)} />
-          ))}
-          {siteTags.length > shownTags ? (
-            <span
-              className="sites-row-extra"
-              title={siteTags
-                .slice(shownTags)
-                .map((tag) => tag.name)
-                .join(', ')}
-            >
-              +{siteTags.length - shownTags}
-              <span className="wl-visually-hidden"> more tags</span>
-            </span>
-          ) : null}
-        </div>
+        <RowTags siteTags={siteTags} />
         <AccessCell site={site} />
         <LinksCell site={site} />
         <RequestsCell site={site} />

@@ -95,9 +95,12 @@ for (const scheme of schemes) {
       const list = page.getByRole('list', { name: 'Sites in No group' });
       const rows = list.getByRole('listitem');
       await expect(rows).toHaveCount(2);
-      await expect(rows.nth(0)).toContainText(`${name}.wardlock.localhost`);
+      // On mobile a row is compact: no hostname or deploy message.
+      if (info.project.name !== 'mobile') {
+        await expect(rows.nth(0)).toContainText(`${name}.wardlock.localhost`);
+        await expect(rows.nth(0)).toContainText('Second version');
+      }
       await expect(rows.nth(0)).toContainText('Public');
-      await expect(rows.nth(0)).toContainText('Second version');
       await expect(rows.nth(0)).toContainText(/just now|now|\d+ minutes? ago/);
       await expect(rows.nth(1)).toContainText(locked);
       await expect(rows.nth(1)).toContainText('Protected');

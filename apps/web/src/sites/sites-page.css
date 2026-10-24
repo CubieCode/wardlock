@@ -67,30 +67,122 @@
   width: auto;
 }
 
-/* Narrow: search across, then Group by and Sort side by side; the rows are
-   already stacked, so density stays at its setting without a control. */
+/* Narrow: the search with View beside it, which opens Group by and Sort in a
+   sheet; a line under them says which apply, with Select. */
 @media (max-width: 47.99rem) {
   .sites-tools {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-wrap: nowrap;
+    gap: var(--space-2);
   }
 
   .sites-search {
-    grid-column: 1 / -1;
+    flex: 1 1 auto;
   }
 
-  .sites-tools .wl-field {
-    display: grid;
-    gap: var(--space-1);
-  }
-
-  .sites-tools .wl-select {
-    width: 100%;
-  }
-
-  .sites-tools .wl-segmented {
+  .sites-search-key {
     display: none;
   }
+
+  .sites-search .wl-input {
+    padding-right: var(--space-3);
+  }
+}
+
+.sites-view-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sites-view-button svg {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.sites-applied {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: calc(-1 * var(--space-3));
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.sites-text-button {
+  min-height: var(--touch-target);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.sites-text-button:hover {
+  background: var(--color-surface-muted);
+}
+
+/* While choosing sites: Cancel, the count and Select all. */
+.sites-choosing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-inline: calc(-1 * var(--space-2));
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sites-choosing-count {
+  font-size: var(--text-base);
+}
+
+/* The View sheet */
+.sites-view-set {
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  border: 0;
+}
+
+.sites-view-set legend {
+  margin-bottom: var(--space-1);
+  padding: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--letter-spacing-caps);
+  text-transform: uppercase;
+}
+
+.sites-view-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--touch-target);
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+}
+
+.sites-view-option:last-child {
+  border-bottom: 0;
+}
+
+.sites-view-option input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: var(--color-primary);
 }
 
 /* Filter chips */
@@ -518,6 +610,201 @@
 
 .sites-list-compact .wl-hub {
   --wire-gap: var(--space-1);
+}
+
+/* Phone: plain section headings over a card of compact rows, no wires. */
+.sites-list-phone .wl-wires {
+  padding-left: 0;
+}
+
+.sites-list-phone .sites-section {
+  gap: 0;
+}
+
+.sites-list-phone .sites-section-head {
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+}
+
+.sites-list-phone .sites-section-title {
+  min-width: 0;
+  font-size: var(--text-sm);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sites-section-count {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.sites-list-phone .sites-section-select {
+  flex: none;
+}
+
+.sites-list-phone .sites-section .wl-hub {
+  --wire-gap: 0;
+}
+
+.sites-list-phone .sites-section .wl-wires {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+/* Show all as a text button under the card. */
+.sites-list-phone .sites-show-all {
+  min-height: var(--touch-target);
+  margin-top: 0;
+  padding-inline: var(--space-1);
+  border-color: transparent;
+  background: none;
+  color: var(--color-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.sites-row-phone {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-1) var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: 0;
+}
+
+.sites-list-phone .wl-wire + .wl-wire .sites-row-phone {
+  border-top: 1px solid var(--color-border);
+}
+
+.sites-row-phone.sites-row-selected {
+  background: var(--color-primary-soft);
+}
+
+.sites-row-phone .sites-row-check {
+  flex: none;
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-1)) 0
+    calc(-1 * var(--space-2));
+}
+
+.sites-row-main {
+  display: grid;
+  flex: 1;
+  gap: 0.125rem;
+  min-width: 0;
+  padding-block: var(--space-1);
+}
+
+.sites-row-phone .sites-row-title {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.sites-row-phone .sites-row-name {
+  line-height: 1.5;
+}
+
+.sites-row-pinned {
+  display: inline-flex;
+  flex: none;
+  color: var(--color-ward);
+}
+
+.sites-row-pinned svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.sites-row-when {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.sites-row-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* A dot between facts, but not before the requests at the end. */
+.sites-row-facts > :not(:first-child, .sites-row-count)::before {
+  content: '·';
+  margin-right: var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.sites-row-word {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-weight: var(--font-weight-medium);
+}
+
+.sites-row-protected {
+  color: var(--color-ward);
+}
+
+.sites-row-public {
+  color: var(--color-public);
+}
+
+.sites-row-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.sites-row-expiring {
+  color: var(--color-warning);
+  font-weight: var(--font-weight-medium);
+}
+
+.sites-row-count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.sites-row-count svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  fill: none;
+  stroke: var(--color-text-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* Tags as a dot and a name, without the chip's outline. */
+.sites-row-phone .sites-row-tags {
+  grid-area: auto;
+  flex-wrap: nowrap;
+  gap: var(--space-3);
+  overflow: hidden;
+}
+
+.sites-row-phone .wl-tag-chip {
+  flex: 0 1 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-muted);
+}
+
+.sites-row-phone .sites-row-more {
+  flex: none;
+  margin-top: calc(-1 * var(--space-1));
 }
 
 /* Pickers in popovers */
