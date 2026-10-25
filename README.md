@@ -110,12 +110,26 @@ The Go modules use vanity import paths on `wardlock.nz`, which serves their `go-
 
 ### Develop
 
-| Command           | Purpose                                                    |
-| ----------------- | ---------------------------------------------------------- |
-| `pnpm dev`        | Run wardlockd with the dashboard's Vite dev server proxied |
-| `pnpm codegen`    | Regenerate OpenAPI bindings (Go, TS) and sqlc queries      |
-| `pnpm format`     | Apply Prettier and gofmt                                   |
-| `pnpm test:watch` | Vitest in watch mode                                       |
+| Command           | Purpose                                                            |
+| ----------------- | ------------------------------------------------------------------ |
+| `pnpm dev`        | Run wardlockd with the dashboard's Vite dev server proxied         |
+| `pnpm demo`       | Run a throwaway server with synthetic sites and 90 days of traffic |
+| `pnpm codegen`    | Regenerate OpenAPI bindings (Go, TS) and sqlc queries              |
+| `pnpm format`     | Apply Prettier and gofmt                                           |
+| `pnpm test:watch` | Vitest in watch mode                                               |
+
+`pnpm demo` is for looking at and screenshotting the dashboard with realistic data. Each run wipes `.local/demo`, builds, starts wardlockd there on localhost and seeds it, then prints the dashboard URL and a one-time sign-in link; Ctrl+C stops it. It never touches `.local/data`.
+
+<details>
+<summary>What the demo contains and how it is seeded</summary>
+
+- One owner, `owner@example.test`. After the printed link (valid 60 minutes), sign in with an emailed code: the dev:// sink writes it under `.local/demo/.local/mail/`.
+- 18 sites from `fixtures/sites/` in 4 groups and ungrouped, 8 tags, 4 pins, public and protected policies (share links, password `demo-password-1234`, email allowlists, one path policy), 11 share links (4 expiring within 48 hours) and second deploys on a few sites.
+- About 80,000 access-log entries over 90 days: a launch spike, steady, rising, fading and dead sites, quieter weekends for work sites, busier New Zealand daytime, a country mix with a few at the map's edges, browsers from realistic User-Agents, refused requests and 404s. Addresses come only from the documentation ranges 198.18.0.0/15 and 2001:db8::/32; countries come from the synthetic test database `apps/server/internal/country/countrytest/testdata/acceptance.mmdb`.
+- The port is one above `WARDLOCK_HTTP_ADDR`'s in `.env` (8081 without one); set `WARDLOCK_DEMO_PORT` to choose another. The dashboard is at `http://wardlock-demo.localhost:<port>`, so its session cookie never replaces a `pnpm dev` one. Nothing else is read from `.env` or the shell.
+- `scripts/demo.sh` runs `apps/server/cmd/wardlock-demo`, which signs in through the server's own email-code flow, creates an API token and seeds everything it can through the `wardlock` CLI. History cannot go through the API, so it then backdates creation times in the database (statements tested against the migrated schema) and appends the generated traffic through `internal/store`, which fills the analytics rollup. `-seed` changes the traffic; the same seed gives the same traffic.
+
+</details>
 
 ### Check and test
 
