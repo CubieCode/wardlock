@@ -224,6 +224,7 @@ function LinkVisits({
     <VisitsCard
       caption={`Requests through link ${publicId}`}
       columns={columns}
+      row={{ browser: true }}
       entries={entries}
       nextCursor={nextCursor}
       more={more}

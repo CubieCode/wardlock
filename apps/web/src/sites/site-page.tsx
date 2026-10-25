@@ -9,6 +9,7 @@ import { LinkDetail } from '../links/access-log-page.js';
 import { ShareLinksCard } from '../links/share-links.js';
 import { AccessTab } from '../policies/providers.js';
 import { useTitle } from '../shell/page.js';
+import { useWide } from '../shell/wide.js';
 import { SiteAccessLogTab } from './access-log-page.js';
 import {
   defaultPolicy,
@@ -140,6 +141,8 @@ export function SitePage({
     tagIds: [],
     pinned: false,
   };
+  // Below 48rem every tab but Overview gets the one-row header.
+  const wide = useWide();
   const organise = useOrganise(
     api,
     state.kind === 'ready' ? state.site : placeholder,
@@ -313,6 +316,7 @@ export function SitePage({
         policy={defaultPolicy(policies)}
         organise={organise}
         onLinkCreated={() => setLinksVersion((n) => n + 1)}
+        compact={!wide && tab !== 'overview'}
       />
       <SiteTabs name={site.name} tab={tab} />
       <div className="site-tab">{body}</div>
