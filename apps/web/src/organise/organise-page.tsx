@@ -139,7 +139,7 @@ export function OrganisePage({ api }: { api: ApiClient }) {
                 groups: put(groups, group, byGroupName),
               }))
             }
-            onRenamed={(group) =>
+            onEdited={(group) =>
               update(({ groups }) => ({
                 groups: put(groups, group, byGroupName),
               }))
