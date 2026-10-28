@@ -26,12 +26,12 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type RefObject,
 } from 'react';
 import { savedViews, sitesChanged } from '../shell/navigator.js';
 import { useTitle } from '../shell/page.js';
 import { navigate, useLocation } from '../shell/router.js';
+import { useWide } from '../shell/wide.js';
 import { useFlash } from './flash.js';
 import { MapPage } from './map-page.js';
 import { isMap, ViewSwitch } from './map-switch.js';
@@ -65,17 +65,6 @@ import {
 } from './sites-page-sections.js';
 import './sites.css';
 import './sites-page.css';
-
-// Below 48rem a section shows three rows before Show all, from 48rem five.
-const wideQuery = '(min-width: 48rem)';
-function subscribeWide(onChange: () => void) {
-  if (!window.matchMedia) return () => {};
-  const media = window.matchMedia(wideQuery);
-  media.addEventListener('change', onChange);
-  return () => media.removeEventListener('change', onChange);
-}
-const wideSnapshot = () =>
-  window.matchMedia ? window.matchMedia(wideQuery).matches : true;
 
 /** How long typing pauses before the search is sent. */
 const searchDelay = 250;
@@ -385,7 +374,8 @@ function SitesList({ api }: { api: ApiClient }) {
   const list = useSites(api, query);
   const meta = useMeta(api);
   const flash = useFlash();
-  const wide = useSyncExternalStore(subscribeWide, wideSnapshot);
+  // Below 48rem a section shows three rows before Show all, from 48rem five.
+  const wide = useWide();
   const phone = !wide;
   const cap = wide ? 5 : 3;
   const title = listTitle(query, meta.state);

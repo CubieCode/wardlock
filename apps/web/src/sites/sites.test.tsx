@@ -889,4 +889,120 @@ describe('site access log', () => {
     expect(headersOf(table)).not.toContain('Country');
     expect(document.body.textContent).not.toMatch(/countr|New Zealand/i);
   });
+
+  describe('below 48rem', () => {
+    beforeEach(() => {
+      window.matchMedia = ((q: string) => ({
+        matches: !q.includes('min-width'),
+        media: q,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      })) as unknown as typeof window.matchMedia;
+    });
+    afterEach(() => {
+      // @ts-expect-error jsdom has none; the other tests expect that.
+      delete window.matchMedia;
+    });
+
+    /** Noon on the day `back` days ago, local time. */
+    const noon = (back: number) => {
+      const day = new Date();
+      day.setDate(day.getDate() - back);
+      day.setHours(12, 0, 0, 0);
+      return day.getTime();
+    };
+
+    it('groups requests by day, each on short lines', async () => {
+      const refused = entry(3, {
+        occurredAt: noon(1) - hour,
+        status: 401,
+        via: 'none',
+      });
+      delete refused.ip;
+      const { api } = fakeServer({
+        ...oneSite(site('docs'), []),
+        'GET /api/v0/analytics': analytics({ attribution: 'Synthetic' }),
+        [`GET ${base}`]: () =>
+          Response.json({
+            items: [
+              entry(1, {
+                occurredAt: noon(0),
+                via: 'link',
+                linkPublicId: 'q4v7m2xkpa',
+                linkLabel: 'Board pack',
+                country: 'NZ',
+              }),
+              entry(2, { occurredAt: noon(1), via: 'email', country: 'NZ' }),
+              refused,
+            ],
+          }),
+      });
+      render(<App api={api} />);
+      const log = await screen.findByRole('region', {
+        name: 'Requests for docs',
+      });
+      expect(screen.queryByRole('table')).toBeNull();
+      expect(
+        within(log)
+          .getAllByRole('heading', { level: 3 })
+          .map((h) => h.textContent),
+      ).toEqual(['Today', 'Yesterday']);
+      const rows = within(log).getAllByRole('listitem');
+      expect(rows).toHaveLength(3);
+      expect(rows[0]!.textContent).toContain('/page-1');
+      expect(within(rows[0]!).getByText('12:00 pm').tagName).toBe('TIME');
+      expect(rows[0]!.textContent).toContain('Opened · 200');
+      expect(
+        within(rows[0]!)
+          .getByRole('link', { name: 'Board pack' })
+          .getAttribute('href'),
+      ).toBe('/sites/docs/links/q4v7m2xkpa');
+      await waitFor(() =>
+        expect(rows[0]!.textContent).toContain('New Zealand'),
+      );
+      expect(rows[1]!.textContent).toContain('Email code');
+      expect(rows[2]!.textContent).toContain('Refused · 401');
+      expect(rows[2]!.textContent).toContain('Not let in');
+      expect(rows[2]!.textContent).toContain('IP not recorded');
+      // The site log has no browser column, so the rows leave it out too.
+      expect(log.textContent).not.toContain('Mozilla');
+    });
+
+    it('keeps the full header for Overview and one row for other tabs', async () => {
+      const { api } = fakeServer({
+        ...oneSite(site('docs'), []),
+        [`GET ${base}`]: () => Response.json({ items: [entry(1)] }),
+      });
+      render(<App api={api} />);
+      await screen.findByRole('region', { name: 'Requests for docs' });
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'docs' }),
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole('textbox', { name: 'Site address' }),
+      ).toBeNull();
+      expect(screen.getByRole('button', { name: 'Pin site' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Open site' })).toBeTruthy();
+
+      let copied = '';
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async (text: string) => void (copied = text) },
+      });
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Copy site address' }),
+      );
+      expect(await screen.findByText('Site address copied.')).toBeTruthy();
+      expect(copied).toBe(site('docs').url);
+
+      fireEvent.click(
+        within(
+          screen.getByRole('navigation', { name: 'Site sections' }),
+        ).getByRole('link', { name: 'Overview' }),
+      );
+      expect(
+        await screen.findByRole('textbox', { name: 'Site address' }),
+      ).toBeTruthy();
+    });
+  });
 });

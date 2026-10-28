@@ -135,6 +135,7 @@ function SiteVisits({
     <VisitsCard
       caption={`Requests for ${name}`}
       columns={columns}
+      row={{ via: (e) => <Via site={name} entry={e} /> }}
       entries={entries}
       nextCursor={nextCursor}
       more={more}

@@ -518,6 +518,39 @@ describe('link access log', () => {
     }
   });
 
+  it('below 48rem shows each request on short lines with its browser', async () => {
+    window.matchMedia = ((q: string) => ({
+      matches: !q.includes('min-width'),
+      media: q,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      const silent = entry(2, { status: 401 });
+      delete silent.userAgent;
+      const { api } = fakeServer({
+        ...sitePage([]),
+        [`GET ${base}/links`]: () =>
+          Response.json({ items: [link('q4v7m2xkpa')] }),
+        [`GET ${base}/links/q4v7m2xkpa/access-log`]: () =>
+          Response.json({ items: [entry(1), silent] }),
+      });
+      render(<App api={api} />);
+      const log = await screen.findByRole('region', {
+        name: 'Requests through link q4v7m2xkpa',
+      });
+      expect(screen.queryByRole('table')).toBeNull();
+      const rows = within(log).getAllByRole('listitem');
+      expect(rows[0]!.textContent).toContain('203.0.113.0');
+      expect(rows[0]!.textContent).toContain('Mozilla/5.0 (synthetic)');
+      // No User-Agent, so no browser line rather than "None sent".
+      expect(rows[1]!.textContent).not.toMatch(/Mozilla|None sent/);
+    } finally {
+      // @ts-expect-error jsdom has none; the other tests expect that.
+      delete window.matchMedia;
+    }
+  });
+
   it('shows the visits newest first and loads older ones', async () => {
     // A refused request with no IP recorded and no User-Agent sent.
     const refused = entry(2, { status: 401 });

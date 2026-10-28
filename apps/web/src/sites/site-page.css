@@ -145,6 +145,77 @@
   font-size: var(--text-sm);
 }
 
+/* Compact header (phones, off Overview): name, pin, Copy address and Open
+   site on one row, then access, requests and live time */
+.site-header-compact {
+  gap: 0;
+  padding: var(--space-2) var(--space-2) var(--space-3) var(--space-4);
+}
+
+.site-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.site-header-row .site-header-title {
+  flex: 1;
+}
+
+.site-header-compact h1 {
+  font-size: var(--text-lg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.site-header-compact .site-header-meta {
+  margin-top: var(--space-1);
+  padding-right: var(--space-2);
+}
+
+.site-header-compact .site-header-access {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.site-header-compact .site-open {
+  flex: none;
+}
+
+.site-copy-address {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--touch-target);
+  height: var(--touch-target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.site-copy-address svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.site-copy-address:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+/* Under the meta line, and only as tall as what it says. */
+.site-copy-status {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
 @media (max-width: 47.99rem) {
   /* Touch targets: the small chips' buttons grow to 44px on phones. */
   .site-add-tag {

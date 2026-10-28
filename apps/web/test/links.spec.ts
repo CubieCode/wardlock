@@ -15,7 +15,7 @@ import {
 } from '@playwright/test';
 import { firstOwnerState, schemes } from './mail.js';
 import { createSite, protect, publish } from './publish.js';
-import { siteTab } from './site-page.js';
+import { onPhone, siteTab, visitLog, visitRows } from './site-page.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 if (!origin) throw new Error('Run through pnpm browser:test');
@@ -143,12 +143,16 @@ for (const scheme of schemes) {
         page.getByRole('heading', { level: 2, name: label }),
       ).toBeVisible();
       // Entries are written in batches about once a second.
-      const table = page.getByRole('table', { name: /Requests through link/ });
+      const log = visitLog(page, /Requests through link/, onPhone(info));
       await expect(async () => {
         await page.reload();
-        await expect(table).toBeVisible({ timeout: 1000 });
+        await expect(log).toBeVisible({ timeout: 1000 });
       }).toPass();
-      const visitRow = table.getByRole('row').nth(1);
+      const visitRow = visitRows(
+        page,
+        /Requests through link/,
+        onPhone(info),
+      ).first();
       await expect(visitRow).toContainText('/');
       await expect(visitRow).toContainText('Opened · 200');
       await shot('access-log');

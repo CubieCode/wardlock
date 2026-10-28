@@ -91,6 +91,96 @@
   color: var(--color-text-muted);
 }
 
+/* Access log below 48rem: requests grouped by day, three short lines each */
+.visit-days {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.visit-day-label {
+  position: sticky;
+  /* Under the phone top bar: a touch target, its padding and its border. */
+  top: calc(var(--touch-target) + 2 * var(--space-2) + 1px);
+  z-index: 1;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: var(--space-2);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.visit-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.visit {
+  display: grid;
+  gap: 0.125rem;
+  padding: var(--space-2) 0;
+  min-width: 0;
+}
+
+.visit + .visit {
+  border-top: 1px solid var(--color-border);
+}
+
+.visit-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.visit-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-weight: var(--font-weight-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visit-line time {
+  flex: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.visit-facts,
+.visit-from {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  min-width: 0;
+}
+
+/* A dot between facts, as in "Refused · 401 · Not let in". */
+.visit-facts > span + span::before,
+.visit-from > span + span::before {
+  content: '·' / '';
+  margin-right: var(--space-2);
+}
+
+.visit-browser {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.visit-ip {
+  font-family: var(--font-mono);
+}
+
 /* Deploy history */
 .deploy-row {
   display: grid;

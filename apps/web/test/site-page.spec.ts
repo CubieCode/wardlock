@@ -175,6 +175,15 @@ for (const scheme of schemes) {
       await page
         .getByRole('combobox', { name: 'Group' })
         .selectOption({ label: groupName });
+      if (info.project.name === 'mobile') {
+        // Phones keep the group and tags on Overview; other tabs have the
+        // one-row header.
+        await expect(chips).toHaveCount(0);
+        await expect(
+          page.getByRole('button', { name: 'Copy site address' }),
+        ).toBeVisible();
+        await siteTab(page, 'Overview');
+      }
       await expect(chips).toContainText(`Group: ${groupName}`);
       await chips.getByRole('button', { name: `Remove ${tag}` }).click();
       await expect(

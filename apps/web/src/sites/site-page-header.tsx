@@ -12,7 +12,9 @@ import { readWeek } from './week-analytics.js';
 /**
  * The site page's header: access, name with its pin, address, group and
  * tags, when it went live, Open site, and the notice for a site the
- * operator has taken down.
+ * operator has taken down. `compact` (phones, off Overview) keeps the name,
+ * pin, Copy address and Open site on one row over a line of access,
+ * requests and live time, and leaves the group and tags to Overview.
  */
 export function SiteHeader({
   api,
@@ -20,62 +22,93 @@ export function SiteHeader({
   policy,
   organise,
   onLinkCreated,
+  compact = false,
 }: {
   api: ApiClient;
   site: Site;
   policy: Policy | undefined;
   organise: Organise;
   onLinkCreated: () => void;
+  compact?: boolean;
 }) {
+  const title = (
+    <div className="site-header-title">
+      <h1>{site.name}</h1>
+      <button
+        type="button"
+        className="site-pin"
+        aria-pressed={site.pinned}
+        aria-label="Pin site"
+        title={site.pinned ? 'Pinned' : 'Not pinned'}
+        onClick={organise.togglePin}
+      >
+        <Star filled={site.pinned} />
+      </button>
+    </div>
+  );
+  // Visitors of a taken-down site see only the unavailable page, so there
+  // is nothing to open.
+  const open = !site.unavailable && (
+    <OpenSiteButton
+      api={api}
+      site={site}
+      policy={policy}
+      onLinkCreated={onLinkCreated}
+    />
+  );
+  const copyAddress = useCopyAddress(site.url);
+  const live =
+    site.activatedAt !== undefined ? (
+      <>
+        Live since <Time at={site.activatedAt} />
+      </>
+    ) : (
+      'Not deployed yet'
+    );
   return (
     <>
-      <header className="site-header">
-        <div className="site-header-main">
-          <p className="site-header-access">
-            <AccessWord policy={policy} />
-            {site.unavailable && (
-              <StatusTag tone="warning">Taken down</StatusTag>
-            )}
-          </p>
-          <div className="site-header-title">
-            <h1>{site.name}</h1>
-            <button
-              type="button"
-              className="site-pin"
-              aria-pressed={site.pinned}
-              aria-label="Pin site"
-              title={site.pinned ? 'Pinned' : 'Not pinned'}
-              onClick={organise.togglePin}
-            >
-              <Star filled={site.pinned} />
-            </button>
+      {compact ? (
+        <header className="site-header site-header-compact">
+          <div className="site-header-row">
+            {title}
+            {copyAddress.button}
+            {open}
           </div>
-          <CopyField label="Site address" value={site.url} />
-        </div>
-        <div className="site-header-side">
-          <Organisation site={site} organise={organise} />
           <p className="site-header-meta">
+            <span className="site-header-access">
+              <AccessWord policy={policy} />
+              {site.unavailable && (
+                <StatusTag tone="warning">Taken down</StatusTag>
+              )}
+            </span>
+            {' · '}
             <WeekRequests api={api} name={site.name} />
-            {site.activatedAt !== undefined ? (
-              <>
-                Live since <Time at={site.activatedAt} />
-              </>
-            ) : (
-              'Not deployed yet'
-            )}
+            {live}
           </p>
-          {!site.unavailable && (
-            // Visitors see only the unavailable page, so there is nothing
-            // to open.
-            <OpenSiteButton
-              api={api}
-              site={site}
-              policy={policy}
-              onLinkCreated={onLinkCreated}
-            />
-          )}
-        </div>
-      </header>
+          {copyAddress.status}
+        </header>
+      ) : (
+        <header className="site-header">
+          <div className="site-header-main">
+            <p className="site-header-access">
+              <AccessWord policy={policy} />
+              {site.unavailable && (
+                <StatusTag tone="warning">Taken down</StatusTag>
+              )}
+            </p>
+            {title}
+            <CopyField label="Site address" value={site.url} />
+          </div>
+          <div className="site-header-side">
+            <Organisation site={site} organise={organise} />
+            <p className="site-header-meta">
+              <WeekRequests api={api} name={site.name} />
+              {live}
+            </p>
+            {open}
+          </div>
+        </header>
+      )}
       {organise.error && <Notice tone="danger">{organise.error}</Notice>}
       {site.unavailable && (
         <Notice tone="warning">
@@ -88,6 +121,59 @@ export function SiteHeader({
       )}
     </>
   );
+}
+
+/**
+ * The compact header's Copy address, and what it says under the header.
+ * Without a clipboard there is no field to select, so it points to
+ * Overview's address field.
+ */
+function useCopyAddress(url: string) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  useEffect(() => {
+    if (state !== 'copied') return;
+    const timer = setTimeout(() => setState('idle'), 2000);
+    return () => clearTimeout(timer);
+  }, [state]);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setState('copied');
+    } catch {
+      setState('failed');
+    }
+  };
+  const button = (
+    <button
+      type="button"
+      className="site-copy-address"
+      aria-label="Copy site address"
+      title="Copy site address"
+      onClick={copy}
+    >
+      <svg
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.5" />
+        <path d="M10.75 5.25V3.75a1.5 1.5 0 0 0-1.5-1.5h-5.5a1.5 1.5 0 0 0-1.5 1.5v5.5a1.5 1.5 0 0 0 1.5 1.5h1.5" />
+      </svg>
+    </button>
+  );
+  const status = (
+    <p className="site-copy-status" role="status">
+      {state === 'copied' ? 'Site address copied.' : null}
+      {state === 'failed'
+        ? 'Could not copy the address. Copy it from Overview.'
+        : null}
+    </p>
+  );
+  return { button, status };
 }
 
 const count = new Intl.NumberFormat('en-NZ');

@@ -12,16 +12,12 @@ import {
   RailItem,
   RailLayout,
 } from '@wardlock/ui';
-import {
-  useEffect,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Me } from '../auth/session.js';
 import { AccountMenu, type Place } from './account-menu.js';
 import { filterIcon, searchIcon } from './icons.js';
 import { JumpTo } from './jump-to.js';
+import { useWide } from './wide.js';
 import {
   isJumpShortcut,
   navigatorFilters,
@@ -59,6 +55,9 @@ export function Shell({
   /** Whether the sites list honours the navigator's filters (V5.8). */
   filters?: boolean;
 }) {
+  // Wide screens get the rail and the navigator column; narrow ones the top
+  // and bottom bars and the drawer. The layout's CSS draws the same split, so
+  // only one set is ever on the page.
   const wide = useWide();
   const [jumping, setJumping] = useState(false);
   const [drawer, setDrawer] = useState(false);
@@ -199,25 +198,6 @@ export function Shell({
       ) : null}
     </>
   );
-}
-
-// Wide screens get the rail and the navigator column; narrow ones the top
-// and bottom bars and the drawer. The layout's CSS draws the same split, so
-// only one set is ever on the page. Without matchMedia (tests), it is wide.
-const wideQuery = '(min-width: 48rem)';
-
-function subscribeWide(onChange: () => void) {
-  if (!window.matchMedia) return () => {};
-  const media = window.matchMedia(wideQuery);
-  media.addEventListener('change', onChange);
-  return () => media.removeEventListener('change', onChange);
-}
-
-const wideSnapshot = () =>
-  window.matchMedia ? window.matchMedia(wideQuery).matches : true;
-
-function useWide() {
-  return useSyncExternalStore(subscribeWide, wideSnapshot);
 }
 
 /** A rail place is current on its own page and on the pages under it. */

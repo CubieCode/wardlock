@@ -9,7 +9,7 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { firstOwnerState, schemes } from './mail.js';
 import { createSite, protect, publish } from './publish.js';
-import { siteTab } from './site-page.js';
+import { onPhone, siteTab, visitLog, visitRows } from './site-page.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 if (!origin) throw new Error('Run through pnpm browser:test');
@@ -75,22 +75,27 @@ for (const scheme of schemes) {
       expect(opened.status()).toBe(200);
 
       // Entries are written in batches about once a second.
-      const table = page.getByRole('table', { name: `Requests for ${site}` });
+      const rows = visitRows(page, `Requests for ${site}`, onPhone(info));
       await expect(async () => {
         await page.reload();
-        await expect(table.getByRole('row')).toHaveCount(3, { timeout: 1000 });
+        await expect(rows).toHaveCount(2, { timeout: 1000 });
       }).toPass();
-      const rows = table.getByRole('row');
-      await expect(rows.nth(1)).toContainText('Opened · 200');
-      await expect(rows.nth(1)).toContainText(`Share link ${label}`);
-      await expect(rows.nth(2)).toContainText('Refused · 401');
-      await expect(rows.nth(2)).toContainText('Not let in');
+      await expect(rows.nth(0)).toContainText('Opened · 200');
+      await expect(rows.nth(0)).toContainText(`Share link ${label}`);
+      await expect(rows.nth(1)).toContainText('Refused · 401');
+      await expect(rows.nth(1)).toContainText('Not let in');
+      if (onPhone(info)) {
+        // Below 48rem the requests sit under their day, each with its time.
+        await expect(
+          page.getByRole('heading', { level: 3, name: 'Today' }),
+        ).toBeVisible();
+        await expect(rows.nth(0).locator('time')).toHaveText(/\d:\d\d\s?[ap]m/);
+      }
       await shot('visits');
     });
 
     await test.step('the link’s label leads to its own log', async () => {
-      await page
-        .getByRole('table', { name: `Requests for ${site}` })
+      await visitLog(page, `Requests for ${site}`, onPhone(info))
         .getByRole('link', { name: label })
         .click();
       await expect(

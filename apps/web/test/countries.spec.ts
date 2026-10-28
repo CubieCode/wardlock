@@ -16,6 +16,7 @@ import { request as httpRequest } from 'node:http';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { firstOwnerState, schemes } from './mail.js';
 import { createSite, protect, publish } from './publish.js';
+import { onPhone, visitLog, visitRows } from './site-page.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 if (!origin) throw new Error('Run through pnpm browser:test');
@@ -154,24 +155,32 @@ for (const scheme of schemes) {
 
     await test.step('the access logs have a Country column and the credit', async () => {
       await page.goto(`${origin}/sites/${site}/access-log`);
-      const log = page.getByRole('table', { name: `Requests for ${site}` });
-      await expect(
-        log.getByRole('columnheader', { name: 'Country' }),
-      ).toHaveCount(1);
-      await expect(log.getByRole('row').nth(1)).toContainText('New Zealand');
+      const phone = onPhone(info);
+      const log = `Requests for ${site}`;
+      // Phones have no columns: the country follows the IP address.
+      if (!phone)
+        await expect(
+          visitLog(page, log, phone).getByRole('columnheader', {
+            name: 'Country',
+          }),
+        ).toHaveCount(1);
+      await expect(visitRows(page, log, phone).first()).toContainText(
+        'New Zealand',
+      );
       await expect(
         page.getByRole('link', { name: 'https://example.test/countries' }),
       ).toHaveAttribute('href', 'https://example.test/countries');
       await shot('site-log');
 
       await page.goto(`${origin}/sites/${site}/links/${publicId}`);
-      const linkLog = page.getByRole('table', {
-        name: `Requests through link ${publicId}`,
-      });
-      await expect(
-        linkLog.getByRole('columnheader', { name: 'Country' }),
-      ).toHaveCount(1);
-      await expect(linkLog.getByRole('row').nth(1)).toContainText(
+      const linkLog = `Requests through link ${publicId}`;
+      if (!phone)
+        await expect(
+          visitLog(page, linkLog, phone).getByRole('columnheader', {
+            name: 'Country',
+          }),
+        ).toHaveCount(1);
+      await expect(visitRows(page, linkLog, phone).first()).toContainText(
         'New Zealand',
       );
       await expect(
