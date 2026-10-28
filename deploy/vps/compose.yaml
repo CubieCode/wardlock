@@ -15,7 +15,7 @@
 name: wardlock
 services:
   wardlockd:
-    image: ${WARDLOCK_IMAGE:-ghcr.io/cubiecode/wardlock:0.2.0}
+    image: ${WARDLOCK_IMAGE:-ghcr.io/cubiecode/wardlock:0.3.0}
     restart: unless-stopped
     env_file:
       # Optional only so `docker compose config` works in a fresh checkout:

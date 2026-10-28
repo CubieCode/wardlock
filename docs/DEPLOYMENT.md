@@ -153,7 +153,7 @@ Releases are on [GitHub](https://github.com/CubieCode/wardlock/releases). [`depl
 
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/CubieCode/wardlock/main/deploy/install.sh
-sh install.sh --version 0.2.0 --component wardlockd   # or wardlock (default), or all
+sh install.sh --version 0.3.0 --component wardlockd   # or wardlock (default), or all
 sh install.sh --component all --dir ~/.local/bin      # latest release, no root
 ```
 
@@ -171,8 +171,8 @@ Each GitHub release carries `wardlockd_<version>_<os>_<arch>` and `wardlock_<ver
 Every archive, SBOM and the container image of a release is signed with a [GitHub artefact attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations): a Sigstore-signed statement that the release workflow in `CubieCode/wardlock` built it from the tagged commit. Check one with the GitHub CLI before installing or running it:
 
 ```sh
-gh attestation verify wardlockd_0.2.0_linux_amd64.tar.gz --repo CubieCode/wardlock
-gh attestation verify oci://ghcr.io/cubiecode/wardlock:0.2.0 --repo CubieCode/wardlock
+gh attestation verify wardlockd_0.3.0_linux_amd64.tar.gz --repo CubieCode/wardlock
+gh attestation verify oci://ghcr.io/cubiecode/wardlock:0.3.0 --repo CubieCode/wardlock
 ```
 
 <details>
@@ -183,8 +183,8 @@ The publish job of [`release.yml`](../.github/workflows/release.yml) makes two b
 To require the release workflow and the tag, not just this repository:
 
 ```sh
-gh attestation verify wardlockd_0.2.0_linux_amd64.tar.gz --repo CubieCode/wardlock \
-  --signer-workflow CubieCode/wardlock/.github/workflows/release.yml --source-ref refs/tags/v0.2.0
+gh attestation verify wardlockd_0.3.0_linux_amd64.tar.gz --repo CubieCode/wardlock \
+  --signer-workflow CubieCode/wardlock/.github/workflows/release.yml --source-ref refs/tags/v0.3.0
 ```
 
 Attestations are made only when a `vX.Y.Z` tag publishes; snapshots and pull requests have none.
@@ -195,7 +195,7 @@ Attestations are made only when a `vX.Y.Z` tag publishes; snapshots and pull req
 
 ```sh
 sudo useradd --system --home /var/lib/wardlock --create-home wardlock
-sudo sh deploy/install.sh --version 0.2.0 --component wardlockd
+sudo sh deploy/install.sh --version 0.3.0 --component wardlockd
 sudo install -m 0640 -o root -g wardlock wardlock.env /etc/wardlock/wardlock.env
 sudo install -m 0644 deploy/wardlockd.service /etc/systemd/system/wardlockd.service
 sudo systemctl daemon-reload && sudo systemctl enable --now wardlockd
@@ -225,7 +225,7 @@ Release images are multi-arch (`linux/amd64`, `linux/arm64`) distroless images a
 
 ```sh
 export WARDLOCK_SECRET=$(openssl rand -base64 32 | tr '+/' '-_')   # keep it; see Backups
-WARDLOCK_IMAGE=ghcr.io/cubiecode/wardlock:0.2.0 docker compose -f deploy/compose.yaml up -d
+WARDLOCK_IMAGE=ghcr.io/cubiecode/wardlock:0.3.0 docker compose -f deploy/compose.yaml up -d
 curl http://127.0.0.1:8080/healthz
 curl http://127.0.0.1:9740/readyz      # the operator listener; see Health, readiness and metrics
 ```
