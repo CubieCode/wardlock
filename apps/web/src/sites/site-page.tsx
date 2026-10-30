@@ -21,6 +21,7 @@ import {
 import { DeploysTab } from './site-page-deploys.js';
 import { SiteHeader } from './site-page-header.js';
 import { useOrganise } from './site-page-organise.js';
+import { PreviewsTab } from './previews.js';
 import { OverviewTab } from './site-page-overview.js';
 import { SettingsTab } from './site-page-settings.js';
 import { siteTabs, SiteTabs, type SiteTabId } from './site-page-tabs.js';
@@ -75,7 +76,8 @@ function pageTitle(name: string, tab: SiteTabId, linkId: string | undefined) {
 /**
  * `/sites/:name` and its tabs: a header with the site's access, address,
  * group, tags and pin, then Overview, Links (and one link at
- * `links/:linkId`), Access, Domains, Deploys, Access log and Settings. The
+ * `links/:linkId`), Access, Domains, Deploys, Previews, Access log and
+ * Settings. The
  * site is read once and kept while the owner moves between tabs.
  */
 export function SitePage({
@@ -218,7 +220,8 @@ export function SitePage({
     );
   };
 
-  const afterRollback = ({ site: now, deploy }: Activation) => {
+  // A rollback or a promoted preview: either way one deploy went live.
+  const afterActivation = ({ site: now, deploy }: Activation) => {
     // Show the answer straight away, then read every status again in place.
     setState((current) =>
       current.kind === 'ready'
@@ -280,7 +283,7 @@ export function SitePage({
       );
       break;
     case 'domains':
-      body = <DomainsCard api={api} site={site} />;
+      body = <DomainsCard api={api} site={site} onSiteChange={setSite} />;
       break;
     case 'deploys':
       body = (
@@ -293,7 +296,19 @@ export function SitePage({
           onOlder={loadOlder}
           refreshFailed={refreshFailed === 'deploys'}
           onRefresh={() => refresh()}
-          onRolledBack={afterRollback}
+          onRolledBack={afterActivation}
+        />
+      );
+      break;
+    case 'previews':
+      body = (
+        <PreviewsTab
+          api={api}
+          site={site}
+          policy={defaultPolicy(policies)}
+          deploys={deploys}
+          onLinkCreated={() => setLinksVersion((n) => n + 1)}
+          onPromoted={afterActivation}
         />
       );
       break;

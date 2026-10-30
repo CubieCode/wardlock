@@ -108,7 +108,7 @@ export function RollbackDialog({
 }
 
 /** The deploy's ID and message, and when it went live or was uploaded. */
-function DeploySummary({
+export function DeploySummary({
   deploy,
   live = false,
 }: {

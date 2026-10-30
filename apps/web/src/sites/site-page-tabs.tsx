@@ -10,6 +10,7 @@ export const siteTabs = [
   { id: 'access', path: 'access', label: 'Access' },
   { id: 'domains', path: 'domains', label: 'Domains' },
   { id: 'deploys', path: 'deploys', label: 'Deploys' },
+  { id: 'previews', path: 'previews', label: 'Previews' },
   { id: 'access-log', path: 'access-log', label: 'Access log' },
   { id: 'settings', path: 'settings', label: 'Settings' },
 ] as const;
