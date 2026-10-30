@@ -1100,7 +1100,7 @@ A release has one version, `vX.Y.Z`, and four tags on the same release commit:
 | `apps/cli/vX.Y.Z`              | `go install wardlock.nz/cli/cmd/wardlock@vX.Y.Z`     |
 | `apps/server/vX.Y.Z`           | `go install wardlock.nz/server/cmd/wardlockd@vX.Y.Z` |
 
-Pushing a `vX.Y.Z` tag is the release decision and needs explicit authorisation. Pull requests, main and manual runs never publish, and the GitHub release is always a draft.
+Pushing a `vX.Y.Z` tag is the release decision and needs explicit authorisation. Pull requests, main and manual runs never publish, and the GitHub release is always a draft. A maintainer can run the whole release with the internal [`wardlock-release`](../.agents/skills/wardlock-release/SKILL.md) agent skill (`/wardlock-release X.Y.Z`): invoking it with a version is that authorisation, and it stops before publishing the draft.
 
 <details>
 <summary>Release steps</summary>
