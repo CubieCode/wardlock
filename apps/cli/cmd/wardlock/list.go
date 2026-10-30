@@ -240,7 +240,16 @@ func listDeploys(ctx context.Context, a *app, c *conn, t target, asJSON bool) er
 		if d.Path != nil {
 			path = *d.Path
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n", shortID(d.Id), deployStatus(d.Status), formatTime(d.CreatedAt), path, d.FileCount, formatBytes(d.TotalSize), msg)
+		// A preview deploy (C1.19) names its preview.
+		status := deployStatus(d.Status)
+		if d.Preview != nil {
+			if d.Status == apiclient.DeployStatusPreview {
+				status += " " + *d.Preview
+			} else {
+				status += " (preview " + *d.Preview + ")"
+			}
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n", shortID(d.Id), status, formatTime(d.CreatedAt), path, d.FileCount, formatBytes(d.TotalSize), msg)
 	}
 	return tw.Flush()
 }
@@ -273,6 +282,8 @@ func deployStatus(s apiclient.DeployStatus) string {
 		return "not live"
 	case apiclient.DeployStatusPending:
 		return "not activated"
+	case apiclient.DeployStatusPreview:
+		return "preview"
 	}
 	return string(s)
 }
