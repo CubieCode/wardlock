@@ -184,7 +184,7 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 
 	d := &deployer{a: a, c: c, root: root, prog: &progress{w: a.stderr, live: a.liveProgress, now: a.now}}
 	return d.run(ctx, deployRequest{path: path, shown: shown, target: t, message: *message, spa: useSPA, immutableAssets: useImmutable,
-		prefix: prefix, yes: *yes, json: g.json, file: file})
+		redirects: cfg.Redirects, headers: cfg.Headers, prefix: prefix, yes: *yes, json: g.json, file: file})
 }
 
 // filing is the group and tags a deploy files its site under, by ID.
@@ -280,6 +280,10 @@ type deployRequest struct {
 	message     string
 	// spa and immutableAssets are nil to follow the base of a path deploy.
 	spa, immutableAssets *bool
+	// redirects and headers come from wardlock.json; nil leaves them out,
+	// so a path deploy keeps its base's.
+	redirects *[]apiclient.Redirect
+	headers   *[]apiclient.HeaderRule
 	// prefix is the path deploy's prefix, /dir/, or "" for the whole site.
 	prefix    string
 	yes, json bool
@@ -360,7 +364,7 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 		manifest[i] = apiclient.ManifestFile{Path: f.path, Sha256: f.sha256, Size: f.size}
 		byHash[f.sha256] = f
 	}
-	body := apiclient.CreateDeployRequest{Files: manifest, Spa: r.spa, ImmutableAssets: r.immutableAssets}
+	body := apiclient.CreateDeployRequest{Files: manifest, Spa: r.spa, ImmutableAssets: r.immutableAssets, Redirects: r.redirects, Headers: r.headers}
 	if r.message != "" {
 		body.Message = &r.message
 	}
