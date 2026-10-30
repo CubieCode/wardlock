@@ -105,7 +105,25 @@ func (p *policyEdge) noRawTokens(t *testing.T, records []edge.AccessRecord) {
 	}
 }
 
-func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
+// withPrimary runs a matrix with no primary hostname and again with the
+// base-domain hostname as primary over an active custom domain (C1.18), so
+// the access rules hold unchanged on the primary.
+func withPrimary(t *testing.T, matrix func(t *testing.T, primary bool)) {
+	t.Run("no primary", func(t *testing.T) { matrix(t, false) })
+	t.Run("on the primary hostname", func(t *testing.T) { matrix(t, true) })
+}
+
+// primaryOnBase gives docs an active custom domain and makes its
+// base-domain hostname the primary.
+func (p *policyEdge) primaryOnBase() {
+	p.t.Helper()
+	p.addDomain("docs", custom, store.DomainActive)
+	p.setPrimary("docs", host)
+}
+
+func TestShareLinkMatrixThroughTheEdge(t *testing.T) { withPrimary(t, shareLinkMatrix) }
+
+func shareLinkMatrix(t *testing.T, primary bool) {
 	type env struct {
 		p     *policyEdge
 		site  store.Site
@@ -120,6 +138,9 @@ func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
 		p.publish("other")
 		p.set("docs", "/", store.Protected, true)
 		p.set("other", "/", store.Protected, true)
+		if primary {
+			p.primaryOnBase()
+		}
 		l, token := p.link("docs", access.NewLink{Label: "Linear ENG-123"})
 		return env{p, site, l, token}
 	}
@@ -366,10 +387,15 @@ func TestShareLinkMatrixThroughTheEdge(t *testing.T) {
 	})
 }
 
-func TestUseLimitedLinkThroughTheEdge(t *testing.T) {
+func TestUseLimitedLinkThroughTheEdge(t *testing.T) { withPrimary(t, useLimitedLink) }
+
+func useLimitedLink(t *testing.T, primary bool) {
 	p := newPolicyEdge(t)
 	p.publish("docs")
 	p.set("docs", "/", store.Protected, true)
+	if primary {
+		p.primaryOnBase()
+	}
 	l, token := p.link("docs", access.NewLink{Label: "one-time", MaxUses: 1})
 	uses := func() int {
 		got, err := p.db.Links().GetByPublicID(t.Context(), l.PublicID)
@@ -473,12 +499,17 @@ func TestUseLimitedLinkThroughTheEdge(t *testing.T) {
 	p.noRawTokens(t, p.accessRecords())
 }
 
-func TestShareLinkRateLimitsThroughTheEdge(t *testing.T) {
+func TestShareLinkRateLimitsThroughTheEdge(t *testing.T) { withPrimary(t, shareLinkRateLimits) }
+
+func shareLinkRateLimits(t *testing.T, primary bool) {
 	p := newPolicyEdge(t)
 	p.publish("docs")
 	p.publish("other")
 	p.set("docs", "/", store.Protected, true)
 	p.set("other", "/", store.Protected, true)
+	if primary {
+		p.primaryOnBase()
+	}
 	_, token := p.link("docs", access.NewLink{})
 	_, otherToken := p.link("other", access.NewLink{})
 	limits := access.DefaultLimits()

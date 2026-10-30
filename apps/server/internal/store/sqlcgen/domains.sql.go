@@ -131,7 +131,7 @@ func (q *Queries) GetActiveDomainByHostname(ctx context.Context, hostname string
 }
 
 const getDomain = `-- name: GetDomain :one
-SELECT domains.id, domains.site_id, domains.hostname, domains.status, domains.verification_token, domains.created_at, domains.last_checked_at, domains.verified_at, domains.failing_since, domains.last_failure_reason, domains.failure_detail
+SELECT domains.id, domains.site_id, domains.hostname, domains.status, domains.verification_token, domains.created_at, domains.last_checked_at, domains.failing_since, domains.last_failure_reason, domains.verified_at, domains.failure_detail, CAST(CASE WHEN sites.primary_domain_id = domains.id THEN 1 ELSE 0 END AS BIGINT) AS is_primary
 FROM domains JOIN sites ON sites.id = domains.site_id
 WHERE domains.site_id = ?1 AND domains.hostname = ?2 AND sites.owner_id = ?3
 `
@@ -143,41 +143,34 @@ type GetDomainParams struct {
 }
 
 type GetDomainRow struct {
-	ID                string
-	SiteID            string
-	Hostname          string
-	Status            string
-	VerificationToken string
-	CreatedAt         int64
-	LastCheckedAt     sql.NullInt64
-	VerifiedAt        sql.NullInt64
-	FailingSince      sql.NullInt64
-	LastFailureReason sql.NullString
-	FailureDetail     sql.NullString
+	Domain    Domain
+	IsPrimary int64
 }
 
 // One of the owner's sites' domains by hostname, whatever its status.
+// is_primary is 1 for the site's chosen primary (C1.18).
 func (q *Queries) GetDomain(ctx context.Context, arg GetDomainParams) (GetDomainRow, error) {
 	row := q.db.QueryRowContext(ctx, getDomain, arg.SiteID, arg.Hostname, arg.OwnerID)
 	var i GetDomainRow
 	err := row.Scan(
-		&i.ID,
-		&i.SiteID,
-		&i.Hostname,
-		&i.Status,
-		&i.VerificationToken,
-		&i.CreatedAt,
-		&i.LastCheckedAt,
-		&i.VerifiedAt,
-		&i.FailingSince,
-		&i.LastFailureReason,
-		&i.FailureDetail,
+		&i.Domain.ID,
+		&i.Domain.SiteID,
+		&i.Domain.Hostname,
+		&i.Domain.Status,
+		&i.Domain.VerificationToken,
+		&i.Domain.CreatedAt,
+		&i.Domain.LastCheckedAt,
+		&i.Domain.FailingSince,
+		&i.Domain.LastFailureReason,
+		&i.Domain.VerifiedAt,
+		&i.Domain.FailureDetail,
+		&i.IsPrimary,
 	)
 	return i, err
 }
 
 const listDomains = `-- name: ListDomains :many
-SELECT domains.id, domains.site_id, domains.hostname, domains.status, domains.verification_token, domains.created_at, domains.last_checked_at, domains.verified_at, domains.failing_since, domains.last_failure_reason, domains.failure_detail
+SELECT domains.id, domains.site_id, domains.hostname, domains.status, domains.verification_token, domains.created_at, domains.last_checked_at, domains.failing_since, domains.last_failure_reason, domains.verified_at, domains.failure_detail, CAST(CASE WHEN sites.primary_domain_id = domains.id THEN 1 ELSE 0 END AS BIGINT) AS is_primary
 FROM domains JOIN sites ON sites.id = domains.site_id
 WHERE domains.site_id = ?1 AND sites.owner_id = ?2
   AND domains.hostname > ?3
@@ -193,17 +186,8 @@ type ListDomainsParams struct {
 }
 
 type ListDomainsRow struct {
-	ID                string
-	SiteID            string
-	Hostname          string
-	Status            string
-	VerificationToken string
-	CreatedAt         int64
-	LastCheckedAt     sql.NullInt64
-	VerifiedAt        sql.NullInt64
-	FailingSince      sql.NullInt64
-	LastFailureReason sql.NullString
-	FailureDetail     sql.NullString
+	Domain    Domain
+	IsPrimary int64
 }
 
 // One of the owner's sites' domains ordered by hostname, after
@@ -223,17 +207,18 @@ func (q *Queries) ListDomains(ctx context.Context, arg ListDomainsParams) ([]Lis
 	for rows.Next() {
 		var i ListDomainsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.SiteID,
-			&i.Hostname,
-			&i.Status,
-			&i.VerificationToken,
-			&i.CreatedAt,
-			&i.LastCheckedAt,
-			&i.VerifiedAt,
-			&i.FailingSince,
-			&i.LastFailureReason,
-			&i.FailureDetail,
+			&i.Domain.ID,
+			&i.Domain.SiteID,
+			&i.Domain.Hostname,
+			&i.Domain.Status,
+			&i.Domain.VerificationToken,
+			&i.Domain.CreatedAt,
+			&i.Domain.LastCheckedAt,
+			&i.Domain.FailingSince,
+			&i.Domain.LastFailureReason,
+			&i.Domain.VerifiedAt,
+			&i.Domain.FailureDetail,
+			&i.IsPrimary,
 		); err != nil {
 			return nil, err
 		}

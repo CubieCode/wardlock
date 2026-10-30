@@ -78,6 +78,8 @@ var operations = []operation{
 	{id: "ListPolicies", method: "GET", path: "/api/v0/sites/{site}/policies", jsonBody: false, security: []string{"sessionCookie", "apiToken:deploy", "apiToken:manage"}},
 	{id: "SetPolicy", method: "PUT", path: "/api/v0/sites/{site}/policies", jsonBody: true, security: []string{"sessionCookie", "apiToken:manage"}},
 	{id: "DeletePolicy", method: "DELETE", path: "/api/v0/sites/{site}/policies/{policyId}", jsonBody: false, security: []string{"sessionCookie", "apiToken:manage"}},
+	{id: "ClearPrimaryHost", method: "DELETE", path: "/api/v0/sites/{site}/primary-host", jsonBody: false, security: []string{"sessionCookie", "apiToken:manage"}},
+	{id: "SetPrimaryHost", method: "PUT", path: "/api/v0/sites/{site}/primary-host", jsonBody: true, security: []string{"sessionCookie", "apiToken:manage"}},
 	{id: "RollbackSite", method: "POST", path: "/api/v0/sites/{site}/rollback", jsonBody: true, security: []string{"sessionCookie", "apiToken:deploy"}},
 	{id: "ListTags", method: "GET", path: "/api/v0/tags", jsonBody: false, security: []string{"sessionCookie", "apiToken:deploy", "apiToken:manage"}},
 	{id: "CreateTag", method: "POST", path: "/api/v0/tags", jsonBody: true, security: []string{"sessionCookie", "apiToken:manage"}},

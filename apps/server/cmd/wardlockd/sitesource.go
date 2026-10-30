@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"wardlock.nz/server/internal/edge"
+	"wardlock.nz/server/internal/sites"
 	"wardlock.nz/server/internal/store"
 )
 
@@ -40,6 +41,7 @@ func (s siteSource) SiteForHost(ctx context.Context, host string) (edge.ServedSi
 		ActiveDeployID: site.ActiveDeployID,
 		ActivatedAt:    site.ActivatedAt,
 		Unavailable:    !site.TakenDownAt.IsZero(),
+		PrimaryHost:    sites.PrimaryHost(site, s.baseDomain),
 	}
 	if !served.Unavailable {
 		// A suspended owner's sites are unavailable too (A2.13).

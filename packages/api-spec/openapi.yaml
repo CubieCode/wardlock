@@ -29,7 +29,8 @@ info:
     - `apiToken`: `Authorization: Bearer wl_<public id>_<secret>` (C1.7). A
       token carries one or both scopes. `deploy` covers creating sites and
       deploys, uploading blobs, activation and rollback. `manage` covers
-      deleting sites and managing custom domains. Read operations accept
+      deleting sites, managing custom domains and choosing a site's primary
+      hostname. Read operations accept
       either scope, and include listing a deploy's files and downloading
       them (C1.14), so a `deploy` token can read a site's content as well as
       publish it. `manage` also covers setting and deleting access
@@ -79,7 +80,7 @@ info:
     | 401 | `unauthenticated`: no credential, or an expired, revoked or unknown one |
     | 403 | `forbidden`: the credential lacks the scope, or a cookie request came from another origin; `invites_restricted`: the operator has kept invitations to themselves |
     | 404 | `not_found` |
-    | 409 | `site_name_taken`, `group_name_taken`, `tag_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `stale_base` (a path deploy's site changed after it was created; create it again), `default_policy`, `passkey_limit`, `site_unavailable` (the operator has taken the site down) |
+    | 409 | `site_name_taken`, `group_name_taken`, `tag_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `stale_base` (a path deploy's site changed after it was created; create it again), `default_policy`, `passkey_limit`, `site_unavailable` (the operator has taken the site down), `domain_not_active` (a pending or lapsed custom domain cannot be the primary hostname) |
     | 410 | `login_expired` |
     | 413 | `limit_exceeded`: a deploy limit (files, bytes per file or per video file, bytes in total, redirects, header rules, bytes per rule value or in all rules) or one of the owner's quotas (bytes stored, sites, deploys in 24 hours), or an organisation limit (100 groups, 200 tags, 20 tags on a site); the `message` names the file and the limit, and `target` is the file's path, or `files`, `deploys`, `redirects`, `headers`, `redirects[i]`, `headers[i]`, `name`, `tagIds` or `addTagIds` |
     | 422 | `file_type_blocked`: the manifest lists a file whose extension the operator has blocked; `target` is its path |
@@ -1674,6 +1675,7 @@ paths:
                     verifiedAt: 1767225660000
                     lastCheckedAt: 1767312060000
                     nextCheckAt: 1767398460000
+                    primary: true
                   - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
                     hostname: docs.example.com
                     status: pending
@@ -1844,6 +1846,93 @@ paths:
           $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/CheckedRecently'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/sites/{site}/primary-host:
+    parameters:
+      - $ref: '#/components/parameters/SiteName'
+    put:
+      operationId: setPrimaryHost
+      summary: Choose a site's primary hostname.
+      description: >-
+        Makes `host` the site's primary hostname (C1.18): requests for the
+        site on any of its other hostnames then answer `308` to the same
+        path and query on the primary, before any access decision, except
+        under `/.wardlock/`. `host` is the site's base-domain hostname or
+        one of its active custom domains, in any spelling (case, trailing
+        dot, Unicode); it replaces any earlier choice. A hostname that is
+        not one of this site's, including another site's or another
+        owner's, answers `404 not_found` like a missing site. A pending or
+        lapsed custom domain of the site answers `409 domain_not_active`.
+        A site the operator has taken down answers `409 site_unavailable`:
+        its hostnames are frozen. Clients that do not follow redirects
+        with their credentials, such as those sending `Authorization:
+        Bearer`, should use the primary hostname once one is set.
+      tags: [domains]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetPrimaryHostRequest'
+            example:
+              host: www.example.org
+      responses:
+        '200':
+          description: The site as it is now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Site'
+              examples:
+                site:
+                  $ref: '#/components/examples/SiteWithPrimaryHost'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: clearPrimaryHost
+      summary: Stop redirecting to a primary hostname.
+      description: >-
+        Leaves the site with no primary hostname, so every one of its
+        hostnames serves it again. Clearing a site with none changes
+        nothing. A site the operator has taken down answers
+        `409 site_unavailable`.
+      tags: [domains]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      responses:
+        '200':
+          description: The site as it is now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Site'
+              examples:
+                site:
+                  $ref: '#/components/examples/Site'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         default:
           $ref: '#/components/responses/Error'
 
@@ -3278,6 +3367,20 @@ components:
         pinned: true
         activeDeployId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
         activatedAt: 1767225660000
+    SiteWithPrimaryHost:
+      summary: A site whose other hostnames redirect to a custom domain.
+      value:
+        id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+        name: docs
+        hostname: docs.wardlock.example.net
+        url: https://docs.wardlock.example.net/
+        createdAt: 1767225600000
+        unavailable: false
+        tagIds: []
+        pinned: false
+        activeDeployId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
+        activatedAt: 1767225660000
+        primaryHost: www.example.org
     Group:
       summary: A group with a note.
       value:
@@ -3906,6 +4009,16 @@ components:
           description: >-
             True while the owner has the site pinned. Read only: set with
             pinSite, unpinSite or organiseSites.
+        primaryHost:
+          description: >-
+            The hostname the site's other hostnames redirect to with `308`
+            (C1.18): `hostname` or one of its active custom domains. Absent
+            when there is none in effect, which is the default: every
+            hostname then serves the site. A chosen custom domain that
+            lapses is not in effect (absent here, no redirect) until it is
+            active again; removing it clears the choice. Read only: set
+            with setPrimaryHost and clearPrimaryHost.
+          $ref: '#/components/schemas/Hostname'
     SitePage:
       type: object
       additionalProperties: false
@@ -4478,6 +4591,14 @@ components:
         failureDetail:
           type: string
           description: Plain-language detail for the last failure.
+        primary:
+          type: boolean
+          description: >-
+            True when the owner chose this domain as the site's primary
+            hostname (C1.18); absent otherwise. It is in effect only while
+            the domain is `active`: while it is lapsed the site's
+            `primaryHost` is absent and nothing redirects, and it resumes
+            when a check passes again.
     DomainPage:
       type: object
       additionalProperties: false
@@ -4489,6 +4610,18 @@ components:
             $ref: '#/components/schemas/Domain'
         nextCursor:
           $ref: '#/components/schemas/Cursor'
+    SetPrimaryHostRequest:
+      type: object
+      additionalProperties: false
+      required: [host]
+      properties:
+        host:
+          type: string
+          description: >-
+            The site's base-domain hostname or one of its active custom
+            domains, as typed; the server normalises it.
+          minLength: 1
+          maxLength: 253
     AddDomainRequest:
       type: object
       additionalProperties: false

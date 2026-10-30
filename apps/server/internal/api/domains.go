@@ -29,6 +29,8 @@ func domainFailed(err error) (*failure, error) {
 		return fail(http.StatusConflict, "domain_taken", "This hostname is already attached to a site on this server.", "hostname"), nil
 	case errors.Is(err, sites.ErrUnavailable):
 		return fail(http.StatusConflict, "site_unavailable", siteUnavailable, ""), nil
+	case errors.Is(err, sites.ErrDomainNotActive):
+		return fail(http.StatusConflict, "domain_not_active", "Only an active custom domain can be the primary hostname: this one is not served until its DNS checks pass.", "host"), nil
 	}
 	return nil, err
 }
@@ -58,6 +60,9 @@ func (s *Server) domainBody(siteName string, d store.Domain) Domain {
 	}
 	if d.FailureDetail != "" {
 		out.FailureDetail = &d.FailureDetail
+	}
+	if d.Primary {
+		out.Primary = &d.Primary
 	}
 	return out
 }

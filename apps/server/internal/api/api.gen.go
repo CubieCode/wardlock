@@ -1074,6 +1074,9 @@ type Domain struct {
 	// Examples: 1767225600000
 	NextCheckAt *Timestamp `json:"nextCheckAt,omitempty"`
 
+	// Primary True when the owner chose this domain as the site's primary hostname (C1.18); absent otherwise. It is in effect only while the domain is `active`: while it is lapsed the site's `primaryHost` is absent and nothing redirects, and it resumes when a check passes again.
+	Primary *bool `json:"primary,omitempty"`
+
 	// RoutingRecord `CNAME <hostname> → <name>.<base domain>`.
 	RoutingRecord DnsRecord `json:"routingRecord"`
 
@@ -1614,6 +1617,12 @@ type SetPolicyRequest struct {
 	Visibility PolicyVisibility `json:"visibility"`
 }
 
+// SetPrimaryHostRequest defines model for SetPrimaryHostRequest.
+type SetPrimaryHostRequest struct {
+	// Host The site's base-domain hostname or one of its active custom domains, as typed; the server normalises it.
+	Host string `json:"host"`
+}
+
 // SetSiteOrganisationRequest defines model for SetSiteOrganisationRequest.
 type SetSiteOrganisationRequest struct {
 	// GroupId The site's group; absent for no group.
@@ -1766,6 +1775,11 @@ type Site struct {
 
 	// Pinned True while the owner has the site pinned. Read only: set with pinSite, unpinSite or organiseSites.
 	Pinned bool `json:"pinned"`
+
+	// PrimaryHost The hostname the site's other hostnames redirect to with `308` (C1.18): `hostname` or one of its active custom domains. Absent when there is none in effect, which is the default: every hostname then serves the site. A chosen custom domain that lapses is not in effect (absent here, no redirect) until it is active again; removing it clears the choice. Read only: set with setPrimaryHost and clearPrimaryHost.
+	//
+	// Examples: docs.example.com
+	PrimaryHost *Hostname `json:"primaryHost,omitempty"`
 
 	// TagIds The site's tags in tag-name order; empty when it has none. Read only, like `groupId`.
 	TagIds []Id `json:"tagIds"`
@@ -2310,6 +2324,9 @@ type SetSiteOrganisationJSONRequestBody = SetSiteOrganisationRequest
 // SetPolicyJSONRequestBody defines body for SetPolicy for application/json ContentType.
 type SetPolicyJSONRequestBody = SetPolicyRequest
 
+// SetPrimaryHostJSONRequestBody defines body for SetPrimaryHost for application/json ContentType.
+type SetPrimaryHostJSONRequestBody = SetPrimaryHostRequest
+
 // RollbackSiteJSONRequestBody defines body for RollbackSite for application/json ContentType.
 type RollbackSiteJSONRequestBody = RollbackRequest
 
@@ -2602,6 +2619,12 @@ type ServerInterface interface {
 	// DeletePolicy Delete a path policy.
 	// (DELETE /api/v0/sites/{site}/policies/{policyId})
 	DeletePolicy(w http.ResponseWriter, r *http.Request, site SiteName, policyId PolicyId)
+	// ClearPrimaryHost Stop redirecting to a primary hostname.
+	// (DELETE /api/v0/sites/{site}/primary-host)
+	ClearPrimaryHost(w http.ResponseWriter, r *http.Request, site SiteName)
+	// SetPrimaryHost Choose a site's primary hostname.
+	// (PUT /api/v0/sites/{site}/primary-host)
+	SetPrimaryHost(w http.ResponseWriter, r *http.Request, site SiteName)
 	// RollbackSite Reactivate an earlier deploy.
 	// (POST /api/v0/sites/{site}/rollback)
 	RollbackSite(w http.ResponseWriter, r *http.Request, site SiteName)
@@ -4378,6 +4401,58 @@ func (siw *ServerInterfaceWrapper) DeletePolicy(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ClearPrimaryHost operation middleware
+func (siw *ServerInterfaceWrapper) ClearPrimaryHost(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ClearPrimaryHost(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetPrimaryHost operation middleware
+func (siw *ServerInterfaceWrapper) SetPrimaryHost(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetPrimaryHost(w, r, site)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RollbackSite operation middleware
 func (siw *ServerInterfaceWrapper) RollbackSite(w http.ResponseWriter, r *http.Request) {
 
@@ -4732,6 +4807,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/domains/{hostname}", wrapper.RemoveDomain)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/domains/{hostname}", wrapper.GetDomain)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/domains/{hostname}/verify", wrapper.VerifyDomain)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/primary-host", wrapper.ClearPrimaryHost)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v0/sites/{site}/primary-host", wrapper.SetPrimaryHost)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/policies", wrapper.ListPolicies)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v0/sites/{site}/policies", wrapper.SetPolicy)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/policies/{policyId}", wrapper.DeletePolicy)
@@ -9863,6 +9940,211 @@ func (response DeletePolicydefaultJSONResponse) VisitDeletePolicyResponse(w http
 	return err
 }
 
+type ClearPrimaryHostRequestObject struct {
+	Site SiteName `json:"site"`
+}
+
+type ClearPrimaryHostResponseObject interface {
+	VisitClearPrimaryHostResponse(w http.ResponseWriter) error
+}
+
+type ClearPrimaryHost200JSONResponse Site
+
+func (response ClearPrimaryHost200JSONResponse) VisitClearPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClearPrimaryHost401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ClearPrimaryHost401JSONResponse) VisitClearPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClearPrimaryHost403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ClearPrimaryHost403JSONResponse) VisitClearPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClearPrimaryHost404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ClearPrimaryHost404JSONResponse) VisitClearPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClearPrimaryHost409JSONResponse struct{ ConflictJSONResponse }
+
+func (response ClearPrimaryHost409JSONResponse) VisitClearPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClearPrimaryHostdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ClearPrimaryHostdefaultJSONResponse) VisitClearPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPrimaryHostRequestObject struct {
+	Site SiteName `json:"site"`
+	Body *SetPrimaryHostJSONRequestBody
+}
+
+type SetPrimaryHostResponseObject interface {
+	VisitSetPrimaryHostResponse(w http.ResponseWriter) error
+}
+
+type SetPrimaryHost200JSONResponse Site
+
+func (response SetPrimaryHost200JSONResponse) VisitSetPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPrimaryHost400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response SetPrimaryHost400JSONResponse) VisitSetPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPrimaryHost401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetPrimaryHost401JSONResponse) VisitSetPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPrimaryHost403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetPrimaryHost403JSONResponse) VisitSetPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPrimaryHost404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response SetPrimaryHost404JSONResponse) VisitSetPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPrimaryHost409JSONResponse struct{ ConflictJSONResponse }
+
+func (response SetPrimaryHost409JSONResponse) VisitSetPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetPrimaryHostdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SetPrimaryHostdefaultJSONResponse) VisitSetPrimaryHostResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RollbackSiteRequestObject struct {
 	Site SiteName `json:"site"`
 	Body *RollbackSiteJSONRequestBody
@@ -10729,6 +11011,12 @@ type StrictServerInterface interface {
 	// DeletePolicy Delete a path policy.
 	// (DELETE /api/v0/sites/{site}/policies/{policyId})
 	DeletePolicy(ctx context.Context, request DeletePolicyRequestObject) (DeletePolicyResponseObject, error)
+	// ClearPrimaryHost Stop redirecting to a primary hostname.
+	// (DELETE /api/v0/sites/{site}/primary-host)
+	ClearPrimaryHost(ctx context.Context, request ClearPrimaryHostRequestObject) (ClearPrimaryHostResponseObject, error)
+	// SetPrimaryHost Choose a site's primary hostname.
+	// (PUT /api/v0/sites/{site}/primary-host)
+	SetPrimaryHost(ctx context.Context, request SetPrimaryHostRequestObject) (SetPrimaryHostResponseObject, error)
 	// RollbackSite Reactivate an earlier deploy.
 	// (POST /api/v0/sites/{site}/rollback)
 	RollbackSite(ctx context.Context, request RollbackSiteRequestObject) (RollbackSiteResponseObject, error)
@@ -12386,6 +12674,65 @@ func (sh *strictHandler) DeletePolicy(w http.ResponseWriter, r *http.Request, si
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DeletePolicyResponseObject); ok {
 		if err := validResponse.VisitDeletePolicyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ClearPrimaryHost operation middleware
+func (sh *strictHandler) ClearPrimaryHost(w http.ResponseWriter, r *http.Request, site SiteName) {
+	var request ClearPrimaryHostRequestObject
+
+	request.Site = site
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ClearPrimaryHost(ctx, request.(ClearPrimaryHostRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ClearPrimaryHost")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ClearPrimaryHostResponseObject); ok {
+		if err := validResponse.VisitClearPrimaryHostResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetPrimaryHost operation middleware
+func (sh *strictHandler) SetPrimaryHost(w http.ResponseWriter, r *http.Request, site SiteName) {
+	var request SetPrimaryHostRequestObject
+
+	request.Site = site
+
+	var body SetPrimaryHostJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetPrimaryHost(ctx, request.(SetPrimaryHostRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetPrimaryHost")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetPrimaryHostResponseObject); ok {
+		if err := validResponse.VisitSetPrimaryHostResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

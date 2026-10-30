@@ -153,6 +153,9 @@ func (s *Server) siteBody(site store.Site, tagIDs []string) Site {
 		out.ActiveDeployId = &site.ActiveDeployID
 		out.ActivatedAt = millis(site.ActivatedAt)
 	}
+	if primary := s.Sites.PrimaryHost(site); primary != "" {
+		out.PrimaryHost = &primary
+	}
 	return out
 }
 

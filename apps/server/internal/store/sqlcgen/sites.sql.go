@@ -13,6 +13,24 @@ import (
 	"database/sql"
 )
 
+const clearPrimary = `-- name: ClearPrimary :execrows
+UPDATE sites SET primary_base = 0, primary_domain_id = NULL
+WHERE id = ?1 AND owner_id = ?2 AND taken_down_at IS NULL
+`
+
+type ClearPrimaryParams struct {
+	ID      string
+	OwnerID string
+}
+
+func (q *Queries) ClearPrimary(ctx context.Context, arg ClearPrimaryParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, clearPrimary, arg.ID, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const createSite = `-- name: CreateSite :exec
 INSERT INTO sites (id, owner_id, name, created_at)
 VALUES (?1, ?2, ?3, ?4)
@@ -54,8 +72,10 @@ func (q *Queries) DeleteSite(ctx context.Context, arg DeleteSiteParams) (int64, 
 }
 
 const getSite = `-- name: GetSite :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE sites.id = ?1 AND sites.owner_id = ?2
 `
 
@@ -65,15 +85,18 @@ type GetSiteParams struct {
 }
 
 type GetSiteRow struct {
-	ID             string
-	OwnerID        string
-	Name           string
-	ActiveDeployID sql.NullString
-	CreatedAt      int64
-	ActivatedAt    sql.NullInt64
-	TakenDownAt    sql.NullInt64
-	GroupID        sql.NullString
-	PinnedAt       sql.NullInt64
+	ID                  string
+	OwnerID             string
+	Name                string
+	ActiveDeployID      sql.NullString
+	CreatedAt           int64
+	ActivatedAt         sql.NullInt64
+	TakenDownAt         sql.NullInt64
+	GroupID             sql.NullString
+	PinnedAt            sql.NullInt64
+	PrimaryBase         int64
+	PrimaryDomain       sql.NullString
+	PrimaryDomainStatus sql.NullString
 }
 
 func (q *Queries) GetSite(ctx context.Context, arg GetSiteParams) (GetSiteRow, error) {
@@ -89,26 +112,34 @@ func (q *Queries) GetSite(ctx context.Context, arg GetSiteParams) (GetSiteRow, e
 		&i.TakenDownAt,
 		&i.GroupID,
 		&i.PinnedAt,
+		&i.PrimaryBase,
+		&i.PrimaryDomain,
+		&i.PrimaryDomainStatus,
 	)
 	return i, err
 }
 
 const getSiteByID = `-- name: GetSiteByID :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE sites.id = ?1
 `
 
 type GetSiteByIDRow struct {
-	ID             string
-	OwnerID        string
-	Name           string
-	ActiveDeployID sql.NullString
-	CreatedAt      int64
-	ActivatedAt    sql.NullInt64
-	TakenDownAt    sql.NullInt64
-	GroupID        sql.NullString
-	PinnedAt       sql.NullInt64
+	ID                  string
+	OwnerID             string
+	Name                string
+	ActiveDeployID      sql.NullString
+	CreatedAt           int64
+	ActivatedAt         sql.NullInt64
+	TakenDownAt         sql.NullInt64
+	GroupID             sql.NullString
+	PinnedAt            sql.NullInt64
+	PrimaryBase         int64
+	PrimaryDomain       sql.NullString
+	PrimaryDomainStatus sql.NullString
 }
 
 // Instance-wide: edge routing only, never owner API handlers.
@@ -125,26 +156,34 @@ func (q *Queries) GetSiteByID(ctx context.Context, id string) (GetSiteByIDRow, e
 		&i.TakenDownAt,
 		&i.GroupID,
 		&i.PinnedAt,
+		&i.PrimaryBase,
+		&i.PrimaryDomain,
+		&i.PrimaryDomainStatus,
 	)
 	return i, err
 }
 
 const getSiteByName = `-- name: GetSiteByName :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE sites.name = ?1
 `
 
 type GetSiteByNameRow struct {
-	ID             string
-	OwnerID        string
-	Name           string
-	ActiveDeployID sql.NullString
-	CreatedAt      int64
-	ActivatedAt    sql.NullInt64
-	TakenDownAt    sql.NullInt64
-	GroupID        sql.NullString
-	PinnedAt       sql.NullInt64
+	ID                  string
+	OwnerID             string
+	Name                string
+	ActiveDeployID      sql.NullString
+	CreatedAt           int64
+	ActivatedAt         sql.NullInt64
+	TakenDownAt         sql.NullInt64
+	GroupID             sql.NullString
+	PinnedAt            sql.NullInt64
+	PrimaryBase         int64
+	PrimaryDomain       sql.NullString
+	PrimaryDomainStatus sql.NullString
 }
 
 // Instance-wide: edge routing only, never owner API handlers.
@@ -161,15 +200,20 @@ func (q *Queries) GetSiteByName(ctx context.Context, name string) (GetSiteByName
 		&i.TakenDownAt,
 		&i.GroupID,
 		&i.PinnedAt,
+		&i.PrimaryBase,
+		&i.PrimaryDomain,
+		&i.PrimaryDomainStatus,
 	)
 	return i, err
 }
 
 const getSiteByOwnerDomain = `-- name: GetSiteByOwnerDomain :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
 FROM sites
 JOIN domains ON domains.site_id = sites.id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE domains.hostname = ?1 AND sites.owner_id = ?2
 `
 
@@ -179,15 +223,18 @@ type GetSiteByOwnerDomainParams struct {
 }
 
 type GetSiteByOwnerDomainRow struct {
-	ID             string
-	OwnerID        string
-	Name           string
-	ActiveDeployID sql.NullString
-	CreatedAt      int64
-	ActivatedAt    sql.NullInt64
-	TakenDownAt    sql.NullInt64
-	GroupID        sql.NullString
-	PinnedAt       sql.NullInt64
+	ID                  string
+	OwnerID             string
+	Name                string
+	ActiveDeployID      sql.NullString
+	CreatedAt           int64
+	ActivatedAt         sql.NullInt64
+	TakenDownAt         sql.NullInt64
+	GroupID             sql.NullString
+	PinnedAt            sql.NullInt64
+	PrimaryBase         int64
+	PrimaryDomain       sql.NullString
+	PrimaryDomainStatus sql.NullString
 }
 
 // Any status: the owner API resolves pending and lapsed hostnames too.
@@ -204,13 +251,18 @@ func (q *Queries) GetSiteByOwnerDomain(ctx context.Context, arg GetSiteByOwnerDo
 		&i.TakenDownAt,
 		&i.GroupID,
 		&i.PinnedAt,
+		&i.PrimaryBase,
+		&i.PrimaryDomain,
+		&i.PrimaryDomainStatus,
 	)
 	return i, err
 }
 
 const getSiteByOwnerName = `-- name: GetSiteByOwnerName :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE sites.name = ?1 AND sites.owner_id = ?2
 `
 
@@ -220,15 +272,18 @@ type GetSiteByOwnerNameParams struct {
 }
 
 type GetSiteByOwnerNameRow struct {
-	ID             string
-	OwnerID        string
-	Name           string
-	ActiveDeployID sql.NullString
-	CreatedAt      int64
-	ActivatedAt    sql.NullInt64
-	TakenDownAt    sql.NullInt64
-	GroupID        sql.NullString
-	PinnedAt       sql.NullInt64
+	ID                  string
+	OwnerID             string
+	Name                string
+	ActiveDeployID      sql.NullString
+	CreatedAt           int64
+	ActivatedAt         sql.NullInt64
+	TakenDownAt         sql.NullInt64
+	GroupID             sql.NullString
+	PinnedAt            sql.NullInt64
+	PrimaryBase         int64
+	PrimaryDomain       sql.NullString
+	PrimaryDomainStatus sql.NullString
 }
 
 func (q *Queries) GetSiteByOwnerName(ctx context.Context, arg GetSiteByOwnerNameParams) (GetSiteByOwnerNameRow, error) {
@@ -244,16 +299,21 @@ func (q *Queries) GetSiteByOwnerName(ctx context.Context, arg GetSiteByOwnerName
 		&i.TakenDownAt,
 		&i.GroupID,
 		&i.PinnedAt,
+		&i.PrimaryBase,
+		&i.PrimaryDomain,
+		&i.PrimaryDomainStatus,
 	)
 	return i, err
 }
 
 const listAllSites = `-- name: ListAllSites :many
 SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
   owners.email AS owner_email, owners.suspended_at AS owner_suspended_at
 FROM sites
 JOIN owners ON owners.id = sites.owner_id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE sites.name > ?1
 ORDER BY sites.name
 LIMIT ?2
@@ -265,17 +325,20 @@ type ListAllSitesParams struct {
 }
 
 type ListAllSitesRow struct {
-	ID               string
-	OwnerID          string
-	Name             string
-	ActiveDeployID   sql.NullString
-	CreatedAt        int64
-	ActivatedAt      sql.NullInt64
-	TakenDownAt      sql.NullInt64
-	GroupID          sql.NullString
-	PinnedAt         sql.NullInt64
-	OwnerEmail       string
-	OwnerSuspendedAt sql.NullInt64
+	ID                  string
+	OwnerID             string
+	Name                string
+	ActiveDeployID      sql.NullString
+	CreatedAt           int64
+	ActivatedAt         sql.NullInt64
+	TakenDownAt         sql.NullInt64
+	GroupID             sql.NullString
+	PinnedAt            sql.NullInt64
+	PrimaryBase         int64
+	PrimaryDomain       sql.NullString
+	PrimaryDomainStatus sql.NullString
+	OwnerEmail          string
+	OwnerSuspendedAt    sql.NullInt64
 }
 
 func (q *Queries) ListAllSites(ctx context.Context, arg ListAllSitesParams) ([]ListAllSitesRow, error) {
@@ -297,6 +360,9 @@ func (q *Queries) ListAllSites(ctx context.Context, arg ListAllSitesParams) ([]L
 			&i.TakenDownAt,
 			&i.GroupID,
 			&i.PinnedAt,
+			&i.PrimaryBase,
+			&i.PrimaryDomain,
+			&i.PrimaryDomainStatus,
 			&i.OwnerEmail,
 			&i.OwnerSuspendedAt,
 		); err != nil {
@@ -314,8 +380,10 @@ func (q *Queries) ListAllSites(ctx context.Context, arg ListAllSitesParams) ([]L
 }
 
 const listSites = `-- name: ListSites :many
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
 FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE sites.owner_id = ?1 AND sites.name > ?2
 ORDER BY sites.name
 LIMIT ?3
@@ -328,15 +396,18 @@ type ListSitesParams struct {
 }
 
 type ListSitesRow struct {
-	ID             string
-	OwnerID        string
-	Name           string
-	ActiveDeployID sql.NullString
-	CreatedAt      int64
-	ActivatedAt    sql.NullInt64
-	TakenDownAt    sql.NullInt64
-	GroupID        sql.NullString
-	PinnedAt       sql.NullInt64
+	ID                  string
+	OwnerID             string
+	Name                string
+	ActiveDeployID      sql.NullString
+	CreatedAt           int64
+	ActivatedAt         sql.NullInt64
+	TakenDownAt         sql.NullInt64
+	GroupID             sql.NullString
+	PinnedAt            sql.NullInt64
+	PrimaryBase         int64
+	PrimaryDomain       sql.NullString
+	PrimaryDomainStatus sql.NullString
 }
 
 func (q *Queries) ListSites(ctx context.Context, arg ListSitesParams) ([]ListSitesRow, error) {
@@ -358,6 +429,9 @@ func (q *Queries) ListSites(ctx context.Context, arg ListSitesParams) ([]ListSit
 			&i.TakenDownAt,
 			&i.GroupID,
 			&i.PinnedAt,
+			&i.PrimaryBase,
+			&i.PrimaryDomain,
+			&i.PrimaryDomainStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -431,6 +505,48 @@ type SetActiveDeployParams struct {
 // A taken-down site keeps the deploy it had (A2.13).
 func (q *Queries) SetActiveDeploy(ctx context.Context, arg SetActiveDeployParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, setActiveDeploy, arg.DeployID, arg.SiteID, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setPrimaryBase = `-- name: SetPrimaryBase :execrows
+UPDATE sites SET primary_base = 1, primary_domain_id = NULL
+WHERE id = ?1 AND owner_id = ?2 AND taken_down_at IS NULL
+`
+
+type SetPrimaryBaseParams struct {
+	ID      string
+	OwnerID string
+}
+
+// Primary hostname (C1.18). The base-domain hostname needs no row; a
+// custom domain must be one of this site's and active as the write lands,
+// so a domain that lapsed or was removed meanwhile changes nothing. A
+// taken-down site's hostnames are frozen with it (A2.13).
+func (q *Queries) SetPrimaryBase(ctx context.Context, arg SetPrimaryBaseParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setPrimaryBase, arg.ID, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setPrimaryDomain = `-- name: SetPrimaryDomain :execrows
+UPDATE sites SET primary_base = 0, primary_domain_id = ?1
+WHERE sites.id = ?2 AND sites.owner_id = ?3 AND sites.taken_down_at IS NULL
+  AND EXISTS (SELECT 1 FROM domains WHERE domains.id = ?1 AND domains.site_id = sites.id AND domains.status = 'active')
+`
+
+type SetPrimaryDomainParams struct {
+	DomainID sql.NullString
+	ID       string
+	OwnerID  string
+}
+
+func (q *Queries) SetPrimaryDomain(ctx context.Context, arg SetPrimaryDomainParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setPrimaryDomain, arg.DomainID, arg.ID, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}

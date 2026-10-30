@@ -810,6 +810,36 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/sites/{site}/primary-host': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Choose a site's primary hostname.
+     * @description Makes `host` the site's primary hostname (C1.18): requests for the site on any of its other hostnames then answer `308` to the same path and query on the primary, before any access decision, except under `/.wardlock/`. `host` is the site's base-domain hostname or one of its active custom domains, in any spelling (case, trailing dot, Unicode); it replaces any earlier choice. A hostname that is not one of this site's, including another site's or another owner's, answers `404 not_found` like a missing site. A pending or lapsed custom domain of the site answers `409 domain_not_active`. A site the operator has taken down answers `409 site_unavailable`: its hostnames are frozen. Clients that do not follow redirects with their credentials, such as those sending `Authorization: Bearer`, should use the primary hostname once one is set.
+     */
+    put: operations['setPrimaryHost'];
+    post?: never;
+    /**
+     * Stop redirecting to a primary hostname.
+     * @description Leaves the site with no primary hostname, so every one of its hostnames serves it again. Clearing a site with none changes nothing. A site the operator has taken down answers `409 site_unavailable`.
+     */
+    delete: operations['clearPrimaryHost'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v0/sites/{site}/policies': {
     parameters: {
       query?: never;
@@ -1516,6 +1546,8 @@ export interface components {
       tagIds: components['schemas']['Id'][];
       /** @description True while the owner has the site pinned. Read only: set with pinSite, unpinSite or organiseSites. */
       pinned: boolean;
+      /** @description The hostname the site's other hostnames redirect to with `308` (C1.18): `hostname` or one of its active custom domains. Absent when there is none in effect, which is the default: every hostname then serves the site. A chosen custom domain that lapses is not in effect (absent here, no redirect) until it is active again; removing it clears the choice. Read only: set with setPrimaryHost and clearPrimaryHost. */
+      primaryHost?: components['schemas']['Hostname'];
     };
     SitePage: {
       items: components['schemas']['Site'][];
@@ -1785,10 +1817,16 @@ export interface components {
         'no_record' | 'cname_elsewhere' | 'txt_mismatch' | 'dns_error';
       /** @description Plain-language detail for the last failure. */
       failureDetail?: string;
+      /** @description True when the owner chose this domain as the site's primary hostname (C1.18); absent otherwise. It is in effect only while the domain is `active`: while it is lapsed the site's `primaryHost` is absent and nothing redirects, and it resumes when a check passes again. */
+      primary?: boolean;
     };
     DomainPage: {
       items: components['schemas']['Domain'][];
       nextCursor?: components['schemas']['Cursor'];
+    };
+    SetPrimaryHostRequest: {
+      /** @description The site's base-domain hostname or one of its active custom domains, as typed; the server normalises it. */
+      host: string;
     };
     AddDomainRequest: {
       /** @description The hostname as typed; the server normalises it. */
@@ -4087,7 +4125,8 @@ export interface operations {
            *           "createdAt": 1767225600000,
            *           "verifiedAt": 1767225660000,
            *           "lastCheckedAt": 1767312060000,
-           *           "nextCheckAt": 1767398460000
+           *           "nextCheckAt": 1767398460000,
+           *           "primary": true
            *         },
            *         {
            *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30",
@@ -4266,6 +4305,78 @@ export interface operations {
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
       429: components['responses']['CheckedRecently'];
+      default: components['responses']['Error'];
+    };
+  };
+  setPrimaryHost: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "host": "www.example.org"
+         *     }
+         */
+        'application/json': components['schemas']['SetPrimaryHostRequest'];
+      };
+    };
+    responses: {
+      /** @description The site as it is now. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Site'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  clearPrimaryHost: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The site as it is now. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Site'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
       default: components['responses']['Error'];
     };
   };

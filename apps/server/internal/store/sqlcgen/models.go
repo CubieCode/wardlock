@@ -232,14 +232,16 @@ type ShareLink struct {
 }
 
 type Site struct {
-	ID             string
-	OwnerID        string
-	Name           string
-	CreatedAt      int64
-	ActiveDeployID sql.NullString
-	TakenDownAt    sql.NullInt64
-	GroupID        sql.NullString
-	PinnedAt       sql.NullInt64
+	ID              string
+	OwnerID         string
+	Name            string
+	CreatedAt       int64
+	ActiveDeployID  sql.NullString
+	TakenDownAt     sql.NullInt64
+	GroupID         sql.NullString
+	PinnedAt        sql.NullInt64
+	PrimaryBase     int64
+	PrimaryDomainID sql.NullString
 }
 
 type SiteGroup struct {

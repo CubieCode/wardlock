@@ -19,13 +19,15 @@ import (
 
 // wardlock domain (C1.9): attach, list, check and detach custom hostnames.
 
-const domainUsage = "Usage: wardlock domain <add|list|verify|remove> DOMAIN [HOST] [flags]\n\n" +
-	"  add DOMAIN HOST      Attach HOST to the site and print the DNS records to create\n" +
-	"  list DOMAIN          List the site's custom hostnames with status and last check\n" +
-	"  verify DOMAIN HOST   Check HOST's DNS now and print the result\n" +
-	"  remove DOMAIN HOST   Detach HOST from the site\n\n" +
+const domainUsage = "Usage: wardlock domain <add|list|verify|remove|primary> DOMAIN [HOST] [flags]\n\n" +
+	"  add DOMAIN HOST               Attach HOST to the site and print the DNS records to create\n" +
+	"  list DOMAIN                   List the site's custom hostnames with status and last check\n" +
+	"  verify DOMAIN HOST            Check HOST's DNS now and print the result\n" +
+	"  remove DOMAIN HOST            Detach HOST from the site\n" +
+	"  primary DOMAIN [HOST|--none]  Show, choose or clear the hostname the others redirect to\n\n" +
 	"HOST is a hostname you control, such as docs.example.com. Adding,\n" +
-	"checking and removing need a token with the manage scope.\n"
+	"checking, removing and choosing the primary need a token with the\n" +
+	"manage scope.\n"
 
 const (
 	// waitTimeout is how long --wait keeps checking.
@@ -54,6 +56,8 @@ func runDomain(ctx context.Context, a *app, args []string) error {
 		return domainVerify(ctx, a, args)
 	case "remove":
 		return domainRemove(ctx, a, args)
+	case "primary":
+		return domainPrimary(ctx, a, args)
 	case "help", "--help", "-h":
 		fmt.Fprint(a.stdout, domainUsage)
 		return nil
@@ -62,15 +66,27 @@ func runDomain(ctx context.Context, a *app, args []string) error {
 	return errUsage
 }
 
-// domainConn parses DOMAIN (and HOST, when wantHost), runs check on the
-// flags so every usage error exits 2 before any network round trip, then
-// connects and finds the site.
-func domainConn(ctx context.Context, a *app, fs *flag.FlagSet, g *globalFlags, args []string, wantHost bool, check func() error) (c *conn, site apiclient.Site, host string, err error) {
+// hostArg says whether a domain command takes HOST after DOMAIN.
+type hostArg int
+
+const (
+	noHost hostArg = iota
+	needHost
+	optionalHost
+)
+
+// domainConn parses DOMAIN (and HOST, as want says), runs check on the
+// flags and HOST so every usage error exits 2 before any network round
+// trip, then connects and finds the site. host is "" when an optional HOST
+// is absent.
+func domainConn(ctx context.Context, a *app, fs *flag.FlagSet, g *globalFlags, args []string, want hostArg, check func(host string) error) (c *conn, site apiclient.Site, host string, err error) {
 	pos, err := parseArgs(fs, args)
 	if err != nil {
 		return nil, site, "", err
 	}
-	if n := map[bool]int{false: 1, true: 2}[wantHost]; len(pos) != n {
+	switch n := len(pos); {
+	case n == 1 && want != needHost, n == 2 && want != noHost:
+	default:
 		fs.Usage()
 		return nil, site, "", errUsage
 	}
@@ -78,7 +94,7 @@ func domainConn(ctx context.Context, a *app, fs *flag.FlagSet, g *globalFlags, a
 	if err != nil {
 		return nil, site, "", err
 	}
-	if wantHost {
+	if len(pos) == 2 {
 		// The server normalises HOST (case, trailing dot, IDN) and says
 		// what is wrong with it; only the obvious mistakes stop here.
 		host = strings.TrimSpace(pos[1])
@@ -87,7 +103,7 @@ func domainConn(ctx context.Context, a *app, fs *flag.FlagSet, g *globalFlags, a
 		}
 	}
 	if check != nil {
-		if err := check(); err != nil {
+		if err := check(host); err != nil {
 			return nil, site, "", err
 		}
 	}
@@ -120,7 +136,7 @@ func domainAdd(ctx context.Context, a *app, args []string) error {
 		"is active or 10 minutes pass. Needs a token with the manage scope.")
 	g := addGlobalFlags(fs)
 	wait := fs.Bool("wait", false, "check until the hostname is active, for up to 10 minutes")
-	c, site, host, err := domainConn(ctx, a, fs, g, args, true, nil)
+	c, site, host, err := domainConn(ctx, a, fs, g, args, needHost, nil)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}
@@ -239,7 +255,7 @@ func domainList(ctx context.Context, a *app, args []string) error {
 		"Lists the site's custom hostnames with their status, last check and\n"+
 		"why the last check failed.")
 	g := addGlobalFlags(fs)
-	c, site, _, err := domainConn(ctx, a, fs, g, args, false, nil)
+	c, site, _, err := domainConn(ctx, a, fs, g, args, noHost, nil)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}
@@ -264,23 +280,123 @@ func domainList(ctx context.Context, a *app, args []string) error {
 	if g.json {
 		return writeJSON(a.stdout, out)
 	}
+	printPrimary(a.stdout, site, out.Domains)
 	if len(out.Domains) == 0 {
 		fmt.Fprintf(a.stdout, "%s has no custom domains. Add one with wardlock domain add %s HOST.\n", site.Name, site.Name)
 		return nil
 	}
 	tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "HOSTNAME\tSTATUS\tLAST CHECK\tPROBLEM")
+	fmt.Fprintln(tw, "HOSTNAME\tSTATUS\tPRIMARY\tLAST CHECK\tPROBLEM")
 	for _, d := range out.Domains {
-		last, problem := "never", "-"
+		last, primary, problem := "never", "-", "-"
 		if d.LastCheckedAt != nil {
 			last = formatTime(*d.LastCheckedAt)
+		}
+		if d.Primary != nil && *d.Primary {
+			primary = "yes"
+			if d.Status != apiclient.DomainStatusActive {
+				primary = "yes, not redirecting"
+			}
 		}
 		if d.Status != apiclient.DomainStatusActive || d.FailureReason != nil {
 			problem = failure(d)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", d.Hostname, d.Status, last, problem)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", d.Hostname, d.Status, primary, last, problem)
 	}
 	return tw.Flush()
+}
+
+// printPrimary says which hostname, if any, the site's others redirect to.
+// A chosen custom domain that has lapsed is named too: it redirects again
+// once a check passes. domains is the site's custom domains.
+func printPrimary(w io.Writer, site apiclient.Site, domains []apiclient.Domain) {
+	if site.PrimaryHost != nil {
+		fmt.Fprintf(w, "Primary hostname: %s. The site's other hostnames redirect there.\n\n", *site.PrimaryHost)
+		return
+	}
+	for _, d := range domains {
+		if d.Primary != nil && *d.Primary {
+			fmt.Fprintf(w, "Primary hostname: %s, not redirecting while it is %s: every hostname serves the site until it is active again.\n\n", d.Hostname, d.Status)
+			return
+		}
+	}
+}
+
+type domainPrimaryResult struct {
+	Site apiclient.Site `json:"site"`
+}
+
+func domainPrimary(ctx context.Context, a *app, args []string) error {
+	fs := newFlagSet(a, "domain primary", "Usage: wardlock domain primary DOMAIN [HOST | --none] [flags]\n\n"+
+		"With HOST, makes it the site's primary hostname: requests on any of the\n"+
+		"site's other hostnames then answer 308 to the same path and query on\n"+
+		"HOST, except Wardlock's own /.wardlock/ pages. HOST is the site's own\n"+
+		"hostname (such as docs.<base domain>) or one of its active custom\n"+
+		"domains. Clients that do not follow redirects with their credentials,\n"+
+		"such as those sending a share-link token as Authorization: Bearer,\n"+
+		"should use HOST. With --none, every hostname serves the site again.\n"+
+		"Without either, shows the primary. Choosing or clearing it needs a\n"+
+		"token with the manage scope.")
+	g := addGlobalFlags(fs)
+	none := fs.Bool("none", false, "stop redirecting: every hostname serves the site")
+	check := func(host string) error {
+		if *none && host != "" {
+			return usageErrorf("pass HOST or --none, not both")
+		}
+		return nil
+	}
+	c, site, h, err := domainConn(ctx, a, fs, g, args, optionalHost, check)
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	switch {
+	case *none:
+		res, err := c.api.ClearPrimaryHostWithResponse(ctx, site.Name, c.auth)
+		if err != nil {
+			return c.unreachable(ctx, err)
+		}
+		if res.JSON200 == nil {
+			return c.failed(res.HTTPResponse, res.Body)
+		}
+		site = *res.JSON200
+	case h != "":
+		res, err := c.api.SetPrimaryHostWithResponse(ctx, site.Name, apiclient.SetPrimaryHostJSONRequestBody{Host: h}, c.auth)
+		if err != nil {
+			return c.unreachable(ctx, err)
+		}
+		if res.JSON200 == nil {
+			return primaryFailed(c, res.HTTPResponse, res.Body, site, h)
+		}
+		site = *res.JSON200
+	}
+	if g.json {
+		return writeJSON(a.stdout, domainPrimaryResult{Site: site})
+	}
+	switch {
+	case site.PrimaryHost != nil && h != "":
+		fmt.Fprintf(a.stdout, "%s is now the primary hostname of %s: its other hostnames redirect there.\n", *site.PrimaryHost, site.Name)
+	case site.PrimaryHost != nil:
+		fmt.Fprintf(a.stdout, "%s is the primary hostname of %s: its other hostnames redirect there.\n", *site.PrimaryHost, site.Name)
+	case *none:
+		fmt.Fprintf(a.stdout, "%s has no primary hostname now: every hostname serves it.\n", site.Name)
+	default:
+		fmt.Fprintf(a.stdout, "%s has no primary hostname in effect: every hostname serves it. wardlock domain list %s shows a chosen custom domain that has lapsed.\n", site.Name, site.Name)
+	}
+	return nil
+}
+
+// primaryFailed is conn.failed with the refusals of a primary explained.
+func primaryFailed(c *conn, res *http.Response, body []byte, site apiclient.Site, host string) error {
+	switch {
+	case res != nil && res.StatusCode == http.StatusNotFound:
+		return fmt.Errorf("%s is not one of %s's hostnames: use %s or a custom domain wardlock domain list %s shows", host, site.Name, site.Hostname, site.Name)
+	case res != nil && res.StatusCode == http.StatusConflict && errorCode(body) == "domain_not_active":
+		return fmt.Errorf("%s is not active, so it cannot be the primary: wardlock domain verify %s %s checks it again", host, site.Name, host)
+	}
+	return c.failed(res, body)
 }
 
 func domainVerify(ctx context.Context, a *app, args []string) error {
@@ -289,7 +405,7 @@ func domainVerify(ctx context.Context, a *app, args []string) error {
 		"active as soon as a check finds its record. Exits 0 whenever the check\n"+
 		"ran, whatever it found. Needs a token with the manage scope.")
 	g := addGlobalFlags(fs)
-	c, site, host, err := domainConn(ctx, a, fs, g, args, true, nil)
+	c, site, host, err := domainConn(ctx, a, fs, g, args, needHost, nil)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}
@@ -327,13 +443,13 @@ func domainRemove(ctx context.Context, a *app, args []string) error {
 		"too. Needs a token with the manage scope.")
 	g := addGlobalFlags(fs)
 	yes := fs.Bool("yes", false, "remove without asking")
-	check := func() error {
+	check := func(string) error {
 		if !*yes && (g.json || !a.canPrompt) {
 			return usageErrorf("pass --yes to remove a custom domain when there is no terminal to ask in, or with --json")
 		}
 		return nil
 	}
-	c, site, host, err := domainConn(ctx, a, fs, g, args, true, check)
+	c, site, host, err := domainConn(ctx, a, fs, g, args, needHost, check)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}

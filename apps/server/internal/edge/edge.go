@@ -167,6 +167,11 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		e.serveReserved(w, r, s.site, clean)
 		return
 	}
+	// Every method, before any access decision (C1.18).
+	if redirectsToPrimary(s.site, host) {
+		e.toPrimary(w, r, s.site)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)

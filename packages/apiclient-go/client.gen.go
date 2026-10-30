@@ -1073,6 +1073,9 @@ type Domain struct {
 	// Examples: 1767225600000
 	NextCheckAt *Timestamp `json:"nextCheckAt,omitempty"`
 
+	// Primary True when the owner chose this domain as the site's primary hostname (C1.18); absent otherwise. It is in effect only while the domain is `active`: while it is lapsed the site's `primaryHost` is absent and nothing redirects, and it resumes when a check passes again.
+	Primary *bool `json:"primary,omitempty"`
+
 	// RoutingRecord `CNAME <hostname> → <name>.<base domain>`.
 	RoutingRecord DnsRecord `json:"routingRecord"`
 
@@ -1613,6 +1616,12 @@ type SetPolicyRequest struct {
 	Visibility PolicyVisibility `json:"visibility"`
 }
 
+// SetPrimaryHostRequest defines model for SetPrimaryHostRequest.
+type SetPrimaryHostRequest struct {
+	// Host The site's base-domain hostname or one of its active custom domains, as typed; the server normalises it.
+	Host string `json:"host"`
+}
+
 // SetSiteOrganisationRequest defines model for SetSiteOrganisationRequest.
 type SetSiteOrganisationRequest struct {
 	// GroupId The site's group; absent for no group.
@@ -1765,6 +1774,11 @@ type Site struct {
 
 	// Pinned True while the owner has the site pinned. Read only: set with pinSite, unpinSite or organiseSites.
 	Pinned bool `json:"pinned"`
+
+	// PrimaryHost The hostname the site's other hostnames redirect to with `308` (C1.18): `hostname` or one of its active custom domains. Absent when there is none in effect, which is the default: every hostname then serves the site. A chosen custom domain that lapses is not in effect (absent here, no redirect) until it is active again; removing it clears the choice. Read only: set with setPrimaryHost and clearPrimaryHost.
+	//
+	// Examples: docs.example.com
+	PrimaryHost *Hostname `json:"primaryHost,omitempty"`
 
 	// TagIds The site's tags in tag-name order; empty when it has none. Read only, like `groupId`.
 	TagIds []Id `json:"tagIds"`
@@ -2308,6 +2322,9 @@ type SetSiteOrganisationJSONRequestBody = SetSiteOrganisationRequest
 
 // SetPolicyJSONRequestBody defines body for SetPolicy for application/json ContentType.
 type SetPolicyJSONRequestBody = SetPolicyRequest
+
+// SetPrimaryHostJSONRequestBody defines body for SetPrimaryHost for application/json ContentType.
+type SetPrimaryHostJSONRequestBody = SetPrimaryHostRequest
 
 // RollbackSiteJSONRequestBody defines body for RollbackSite for application/json ContentType.
 type RollbackSiteJSONRequestBody = RollbackRequest
@@ -3120,6 +3137,31 @@ type ClientInterface interface {
 	//
 	// Corresponds with DELETE /api/v0/sites/{site}/policies/{policyId} (the `DeletePolicy` operationId).
 	DeletePolicy(ctx context.Context, site SiteName, policyId PolicyId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ClearPrimaryHost Stop redirecting to a primary hostname.
+	//
+	// Leaves the site with no primary hostname, so every one of its hostnames serves it again. Clearing a site with none changes nothing. A site the operator has taken down answers `409 site_unavailable`.
+	//
+	// Corresponds with DELETE /api/v0/sites/{site}/primary-host (the `ClearPrimaryHost` operationId).
+	ClearPrimaryHost(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetPrimaryHostWithBody Choose a site's primary hostname.
+	//
+	// Makes `host` the site's primary hostname (C1.18): requests for the site on any of its other hostnames then answer `308` to the same path and query on the primary, before any access decision, except under `/.wardlock/`. `host` is the site's base-domain hostname or one of its active custom domains, in any spelling (case, trailing dot, Unicode); it replaces any earlier choice. A hostname that is not one of this site's, including another site's or another owner's, answers `404 not_found` like a missing site. A pending or lapsed custom domain of the site answers `409 domain_not_active`. A site the operator has taken down answers `409 site_unavailable`: its hostnames are frozen. Clients that do not follow redirects with their credentials, such as those sending `Authorization: Bearer`, should use the primary hostname once one is set.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/primary-host (the `SetPrimaryHost` operationId).
+	SetPrimaryHostWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetPrimaryHost Choose a site's primary hostname.
+	//
+	// Makes `host` the site's primary hostname (C1.18): requests for the site on any of its other hostnames then answer `308` to the same path and query on the primary, before any access decision, except under `/.wardlock/`. `host` is the site's base-domain hostname or one of its active custom domains, in any spelling (case, trailing dot, Unicode); it replaces any earlier choice. A hostname that is not one of this site's, including another site's or another owner's, answers `404 not_found` like a missing site. A pending or lapsed custom domain of the site answers `409 domain_not_active`. A site the operator has taken down answers `409 site_unavailable`: its hostnames are frozen. Clients that do not follow redirects with their credentials, such as those sending `Authorization: Bearer`, should use the primary hostname once one is set.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/primary-host (the `SetPrimaryHost` operationId).
+	SetPrimaryHost(ctx context.Context, site SiteName, body SetPrimaryHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RollbackSiteWithBody Reactivate an earlier deploy.
 	//
@@ -4601,6 +4643,61 @@ func (c *Client) SetPolicy(ctx context.Context, site SiteName, body SetPolicyJSO
 // Corresponds with DELETE /api/v0/sites/{site}/policies/{policyId} (the `DeletePolicy` operationId).
 func (c *Client) DeletePolicy(ctx context.Context, site SiteName, policyId PolicyId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeletePolicyRequest(c.Server, site, policyId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ClearPrimaryHost Stop redirecting to a primary hostname.
+//
+// Leaves the site with no primary hostname, so every one of its hostnames serves it again. Clearing a site with none changes nothing. A site the operator has taken down answers `409 site_unavailable`.
+//
+// Corresponds with DELETE /api/v0/sites/{site}/primary-host (the `ClearPrimaryHost` operationId).
+func (c *Client) ClearPrimaryHost(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewClearPrimaryHostRequest(c.Server, site)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetPrimaryHostWithBody Choose a site's primary hostname.
+//
+// Makes `host` the site's primary hostname (C1.18): requests for the site on any of its other hostnames then answer `308` to the same path and query on the primary, before any access decision, except under `/.wardlock/`. `host` is the site's base-domain hostname or one of its active custom domains, in any spelling (case, trailing dot, Unicode); it replaces any earlier choice. A hostname that is not one of this site's, including another site's or another owner's, answers `404 not_found` like a missing site. A pending or lapsed custom domain of the site answers `409 domain_not_active`. A site the operator has taken down answers `409 site_unavailable`: its hostnames are frozen. Clients that do not follow redirects with their credentials, such as those sending `Authorization: Bearer`, should use the primary hostname once one is set.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v0/sites/{site}/primary-host (the `SetPrimaryHost` operationId).
+func (c *Client) SetPrimaryHostWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrimaryHostRequestWithBody(c.Server, site, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetPrimaryHost Choose a site's primary hostname.
+//
+// Makes `host` the site's primary hostname (C1.18): requests for the site on any of its other hostnames then answer `308` to the same path and query on the primary, before any access decision, except under `/.wardlock/`. `host` is the site's base-domain hostname or one of its active custom domains, in any spelling (case, trailing dot, Unicode); it replaces any earlier choice. A hostname that is not one of this site's, including another site's or another owner's, answers `404 not_found` like a missing site. A pending or lapsed custom domain of the site answers `409 domain_not_active`. A site the operator has taken down answers `409 site_unavailable`: its hostnames are frozen. Clients that do not follow redirects with their credentials, such as those sending `Authorization: Bearer`, should use the primary hostname once one is set.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v0/sites/{site}/primary-host (the `SetPrimaryHost` operationId).
+func (c *Client) SetPrimaryHost(ctx context.Context, site SiteName, body SetPrimaryHostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetPrimaryHostRequest(c.Server, site, body)
 	if err != nil {
 		return nil, err
 	}
@@ -7493,6 +7590,87 @@ func NewDeletePolicyRequest(server string, site SiteName, policyId PolicyId) (*h
 	return req, nil
 }
 
+// NewClearPrimaryHostRequest constructs an http.Request for the ClearPrimaryHost method
+func NewClearPrimaryHostRequest(server string, site SiteName) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/primary-host", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetPrimaryHostRequest calls the generic SetPrimaryHost builder with application/json body
+func NewSetPrimaryHostRequest(server string, site SiteName, body SetPrimaryHostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetPrimaryHostRequestWithBody(server, site, "application/json", bodyReader)
+}
+
+// NewSetPrimaryHostRequestWithBody constructs an http.Request for the SetPrimaryHost method, with any body, and a specified content type
+func NewSetPrimaryHostRequestWithBody(server string, site SiteName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/primary-host", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewRollbackSiteRequest calls the generic RollbackSite builder with application/json body
 func NewRollbackSiteRequest(server string, site SiteName, body RollbackSiteJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -8562,6 +8740,33 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with DELETE /api/v0/sites/{site}/policies/{policyId} (the `DeletePolicy` operationId).
 	DeletePolicyWithResponse(ctx context.Context, site SiteName, policyId PolicyId, reqEditors ...RequestEditorFn) (*DeletePolicyResponse, error)
+
+	// ClearPrimaryHostWithResponse Stop redirecting to a primary hostname.
+	//
+	// Leaves the site with no primary hostname, so every one of its hostnames serves it again. Clearing a site with none changes nothing. A site the operator has taken down answers `409 site_unavailable`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/sites/{site}/primary-host (the `ClearPrimaryHost` operationId).
+	ClearPrimaryHostWithResponse(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*ClearPrimaryHostResponse, error)
+
+	// SetPrimaryHostWithBodyWithResponse Choose a site's primary hostname.
+	//
+	// Makes `host` the site's primary hostname (C1.18): requests for the site on any of its other hostnames then answer `308` to the same path and query on the primary, before any access decision, except under `/.wardlock/`. `host` is the site's base-domain hostname or one of its active custom domains, in any spelling (case, trailing dot, Unicode); it replaces any earlier choice. A hostname that is not one of this site's, including another site's or another owner's, answers `404 not_found` like a missing site. A pending or lapsed custom domain of the site answers `409 domain_not_active`. A site the operator has taken down answers `409 site_unavailable`: its hostnames are frozen. Clients that do not follow redirects with their credentials, such as those sending `Authorization: Bearer`, should use the primary hostname once one is set.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/primary-host (the `SetPrimaryHost` operationId).
+	SetPrimaryHostWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrimaryHostResponse, error)
+
+	// SetPrimaryHostWithResponse Choose a site's primary hostname.
+	//
+	// Makes `host` the site's primary hostname (C1.18): requests for the site on any of its other hostnames then answer `308` to the same path and query on the primary, before any access decision, except under `/.wardlock/`. `host` is the site's base-domain hostname or one of its active custom domains, in any spelling (case, trailing dot, Unicode); it replaces any earlier choice. A hostname that is not one of this site's, including another site's or another owner's, answers `404 not_found` like a missing site. A pending or lapsed custom domain of the site answers `409 domain_not_active`. A site the operator has taken down answers `409 site_unavailable`: its hostnames are frozen. Clients that do not follow redirects with their credentials, such as those sending `Authorization: Bearer`, should use the primary hostname once one is set.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v0/sites/{site}/primary-host (the `SetPrimaryHost` operationId).
+	SetPrimaryHostWithResponse(ctx context.Context, site SiteName, body SetPrimaryHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrimaryHostResponse, error)
 
 	// RollbackSiteWithBodyWithResponse Reactivate an earlier deploy.
 	//
@@ -12824,6 +13029,165 @@ func (r DeletePolicyResponse) ContentType() string {
 	return ""
 }
 
+type ClearPrimaryHostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Site
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ClearPrimaryHostResponse) GetJSON200() *Site {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ClearPrimaryHostResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ClearPrimaryHostResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ClearPrimaryHostResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ClearPrimaryHostResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ClearPrimaryHostResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ClearPrimaryHostResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ClearPrimaryHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ClearPrimaryHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ClearPrimaryHostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetPrimaryHostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Site
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SetPrimaryHostResponse) GetJSON200() *Site {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SetPrimaryHostResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r SetPrimaryHostResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r SetPrimaryHostResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r SetPrimaryHostResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r SetPrimaryHostResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SetPrimaryHostResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SetPrimaryHostResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SetPrimaryHostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetPrimaryHostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetPrimaryHostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type RollbackSiteResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -14541,6 +14905,51 @@ func (c *ClientWithResponses) DeletePolicyWithResponse(ctx context.Context, site
 		return nil, err
 	}
 	return ParseDeletePolicyResponse(rsp)
+}
+
+// ClearPrimaryHostWithResponse Stop redirecting to a primary hostname.
+//
+// Leaves the site with no primary hostname, so every one of its hostnames serves it again. Clearing a site with none changes nothing. A site the operator has taken down answers `409 site_unavailable`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/sites/{site}/primary-host (the `ClearPrimaryHost` operationId).
+func (c *ClientWithResponses) ClearPrimaryHostWithResponse(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*ClearPrimaryHostResponse, error) {
+	rsp, err := c.ClearPrimaryHost(ctx, site, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseClearPrimaryHostResponse(rsp)
+}
+
+// SetPrimaryHostWithBodyWithResponse Choose a site's primary hostname.
+//
+// Makes `host` the site's primary hostname (C1.18): requests for the site on any of its other hostnames then answer `308` to the same path and query on the primary, before any access decision, except under `/.wardlock/`. `host` is the site's base-domain hostname or one of its active custom domains, in any spelling (case, trailing dot, Unicode); it replaces any earlier choice. A hostname that is not one of this site's, including another site's or another owner's, answers `404 not_found` like a missing site. A pending or lapsed custom domain of the site answers `409 domain_not_active`. A site the operator has taken down answers `409 site_unavailable`: its hostnames are frozen. Clients that do not follow redirects with their credentials, such as those sending `Authorization: Bearer`, should use the primary hostname once one is set.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v0/sites/{site}/primary-host (the `SetPrimaryHost` operationId).
+func (c *ClientWithResponses) SetPrimaryHostWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetPrimaryHostResponse, error) {
+	rsp, err := c.SetPrimaryHostWithBody(ctx, site, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrimaryHostResponse(rsp)
+}
+
+// SetPrimaryHostWithResponse Choose a site's primary hostname.
+//
+// Makes `host` the site's primary hostname (C1.18): requests for the site on any of its other hostnames then answer `308` to the same path and query on the primary, before any access decision, except under `/.wardlock/`. `host` is the site's base-domain hostname or one of its active custom domains, in any spelling (case, trailing dot, Unicode); it replaces any earlier choice. A hostname that is not one of this site's, including another site's or another owner's, answers `404 not_found` like a missing site. A pending or lapsed custom domain of the site answers `409 domain_not_active`. A site the operator has taken down answers `409 site_unavailable`: its hostnames are frozen. Clients that do not follow redirects with their credentials, such as those sending `Authorization: Bearer`, should use the primary hostname once one is set.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v0/sites/{site}/primary-host (the `SetPrimaryHost` operationId).
+func (c *ClientWithResponses) SetPrimaryHostWithResponse(ctx context.Context, site SiteName, body SetPrimaryHostJSONRequestBody, reqEditors ...RequestEditorFn) (*SetPrimaryHostResponse, error) {
+	rsp, err := c.SetPrimaryHost(ctx, site, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetPrimaryHostResponse(rsp)
 }
 
 // RollbackSiteWithBodyWithResponse Reactivate an earlier deploy.
@@ -18138,6 +18547,135 @@ func ParseDeletePolicyResponse(rsp *http.Response) (*DeletePolicyResponse, error
 	switch {
 	case rsp.StatusCode == 204:
 		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseClearPrimaryHostResponse parses an HTTP response from a ClearPrimaryHostWithResponse call
+func ParseClearPrimaryHostResponse(rsp *http.Response) (*ClearPrimaryHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ClearPrimaryHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Site
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetPrimaryHostResponse parses an HTTP response from a SetPrimaryHostWithResponse call
+func ParseSetPrimaryHostResponse(rsp *http.Response) (*SetPrimaryHostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetPrimaryHostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Site
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest Unauthenticated

@@ -55,6 +55,10 @@ var implemented = map[string]bool{
 	"VerifyDomain": true,
 	"RemoveDomain": true,
 
+	// Primary hostname (C1.18).
+	"SetPrimaryHost":   true,
+	"ClearPrimaryHost": true,
+
 	// Share links (A2.2).
 	"ListShareLinks":  true,
 	"CreateShareLink": true,

@@ -47,6 +47,10 @@ type Domain struct {
 	LastFailureReason DomainFailure
 	// FailureDetail is a plain explanation of the last failure for the owner.
 	FailureDetail string
+	// Primary means the owner chose the domain as its site's primary
+	// hostname (C1.18), whatever its status. Read only, and set only by
+	// Get and List; see Sites.SetPrimaryDomain.
+	Primary bool
 }
 
 // Domains stores custom domains. A hostname belongs to at most one site on
@@ -123,7 +127,7 @@ func (r domainsRepo) Get(ctx context.Context, ownerID, siteID, hostname string) 
 	if err != nil {
 		return Domain{}, mapErr("get domain", err)
 	}
-	return domainFrom(row), nil
+	return ownedDomainFrom(row.Domain, row.IsPrimary), nil
 }
 
 func (r domainsRepo) List(ctx context.Context, ownerID, siteID, afterHostname string, limit int) ([]Domain, error) {
@@ -135,7 +139,7 @@ func (r domainsRepo) List(ctx context.Context, ownerID, siteID, afterHostname st
 	}
 	out := make([]Domain, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, domainFrom(sqlcgen.GetDomainRow(row)))
+		out = append(out, ownedDomainFrom(row.Domain, row.IsPrimary))
 	}
 	return out, nil
 }
@@ -150,7 +154,7 @@ func (r domainsRepo) GetActiveByHostname(ctx context.Context, hostname string) (
 	if err != nil {
 		return Domain{}, mapErr("get active domain", err)
 	}
-	return domainFrom(sqlcgen.GetDomainRow(row)), nil
+	return domainFrom(sqlcgen.GetActiveDomainByHostnameRow(row)), nil
 }
 
 func (r domainsRepo) RecordCheck(ctx context.Context, prev, next Domain) error {
@@ -180,7 +184,7 @@ func (r domainsRepo) ListToCheck(ctx context.Context, windowStart, recheckBefore
 	}
 	out := make([]Domain, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, domainFrom(sqlcgen.GetDomainRow(row)))
+		out = append(out, domainFrom(sqlcgen.GetActiveDomainByHostnameRow(row)))
 	}
 	return out, nil
 }
@@ -194,7 +198,7 @@ func (r domainsRepo) ListExpiredPending(ctx context.Context, createdBefore time.
 	}
 	out := make([]Domain, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, domainFrom(sqlcgen.GetDomainRow(row)))
+		out = append(out, domainFrom(sqlcgen.GetActiveDomainByHostnameRow(row)))
 	}
 	return out, nil
 }
@@ -204,7 +208,7 @@ func (r domainsRepo) DeleteExpiredPending(ctx context.Context, id string, create
 	return mapErr("delete expired pending domain", err)
 }
 
-func domainFrom(row sqlcgen.GetDomainRow) Domain {
+func domainFrom(row sqlcgen.GetActiveDomainByHostnameRow) Domain {
 	return Domain{
 		ID:                row.ID,
 		SiteID:            row.SiteID,
@@ -218,4 +222,15 @@ func domainFrom(row sqlcgen.GetDomainRow) Domain {
 		LastFailureReason: DomainFailure(row.LastFailureReason.String),
 		FailureDetail:     row.FailureDetail.String,
 	}
+}
+
+// ownedDomainFrom converts an owner read's row, with its primary flag.
+func ownedDomainFrom(d sqlcgen.Domain, isPrimary int64) Domain {
+	out := domainFrom(sqlcgen.GetActiveDomainByHostnameRow{
+		ID: d.ID, SiteID: d.SiteID, Hostname: d.Hostname, Status: d.Status, VerificationToken: d.VerificationToken,
+		CreatedAt: d.CreatedAt, LastCheckedAt: d.LastCheckedAt, VerifiedAt: d.VerifiedAt, FailingSince: d.FailingSince,
+		LastFailureReason: d.LastFailureReason, FailureDetail: d.FailureDetail,
+	})
+	out.Primary = isPrimary == 1
+	return out
 }
