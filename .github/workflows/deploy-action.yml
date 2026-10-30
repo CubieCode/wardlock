@@ -1,0 +1,323 @@
+name: Deploy action
+# Tests the GitHub Action in actions/deploy (I6.1) from the working tree,
+# never against a real Wardlock instance and with no secrets:
+# - lint: actionlint (pinned) on every workflow, which also checks each use
+#   of the local action against its action.yml, and shellcheck on the
+#   action's scripts. It always runs on ubuntu-latest, which has shellcheck.
+# - e2e: starts a throwaway wardlockd on the runner's loopback, as `pnpm
+#   demo` does (actions/deploy/test/start-wardlockd.sh), and runs the action
+#   for a live deploy, a preview deploy (twice) and a preview deletion,
+#   checking its outputs and what the server serves. The pull request comment
+#   goes to a fake GitHub API (actions/deploy/test/fake-github.mjs) and must
+#   be created once, then updated in place. The release download runs
+#   against a local copy of a release, and must fail on a checksum mismatch.
+# - token-in-logs: downloads e2e's log once it finishes and fails if the
+#   throwaway API token appears in it.
+# The scripts' unit tests (actions/deploy/test/*.test.mjs) run in pnpm check.
+#
+# Runners: e2e and token-in-logs use vars.RUNNER as in ci.yml (unset means
+# ubuntu-latest); pull requests from forks always run on ubuntu-latest.
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - actions/**
+      - apps/cli/**
+      - .github/workflows/**
+permissions:
+  contents: read
+concurrency:
+  group: deploy-action-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - &go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: ${{ runner.environment == 'github-hosted' }}
+          cache-dependency-path: |
+            apps/*/go.sum
+            packages/*/go.sum
+      - name: Install actionlint
+        # Built from the pinned module (checked against the Go checksum
+        # database) outside the repository, so no go.sum changes.
+        run: |
+          GOWORK=off GOFLAGS= GOBIN="$RUNNER_TEMP/actionlint" go -C "$RUNNER_TEMP" install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "$RUNNER_TEMP/actionlint" >> "$GITHUB_PATH"
+      # Also runs shellcheck on every run: block.
+      - run: actionlint -color
+      - run: shellcheck actions/deploy/scripts/*.sh actions/deploy/test/*.sh
+
+  e2e:
+    runs-on: &runner ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || fromJSON(vars.RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 15
+    outputs:
+      token-public-id: ${{ steps.server.outputs.token-public-id }}
+    env:
+      # The preview this run deploys: the pull request's, else a fixed name.
+      EXPECTED_PREVIEW: ${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || 'ci' }}
+    steps:
+      - *checkout
+      - *go
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Build wardlockd and wardlock
+        run: |
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/bin/wardlockd" ./apps/server/cmd/wardlockd
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/bin/wardlock" ./apps/cli/cmd/wardlock
+      - name: Start a throwaway wardlockd
+        id: server
+        run: bash actions/deploy/test/start-wardlockd.sh "$RUNNER_TEMP/bin/wardlockd"
+      - name: Start a fake GitHub API
+        id: github
+        run: |
+          token="ghs_fake$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          echo "::add-mask::$token"
+          node actions/deploy/test/fake-github.mjs "$token" "$RUNNER_TEMP/comments.json" > "$RUNNER_TEMP/fake-github.url" &
+          for _ in $(seq 1 50); do [[ -s $RUNNER_TEMP/fake-github.url ]] && break; sleep 0.1; done
+          { echo "token=$token"; echo "url=$(cat "$RUNNER_TEMP/fake-github.url")"; } >> "$GITHUB_OUTPUT"
+      - name: Write a site
+        id: site
+        run: |
+          dir="$RUNNER_TEMP/site"
+          mkdir -p "$dir/dist"
+          echo '{"site": "action-ci", "dir": "dist"}' > "$dir/wardlock.json"
+          echo "live $GITHUB_RUN_ID" > "$dir/dist/index.html"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+      - name: Define the checks
+        env:
+          SERVER_BASE: ${{ steps.server.outputs.base-domain }}
+          SERVER_PORT: ${{ steps.server.outputs.port }}
+        run: |
+          cat > "$RUNNER_TEMP/check.sh" <<'EOF'
+          set -euo pipefail
+          # served HOST prints the status and the body served at HOST's /.
+          served() {
+            local status
+            status=$(curl -s --resolve "$1:$PORT:127.0.0.1" -o "$RUNNER_TEMP/body" -w '%{http_code}' "http://$1:$PORT/")
+            echo "$status $(cat "$RUNNER_TEMP/body")"
+          }
+          # expect WHAT GOT WANT
+          expect() {
+            [[ $2 == "$3" ]] || { echo "::error::$1: got \"$2\", want \"$3\""; exit 1; }
+          }
+          EOF
+          { echo "BASE=$SERVER_BASE"; echo "PORT=$SERVER_PORT"; } >> "$GITHUB_ENV"
+
+      - name: Live deploy
+        id: live
+        uses: ./actions/deploy
+        with:
+          server: ${{ steps.server.outputs.server }}
+          token: ${{ steps.server.outputs.token }}
+          working-directory: ${{ steps.site.outputs.dir }}
+          cli-path: ${{ runner.temp }}/bin/wardlock
+          pr-preview: false
+          message: live from CI
+      - name: Check the live deploy
+        env:
+          URL: ${{ steps.live.outputs.url }}
+          ID: ${{ steps.live.outputs.deploy-id }}
+          OUT_PREVIEW: ${{ steps.live.outputs.preview }}
+        run: |
+          source "$RUNNER_TEMP/check.sh"
+          expect url "$URL" "http://action-ci.$BASE:$PORT/"
+          [[ $ID =~ ^[0-9a-f-]{36}$ ]] || expect deploy-id "$ID" '<a UUID>'
+          expect preview "$OUT_PREVIEW" ''
+          expect served "$(served "action-ci.$BASE")" "200 live $GITHUB_RUN_ID"
+          echo "$ID" > "$RUNNER_TEMP/live-id"
+
+      - run: echo "preview one $GITHUB_RUN_ID" > "$RUNNER_TEMP/site/dist/index.html"
+      - name: Preview deploy
+        id: preview
+        uses: ./actions/deploy
+        with: &preview
+          server: ${{ steps.server.outputs.server }}
+          token: ${{ steps.server.outputs.token }}
+          working-directory: ${{ steps.site.outputs.dir }}
+          cli-path: ${{ runner.temp }}/bin/wardlock
+          # Pull requests take pr-<number> by default; other runs name one.
+          preview: ${{ github.event_name != 'pull_request' && 'ci' || '' }}
+          github-token: ${{ steps.github.outputs.token }}
+          github-api-url: ${{ steps.github.outputs.url }}
+      - name: Check the preview deploy
+        env:
+          URL: ${{ steps.preview.outputs.url }}
+          ID: ${{ steps.preview.outputs.deploy-id }}
+          OUT_PREVIEW: ${{ steps.preview.outputs.preview }}
+        run: |
+          source "$RUNNER_TEMP/check.sh"
+          expect preview "$OUT_PREVIEW" "$EXPECTED_PREVIEW"
+          expect url "$URL" "http://action-ci--$EXPECTED_PREVIEW.$BASE:$PORT/"
+          [[ $ID =~ ^[0-9a-f-]{36}$ && $ID != "$(cat "$RUNNER_TEMP/live-id")" ]] || expect deploy-id "$ID" '<a new UUID>'
+          expect served "$(served "action-ci--$EXPECTED_PREVIEW.$BASE")" "200 preview one $GITHUB_RUN_ID"
+          expect "live site" "$(served "action-ci.$BASE")" "200 live $GITHUB_RUN_ID"
+      - name: Check the comment was created
+        if: github.event_name == 'pull_request'
+        env:
+          ID: ${{ steps.preview.outputs.deploy-id }}
+        run: |
+          source "$RUNNER_TEMP/check.sh"
+          comments="$RUNNER_TEMP/comments.json"
+          expect comments "$(jq length "$comments")" 1
+          expect issue "$(jq '.[0].issue' "$comments")" "${{ github.event.pull_request.number }}"
+          expect updates "$(jq '.[0].updates' "$comments")" 0
+          jq -e --arg id "$ID" '.[0].body | contains($id)' "$comments" >/dev/null || expect body 'no deploy ID' "$ID"
+          jq '.[0].id' "$comments" > "$RUNNER_TEMP/comment-id"
+
+      - run: echo "preview two $GITHUB_RUN_ID" > "$RUNNER_TEMP/site/dist/index.html"
+      - name: Preview deploy again
+        id: preview2
+        uses: ./actions/deploy
+        with: *preview
+      - name: Check the preview was replaced
+        run: |
+          source "$RUNNER_TEMP/check.sh"
+          expect served "$(served "action-ci--$EXPECTED_PREVIEW.$BASE")" "200 preview two $GITHUB_RUN_ID"
+      - name: Check the comment was updated in place
+        if: github.event_name == 'pull_request'
+        env:
+          ID: ${{ steps.preview2.outputs.deploy-id }}
+        run: |
+          source "$RUNNER_TEMP/check.sh"
+          comments="$RUNNER_TEMP/comments.json"
+          expect comments "$(jq length "$comments")" 1
+          expect "comment id" "$(jq '.[0].id' "$comments")" "$(cat "$RUNNER_TEMP/comment-id")"
+          expect updates "$(jq '.[0].updates' "$comments")" 1
+          jq -e --arg id "$ID" '.[0].body | contains($id)' "$comments" >/dev/null || expect body 'no deploy ID' "$ID"
+
+      - name: Delete the preview
+        id: delete
+        uses: ./actions/deploy
+        with:
+          server: ${{ steps.server.outputs.server }}
+          token: ${{ steps.server.outputs.token }}
+          working-directory: ${{ steps.site.outputs.dir }}
+          cli-path: ${{ runner.temp }}/bin/wardlock
+          preview: ${{ github.event_name != 'pull_request' && 'ci' || '' }}
+          github-token: ${{ steps.github.outputs.token }}
+          github-api-url: ${{ steps.github.outputs.url }}
+          delete: true
+      - name: Check the preview was deleted
+        env:
+          URL: ${{ steps.delete.outputs.url }}
+          OUT_PREVIEW: ${{ steps.delete.outputs.preview }}
+        run: |
+          source "$RUNNER_TEMP/check.sh"
+          expect preview "$OUT_PREVIEW" "$EXPECTED_PREVIEW"
+          expect url "$URL" ''
+          expect "preview status" "$(served "action-ci--$EXPECTED_PREVIEW.$BASE" | cut -d ' ' -f 1)" 404
+          expect "live site" "$(served "action-ci.$BASE")" "200 live $GITHUB_RUN_ID"
+      - name: Check the comment says so
+        if: github.event_name == 'pull_request'
+        run: |
+          source "$RUNNER_TEMP/check.sh"
+          comments="$RUNNER_TEMP/comments.json"
+          expect comments "$(jq length "$comments")" 1
+          jq -e '.[0].body | contains("was deleted")' "$comments" >/dev/null || expect body 'not marked deleted' 'was deleted'
+
+      - name: Make a local release
+        id: release
+        run: |
+          case $RUNNER_ARCH in X64) arch=amd64 ;; ARM64) arch=arm64 ;; esac
+          dir="$RUNNER_TEMP/release"
+          mkdir -p "$dir"
+          archive="wardlock_0.0.0-ci_linux_${arch}.tar.gz"
+          tar -czf "$dir/$archive" -C "$RUNNER_TEMP/bin" wardlock
+          (cd "$dir" && sha256sum "$archive" > checksums.txt)
+          echo "url=file://$dir" >> "$GITHUB_OUTPUT"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+      - run: echo "downloaded $GITHUB_RUN_ID" > "$RUNNER_TEMP/site/dist/index.html"
+      - name: Deploy with the downloaded CLI
+        id: downloaded
+        uses: ./actions/deploy
+        env:
+          WARDLOCK_ACTION_RELEASE_URL: ${{ steps.release.outputs.url }}
+        with:
+          server: ${{ steps.server.outputs.server }}
+          token: ${{ steps.server.outputs.token }}
+          working-directory: ${{ steps.site.outputs.dir }}
+          version: v0.0.0-ci
+          pr-preview: false
+      - name: Check the downloaded CLI deployed
+        run: |
+          source "$RUNNER_TEMP/check.sh"
+          expect served "$(served "action-ci.$BASE")" "200 downloaded $GITHUB_RUN_ID"
+      - name: Tamper with the release
+        env:
+          ARCHIVE: ${{ steps.release.outputs.archive }}
+        run: |
+          echo tampered >> "$RUNNER_TEMP/release/$ARCHIVE"
+          echo "tampered $GITHUB_RUN_ID" > "$RUNNER_TEMP/site/dist/index.html"
+      - name: Deploy with a tampered CLI (must fail)
+        id: tampered
+        continue-on-error: true
+        uses: ./actions/deploy
+        env:
+          WARDLOCK_ACTION_RELEASE_URL: ${{ steps.release.outputs.url }}
+        with:
+          server: ${{ steps.server.outputs.server }}
+          token: ${{ steps.server.outputs.token }}
+          working-directory: ${{ steps.site.outputs.dir }}
+          version: v0.0.0-ci
+          pr-preview: false
+      - name: Check the checksum mismatch failed the step
+        env:
+          OUTCOME: ${{ steps.tampered.outcome }}
+          ID: ${{ steps.tampered.outputs.deploy-id }}
+        run: |
+          source "$RUNNER_TEMP/check.sh"
+          expect outcome "$OUTCOME" failure
+          expect deploy-id "$ID" ''
+          expect served "$(served "action-ci.$BASE")" "200 downloaded $GITHUB_RUN_ID"
+
+      - name: Stop wardlockd
+        if: always() && steps.server.outputs.pid
+        env:
+          PID: ${{ steps.server.outputs.pid }}
+          DATA: ${{ steps.server.outputs.data }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          kill "$PID" || true
+          if [[ $JOB_STATUS != success ]]; then cat "$DATA/wardlockd.log"; fi
+          rm -rf "$DATA"
+      - if: always()
+        run: pkill -f 'actions/deploy/test/fake-github.mjs' || true
+
+  # The token is masked as a secret would be; this proves that nothing in the
+  # action or the CLI printed it, in any form the mask would miss as well.
+  token-in-logs:
+    needs: e2e
+    if: always() && needs.e2e.outputs.token-public-id
+    runs-on: *runner
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Look for the token in e2e's log
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIC_ID: ${{ needs.e2e.outputs.token-public-id }}
+          API: ${{ github.api_url }}/repos/${{ github.repository }}/actions
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json')
+          job=$(curl -fsSL "${auth[@]}" "$API/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" |
+            jq -r '.jobs[] | select(.name == "e2e") | .id')
+          [[ -n $job ]] || { echo "::error::no e2e job in this run"; exit 1; }
+          curl -fsSL "${auth[@]}" -o e2e.log "$API/jobs/$job/logs"
+          grep -q 'Wardlock preview deployed' e2e.log || { echo "::error::e2e's log does not show the action ran"; exit 1; }
+          if grep -Eq "wl_${PUBLIC_ID}_|wl_[a-z0-9]{10}_[A-Za-z0-9_-]{20,}" e2e.log; then
+            echo "::error::an API token appears in e2e's log"
+            exit 1
+          fi
+          echo "e2e's log ($(wc -l < e2e.log) lines) holds no API token."

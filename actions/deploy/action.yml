@@ -1,0 +1,140 @@
+# SPDX-FileCopyrightText: 2026 CubieCode
+# SPDX-License-Identifier: MIT
+#
+# Deploys a static site to a Wardlock server with the wardlock CLI, and on
+# pull requests to the preview pr-<number>, with one comment on the pull
+# request. README.md describes the inputs, outputs and permissions.
+#
+# Inputs reach the scripts only through env, never interpolated into run:,
+# so no input can inject shell. The token is masked before anything runs.
+name: Wardlock deploy
+description: Deploy a static site to Wardlock, with a preview and a comment for each pull request.
+author: CubieCode
+branding:
+  icon: upload-cloud
+  color: gray-dark
+inputs:
+  server:
+    description: The Wardlock server's dashboard origin, such as https://app.wardlock.nz. Defaults to "server" in wardlock.json.
+    required: false
+    default: ''
+  token:
+    description: A deploy-scoped Wardlock API token, from a secret. Empty for pull requests from forks, which then end with a notice.
+    required: true
+  directory:
+    description: The directory to deploy. Defaults to "dir" in wardlock.json, else the working directory.
+    required: false
+    default: ''
+  site:
+    description: The site to deploy to (docs, docs.<base domain> or a custom domain). Defaults to "site" in wardlock.json.
+    required: false
+    default: ''
+  message:
+    description: The deploy message. Defaults to the short commit SHA and its subject.
+    required: false
+    default: ''
+  path:
+    description: Deploy into this path of the site only, such as /mockup-x/.
+    required: false
+    default: ''
+  preview:
+    description: Deploy to this preview instead of the live site. Defaults to pr-<number> on pull_request events and to the live site otherwise.
+    required: false
+    default: ''
+  pr-preview:
+    description: On pull_request events, deploy to the preview pr-<number>, comment on the pull request and delete the preview when it closes. Set to false to deploy as on any other event.
+    required: false
+    default: 'true'
+  delete:
+    description: Set to true to delete the preview instead of deploying. Closing a pull request deletes its preview without it.
+    required: false
+    default: 'false'
+  working-directory:
+    description: Where the CLI runs and looks for wardlock.json.
+    required: false
+    default: '.'
+  version:
+    description: The wardlock CLI release to download, such as v0.4.0. Defaults to the tag the action is used at.
+    required: false
+    default: ''
+  cli-path:
+    description: A wardlock binary to run instead of downloading a release (for this repository's own CI).
+    required: false
+    default: ''
+  github-token:
+    description: The token that comments on the pull request; it needs pull-requests write. Empty skips the comment.
+    required: false
+    default: ${{ github.token }}
+  github-api-url:
+    description: The GitHub API the comment goes to.
+    required: false
+    default: ${{ github.api_url }}
+outputs:
+  url:
+    description: The address the deploy is served at; empty for a deletion or a skipped run.
+    value: ${{ steps.deploy.outputs.url }}
+  deploy-id:
+    description: The deploy's ID; empty for a deletion or a skipped run.
+    value: ${{ steps.deploy.outputs.deploy-id }}
+  preview:
+    description: The preview deployed to or deleted; empty for the live site.
+    value: ${{ steps.prepare.outputs.preview }}
+runs:
+  using: composite
+  steps:
+    - id: prepare
+      shell: bash
+      env:
+        WARDLOCK_TOKEN: ${{ inputs.token }}
+        INPUT_PREVIEW: ${{ inputs.preview }}
+        INPUT_DELETE: ${{ inputs.delete }}
+        INPUT_PR_PREVIEW: ${{ inputs.pr-preview }}
+        EVENT_NAME: ${{ github.event_name }}
+        EVENT_ACTION: ${{ github.event.action }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        REPOSITORY: ${{ github.repository }}
+        ACTOR: ${{ github.actor }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/prepare.sh"
+
+    - id: install
+      if: steps.prepare.outputs.mode != 'skip' && inputs.cli-path == ''
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/install.sh"
+
+    - id: deploy
+      if: steps.prepare.outputs.mode != 'skip'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        WARDLOCK_TOKEN: ${{ inputs.token }}
+        WARDLOCK_CLI: ${{ inputs.cli-path || steps.install.outputs.cli }}
+        MODE: ${{ steps.prepare.outputs.mode }}
+        PREVIEW: ${{ steps.prepare.outputs.preview }}
+        INPUT_SERVER: ${{ inputs.server }}
+        INPUT_DIRECTORY: ${{ inputs.directory }}
+        INPUT_SITE: ${{ inputs.site }}
+        INPUT_MESSAGE: ${{ inputs.message }}
+        INPUT_PATH: ${{ inputs.path }}
+        COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        COMMIT_FALLBACK_SUBJECT: ${{ github.event.head_commit.message || github.event.pull_request.title }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/deploy.sh"
+
+    - id: comment
+      if: steps.prepare.outputs.mode != 'skip' && github.event_name == 'pull_request' && steps.prepare.outputs.preview != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_API: ${{ inputs.github-api-url }}
+        REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        MODE: ${{ steps.prepare.outputs.mode }}
+        SITE: ${{ steps.deploy.outputs.site }}
+        PREVIEW: ${{ steps.prepare.outputs.preview }}
+        URL: ${{ steps.deploy.outputs.url }}
+        DEPLOY_ID: ${{ steps.deploy.outputs.deploy-id }}
+        COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/comment.sh"

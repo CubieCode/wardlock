@@ -6,14 +6,24 @@ name: Docs site
 #
 # The deploy job publishes the site to the instance in the WARDLOCK_SERVER
 # variable with the WARDLOCK_TOKEN secret (a deploy-scope API token) on every
-# push to main that changes the docs, and on a manual run from main. Pull
-# requests only build. The site is public: a new site has no `/` policy, so
-# the deploy job sets none.
+# push to main that changes the docs, and on a manual run from main, through
+# this repository's deploy action (actions/deploy) with the CLI built from
+# source. The site is public: a new site has no `/` policy, so the deploy job
+# sets none.
+#
+# Pull requests only build, unless the DOCS_PREVIEWS variable is `true`: then
+# a pull request from a branch of this repository also deploys the preview
+# docs--pr-<number> (public, like the site, since previews follow the site's
+# policies), comments its address on the pull request, and deletes it when
+# the pull request closes. Turn it on only once the instance runs a release
+# with preview deploys (C1.19). Pull requests from forks get no secrets and
+# never deploy.
 #
 # Runners: vars.RUNNER as in ci.yml (unset means ubuntu-latest); pull
 # requests from forks always run on ubuntu-latest.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
   push:
     branches: [main]
@@ -28,6 +38,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
+    if: github.event.action != 'closed'
     runs-on: &runner ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || fromJSON(vars.RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 10
     steps:
@@ -64,10 +75,71 @@ jobs:
       - *node
       - *install
       - *build
-      - run: go build -o "$RUNNER_TEMP/wardlock" ./apps/cli/cmd/wardlock
+      - &cli
+        run: go build -o "$RUNNER_TEMP/wardlock" ./apps/cli/cmd/wardlock
+      - id: message
+        run: echo "message=docs ${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
       # wardlock.json names the site (docs) and the directory (dist).
-      - working-directory: docs-site
-        env:
-          WARDLOCK_SERVER: ${{ vars.WARDLOCK_SERVER }}
-          WARDLOCK_TOKEN: ${{ secrets.WARDLOCK_TOKEN }}
-        run: '"$RUNNER_TEMP/wardlock" deploy --json --message "docs ${GITHUB_SHA::12}"'
+      - uses: ./actions/deploy
+        with:
+          server: ${{ vars.WARDLOCK_SERVER }}
+          token: ${{ secrets.WARDLOCK_TOKEN }}
+          working-directory: docs-site
+          cli-path: ${{ runner.temp }}/wardlock
+          message: ${{ steps.message.outputs.message }}
+
+  # Off unless vars.DOCS_PREVIEWS is 'true' (see the header). Forks are
+  # left out here rather than by the action's notice, so their runs stay
+  # quiet.
+  preview:
+    if: >-
+      vars.DOCS_PREVIEWS == 'true' && github.event_name == 'pull_request'
+      && github.event.action != 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    needs: build
+    runs-on: *runner
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - *checkout
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+      - *pnpm
+      - *node
+      - *install
+      - *build
+      - *cli
+      # Deploys to docs--pr-<number> and comments its address.
+      - uses: ./actions/deploy
+        with:
+          server: ${{ vars.WARDLOCK_SERVER }}
+          token: ${{ secrets.WARDLOCK_TOKEN }}
+          working-directory: docs-site
+          cli-path: ${{ runner.temp }}/wardlock
+
+  # Deletes the pull request's preview when it closes, under the same switch.
+  preview-delete:
+    if: >-
+      vars.DOCS_PREVIEWS == 'true' && github.event_name == 'pull_request'
+      && github.event.action == 'closed'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: *runner
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - *checkout
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+      - *cli
+      - uses: ./actions/deploy
+        with:
+          server: ${{ vars.WARDLOCK_SERVER }}
+          token: ${{ secrets.WARDLOCK_TOKEN }}
+          working-directory: docs-site
+          cli-path: ${{ runner.temp }}/wardlock
