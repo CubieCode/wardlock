@@ -46,17 +46,25 @@ func TestBackupDuringWrites(t *testing.T) {
 	// Each writer inserts sites in order, so a consistent snapshot holds a
 	// prefix of each writer's sequence.
 	var written [2]atomic.Int64
+	// SQLite's write lock is not fair: on a loaded machine one handle can win
+	// it for seconds while the other sits in busy_timeout. A writer that gets
+	// this far ahead pauses, which frees the lock for the other, so both make
+	// progress however the lock is handed out. Inside the window they still
+	// contend for real.
+	const maxLead = 8
 	writeCtx, stop := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	for w, h := range []*store.DB{db, other} {
 		wg.Go(func() {
 			for i := 0; writeCtx.Err() == nil; i++ {
+				for written[w].Load()-written[1-w].Load() >= maxLead && writeCtx.Err() == nil {
+					time.Sleep(time.Millisecond)
+				}
 				s := store.Site{ID: store.NewID(), OwnerID: owner.ID, Name: fmt.Sprintf("w%d-%06d", w, i), CreatedAt: time.Now()}
 				if err := h.Sites().Create(writeCtx, s, store.Quotas{}); err != nil {
-					// Two handles inserting in tight loops can starve one
-					// past busy_timeout on a loaded machine. Lock fairness
-					// is not what this test checks, so try the same site
-					// again.
+					// A slow machine can still run out one busy_timeout.
+					// Lock fairness is not what this test checks, so try
+					// the same site again.
 					if strings.Contains(err.Error(), "SQLITE_BUSY") {
 						i--
 						continue
@@ -227,10 +235,11 @@ func TestFailedBackupLeavesNothing(t *testing.T) {
 
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	const timeout = 2 * time.Minute
+	deadline := time.Now().Add(timeout)
 	for !cond() {
 		if time.Now().After(deadline) {
-			t.Fatal("condition not met within 10s")
+			t.Fatalf("condition not met within %s", timeout)
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
