@@ -65,6 +65,7 @@ func newGCWorldOver(t *testing.T, blobs gcStore) *gcWorld {
 	w.svc = deploys.NewService(deploys.Config{
 		Sites:    w.db.Sites(),
 		Deploys:  w.db.Deploys(),
+		Previews: w.db.Previews(),
 		Blobs:    w.blobs,
 		Notifier: deploys.NewLocalNotifier(),
 		Limits:   deploys.DefaultLimits(),

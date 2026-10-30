@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"wardlock.nz/server/internal/access"
+	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/edge"
 	"wardlock.nz/server/internal/store"
 )
@@ -48,6 +49,14 @@ func (p *policyEdge) visit(v visit) result {
 	}
 	if v.host == "" {
 		v.host = host
+		if p.siteHost != "" {
+			v.host = p.siteHost
+			// A form posted from the page comes from the preview's origin.
+			if v.header.Get("Origin") == "http://"+host {
+				v.header = v.header.Clone()
+				v.header.Set("Origin", "http://"+p.siteHost)
+			}
+		}
 	}
 	var req *http.Request
 	if v.form != nil {
@@ -105,12 +114,38 @@ func (p *policyEdge) noRawTokens(t *testing.T, records []edge.AccessRecord) {
 	}
 }
 
-// withPrimary runs a matrix with no primary hostname and again with the
-// base-domain hostname as primary over an active custom domain (C1.18), so
-// the access rules hold unchanged on the primary.
-func withPrimary(t *testing.T, matrix func(t *testing.T, primary bool)) {
-	t.Run("no primary", func(t *testing.T) { matrix(t, false) })
-	t.Run("on the primary hostname", func(t *testing.T) { matrix(t, true) })
+// hostVariant is the hostname a matrix runs its requests on.
+type hostVariant int
+
+const (
+	// onBase is the base-domain hostname, with no primary.
+	onBase hostVariant = iota
+	// onPrimary is the base-domain hostname as primary over an active
+	// custom domain (C1.18).
+	onPrimary
+	// onPreview is a preview of docs serving the same files (C1.19), with
+	// a primary set elsewhere that must not redirect it.
+	onPreview
+)
+
+// apply sets p up for v once docs and other are published.
+func (v hostVariant) apply(p *policyEdge) {
+	switch v {
+	case onPrimary:
+		p.primaryOnBase()
+	case onPreview:
+		p.primaryOnBase()
+		p.deployFiles("docs", deploys.Manifest{Preview: "pr-1"}, policyFiles)
+		p.siteHost = previewHost
+	}
+}
+
+// withHosts runs a matrix on each hostVariant, so the access rules hold
+// unchanged on the primary and on a preview hostname.
+func withHosts(t *testing.T, matrix func(t *testing.T, v hostVariant)) {
+	t.Run("no primary", func(t *testing.T) { matrix(t, onBase) })
+	t.Run("on the primary hostname", func(t *testing.T) { matrix(t, onPrimary) })
+	t.Run("on a preview hostname", func(t *testing.T) { matrix(t, onPreview) })
 }
 
 // primaryOnBase gives docs an active custom domain and makes its
@@ -121,9 +156,9 @@ func (p *policyEdge) primaryOnBase() {
 	p.setPrimary("docs", host)
 }
 
-func TestShareLinkMatrixThroughTheEdge(t *testing.T) { withPrimary(t, shareLinkMatrix) }
+func TestShareLinkMatrixThroughTheEdge(t *testing.T) { withHosts(t, shareLinkMatrix) }
 
-func shareLinkMatrix(t *testing.T, primary bool) {
+func shareLinkMatrix(t *testing.T, variant hostVariant) {
 	type env struct {
 		p     *policyEdge
 		site  store.Site
@@ -138,9 +173,7 @@ func shareLinkMatrix(t *testing.T, primary bool) {
 		p.publish("other")
 		p.set("docs", "/", store.Protected, true)
 		p.set("other", "/", store.Protected, true)
-		if primary {
-			p.primaryOnBase()
-		}
+		variant.apply(p)
 		l, token := p.link("docs", access.NewLink{Label: "Linear ENG-123"})
 		return env{p, site, l, token}
 	}
@@ -387,15 +420,13 @@ func shareLinkMatrix(t *testing.T, primary bool) {
 	})
 }
 
-func TestUseLimitedLinkThroughTheEdge(t *testing.T) { withPrimary(t, useLimitedLink) }
+func TestUseLimitedLinkThroughTheEdge(t *testing.T) { withHosts(t, useLimitedLink) }
 
-func useLimitedLink(t *testing.T, primary bool) {
+func useLimitedLink(t *testing.T, variant hostVariant) {
 	p := newPolicyEdge(t)
 	p.publish("docs")
 	p.set("docs", "/", store.Protected, true)
-	if primary {
-		p.primaryOnBase()
-	}
+	variant.apply(p)
 	l, token := p.link("docs", access.NewLink{Label: "one-time", MaxUses: 1})
 	uses := func() int {
 		got, err := p.db.Links().GetByPublicID(t.Context(), l.PublicID)
@@ -499,17 +530,15 @@ func useLimitedLink(t *testing.T, primary bool) {
 	p.noRawTokens(t, p.accessRecords())
 }
 
-func TestShareLinkRateLimitsThroughTheEdge(t *testing.T) { withPrimary(t, shareLinkRateLimits) }
+func TestShareLinkRateLimitsThroughTheEdge(t *testing.T) { withHosts(t, shareLinkRateLimits) }
 
-func shareLinkRateLimits(t *testing.T, primary bool) {
+func shareLinkRateLimits(t *testing.T, variant hostVariant) {
 	p := newPolicyEdge(t)
 	p.publish("docs")
 	p.publish("other")
 	p.set("docs", "/", store.Protected, true)
 	p.set("other", "/", store.Protected, true)
-	if primary {
-		p.primaryOnBase()
-	}
+	variant.apply(p)
 	_, token := p.link("docs", access.NewLink{})
 	_, otherToken := p.link("other", access.NewLink{})
 	limits := access.DefaultLimits()

@@ -118,7 +118,7 @@ func newHarnessWith(t *testing.T, limits deploys.Limits, quotas store.Quotas, co
 		SiteURL: func(host string) string { return "http://" + host + ":8080/" },
 	}
 	dc := deploys.Config{
-		Sites: db.Sites(), Deploys: db.Deploys(), Blobs: hs.blobs, Notifier: notifier,
+		Sites: db.Sites(), Deploys: db.Deploys(), Previews: db.Previews(), Blobs: hs.blobs, Notifier: notifier,
 		Limits: limits, Quotas: quotas, Now: time.Now,
 	}
 	if configure != nil {

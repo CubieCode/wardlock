@@ -65,6 +65,9 @@ func accessLogContract(t *testing.T, open Opener) {
 			if i == 1 {
 				e.Country = store.CountryUnknown
 			}
+			if i == 2 {
+				e.Preview = "pr-42" // a preview's request (C1.19)
+			}
 			want = append(want, e)
 		}
 		noise := valid()
@@ -274,5 +277,5 @@ func newestFirst(a, b store.AccessEntry) int {
 func sameEntry(a, b store.AccessEntry) bool {
 	return a.ID == b.ID && a.OccurredAt.Equal(b.OccurredAt) && a.SiteID == b.SiteID && a.Host == b.Host &&
 		a.Path == b.Path && a.Status == b.Status && a.Via == b.Via && a.LinkPublicID == b.LinkPublicID &&
-		a.IP == b.IP && a.UserAgent == b.UserAgent && a.Country == b.Country
+		a.IP == b.IP && a.UserAgent == b.UserAgent && a.Country == b.Country && a.Preview == b.Preview
 }

@@ -39,6 +39,10 @@ func TestCheckName(t *testing.T) {
 		{"wardlock.test", "mail", sites.ErrReservedName},
 		{"wardlock.test", "wardlock", sites.ErrReservedName},
 		{"wardlock.test", "xn--bcher-kva", sites.ErrReservedName},
+		// "--" joins a site and a preview in a preview's hostname (C1.19).
+		{"wardlock.test", "docs--pr-1", sites.ErrInvalidName},
+		{"wardlock.test", "a--b", sites.ErrInvalidName},
+		{"wardlock.test", "a-b-c", nil},
 		// The dashboard host's label under the base domain.
 		{"console.wardlock.test", "console", sites.ErrReservedName},
 		{"a.console.wardlock.test", "console", sites.ErrReservedName},
