@@ -46,6 +46,7 @@ var commands = []command{
 	{"site", "Put sites in a group and add or remove their tags", runSite},
 	{"pin", "Pin sites, to keep them at hand", runPin},
 	{"unpin", "Unpin sites", runUnpin},
+	{"mcp", "Serve the Model Context Protocol to AI tools on stdio", runMCP},
 	{"login", "Log in to a Wardlock server in your browser", runLogin},
 	{"logout", "Revoke and forget the stored token", runLogout},
 	{"version", "Print the CLI version, and the server's with --server", runVersion},

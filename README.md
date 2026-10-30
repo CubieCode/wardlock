@@ -56,6 +56,8 @@ It is built for agencies and freelancers sending client previews, teams sharing 
 npx skills add CubieCode/wardlock --skill wardlock-publish
 ```
 
+AI tools that connect to MCP servers rather than running shell commands can use `wardlock mcp` instead: it serves listing, deploying, pulling, policies and share links as tools with the same credentials ([MCP server](docs/SPEC.md#mcp-server-i65)).
+
 <details>
 <summary>What the skill does</summary>
 
