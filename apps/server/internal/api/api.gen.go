@@ -291,6 +291,30 @@ func (e PolicyVisibility) Valid() bool {
 	}
 }
 
+// Defines values for RedirectStatus.
+const (
+	RedirectStatusN301 RedirectStatus = 301
+	RedirectStatusN302 RedirectStatus = 302
+	RedirectStatusN307 RedirectStatus = 307
+	RedirectStatusN308 RedirectStatus = 308
+)
+
+// Valid indicates whether the value is a known member of the RedirectStatus enum.
+func (e RedirectStatus) Valid() bool {
+	switch e {
+	case RedirectStatusN301:
+		return true
+	case RedirectStatusN302:
+		return true
+	case RedirectStatusN307:
+		return true
+	case RedirectStatusN308:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Scope.
 const (
 	ScopeDeploy Scope = "deploy"
@@ -787,6 +811,9 @@ type CreateDeployRequest struct {
 	// Files The deploy's files, relative to `path` when it is given. At least one for a full deploy; empty with `path` removes the prefix.
 	Files []ManifestFile `json:"files"`
 
+	// Headers Header rules, in order. Left out, none, or with `path` the base deploy's; `[]` for none.
+	Headers *[]HeaderRule `json:"headers,omitempty"`
+
 	// ImmutableAssets Cache files under `/assets/` with a content hash in their name for a year as immutable (SPEC "Serving"). Only set it when every such name changes whenever its content does. Defaults to false, or with `path` to the base deploy's setting.
 	ImmutableAssets *bool   `json:"immutableAssets,omitempty"`
 	Message         *string `json:"message,omitempty"`
@@ -795,6 +822,9 @@ type CreateDeployRequest struct {
 	//
 	// Examples: /mockup-x/
 	Path *DeployPath `json:"path,omitempty"`
+
+	// Redirects Redirect rules, in order. Left out, none, or with `path` the base deploy's; `[]` for none.
+	Redirects *[]Redirect `json:"redirects,omitempty"`
 
 	// Spa Serve `/index.html` for missing extensionless paths. Defaults to false, or with `path` to the base deploy's setting.
 	Spa *bool `json:"spa,omitempty"`
@@ -917,6 +947,9 @@ type Deploy struct {
 	CreatedAt Timestamp `json:"createdAt"`
 	FileCount int32     `json:"fileCount"`
 
+	// Headers The deploy's header rules in order, with canonical header names. Absent when it has none.
+	Headers *[]HeaderRule `json:"headers,omitempty"`
+
 	// Id A lowercase, hyphenated UUIDv7.
 	//
 	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
@@ -930,6 +963,9 @@ type Deploy struct {
 	//
 	// Examples: /mockup-x/
 	Path *DeployPath `json:"path,omitempty"`
+
+	// Redirects The deploy's redirect rules in order, each with its status. Absent when it has none.
+	Redirects *[]Redirect `json:"redirects,omitempty"`
 
 	// Spa Whether missing paths without a file extension serve `/index.html` while this deploy is active.
 	Spa bool `json:"spa"`
@@ -1186,6 +1222,19 @@ type GroupSiteCount struct {
 
 	// Sites A number of sites.
 	Sites SiteCount `json:"sites"`
+}
+
+// HeaderRule Sets response headers on deploy responses for matching request paths; every matching rule applies in order, a later one overwriting the same name. See SPEC "Redirects and response headers" for the allowlist.
+type HeaderRule struct {
+	// Path An exact clean path, or a prefix ending in `/*` (`/*` matches every path). Never under `/.wardlock/`.
+	//
+	// Examples: /*
+	Path string `json:"path"`
+
+	// Set Header names to values: `Content-Security-Policy`, `Content-Security-Policy-Report-Only`, `Permissions-Policy`, `X-Frame-Options`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Embedder-Policy`, `X-Content-Type-Options` (only `nosniff`), `Link`, and, sent only under public policies, `Referrer-Policy` and the `Access-Control-Allow-*`, `Access-Control-Expose-Headers` and `Access-Control-Max-Age` response headers.
+	//
+	// Examples: {"X-Frame-Options":"DENY"}
+	Set map[string]string `json:"set"`
 }
 
 // Health defines model for Health.
@@ -1484,6 +1533,25 @@ type PolicyVisibility string
 type PollCliLoginRequest struct {
 	DeviceCode string `json:"deviceCode"`
 }
+
+// Redirect Applied, first match wins, only to a request path that serves no file (after clean URLs, before the 404 page and the SPA fallback), once the visitor may read that path. See SPEC "Redirects and response headers".
+type Redirect struct {
+	// From An exact clean path such as `/old`, or a prefix ending in `/*` such as `/blog/*`, which matches `/blog/` and everything under it. Never under `/.wardlock/`.
+	//
+	// Examples: /blog/*
+	From string `json:"from"`
+
+	// Status Defaults to 301 on creation; always present on a Deploy.
+	Status *RedirectStatus `json:"status,omitempty"`
+
+	// To A path on the same site (`/news/:splat`) or an absolute `https://` URL. `:splat` in its path is replaced by what a `/*` prefix matched. The request's query string is kept unless `to` has its own.
+	//
+	// Examples: /news/:splat
+	To string `json:"to"`
+}
+
+// RedirectStatus Defaults to 301 on creation; always present on a Deploy.
+type RedirectStatus int
 
 // RequestCount Requests answered below 400 (`allowed`) and at 400 or above (`refused`).
 type RequestCount struct {

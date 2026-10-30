@@ -14,8 +14,8 @@ import (
 )
 
 const createDeploy = `-- name: CreateDeploy :exec
-INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, immutable_assets, created_at, activated_at, path_prefix, base_deploy_id)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, immutable_assets, created_at, activated_at, path_prefix, base_deploy_id, redirects, headers)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
 `
 
 type CreateDeployParams struct {
@@ -30,6 +30,8 @@ type CreateDeployParams struct {
 	ActivatedAt     sql.NullInt64
 	PathPrefix      sql.NullString
 	BaseDeployID    sql.NullString
+	Redirects       sql.NullString
+	Headers         sql.NullString
 }
 
 func (q *Queries) CreateDeploy(ctx context.Context, arg CreateDeployParams) error {
@@ -45,6 +47,8 @@ func (q *Queries) CreateDeploy(ctx context.Context, arg CreateDeployParams) erro
 		arg.ActivatedAt,
 		arg.PathPrefix,
 		arg.BaseDeployID,
+		arg.Redirects,
+		arg.Headers,
 	)
 	return err
 }
@@ -90,7 +94,7 @@ func (q *Queries) DeleteDeploy(ctx context.Context, arg DeleteDeployParams) (int
 }
 
 const getDeploy = `-- name: GetDeploy :one
-SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers
 FROM deploys JOIN sites ON sites.id = deploys.site_id
 WHERE deploys.id = ?1 AND deploys.site_id = ?2 AND sites.owner_id = ?3
 `
@@ -113,6 +117,8 @@ type GetDeployRow struct {
 	ActivatedAt     sql.NullInt64
 	PathPrefix      sql.NullString
 	BaseDeployID    sql.NullString
+	Redirects       sql.NullString
+	Headers         sql.NullString
 }
 
 func (q *Queries) GetDeploy(ctx context.Context, arg GetDeployParams) (GetDeployRow, error) {
@@ -130,6 +136,8 @@ func (q *Queries) GetDeploy(ctx context.Context, arg GetDeployParams) (GetDeploy
 		&i.ActivatedAt,
 		&i.PathPrefix,
 		&i.BaseDeployID,
+		&i.Redirects,
+		&i.Headers,
 	)
 	return i, err
 }
@@ -234,7 +242,7 @@ func (q *Queries) ListDeployFiles(ctx context.Context, deployID string) ([]ListD
 }
 
 const listDeploys = `-- name: ListDeploys :many
-SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers
 FROM deploys JOIN sites ON sites.id = deploys.site_id
 WHERE deploys.site_id = ?1 AND sites.owner_id = ?2
   AND (deploys.created_at < ?3
@@ -263,6 +271,8 @@ type ListDeploysRow struct {
 	ActivatedAt     sql.NullInt64
 	PathPrefix      sql.NullString
 	BaseDeployID    sql.NullString
+	Redirects       sql.NullString
+	Headers         sql.NullString
 }
 
 // Newest first, strictly before the cursor (created_at, id); the first page
@@ -294,6 +304,8 @@ func (q *Queries) ListDeploys(ctx context.Context, arg ListDeploysParams) ([]Lis
 			&i.ActivatedAt,
 			&i.PathPrefix,
 			&i.BaseDeployID,
+			&i.Redirects,
+			&i.Headers,
 		); err != nil {
 			return nil, err
 		}

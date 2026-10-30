@@ -74,6 +74,7 @@ func failed(err error) (*failure, error) {
 		{sites.ErrNameTaken, http.StatusConflict, "site_name_taken", "This site name is taken.", "name"},
 		{deploys.ErrInvalidPath, http.StatusBadRequest, "invalid_path", message, target},
 		{deploys.ErrInvalidManifest, http.StatusBadRequest, "invalid_manifest", message, target},
+		{deploys.ErrInvalidConfig, http.StatusBadRequest, "invalid_config", message, target},
 		{sites.ErrLimitExceeded, http.StatusRequestEntityTooLarge, "limit_exceeded", siteLimit, "name"},
 		{deploys.ErrLimitExceeded, http.StatusRequestEntityTooLarge, "limit_exceeded", message, target},
 		{deploys.ErrBlockedType, http.StatusUnprocessableEntity, "file_type_blocked", message, target},
@@ -180,6 +181,21 @@ func deployBody(site store.Site, d store.Deploy) Deploy {
 	}
 	if d.PathPrefix != "" {
 		out.Path = &d.PathPrefix
+	}
+	if len(d.Redirects) > 0 {
+		redirects := make([]Redirect, len(d.Redirects))
+		for i, r := range d.Redirects {
+			status := RedirectStatus(r.Status)
+			redirects[i] = Redirect{From: r.From, To: r.To, Status: &status}
+		}
+		out.Redirects = &redirects
+	}
+	if len(d.Headers) > 0 {
+		headers := make([]HeaderRule, len(d.Headers))
+		for i, h := range d.Headers {
+			headers[i] = HeaderRule{Path: h.Path, Set: h.Set}
+		}
+		out.Headers = &headers
 	}
 	if !d.ActivatedAt.IsZero() {
 		out.ActivatedAt = millis(d.ActivatedAt)
@@ -361,6 +377,23 @@ func (s *Server) CreateDeploy(ctx context.Context, req CreateDeployRequestObject
 		m.Message = *req.Body.Message
 	}
 	m.SPA, m.ImmutableAssets = req.Body.Spa, req.Body.ImmutableAssets
+	if req.Body.Redirects != nil {
+		redirects := make([]store.Redirect, len(*req.Body.Redirects))
+		for i, r := range *req.Body.Redirects {
+			redirects[i] = store.Redirect{From: r.From, To: r.To}
+			if r.Status != nil {
+				redirects[i].Status = int(*r.Status)
+			}
+		}
+		m.Redirects = &redirects
+	}
+	if req.Body.Headers != nil {
+		headers := make([]store.HeaderRule, len(*req.Body.Headers))
+		for i, h := range *req.Body.Headers {
+			headers[i] = store.HeaderRule{Path: h.Path, Set: h.Set}
+		}
+		m.Headers = &headers
+	}
 	if req.Body.Path != nil {
 		if *req.Body.Path == "" {
 			return CreateDeploydefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_path", "path must be a prefix such as /mockup-x/; leave it out to deploy the whole site.", "path")), nil

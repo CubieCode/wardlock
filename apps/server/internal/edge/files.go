@@ -14,15 +14,21 @@ import (
 
 // result is how a request path maps onto the active deploy.
 type result struct {
-	file     ServedFile
-	status   int    // 200, or 404 for 404.html
-	redirect string // escaped absolute path of a directory, with its slash
+	file ServedFile
+	// status is 200, or 404 for 404.html; for a redirect, its status.
+	status int
+	// redirect is the Location: a directory's escaped absolute path with
+	// its slash, or where one of the deploy's redirects sends the request
+	// (C1.17), with the query.
+	redirect string
 }
 
 // resolve applies SPEC "Serving" to name, a cleaned request path without its
-// leading slash ("" for the root; a trailing slash is kept). ok is false
-// when nothing in the deploy answers, which is a plain 404.
-func resolve(s *served, name string) (res result, ok bool) {
+// leading slash ("" for the root; a trailing slash is kept), with the
+// request's raw query. ok is false when nothing in the deploy answers,
+// which is a plain 404. The deploy's redirects apply only once no file
+// answers, ahead of the SPA fallback and 404.html.
+func resolve(s *served, name, rawQuery string) (res result, ok bool) {
 	if name == "" || strings.HasSuffix(name, "/") {
 		if f, ok := s.files[name+"index.html"]; ok {
 			return result{file: f, status: http.StatusOK}, true
@@ -35,8 +41,17 @@ func resolve(s *served, name string) (res result, ok bool) {
 			return result{file: f, status: http.StatusOK}, true
 		}
 		if _, ok := s.files[name+"/index.html"]; ok {
-			return result{redirect: escapePath(name) + "/"}, true
+			// An absolute path: cleaning leaves no empty first segment, so
+			// it cannot become a scheme-relative //host URL.
+			loc := escapePath(name) + "/"
+			if rawQuery != "" {
+				loc += "?" + rawQuery
+			}
+			return result{redirect: loc, status: http.StatusMovedPermanently}, true
 		}
+	}
+	if loc, status, ok := ownerRedirect(s, "/"+name, rawQuery); ok {
+		return result{redirect: loc, status: status}, true
 	}
 	if s.site.SPA && path.Ext(name) == "" {
 		if f, ok := s.files["index.html"]; ok {

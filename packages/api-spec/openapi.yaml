@@ -75,13 +75,13 @@ info:
 
     | Status | Codes |
     | ------ | ----- |
-    | 400 | `invalid_request` (malformed JSON, missing or invalid field), `invalid_code`, `invalid_site_name`, `reserved_site_name`, `invalid_path`, `invalid_manifest`, `invalid_hostname`, `hash_mismatch`, `unexpected_blob`, `invalid_policy_path`, `invalid_policy`, `invalid_share_link`, `invalid_passkey` |
+    | 400 | `invalid_request` (malformed JSON, missing or invalid field), `invalid_code`, `invalid_site_name`, `reserved_site_name`, `invalid_path`, `invalid_manifest`, `invalid_config` (a deploy's redirect or header rule is malformed or sets a header a deploy may not; `target` is `redirects[i]` or `headers[i]`), `invalid_hostname`, `hash_mismatch`, `unexpected_blob`, `invalid_policy_path`, `invalid_policy`, `invalid_share_link`, `invalid_passkey` |
     | 401 | `unauthenticated`: no credential, or an expired, revoked or unknown one |
     | 403 | `forbidden`: the credential lacks the scope, or a cookie request came from another origin; `invites_restricted`: the operator has kept invitations to themselves |
     | 404 | `not_found` |
     | 409 | `site_name_taken`, `group_name_taken`, `tag_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `stale_base` (a path deploy's site changed after it was created; create it again), `default_policy`, `passkey_limit`, `site_unavailable` (the operator has taken the site down) |
     | 410 | `login_expired` |
-    | 413 | `limit_exceeded`: a deploy limit (files, bytes per file or per video file, bytes in total) or one of the owner's quotas (bytes stored, sites, deploys in 24 hours), or an organisation limit (100 groups, 200 tags, 20 tags on a site); the `message` names the file and the limit, and `target` is the file's path, or `files`, `deploys`, `name`, `tagIds` or `addTagIds` |
+    | 413 | `limit_exceeded`: a deploy limit (files, bytes per file or per video file, bytes in total, redirects, header rules, bytes per rule value or in all rules) or one of the owner's quotas (bytes stored, sites, deploys in 24 hours), or an organisation limit (100 groups, 200 tags, 20 tags on a site); the `message` names the file and the limit, and `target` is the file's path, or `files`, `deploys`, `redirects`, `headers`, `redirects[i]`, `headers[i]`, `name`, `tagIds` or `addTagIds` |
     | 422 | `file_type_blocked`: the manifest lists a file whose extension the operator has blocked; `target` is its path |
     | 429 | `rate_limited`, `slow_down`, `checked_recently` (a domain check came too soon after the last); `Retry-After` gives the seconds to wait |
     | 451 | `file_withheld`: content screening has withheld this file on every site, so it cannot be downloaded either |
@@ -1279,6 +1279,20 @@ paths:
         Activation refuses a path deploy with `409 stale_base` once the site
         serves another deploy than its base; create it again (nothing needs
         uploading again).
+
+        `redirects` and `headers` are the deploy's rules (SPEC "Redirects
+        and response headers"), recorded on it like `spa`, so rollback
+        restores them. Left out, a full deploy has none and a path deploy
+        keeps its base's; an empty list has none either way. A malformed
+        rule, a status other than 301, 302, 307 or 308, a `to` that is not a
+        path on the site or an `https://` URL, a control character, a
+        `from` or `path` under `/.wardlock/`, or a header name outside the
+        allowlist answers `400 invalid_config` with the rule
+        (`redirects[3]`, `headers[0]`) as `target`. More than 1,000
+        redirects or 100 header rules answers `413 limit_exceeded` with
+        target `redirects` or `headers`; a value over 8 KiB, with the rule
+        as target; more than 64 KiB in all rules, with the list that
+        passed it (redirects are counted first).
       tags: [deploys]
       security:
         - sessionCookie: []
@@ -4169,6 +4183,89 @@ components:
             Absent for a full deploy. Either way the deploy lists every file
             the site serves while it is active.
           $ref: '#/components/schemas/DeployPath'
+        redirects:
+          type: array
+          description: >-
+            The deploy's redirect rules in order, each with its status.
+            Absent when it has none.
+          items:
+            $ref: '#/components/schemas/Redirect'
+        headers:
+          type: array
+          description: >-
+            The deploy's header rules in order, with canonical header names.
+            Absent when it has none.
+          items:
+            $ref: '#/components/schemas/HeaderRule'
+    Redirect:
+      type: object
+      additionalProperties: false
+      description: >-
+        Applied, first match wins, only to a request path that serves no
+        file (after clean URLs, before the 404 page and the SPA fallback),
+        once the visitor may read that path. See SPEC "Redirects and
+        response headers".
+      required: [from, to]
+      properties:
+        from:
+          type: string
+          description: >-
+            An exact clean path such as `/old`, or a prefix ending in `/*`
+            such as `/blog/*`, which matches `/blog/` and everything under
+            it. Never under `/.wardlock/`.
+          minLength: 1
+          maxLength: 8192
+          examples: [/blog/*]
+        to:
+          type: string
+          description: >-
+            A path on the same site (`/news/:splat`) or an absolute
+            `https://` URL. `:splat` in its path is replaced by what a `/*`
+            prefix matched. The request's query string is kept unless `to`
+            has its own.
+          minLength: 1
+          maxLength: 8192
+          examples: [/news/:splat]
+        status:
+          type: integer
+          description: Defaults to 301 on creation; always present on a Deploy.
+          enum: [301, 302, 307, 308]
+    HeaderRule:
+      type: object
+      additionalProperties: false
+      description: >-
+        Sets response headers on deploy responses for matching request
+        paths; every matching rule applies in order, a later one
+        overwriting the same name. See SPEC "Redirects and response
+        headers" for the allowlist.
+      required: [path, set]
+      properties:
+        path:
+          type: string
+          description: >-
+            An exact clean path, or a prefix ending in `/*` (`/*` matches
+            every path). Never under `/.wardlock/`.
+          minLength: 1
+          maxLength: 8192
+          examples: [/*]
+        set:
+          type: object
+          description: >-
+            Header names to values: `Content-Security-Policy`,
+            `Content-Security-Policy-Report-Only`, `Permissions-Policy`,
+            `X-Frame-Options`, `Cross-Origin-Opener-Policy`,
+            `Cross-Origin-Embedder-Policy`, `X-Content-Type-Options` (only
+            `nosniff`), `Link`, and, sent only under public policies,
+            `Referrer-Policy` and the `Access-Control-Allow-*`,
+            `Access-Control-Expose-Headers` and `Access-Control-Max-Age`
+            response headers.
+          minProperties: 1
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 8192
+          examples:
+            - X-Frame-Options: DENY
     DeployPath:
       type: string
       description: >-
@@ -4270,6 +4367,22 @@ components:
             Replace only this prefix of the site, keeping the active
             deploy's files outside it (see `createDeploy`).
           $ref: '#/components/schemas/DeployPath'
+        redirects:
+          type: array
+          description: >-
+            Redirect rules, in order. Left out, none, or with `path` the
+            base deploy's; `[]` for none.
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/Redirect'
+        headers:
+          type: array
+          description: >-
+            Header rules, in order. Left out, none, or with `path` the base
+            deploy's; `[]` for none.
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/HeaderRule'
     CreatedDeploy:
       type: object
       additionalProperties: false

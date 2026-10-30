@@ -72,6 +72,8 @@ type Deploy struct {
 	ImmutableAssets int64
 	PathPrefix      sql.NullString
 	BaseDeployID    sql.NullString
+	Redirects       sql.NullString
+	Headers         sql.NullString
 }
 
 type DeployFile struct {

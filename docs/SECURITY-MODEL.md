@@ -137,6 +137,23 @@ A deploy that opts into `immutableAssets` (SPEC "Serving") has its hashed files 
 
 </details>
 
+### Owner-set redirects and headers on protected sites
+
+A deploy may carry redirects and a short allowlist of response headers (C1.17, SPEC "Redirects and response headers"). They never weaken protection: both apply only after the access decision for the request path, never to Wardlock's own pages, and on a protected policy Wardlock's headers always win.
+
+<details>
+<summary>Decision (C1.17): what owner rules can and cannot do</summary>
+
+- **After access.** A redirect's `from` and a header rule's `path` are matched against the request path, which the governing policy has already allowed. A visitor without access gets the login page or the bare 401 exactly as without rules: no `Location`, no owner headers, so a rule cannot reveal that a protected path exists or where it leads. Rules never apply under `/.wardlock/` (they cannot even name it) or to the login page, the 401, the share-link interstitial, the token-guessing 429, a withheld file's 451 or the unavailable page.
+- **Files win.** A redirect applies only to a path no file answers, so a rule cannot hide or replace a deployed file, and there is no rewriting or proxying: the edge never fetches anything on a visitor's behalf.
+- **Tokens never leave the site.** The request's query is kept on a redirect, as for the directory redirect, but a share-link `t` parameter is removed whenever `to` is another origin. On a same-site `to` it is kept, so a fetcher without cookies can follow the redirect; the token is checked again there. The `:splat` remainder is percent-encoded segment by segment, so a request path cannot turn a same-site `to` into a scheme-relative or backslash URL to another host (fuzzed).
+- **Headers Wardlock owns.** Caching (`Cache-Control`, `ETag`, `Last-Modified`, `Vary`), cookies (`Set-Cookie`), the body's description (`Content-*`), `Location` and `Strict-Transport-Security` are never owner-set, so a rule cannot make a protected or cookie-setting answer cacheable, set a cookie on the site's host, or pin HSTS on a shared base domain. `X-Robots-Tag` and `Cross-Origin-Resource-Policy` are not on the allowlist at all. `X-Content-Type-Options` accepts only `nosniff`.
+- **Protected policies.** `Referrer-Policy` and the `Access-Control-*` response headers apply only under public policies: on a protected one they would leak protected URLs through referrers or let another origin read protected answers with the visitor's session. They are dropped at serving time, since a policy can change after the deploy, and Wardlock's protected-site headers (`X-Robots-Tag`, `Referrer-Policy`, `Cross-Origin-Resource-Policy`, private caching, `Vary: Cookie`, `nosniff`) are set after the deploy's.
+- **The share-link strip script.** A page a share-link token opened from the URL carries Wardlock's inline script that removes `t` from the address bar and history. A deploy's `Content-Security-Policy` could block it and leave the token where it can be bookmarked, shared or sent on, so on those responses only, each of its policies gains the script's `'sha256-…'` source. It goes on the directive that governs inline script elements (`script-src-elem`, else `script-src`, else `default-src`) when the policy has one, and replaces a lone `'none'`. A directive already allowing inline script (`'unsafe-inline'` without a nonce, hash or `'strict-dynamic'`) is kept as it is, since a hash would switch `'unsafe-inline'` off. Other directives and `Content-Security-Policy-Report-Only` are left as they are, and every other response sends the deploy's CSP byte for byte. The hash allows only that exact script, so it opens nothing else.
+- **What owners can still do.** The allowed headers can only tighten or loosen what browsers let the site's own pages do (CSP, framing, COOP/COEP, permissions, preload links) and, on public paths, cross-origin reads of public content. A site's scripts could do as much themselves; the site is its own origin either way.
+
+</details>
+
 ### Brute force and enumeration
 
 Tokens carry 256 bits of secret, so guessing is infeasible; even so, failed token checks are rate-limited per IP and per site, as are password attempts and email-code sends and verifications. Responses never reveal whether a link, address or path exists, and no flood of guesses or of invented addresses lets anyone in, though a determined attacker with six or more networks can hold one site's sign-in method shut (accepted, below).

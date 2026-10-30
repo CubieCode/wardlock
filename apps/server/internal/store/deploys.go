@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -31,8 +32,29 @@ type Deploy struct {
 	// created, which activation requires still to be active; "" for a full
 	// deploy and for a path deploy to a site with nothing live.
 	BaseDeployID string
-	CreatedAt    time.Time
-	ActivatedAt  time.Time // most recent activation; zero if never
+	// Redirects are applied in order, first match wins, to paths that
+	// serve no file (C1.17); nil for none.
+	Redirects []Redirect
+	// Headers are applied in order, each matching rule in turn (C1.17);
+	// nil for none.
+	Headers     []HeaderRule
+	CreatedAt   time.Time
+	ActivatedAt time.Time // most recent activation; zero if never
+}
+
+// Redirect is one redirect rule of a deploy (C1.17), validated by the
+// deploys package before it is stored.
+type Redirect struct {
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Status int    `json:"status"`
+}
+
+// HeaderRule sets response headers on the paths it matches (C1.17). Set's
+// names are canonical header names.
+type HeaderRule struct {
+	Path string            `json:"path"`
+	Set  map[string]string `json:"set"`
 }
 
 // DeployFile is one manifest entry. Its blob need not exist yet: activation
@@ -170,6 +192,14 @@ func (db *DB) Deploys() Deploys { return deploysRepo{db} }
 type deploysRepo struct{ db *DB }
 
 func (r deploysRepo) Create(ctx context.Context, ownerID string, d Deploy, files []DeployFile, quotas Quotas) error {
+	redirects, err := encodeRules(d.Redirects)
+	if err != nil {
+		return fmt.Errorf("encode redirects: %w", err)
+	}
+	headers, err := encodeRules(d.Headers)
+	if err != nil {
+		return fmt.Errorf("encode headers: %w", err)
+	}
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		if err := requireSite(ctx, q, ownerID, d.SiteID); err != nil {
 			return err
@@ -193,6 +223,8 @@ func (r deploysRepo) Create(ctx context.Context, ownerID string, d Deploy, files
 			ActivatedAt:     nullMs(d.ActivatedAt),
 			PathPrefix:      nullString(d.PathPrefix),
 			BaseDeployID:    nullString(d.BaseDeployID),
+			Redirects:       redirects,
+			Headers:         headers,
 		})
 		if err != nil {
 			return mapErr("create deploy", err)
@@ -271,10 +303,42 @@ func getDeploy(ctx context.Context, q *sqlcgen.Queries, ownerID, siteID, id stri
 	if err != nil {
 		return Deploy{}, mapErr("get deploy", err)
 	}
-	return deployFrom(row), nil
+	return deployFrom(row)
 }
 
-func deployFrom(row sqlcgen.GetDeployRow) Deploy {
+// encodeRules stores a deploy's rules as one JSON array; none is NULL.
+func encodeRules[T any](rules []T) (sql.NullString, error) {
+	if len(rules) == 0 {
+		return sql.NullString{}, nil
+	}
+	b, err := json.Marshal(rules)
+	if err != nil {
+		return sql.NullString{}, err
+	}
+	return sql.NullString{String: string(b), Valid: true}, nil
+}
+
+// decodeRules reads what encodeRules stored; NULL is nil.
+func decodeRules[T any](col sql.NullString) ([]T, error) {
+	if !col.Valid {
+		return nil, nil
+	}
+	var rules []T
+	if err := json.Unmarshal([]byte(col.String), &rules); err != nil {
+		return nil, err
+	}
+	return rules, nil
+}
+
+func deployFrom(row sqlcgen.GetDeployRow) (Deploy, error) {
+	redirects, err := decodeRules[Redirect](row.Redirects)
+	if err != nil {
+		return Deploy{}, fmt.Errorf("decode redirects of deploy %s: %w", row.ID, err)
+	}
+	headers, err := decodeRules[HeaderRule](row.Headers)
+	if err != nil {
+		return Deploy{}, fmt.Errorf("decode headers of deploy %s: %w", row.ID, err)
+	}
 	return Deploy{
 		ID:              row.ID,
 		SiteID:          row.SiteID,
@@ -285,9 +349,11 @@ func deployFrom(row sqlcgen.GetDeployRow) Deploy {
 		ImmutableAssets: row.ImmutableAssets == 1,
 		PathPrefix:      row.PathPrefix.String,
 		BaseDeployID:    row.BaseDeployID.String,
+		Redirects:       redirects,
+		Headers:         headers,
 		CreatedAt:       fromMs(row.CreatedAt),
 		ActivatedAt:     fromNullMs(row.ActivatedAt),
-	}
+	}, nil
 }
 
 func (r deploysRepo) List(ctx context.Context, ownerID, siteID string, before DeployCursor, limit int) ([]Deploy, error) {
@@ -307,7 +373,11 @@ func (r deploysRepo) List(ctx context.Context, ownerID, siteID string, before De
 	}
 	deploys := make([]Deploy, 0, len(rows))
 	for _, row := range rows {
-		deploys = append(deploys, deployFrom(sqlcgen.GetDeployRow(row)))
+		d, err := deployFrom(sqlcgen.GetDeployRow(row))
+		if err != nil {
+			return nil, err
+		}
+		deploys = append(deploys, d)
 	}
 	return deploys, nil
 }

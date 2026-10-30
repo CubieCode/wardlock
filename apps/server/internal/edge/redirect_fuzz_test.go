@@ -91,3 +91,30 @@ func FuzzLinkTokenFromRequest(f *testing.F) {
 		}
 	})
 }
+
+// FuzzRedirectLocation checks that a deploy's same-site redirect stays on
+// the site whatever a /* prefix matched, and that one to another origin
+// never carries a share-link token.
+func FuzzRedirectLocation(f *testing.F) {
+	for _, s := range []string{"", "a/b/", `\evil.example`, "/evil.example", "a?t=x#y", "\t\n", "%2F%2Fevil", ".."} {
+		f.Add(s, "t=wl_x&k=1")
+	}
+	f.Fuzz(func(t *testing.T, rest, rawQuery string) {
+		if _, err := url.ParseRequestURI("/?" + rawQuery); err != nil || strings.ContainsAny(rawQuery, " #") {
+			t.Skip("net/http never hands the edge such a query")
+		}
+		for _, to := range []string{"/:splat", "/docs/:splat", "/:splat?own=1"} {
+			if loc := redirectLocation(to, rest, rawQuery); !sameHostTarget(loc) {
+				t.Fatalf("redirectLocation(%q, %q, %q) = %q leaves the site", to, rest, rawQuery, loc)
+			}
+		}
+		loc := redirectLocation("https://elsewhere.example.test/:splat", rest, rawQuery)
+		u, err := url.Parse(loc)
+		if err != nil || u.Host != "elsewhere.example.test" {
+			t.Fatalf("redirectLocation to another origin = %q (%v)", loc, err)
+		}
+		if _, ok := firstQueryValue(u.RawQuery, tokenParam); ok {
+			t.Fatalf("redirectLocation(%q) = %q carries a t parameter", rawQuery, loc)
+		}
+	})
+}

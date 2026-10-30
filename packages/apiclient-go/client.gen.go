@@ -290,6 +290,30 @@ func (e PolicyVisibility) Valid() bool {
 	}
 }
 
+// Defines values for RedirectStatus.
+const (
+	RedirectStatusN301 RedirectStatus = 301
+	RedirectStatusN302 RedirectStatus = 302
+	RedirectStatusN307 RedirectStatus = 307
+	RedirectStatusN308 RedirectStatus = 308
+)
+
+// Valid indicates whether the value is a known member of the RedirectStatus enum.
+func (e RedirectStatus) Valid() bool {
+	switch e {
+	case RedirectStatusN301:
+		return true
+	case RedirectStatusN302:
+		return true
+	case RedirectStatusN307:
+		return true
+	case RedirectStatusN308:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Scope.
 const (
 	ScopeDeploy Scope = "deploy"
@@ -786,6 +810,9 @@ type CreateDeployRequest struct {
 	// Files The deploy's files, relative to `path` when it is given. At least one for a full deploy; empty with `path` removes the prefix.
 	Files []ManifestFile `json:"files"`
 
+	// Headers Header rules, in order. Left out, none, or with `path` the base deploy's; `[]` for none.
+	Headers *[]HeaderRule `json:"headers,omitempty"`
+
 	// ImmutableAssets Cache files under `/assets/` with a content hash in their name for a year as immutable (SPEC "Serving"). Only set it when every such name changes whenever its content does. Defaults to false, or with `path` to the base deploy's setting.
 	ImmutableAssets *bool   `json:"immutableAssets,omitempty"`
 	Message         *string `json:"message,omitempty"`
@@ -794,6 +821,9 @@ type CreateDeployRequest struct {
 	//
 	// Examples: /mockup-x/
 	Path *DeployPath `json:"path,omitempty"`
+
+	// Redirects Redirect rules, in order. Left out, none, or with `path` the base deploy's; `[]` for none.
+	Redirects *[]Redirect `json:"redirects,omitempty"`
 
 	// Spa Serve `/index.html` for missing extensionless paths. Defaults to false, or with `path` to the base deploy's setting.
 	Spa *bool `json:"spa,omitempty"`
@@ -916,6 +946,9 @@ type Deploy struct {
 	CreatedAt Timestamp `json:"createdAt"`
 	FileCount int32     `json:"fileCount"`
 
+	// Headers The deploy's header rules in order, with canonical header names. Absent when it has none.
+	Headers *[]HeaderRule `json:"headers,omitempty"`
+
 	// Id A lowercase, hyphenated UUIDv7.
 	//
 	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
@@ -929,6 +962,9 @@ type Deploy struct {
 	//
 	// Examples: /mockup-x/
 	Path *DeployPath `json:"path,omitempty"`
+
+	// Redirects The deploy's redirect rules in order, each with its status. Absent when it has none.
+	Redirects *[]Redirect `json:"redirects,omitempty"`
 
 	// Spa Whether missing paths without a file extension serve `/index.html` while this deploy is active.
 	Spa bool `json:"spa"`
@@ -1185,6 +1221,19 @@ type GroupSiteCount struct {
 
 	// Sites A number of sites.
 	Sites SiteCount `json:"sites"`
+}
+
+// HeaderRule Sets response headers on deploy responses for matching request paths; every matching rule applies in order, a later one overwriting the same name. See SPEC "Redirects and response headers" for the allowlist.
+type HeaderRule struct {
+	// Path An exact clean path, or a prefix ending in `/*` (`/*` matches every path). Never under `/.wardlock/`.
+	//
+	// Examples: /*
+	Path string `json:"path"`
+
+	// Set Header names to values: `Content-Security-Policy`, `Content-Security-Policy-Report-Only`, `Permissions-Policy`, `X-Frame-Options`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Embedder-Policy`, `X-Content-Type-Options` (only `nosniff`), `Link`, and, sent only under public policies, `Referrer-Policy` and the `Access-Control-Allow-*`, `Access-Control-Expose-Headers` and `Access-Control-Max-Age` response headers.
+	//
+	// Examples: {"X-Frame-Options":"DENY"}
+	Set map[string]string `json:"set"`
 }
 
 // Health defines model for Health.
@@ -1483,6 +1532,25 @@ type PolicyVisibility string
 type PollCliLoginRequest struct {
 	DeviceCode string `json:"deviceCode"`
 }
+
+// Redirect Applied, first match wins, only to a request path that serves no file (after clean URLs, before the 404 page and the SPA fallback), once the visitor may read that path. See SPEC "Redirects and response headers".
+type Redirect struct {
+	// From An exact clean path such as `/old`, or a prefix ending in `/*` such as `/blog/*`, which matches `/blog/` and everything under it. Never under `/.wardlock/`.
+	//
+	// Examples: /blog/*
+	From string `json:"from"`
+
+	// Status Defaults to 301 on creation; always present on a Deploy.
+	Status *RedirectStatus `json:"status,omitempty"`
+
+	// To A path on the same site (`/news/:splat`) or an absolute `https://` URL. `:splat` in its path is replaced by what a `/*` prefix matched. The request's query string is kept unless `to` has its own.
+	//
+	// Examples: /news/:splat
+	To string `json:"to"`
+}
+
+// RedirectStatus Defaults to 301 on creation; always present on a Deploy.
+type RedirectStatus int
 
 // RequestCount Requests answered below 400 (`allowed`) and at 400 or above (`refused`).
 type RequestCount struct {
@@ -2851,6 +2919,7 @@ type ClientInterface interface {
 	//
 	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 	// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
+	// `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -2861,6 +2930,7 @@ type ClientInterface interface {
 	//
 	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 	// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
+	// `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -4079,6 +4149,7 @@ func (c *Client) ListDeploys(ctx context.Context, site SiteName, params *ListDep
 //
 // Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 // With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
+// `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
 //
 // Takes any type of body and a specified content type.
 //
@@ -4099,6 +4170,7 @@ func (c *Client) CreateDeployWithBody(ctx context.Context, site SiteName, conten
 //
 // Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 // With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
+// `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
 //
 // Takes a body of the `application/json` content type.
 //
@@ -8259,6 +8331,7 @@ type ClientWithResponsesInterface interface {
 	//
 	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 	// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
+	// `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -8269,6 +8342,7 @@ type ClientWithResponsesInterface interface {
 	//
 	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 	// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
+	// `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -14081,6 +14155,7 @@ func (c *ClientWithResponses) ListDeploysWithResponse(ctx context.Context, site 
 //
 // Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 // With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
+// `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -14097,6 +14172,7 @@ func (c *ClientWithResponses) CreateDeployWithBodyWithResponse(ctx context.Conte
 //
 // Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 // With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
+// `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //

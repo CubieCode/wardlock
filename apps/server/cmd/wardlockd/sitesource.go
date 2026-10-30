@@ -59,6 +59,12 @@ func (s siteSource) SiteForHost(ctx context.Context, host string) (edge.ServedSi
 	}
 	served.SPA = d.SPA
 	served.ImmutableAssets = d.ImmutableAssets
+	for _, r := range d.Redirects {
+		served.Redirects = append(served.Redirects, edge.Redirect{From: r.From, To: r.To, Status: r.Status})
+	}
+	for _, h := range d.Headers {
+		served.Headers = append(served.Headers, edge.HeaderRule{Path: h.Path, Set: h.Set})
+	}
 	if s.moderation != nil {
 		exempt, err := s.moderation.Exempt(ctx, site.OwnerID)
 		if err != nil {

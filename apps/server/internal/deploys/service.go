@@ -15,7 +15,8 @@ import (
 )
 
 // Errors returned by Service. Input errors arrive as *TargetError wrapping
-// ErrInvalidPath, ErrInvalidManifest, ErrLimitExceeded or ErrBlockedType.
+// ErrInvalidPath, ErrInvalidManifest, ErrInvalidConfig, ErrLimitExceeded or
+// ErrBlockedType.
 var (
 	// ErrNotFound covers a missing site or deploy and one that belongs to
 	// another owner alike.
@@ -23,6 +24,9 @@ var (
 	ErrInvalidPath     = errors.New("invalid path")
 	ErrInvalidManifest = errors.New("invalid manifest")
 	ErrLimitExceeded   = errors.New("limit exceeded")
+	// ErrInvalidConfig means a redirect or header rule is malformed or sets
+	// a header a deploy may not (C1.17).
+	ErrInvalidConfig = errors.New("invalid config")
 	// ErrBlockedType means the manifest lists a file whose extension the
 	// operator has blocked (A2.14).
 	ErrBlockedType      = errors.New("file type blocked")
@@ -159,12 +163,21 @@ func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manife
 	if err := s.c.Limits.validate(&m); err != nil {
 		return store.Deploy{}, nil, err
 	}
+	if err := validateRules(&m); err != nil {
+		return store.Deploy{}, nil, err
+	}
 	if err := s.checkHeldSizes(ctx, ownerID, &m); err != nil {
 		return store.Deploy{}, nil, err
 	}
 	d.FileCount = len(m.Files)
 	d.SPA = m.SPA != nil && *m.SPA
 	d.ImmutableAssets = m.ImmutableAssets != nil && *m.ImmutableAssets
+	if m.Redirects != nil && len(*m.Redirects) > 0 {
+		d.Redirects = *m.Redirects
+	}
+	if m.Headers != nil && len(*m.Headers) > 0 {
+		d.Headers = *m.Headers
+	}
 	d.CreatedAt = s.now()
 	for _, f := range m.Files {
 		d.TotalSize += f.Size
@@ -184,8 +197,8 @@ func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manife
 
 // merge turns a path deploy's manifest into the whole site's: the files of
 // the site's active deploy, pinned as d's base, outside the prefix, as they
-// are, and m's files under it. SPA and ImmutableAssets left unset follow
-// the base. A site with nothing live takes m's files alone.
+// are, and m's files under it. SPA, ImmutableAssets, Redirects and Headers
+// left unset follow the base. A site with nothing live takes m's files alone.
 func (s *Service) merge(ctx context.Context, ownerID string, site store.Site, m *Manifest, d *store.Deploy) error {
 	prefix, err := NormalisePrefix(m.Path)
 	if err != nil {
@@ -226,6 +239,12 @@ func (s *Service) merge(ctx context.Context, ownerID string, site store.Site, m 
 		}
 		if m.ImmutableAssets == nil {
 			m.ImmutableAssets = &base.ImmutableAssets
+		}
+		if m.Redirects == nil {
+			m.Redirects = &base.Redirects
+		}
+		if m.Headers == nil {
+			m.Headers = &base.Headers
 		}
 	}
 	m.Files = files

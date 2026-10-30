@@ -59,19 +59,25 @@ func firstQueryValue(rawQuery, key string) (string, bool) {
 // parameter removed and the rest kept byte for byte: where the
 // interstitial returns the visitor.
 func withoutToken(r *http.Request) string {
+	p := r.URL.EscapedPath()
+	if q := queryWithoutToken(r.URL.RawQuery); q != "" {
+		p += "?" + q
+	}
+	return p
+}
+
+// queryWithoutToken is rawQuery with every t parameter, in any spelling,
+// and empty parts removed.
+func queryWithoutToken(rawQuery string) string {
 	var kept []string
-	for part := range strings.SplitSeq(r.URL.RawQuery, "&") {
+	for part := range strings.SplitSeq(rawQuery, "&") {
 		k, _, _ := strings.Cut(part, "=")
 		if dk, err := url.QueryUnescape(k); part == "" || (err == nil && dk == tokenParam) {
 			continue
 		}
 		kept = append(kept, part)
 	}
-	p := r.URL.EscapedPath()
-	if len(kept) > 0 {
-		p += "?" + strings.Join(kept, "&")
-	}
-	return p
+	return strings.Join(kept, "&")
 }
 
 // navigation reports whether r is a browser loading a page: a GET that
@@ -108,7 +114,10 @@ func (e *Edge) issueLinkSession(w http.ResponseWriter, r *http.Request, d *acces
 // stripScript removes the token from the address bar once an HTML page has
 // loaded, so it is not bookmarked, shared or sent on as a Referer by
 // accident. It changes nothing else about the URL's path or fragment.
-const stripScript = `<script>(function(){try{var u=new URL(location.href);if(u.searchParams.has("t")){u.searchParams.delete("t");history.replaceState(history.state,"",u.pathname+u.search+u.hash)}}catch(e){}})();</script>`
+const stripScript = "<script>" + stripJS + "</script>"
+
+// stripJS is stripScript's body, which stripCSPSource hashes.
+const stripJS = `(function(){try{var u=new URL(location.href);if(u.searchParams.has("t")){u.searchParams.delete("t");history.replaceState(history.state,"",u.pathname+u.search+u.hash)}}catch(e){}})();`
 
 // injectStrip inserts stripScript into an HTML document: before </head>,
 // else before <body, else after a leading doctype, else at the start. Tags
@@ -179,6 +188,15 @@ func (e *Edge) serveStripped(w http.ResponseWriter, r *http.Request, s *served, 
 	}
 	body := injectStrip(doc)
 	h := w.Header()
+	// A deploy's CSP (C1.17) must not block the script that removes the
+	// token from the address bar.
+	if csp := h.Values("Content-Security-Policy"); len(csp) > 0 {
+		allowed := make([]string, len(csp))
+		for i, v := range csp {
+			allowed[i] = allowStripScript(v)
+		}
+		h["Content-Security-Policy"] = allowed
+	}
 	h.Set("Cache-Control", "private, no-store")
 	h.Set("Content-Type", ctype)
 	h.Set("Content-Length", strconv.Itoa(len(body)))

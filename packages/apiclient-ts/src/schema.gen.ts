@@ -580,6 +580,7 @@ export interface paths {
      * Create a deploy from a manifest.
      * @description Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
      *     With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
+     *     `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
      */
     post: operations['createDeploy'];
     delete?: never;
@@ -1641,6 +1642,45 @@ export interface components {
       immutableAssets: boolean;
       /** @description The prefix a path deploy replaced, keeping the rest of its base. Absent for a full deploy. Either way the deploy lists every file the site serves while it is active. */
       path?: components['schemas']['DeployPath'];
+      /** @description The deploy's redirect rules in order, each with its status. Absent when it has none. */
+      redirects?: components['schemas']['Redirect'][];
+      /** @description The deploy's header rules in order, with canonical header names. Absent when it has none. */
+      headers?: components['schemas']['HeaderRule'][];
+    };
+    /** @description Applied, first match wins, only to a request path that serves no file (after clean URLs, before the 404 page and the SPA fallback), once the visitor may read that path. See SPEC "Redirects and response headers". */
+    Redirect: {
+      /**
+       * @description An exact clean path such as `/old`, or a prefix ending in `/*` such as `/blog/*`, which matches `/blog/` and everything under it. Never under `/.wardlock/`.
+       * @example /blog/*
+       */
+      from: string;
+      /**
+       * @description A path on the same site (`/news/:splat`) or an absolute `https://` URL. `:splat` in its path is replaced by what a `/*` prefix matched. The request's query string is kept unless `to` has its own.
+       * @example /news/:splat
+       */
+      to: string;
+      /**
+       * @description Defaults to 301 on creation; always present on a Deploy.
+       * @enum {integer}
+       */
+      status?: 301 | 302 | 307 | 308;
+    };
+    /** @description Sets response headers on deploy responses for matching request paths; every matching rule applies in order, a later one overwriting the same name. See SPEC "Redirects and response headers" for the allowlist. */
+    HeaderRule: {
+      /**
+       * @description An exact clean path, or a prefix ending in `/*` (`/*` matches every path). Never under `/.wardlock/`.
+       * @example /*
+       */
+      path: string;
+      /**
+       * @description Header names to values: `Content-Security-Policy`, `Content-Security-Policy-Report-Only`, `Permissions-Policy`, `X-Frame-Options`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Embedder-Policy`, `X-Content-Type-Options` (only `nosniff`), `Link`, and, sent only under public policies, `Referrer-Policy` and the `Access-Control-Allow-*`, `Access-Control-Expose-Headers` and `Access-Control-Max-Age` response headers.
+       * @example {
+       *       "X-Frame-Options": "DENY"
+       *     }
+       */
+      set: {
+        [key: string]: string;
+      };
     };
     /**
      * @description A directory prefix starting and ending with `/`, such as `/mockup-x/`: never `/` itself, with no empty, `.` or `..` segments, no control or invisible format characters, and never under `/.wardlock/`. Matched byte for byte against deploy paths.
@@ -1691,6 +1731,10 @@ export interface components {
       immutableAssets?: boolean;
       /** @description Replace only this prefix of the site, keeping the active deploy's files outside it (see `createDeploy`). */
       path?: components['schemas']['DeployPath'];
+      /** @description Redirect rules, in order. Left out, none, or with `path` the base deploy's; `[]` for none. */
+      redirects?: components['schemas']['Redirect'][];
+      /** @description Header rules, in order. Left out, none, or with `path` the base deploy's; `[]` for none. */
+      headers?: components['schemas']['HeaderRule'][];
     };
     CreatedDeploy: {
       deploy: components['schemas']['Deploy'];

@@ -344,6 +344,7 @@ Each refusal's message says which quota and its limit; nothing is written and a 
 
 - `/` and `/dir/` serve `index.html`, and `/page` serves `page.html` (clean URLs). Only `GET` and `HEAD` are served.
 - A missing path serves the deploy's `404.html`, or `/index.html` with the SPA fallback (`--spa`).
+- **Redirects and response headers** (C1.17): a deploy may carry redirect rules, applied only to paths that serve no file, and extra response headers from an allowlist, both from `wardlock.json` (see [Redirects and response headers](#redirects-and-response-headers-c117)).
 - Responses support `ETag`, conditional and `Range` requests, and precompressed `.br` and `.gz` siblings.
 - Cache headers: `Cache-Control: public, max-age=0, must-revalidate` for every deployed file; `private` replaces `public` on protected sites.
 - **Long-term caching for hashed assets** (C1.10): a deploy may opt in with `--immutable-assets`, so files such as `assets/index-BdK3j2Lp.js` are cached for a year.
@@ -353,7 +354,7 @@ Each refusal's message says which quota and its limit; nothing is written and a 
 <summary>Request rules in full</summary>
 
 - `/` and `/dir/` serve `index.html`; `/page` serves `page.html` when `page` does not exist (clean URLs); `/page.html` is served as is. `/dir` without its slash redirects (301, to the absolute path, query kept) to `/dir/` when `dir/index.html` exists and neither `dir` nor `dir.html` does. Only `GET` and `HEAD` are served (405 otherwise).
-- A missing path serves the deploy's `404.html` with status 404 if present, otherwise a plain 404. With the **SPA fallback** option (recorded on each deploy from `--spa` or `wardlock.json`, so rollback restores it), missing paths without a file extension serve `/index.html` with status 200.
+- A path no file answers, after clean URLs and the directory redirect, is first matched against the deploy's redirects (C1.17); then it serves the SPA fallback or `404.html`. A missing path serves the deploy's `404.html` with status 404 if present, otherwise a plain 404. With the **SPA fallback** option (recorded on each deploy from `--spa` or `wardlock.json`, so rollback restores it), missing paths without a file extension serve `/index.html` with status 200.
 - `Content-Type` comes from the file's extension: the types browsers show as text or a page (`.html`, `.htm`, `.shtml` `text/html`, `.xhtml`, `.xht`, `.xhtm`, `.svg`, `.txt`, `.text` `text/plain`, `.md`, `.markdown` `text/markdown`, `.csv`, `.json`, `.xml`) are pinned in the server, so every host serves them alike; others come from Go's table and the host's `mime.types`, and an unknown extension is `application/octet-stream`, never sniffed.
 - Responses carry `ETag` (content hash) and `Last-Modified` (activation time), honour conditional requests and byte `Range` requests, and serve precompressed `.br` or `.gz` siblings when the client accepts them: the sibling with the highest `Accept-Encoding` q wins, `br` on a tie; `q=0`, or a q that does not parse or lies outside 0–1, refuses a coding. A file with a sibling answers with `Vary: Accept-Encoding`, and a sibling has its own `ETag`. A precompressed sibling honours a single byte range; a multi-range request for one is answered 200 with the whole sibling. `404.html` is sent whole, without conditional or range handling. A file whose extension has no known type is sent as `application/octet-stream`, never sniffed.
 - An unknown host, a nested subdomain, a pending or lapsed custom domain and a site with no active deploy all get the same plain 404, for every method and path, `/.wardlock/` included. Deploy files under `.wardlock/` (in any letter case) are never served, even as `404.html`.
@@ -366,6 +367,54 @@ Each refusal's message says which quota and its limit; nothing is written and a 
 - **Long-term caching for hashed assets** (C1.10). A deploy may opt in with `immutableAssets` (recorded on each deploy from `--immutable-assets` or `wardlock.json`, like the SPA fallback, so rollback restores matching headers; off by default). While such a deploy is active, a **hashed asset** answering its own path with status 200 is sent with `Cache-Control: public, max-age=31536000, immutable`, or `private, max-age=31536000, immutable` on protected sites; its precompressed siblings, `304`s and range answers carry the same header. Everything else keeps the headers above: other files, the request of a hashed asset by another path (a clean URL), `?format=md|txt` renditions, the SPA fallback, `404.html` and plain 404s, redirects, and every response that is `no-store` (one that sets or clears a cookie, the HTML a share-link token in the URL strips, server errors, and the login, interstitial, callback and other `/.wardlock/` pages). While [content screening](#content-screening-a215) applies to a site, a file it has not screened yet is sent `no-cache` instead, and gets the year once it has a verdict.
   - The rule: a deploy path is a hashed asset when it starts with `assets/` (case-sensitive, at any depth below it, such as `assets/fonts/inter.5d1c2e8f.woff2`) and its file name, without its last extension, ends in `-` or `.` followed by 8 or more characters from `[A-Za-z0-9_]`, with at least one character before that separator. The extension must be non-empty. So Vite's and Rollup's `index-BdK3j2Lp.js` and webpack's and Parcel's `main.3f2a9c1b.js` match; `app.js`, `index-BdK3j2L.js` (7 characters), `main.3f2a9c1b.chunk.js` (the hash is not last), `vendor-BdK3j2Lp.js` outside `/assets/` and a sibling requested by its own name (`index-BdK3j2Lp.js.br`) do not.
   - The trade-off: the rule looks only at names, not at whether a segment really is a hash, so it is deliberately narrow to `/assets/`, and it still has false positives and negatives. A descriptive name with a long final word (`assets/my-component.js`, `assets/logo.original.png`) matches and is cached for a year, so a later deploy that changes such a file under the same name reaches returning visitors only when their cache expires or is cleared. A hash containing `-` (Rollup's base64url can produce one) may leave too short a segment and simply keeps revalidating, which is safe. That is why the option is per deploy and the owner's call: turn it on only when every file under `/assets/` is renamed whenever its content changes, which Vite, webpack and Parcel production builds do by default. On a protected site the browser keeps the private copy for its lifetime, so revoking access does not remove assets a visitor already fetched; pages are still checked on every request.
+
+</details>
+
+### Redirects and response headers (C1.17)
+
+A deploy may carry `redirects` and `headers` from `wardlock.json` (no flags). They are recorded on the deploy like the SPA fallback, so rollback restores them, and a path deploy keeps its base's unless it gives its own.
+
+```json
+{
+  "redirects": [
+    { "from": "/old", "to": "/new" },
+    {
+      "from": "/blog/*",
+      "to": "https://blog.example.com/:splat",
+      "status": 308
+    }
+  ],
+  "headers": [
+    { "path": "/*", "set": { "X-Frame-Options": "DENY" } },
+    {
+      "path": "/embed/*",
+      "set": {
+        "Content-Security-Policy": "frame-ancestors https://example.com"
+      }
+    }
+  ]
+}
+```
+
+|            | Redirects                                                                  | Headers                                                                                                  |
+| ---------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Shape      | `{from, to, status}`                                                       | `{path, set}`                                                                                            |
+| Matching   | in order, first match wins                                                 | every matching rule in order; a later one overwrites the same name                                       |
+| Applies to | a request path that serves no file, before the SPA fallback and `404.html` | every deploy response: files, renditions, redirects, the SPA fallback, `404.html` and plain 404s         |
+| Never      | rewrites or proxying; a deployed file always wins                          | under `/.wardlock/`, or on the login page, `401`, the interstitial, `429`, `451` or the unavailable page |
+
+`from` and `path` are an exact path (`/old`) or a prefix ending in `/*` (`/blog/*`). `to` is a path on the site or an `https://` URL, and `status` is 301 (the default), 302, 307 or 308. Both kinds apply only after the access decision for the request path, so a protected path's redirects and headers reach only visitors who may read it.
+
+<details>
+<summary>Matching, query strings, the header allowlist and limits</summary>
+
+- **Matching.** `from` and `path` are matched byte for byte, case-sensitively, against the request path after percent-decoding and dot-segment resolution (the path policies see). An exact rule matches only that path, so the trailing slash counts: `/old` does not match `/old/`. A prefix `/blog/*` matches `/blog/` and everything under it, but not `/blog`; `/*` matches every path. `*` may appear only as that final `/*`, and `?` and `#` not at all. A rule must be a clean path (no empty, `.` or `..` segments) and never under `/.wardlock/` in any letter case; Wardlock serves that path itself, so such a rule could never apply and is refused.
+- **Redirects.** What a `/*` prefix matched replaces `:splat` in the path part of `to`, each segment percent-encoded, so `/blog/a b/` to `/news/:splat` answers `Location: /news/a%20b/`; `:splat` is refused in `to`'s host, query or fragment and when `from` is exact. The request's query string is kept, placed before any `#fragment` of `to`, unless `to` has a query of its own, which replaces it. A share-link token (`t`) in the query is kept on a same-site `to`, as for the directory redirect, so a fetcher without cookies can follow it; it is always removed when `to` is another origin, so a token never leaves the site. Redirects answer only `GET` and `HEAD` (other methods are 405 first) with no body, `Cache-Control` as for any deploy response.
+- **Order of resolution.** A file at the path, `page.html` for `/page`, the directory index and the `/dir` to `/dir/` redirect all win over a rule. Then the deploy's redirects, then the SPA fallback, then `404.html`, then a plain 404.
+- **Header allowlist.** `Content-Security-Policy`, `Content-Security-Policy-Report-Only`, `Permissions-Policy`, `X-Frame-Options`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Embedder-Policy`, `X-Content-Type-Options` (only `nosniff`, which Wardlock sends on every response anyway), `Link`, and the public-only `Referrer-Policy`, `Access-Control-Allow-Origin`, `Access-Control-Allow-Credentials`, `Access-Control-Allow-Headers`, `Access-Control-Allow-Methods`, `Access-Control-Expose-Headers` and `Access-Control-Max-Age`. Names match in any letter case and are stored and returned in that canonical form; one name twice in a rule is refused. Any other name answers `400 invalid_config` naming the rule. `Cache-Control`, `Set-Cookie`, `Content-*` (other than the two CSP headers), `ETag`, `Last-Modified`, `Location`, `Vary` and `Strict-Transport-Security` are never owner-set.
+- **Protected policies.** Public-only headers are accepted at deploy time and left out of every response a protected policy governs (policies can change after a deploy), and Wardlock's own [protected-site headers](#protected-site-response-headers) are set after the deploy's, so they always win. On an HTML page a share-link token opened from the URL, which carries the inline script that removes `t` from the address bar, each policy in the deploy's `Content-Security-Policy` gains that script's `'sha256-…'` source. It goes on `script-src-elem`, else `script-src`, else `default-src` when the policy has one, and replaces a lone `'none'`. A directive already allowing inline script (`'unsafe-inline'` with no nonce, hash or `'strict-dynamic'`) is kept, and `Content-Security-Policy-Report-Only` is never changed. Every other response sends the deploy's value as given. A `Link` rule adds to the `Link: rel="alternate"` headers of [renditions](#ai-readable-renditions-a26).
+- **Limits**, checked when the deploy is created: 1,000 redirects (`413 limit_exceeded`, target `redirects`), 100 header rules (target `headers`), 8 KiB for each `from`, `to`, `path`, header name and value (target `redirects[i]` or `headers[i]`), and 64 KiB for all of them together (target `redirects` when the redirects alone pass it, otherwise `headers`). Every string must be valid UTF-8 without control characters, and `to` may hold no spaces (percent-encode them). Other faults (a missing field, a bad status or `to`, a disallowed header, an empty value) answer `400 invalid_config` with the rule as `target`.
+- **Absent or empty.** Leaving `redirects` or `headers` out gives a full deploy none and a path deploy its base's, as for `spa`; `[]` gives none either way.
 
 </details>
 
@@ -692,7 +741,7 @@ A withheld file answers `451 Unavailable For Legal Reasons` wherever it would be
 
 ## Protected-site response headers
 
-Every response a protected policy governs is kept out of search engines and shared caches (`X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: private` or `no-store`, `Vary: Cookie`). The login page also sends a restrictive `Content-Security-Policy` and `X-Frame-Options: DENY`. Wardlock never blocks AI fetchers in `robots.txt`; access is the policy's job.
+Every response a protected policy governs is kept out of search engines and shared caches (`X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer`, `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: private` or `no-store`, `Vary: Cookie`). The login page also sends a restrictive `Content-Security-Policy` and `X-Frame-Options: DENY`. A deploy's own headers (C1.17) never replace these. Wardlock never blocks AI fetchers in `robots.txt`; access is the policy's job.
 
 <details>
 <summary>Every header and when it is sent</summary>
@@ -857,11 +906,13 @@ Add it to a client with the directory it may deploy from and pull into as `--roo
   "immutableAssets": false,
   "path": "/mockup-x/",
   "group": "Client work",
-  "tags": ["preview"]
+  "tags": ["preview"],
+  "redirects": [{ "from": "/old", "to": "/new" }],
+  "headers": [{ "path": "/*", "set": { "X-Frame-Options": "DENY" } }]
 }
 ```
 
-All fields are optional; flags and arguments override them (`--spa=false` overrides `"spa": true`, `--immutable-assets=false` overrides `"immutableAssets": true`, `--path ''` overrides `"path"`). `path` makes every `deploy` from this directory a path deploy into that prefix (C1.13). `group` and `tags` file the deployed site under that existing group and add those existing tags once it is live, keeping any tags it already has: a deploy never removes a site's group or tags (V5.15; `--group` and `--tag` override them, and `--group ''` leaves the group as it is). `server` applies to every command except `login`, `logout` and `version`; `site`, `dir` (relative to this directory), `path`, `group` and `tags` only to `deploy`, since `rollback` and `teardown` always name their site. Unknown fields, wrong types and anything but one JSON object are usage errors naming the file, so typos are caught.
+All fields are optional; flags and arguments override them (`--spa=false` overrides `"spa": true`, `--immutable-assets=false` overrides `"immutableAssets": true`, `--path ''` overrides `"path"`). `path` makes every `deploy` from this directory a path deploy into that prefix (C1.13). `group` and `tags` file the deployed site under that existing group and add those existing tags once it is live, keeping any tags it already has: a deploy never removes a site's group or tags (V5.15; `--group` and `--tag` override them, and `--group ''` leaves the group as it is). `redirects` and `headers` are sent with every deploy from this directory, with no flags to override them ([Redirects and response headers](#redirects-and-response-headers-c117)); a rule missing `from`, `to`, `path` or `set`, or a `status` other than 301, 302, 307 or 308, is a usage error naming the rule, and the server checks the rest. `server` applies to every command except `login`, `logout` and `version`; `site`, `dir` (relative to this directory), `path`, `group`, `tags`, `redirects` and `headers` only to `deploy`, since `rollback` and `teardown` always name their site. Unknown fields, wrong types and anything but one JSON object are usage errors naming the file, so typos are caught.
 
 `.wardlockignore` uses `.gitignore` syntax, relative to the deployed directory. `.git/`, `node_modules/`, `.env*`, `.DS_Store` and the config files are never deployed; other dotfiles are left out unless re-included with `!`, except `.well-known/`, which is included.
 
