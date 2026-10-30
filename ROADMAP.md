@@ -2,12 +2,12 @@
 
 Statuses are `todo`, `in-progress`, `review`, `done` and `blocked` (with a reason). `done` means merged to main and accepted, not merely coded; the coordinator sets it after merge. Implementing any item needs an explicit assignment; a request to scaffold, document or plan is not one. Unbuilt features stay invisible in the dashboard and CLI until their item is done.
 
-Each item is one PR on its own branch, built with the [wardlock-item](.agents/skills/wardlock-item/SKILL.md) skill once its dependencies are `done`. Workers change only their own item's Status, Owner and PR fields, then run `node scripts/roadmap-board.mjs` to refresh the board.
+Each item is one PR on its own branch, built with the [wardlock-item](.agents/skills/wardlock-item/SKILL.md) skill once its dependencies are `done`. Workers change only their own item's Status and Owner fields (the coordinator records the PR when it marks the item `done`), then run `node scripts/roadmap-board.mjs` to refresh the board.
 
 <details>
 <summary>Branches, ownership and serialization gates</summary>
 
-Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with the [wardlock-item](.agents/skills/wardlock-item/SKILL.md) skill; parallel lanes are coordinated with [wardlock-orchestrate](.agents/skills/wardlock-orchestrate/SKILL.md). Start an item only when every dependency is `done` on main. Workers update only their own item's Status, Owner and PR fields. The **Parallel** line names the files an item owns, the serialization gates it touches (migrations and sqlc schema, `packages/api-spec`, `packages/ui`, `internal/access` cookie/session primitives, lockfiles) and the items it can share a wave with; check real file overlap before launching. One migration owner and one lockfile owner per wave.
+Each item is one focused PR on branch `feat/<id-lower>-<slug>`, implemented with the [wardlock-item](.agents/skills/wardlock-item/SKILL.md) skill; parallel lanes are coordinated with [wardlock-orchestrate](.agents/skills/wardlock-orchestrate/SKILL.md). Start an item only when every dependency is `done` on main. Workers update only their own item's Status and Owner fields. The **Parallel** line names the files an item owns, the serialization gates it touches (migrations and sqlc schema, `packages/api-spec`, `packages/ui`, `internal/access` cookie/session primitives, lockfiles) and the items it can share a wave with; check real file overlap before launching. One migration owner and one lockfile owner per wave.
 
 </details>
 
