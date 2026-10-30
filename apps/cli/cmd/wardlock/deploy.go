@@ -45,7 +45,12 @@ const (
 type deployResult struct {
 	apiclient.Activation
 	// Path is the prefix a path deploy replaced; absent for a full deploy.
-	Path        string        `json:"path,omitempty"`
+	Path string `json:"path,omitempty"`
+	// Preview and URL name the preview a preview deploy went to and its
+	// address (C1.19); absent for a deploy to the live site. Preview
+	// replaces the Activation's preview object.
+	Preview     string        `json:"preview,omitempty"`
+	URL         string        `json:"url,omitempty"`
 	SiteCreated bool          `json:"siteCreated"`
 	Uploaded    uploadedStats `json:"uploaded"`
 	Skipped     []string      `json:"skipped"`
@@ -70,13 +75,20 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 		"With --path /mockup-x/ (default \"path\" from wardlock.json), DIR\n"+
 		"replaces only that part of the site and everything else stays live.\n"+
 		"An empty DIR removes it, after you confirm by typing the path;\n"+
-		"without a terminal, or with --json, pass --yes instead.")
+		"without a terminal, or with --json, pass --yes instead.\n\n"+
+		"With --preview NAME, the deploy goes to the preview NAME of the site,\n"+
+		"served at <site>--NAME on the server's base domain, and the live site\n"+
+		"is left as it is. Deploying to the same NAME again replaces it. A\n"+
+		"preview lasts 14 days after its last deploy unless --expires says\n"+
+		"otherwise; wardlock preview promote puts it live.")
 	g := addGlobalFlags(fs)
 	message := fs.String("message", "", "describe this deploy in its history")
 	spa := fs.Bool("spa", false, "serve /index.html for missing paths without a file extension (default \"spa\" from wardlock.json)")
 	immutable := fs.Bool("immutable-assets", false, "cache hashed files under /assets/, such as index-BdK3j2Lp.js, for a year without revalidating (default \"immutableAssets\" from wardlock.json)")
 	pathFlag := fs.String("path", "", "deploy DIR into this part of the site, such as /mockup-x/, keeping the rest (default \"path\" from wardlock.json; '' for the whole site)")
 	yes := fs.Bool("yes", false, "with --path and an empty DIR, remove the path without asking")
+	previewFlag := fs.String("preview", "", "deploy to this preview of the site, such as pr-42, instead of the live site")
+	expires := fs.String("expires", "", "with --preview, how long the preview lasts after this deploy: 1d to 90d, or never (default 14d, or what the preview had)")
 	groupFlag := fs.String("group", "", "after the deploy goes live, put the site in this existing group (default \"group\" from wardlock.json; '' to leave the site's group as it is: a deploy never removes a site's group or tags)")
 	tagFlags := stringsFlag(fs, "tag", "after the deploy goes live, add this existing tag to the site, keeping its other tags (repeatable; default \"tags\" from wardlock.json)")
 	pos, err := parseArgs(fs, args)
@@ -144,6 +156,19 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 	} else {
 		useSPA, useImmutable = orFalse(useSPA), orFalse(useImmutable)
 	}
+	if *expires != "" && *previewFlag == "" {
+		return usageErrorf("--expires needs --preview NAME: only a preview expires")
+	}
+	if *expires != "" {
+		if err := checkExpires(*expires); err != nil {
+			return err
+		}
+	}
+	if *previewFlag != "" {
+		if err := checkPreviewName(*previewFlag); err != nil {
+			return err
+		}
+	}
 	if n := utf8.RuneCountInString(*message); n > maxMessageChars {
 		return usageErrorf("--message is %d characters; the limit is %d", n, maxMessageChars)
 	}
@@ -184,7 +209,7 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 
 	d := &deployer{a: a, c: c, root: root, prog: &progress{w: a.stderr, live: a.liveProgress, now: a.now}}
 	return d.run(ctx, deployRequest{path: path, shown: shown, target: t, message: *message, spa: useSPA, immutableAssets: useImmutable,
-		redirects: cfg.Redirects, headers: cfg.Headers, prefix: prefix, yes: *yes, json: g.json, file: file})
+		redirects: cfg.Redirects, headers: cfg.Headers, prefix: prefix, preview: *previewFlag, expires: *expires, yes: *yes, json: g.json, file: file})
 }
 
 // filing is the group and tags a deploy files its site under, by ID.
@@ -285,8 +310,11 @@ type deployRequest struct {
 	redirects *[]apiclient.Redirect
 	headers   *[]apiclient.HeaderRule
 	// prefix is the path deploy's prefix, /dir/, or "" for the whole site.
-	prefix    string
-	yes, json bool
+	prefix string
+	// preview is the preview to deploy to, "" for the live site, and
+	// expires its lifetime as the API takes it ("" for the default).
+	preview, expires string
+	yes, json        bool
 	// file is the group and tags to file the site under once live.
 	file filing
 }
@@ -317,7 +345,9 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 	if removing && r.prefix == "" {
 		return fmt.Errorf("nothing to deploy: %s has no files that are not ignored", r.shown)
 	}
-	if removing && !r.yes && (r.json || !a.canPrompt) {
+	// Emptying a prefix of a preview changes nothing live: no need to ask.
+	confirm := removing && !r.yes && r.preview == ""
+	if confirm && (r.json || !a.canPrompt) {
 		return usageErrorf("%s is empty, so this removes everything under %s from %s: pass --yes to confirm when there is no terminal to ask in, or with --json", r.shown, r.prefix, r.target)
 	}
 
@@ -346,7 +376,7 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 		if site, err = c.mustFindSite(ctx, r.target); err != nil {
 			return err
 		}
-		if !r.yes {
+		if confirm {
 			ok, err := a.confirm(fmt.Sprintf("%s is empty, so this removes every file under %s from %s at once.\nType the path to confirm: ", r.shown, r.prefix, site.Hostname), r.prefix)
 			if err != nil {
 				return err
@@ -371,6 +401,12 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 	if r.prefix != "" {
 		body.Path = &r.prefix
 	}
+	if r.preview != "" {
+		body.Preview = &r.preview
+	}
+	if r.expires != "" {
+		body.PreviewExpires = &r.expires
+	}
 	up := &uploadedStats{}
 	act, err := d.deploy(ctx, site.Name, body, byHash, up, len(files))
 	if errors.Is(err, errStaleBase) {
@@ -392,15 +428,36 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 		}
 	}
 	if r.json {
-		return writeJSON(a.stdout, deployResult{
+		out := deployResult{
 			Activation:  act,
 			Path:        r.prefix,
 			SiteCreated: created,
 			Uploaded:    *up,
 			Skipped:     skipped,
-		})
+		}
+		if act.Preview != nil {
+			out.Preview, out.URL = act.Preview.Name, previewURL(*act.Preview, r.prefix)
+		}
+		return writeJSON(a.stdout, out)
 	}
 	took := a.now().Sub(start).Seconds()
+	if act.Preview != nil {
+		what := "Removed " + r.prefix + " from"
+		if !removing {
+			what = fmt.Sprintf("Deployed %s (%s)", plural(len(files), "file", "files"), formatBytes(total))
+			if r.prefix != "" {
+				what += " to " + r.prefix + " of"
+			} else {
+				what += " to"
+			}
+		}
+		if created {
+			what = "Created " + act.Site.Name + " and d" + strings.TrimPrefix(what, "D")
+		}
+		fmt.Fprintf(a.stdout, "%s preview %s of %s in %.1fs (%s). Deploy %s is live there:\n%s\n", what, act.Preview.Name, act.Site.Name, took,
+			previewExpiry(*act.Preview), shortID(act.Deploy.Id), previewURL(*act.Preview, r.prefix))
+		return nil
+	}
 	if removing {
 		fmt.Fprintf(a.stdout, "Removed %s from %s in %.1fs. Deploy %s is live:\n%s\n", r.prefix, act.Site.Name, took, shortID(act.Deploy.Id), act.Site.Url)
 		return nil
@@ -444,6 +501,10 @@ func (d *deployer) deploy(ctx context.Context, site string, body apiclient.Creat
 	// deploy that does not carry the prefix asked for.
 	if body.Path != nil && (deploy.Path == nil || *deploy.Path != *body.Path) {
 		return apiclient.Activation{}, fmt.Errorf("server %s does not support deploying into a path (it needs Wardlock 0.2.0 or later); nothing was changed", c.server)
+	}
+	// Likewise a server older than previews would put a preview live.
+	if body.Preview != nil && (deploy.Preview == nil || *deploy.Preview != *body.Preview) {
+		return apiclient.Activation{}, fmt.Errorf("server %s does not support preview deploys; nothing was changed", c.server)
 	}
 
 	var toUpload []localFile

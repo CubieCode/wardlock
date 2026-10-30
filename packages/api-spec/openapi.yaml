@@ -28,7 +28,8 @@ info:
       header and no session cookie is outside this check.
     - `apiToken`: `Authorization: Bearer wl_<public id>_<secret>` (C1.7). A
       token carries one or both scopes. `deploy` covers creating sites and
-      deploys, uploading blobs, activation and rollback. `manage` covers
+      deploys, uploading blobs, activation and rollback, and deleting and
+      promoting previews (C1.19). `manage` covers
       deleting sites, managing custom domains and choosing a site's primary
       hostname. Read operations accept
       either scope, and include listing a deploy's files and downloading
@@ -76,11 +77,11 @@ info:
 
     | Status | Codes |
     | ------ | ----- |
-    | 400 | `invalid_request` (malformed JSON, missing or invalid field), `invalid_code`, `invalid_site_name`, `reserved_site_name`, `invalid_path`, `invalid_manifest`, `invalid_config` (a deploy's redirect or header rule is malformed or sets a header a deploy may not; `target` is `redirects[i]` or `headers[i]`), `invalid_hostname`, `hash_mismatch`, `unexpected_blob`, `invalid_policy_path`, `invalid_policy`, `invalid_share_link`, `invalid_passkey` |
+    | 400 | `invalid_request` (malformed JSON, missing or invalid field), `invalid_code`, `invalid_site_name`, `reserved_site_name`, `invalid_path`, `invalid_manifest`, `invalid_config` (a deploy's redirect or header rule is malformed or sets a header a deploy may not; `target` is `redirects[i]` or `headers[i]`), `invalid_hostname`, `invalid_preview_name` (a preview name breaks the rules or its hostname label would pass 63 characters; `target` is `preview`), `hash_mismatch`, `unexpected_blob`, `invalid_policy_path`, `invalid_policy`, `invalid_share_link`, `invalid_passkey` |
     | 401 | `unauthenticated`: no credential, or an expired, revoked or unknown one |
     | 403 | `forbidden`: the credential lacks the scope, or a cookie request came from another origin; `invites_restricted`: the operator has kept invitations to themselves |
     | 404 | `not_found` |
-    | 409 | `site_name_taken`, `group_name_taken`, `tag_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `stale_base` (a path deploy's site changed after it was created; create it again), `default_policy`, `passkey_limit`, `site_unavailable` (the operator has taken the site down), `domain_not_active` (a pending or lapsed custom domain cannot be the primary hostname) |
+    | 409 | `site_name_taken` (also, with `target` `preview`, for a preview whose hostname label is a site's name), `group_name_taken`, `tag_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `stale_base` (a path deploy's site changed after it was created; create it again), `default_policy`, `passkey_limit`, `site_unavailable` (the operator has taken the site down), `domain_not_active` (a pending or lapsed custom domain cannot be the primary hostname) |
     | 410 | `login_expired` |
     | 413 | `limit_exceeded`: a deploy limit (files, bytes per file or per video file, bytes in total, redirects, header rules, bytes per rule value or in all rules) or one of the owner's quotas (bytes stored, sites, deploys in 24 hours), or an organisation limit (100 groups, 200 tags, 20 tags on a site); the `message` names the file and the limit, and `target` is the file's path, or `files`, `deploys`, `redirects`, `headers`, `redirects[i]`, `headers[i]`, `name`, `tagIds` or `addTagIds` |
     | 422 | `file_type_blocked`: the manifest lists a file whose extension the operator has blocked; `target` is its path |
@@ -105,6 +106,8 @@ tags:
     description: Sites (C1.2).
   - name: deploys
     description: Deploys, blob uploads, activation and rollback (C1.2).
+  - name: previews
+    description: Preview deploys (C1.19).
   - name: domains
     description: Custom domains (C1.9).
   - name: policies
@@ -1294,6 +1297,22 @@ paths:
         target `redirects` or `headers`; a value over 8 KiB, with the rule
         as target; more than 64 KiB in all rules, with the list that
         passed it (redirects are counted first).
+
+        With `preview` (a name such as `pr-42`), the deploy goes to that
+        preview of the site (C1.19), served at
+        `<site>--<preview>.<base domain>`, instead of the live site:
+        activating it makes it the preview's deploy and leaves the site as
+        it is, and deploying to the same name again replaces it. A name
+        that is not 1 to 20 characters of a-z, 0-9 and '-', starts or ends
+        with '-' or contains '--', or whose hostname label would pass 63
+        characters, answers `400 invalid_preview_name`; a label that is an
+        existing site's name answers `409 site_name_taken`, both with target
+        `preview`. With `path` too, the base is the live site's active
+        deploy, as for any path deploy. `previewExpires` sets how long the
+        preview lasts after this deploy is activated, `14d` by default (or
+        the preview's own setting when it already exists); it needs
+        `preview` (`400 invalid_request` otherwise). A preview deploy counts
+        towards quotas and is screened like any other.
       tags: [deploys]
       security:
         - sessionCookie: []
@@ -1561,7 +1580,10 @@ paths:
         happens when that content was uploaded through another deploy after
         this one was created. Such a deploy can never be activated: create a
         new one with the right sizes. A site the operator has taken down
-        answers `409 site_unavailable`.
+        answers `409 site_unavailable`. A preview deploy (C1.19) becomes its
+        preview's deploy instead, its expiry starting again from now, and
+        the site keeps its active deploy; the answer then carries
+        `preview`.
       tags: [deploys]
       security:
         - sessionCookie: []
@@ -1598,8 +1620,9 @@ paths:
       description: >-
         Reactivates `deployId`, or without it the deploy that was active
         before the current one, instantly and with no upload. A deploy that
-        was never activated answers `409 deploy_not_activated`; a site with
-        no earlier deploy answers `409 no_previous_deploy`; a site the
+        was never activated on the live site, including a preview deploy
+        that was never promoted, answers `409 deploy_not_activated`; a site
+        with no earlier deploy answers `409 no_previous_deploy`; a site the
         operator has taken down answers `409 site_unavailable`.
       tags: [deploys]
       security:
@@ -1925,6 +1948,134 @@ paths:
               examples:
                 site:
                   $ref: '#/components/examples/Site'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/sites/{site}/previews:
+    parameters:
+      - $ref: '#/components/parameters/SiteName'
+    get:
+      operationId: listPreviews
+      summary: List a site's previews.
+      description: >-
+        The site's previews (C1.19) by name, each with the deploy it serves.
+        An expired preview is not listed: it answers as an unknown host
+        until garbage collection removes it. A site the operator has taken
+        down still lists them.
+      tags: [previews]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of previews.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewPage'
+              example:
+                items:
+                  - name: pr-42
+                    hostname: docs--pr-42.wardlock.example
+                    url: https://docs--pr-42.wardlock.example/
+                    createdAt: 1767225600000
+                    deployedAt: 1767225660000
+                    expiresAt: 1768435260000
+                    deploy:
+                      id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
+                      status: preview
+                      createdAt: 1767225600000
+                      fileCount: 42
+                      totalSize: 1532918
+                      message: Try the new navigation
+                      spa: false
+                      immutableAssets: false
+                      preview: pr-42
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/sites/{site}/previews/{preview}:
+    parameters:
+      - $ref: '#/components/parameters/SiteName'
+      - $ref: '#/components/parameters/PreviewName'
+    delete:
+      operationId: deletePreview
+      summary: Delete a preview.
+      description: >-
+        Stops serving the preview at once; garbage collection removes its
+        deploy unless it is the site's active deploy or in its history
+        after a promotion. A missing or expired preview, and another
+        owner's, answer `404 not_found`. A site the operator has taken down
+        answers `409 site_unavailable`.
+      tags: [previews]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/sites/{site}/previews/{preview}/promote:
+    parameters:
+      - $ref: '#/components/parameters/SiteName'
+      - $ref: '#/components/parameters/PreviewName'
+    post:
+      operationId: promotePreview
+      summary: Put a preview's deploy live.
+      description: >-
+        Activates the preview's deploy on the live site: an ordinary
+        activation that enters the site's history and can be rolled back
+        from. The preview keeps serving the same deploy. Promoting the
+        deploy that is already live changes nothing. A path preview made on
+        a live deploy the site no longer serves answers `409 stale_base`, so
+        what went live since is never dropped: deploy the preview again,
+        then promote it. A missing or expired preview, and another owner's,
+        answer `404 not_found`; a site the operator has taken down answers
+        `409 site_unavailable`.
+      tags: [previews]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+      responses:
+        '200':
+          description: Promoted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Activation'
+              examples:
+                activation:
+                  $ref: '#/components/examples/Activation'
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -3079,6 +3230,14 @@ components:
       schema:
         $ref: '#/components/schemas/SiteName'
       example: docs
+    PreviewName:
+      name: preview
+      in: path
+      required: true
+      description: The preview's name.
+      schema:
+        $ref: '#/components/schemas/PreviewName'
+      example: pr-42
     DeployId:
       name: deployId
       in: path
@@ -4259,12 +4418,17 @@ components:
           type: string
           description: >-
             `pending` until first activated; `active` while it is the site's
-            active deploy; `inactive` once replaced or rolled back from.
-          enum: [pending, active, inactive]
+            active deploy; `inactive` once replaced or rolled back from;
+            `preview` for a preview deploy activated as its preview and never
+            on the live site (C1.19), which is not a rollback target until
+            promoted.
+          enum: [pending, active, inactive, preview]
         createdAt:
           $ref: '#/components/schemas/Timestamp'
         activatedAt:
-          description: When it was last activated. Absent while pending.
+          description: >-
+            When it was last activated on the live site. Absent while
+            pending, and for a preview deploy that was never promoted.
           $ref: '#/components/schemas/Timestamp'
         fileCount:
           type: integer
@@ -4310,6 +4474,11 @@ components:
             Absent when it has none.
           items:
             $ref: '#/components/schemas/HeaderRule'
+        preview:
+          description: >-
+            The preview the deploy was made for (C1.19); absent for a
+            deploy to the live site.
+          $ref: '#/components/schemas/PreviewName'
     Redirect:
       type: object
       additionalProperties: false
@@ -4496,6 +4665,13 @@ components:
           maxItems: 100
           items:
             $ref: '#/components/schemas/HeaderRule'
+        preview:
+          description: >-
+            Deploy to this preview of the site instead of the live site
+            (see `createDeploy`).
+          $ref: '#/components/schemas/PreviewName'
+        previewExpires:
+          $ref: '#/components/schemas/PreviewExpires'
     CreatedDeploy:
       type: object
       additionalProperties: false
@@ -4525,6 +4701,66 @@ components:
           $ref: '#/components/schemas/Site'
         deploy:
           $ref: '#/components/schemas/Deploy'
+        preview:
+          description: >-
+            The preview, as it is now, when a preview deploy was activated
+            or a preview promoted (C1.19).
+          $ref: '#/components/schemas/Preview'
+    PreviewName:
+      type: string
+      description: >-
+        A preview's name (C1.19): 1-20 characters of a-z, 0-9 and '-', not
+        starting or ending with '-' and without '--'. The preview is served
+        at `<site>--<name>.<base domain>`, a label of at most 63
+        characters.
+      minLength: 1
+      maxLength: 20
+      pattern: ^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$
+      examples: [pr-42]
+    PreviewExpires:
+      type: string
+      description: >-
+        How long a preview lasts after each deploy: `<days>d`, 1 to 90 days,
+        or `never`. Left out, `14d` for a new preview, or the preview's own
+        setting.
+      pattern: ^(never|[1-9][0-9]?d)$
+      examples: [14d, never]
+    Preview:
+      type: object
+      additionalProperties: false
+      required: [name, hostname, url, createdAt, deployedAt, deploy]
+      properties:
+        name:
+          $ref: '#/components/schemas/PreviewName'
+        hostname:
+          description: '`<site>--<name>.<base domain>`.'
+          $ref: '#/components/schemas/Hostname'
+        url:
+          type: string
+          format: uri
+          description: The preview's URL.
+        createdAt:
+          description: When the preview was first deployed.
+          $ref: '#/components/schemas/Timestamp'
+        deployedAt:
+          description: When its deploy went live as the preview.
+          $ref: '#/components/schemas/Timestamp'
+        expiresAt:
+          description: When it stops being served. Absent when it never expires.
+          $ref: '#/components/schemas/Timestamp'
+        deploy:
+          $ref: '#/components/schemas/Deploy'
+    PreviewPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Preview'
+        nextCursor:
+          $ref: '#/components/schemas/Cursor'
 
     DnsRecord:
       type: object
@@ -4883,6 +5119,11 @@ components:
         host:
           type: string
           description: The host the request named.
+        preview:
+          description: >-
+            The preview the request reached (C1.19); absent for the live
+            site. Analytics never counts preview requests.
+          $ref: '#/components/schemas/PreviewName'
         path:
           type: string
           description: The requested path, without the query string.

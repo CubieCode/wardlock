@@ -18,6 +18,8 @@ type Repos struct {
 	Sites     store.Sites
 	Domains   store.Domains
 	Deploys   store.Deploys
+	// Previews stores sites' previews (C1.19).
+	Previews  store.Previews
 	Policies  store.Policies
 	Links     store.Links
 	AccessLog store.AccessLog
@@ -52,6 +54,7 @@ func ReposOf(db *store.DB) Repos {
 		Sites:      db.Sites(),
 		Domains:    db.Domains(),
 		Deploys:    db.Deploys(),
+		Previews:   db.Previews(),
 		Policies:   db.Policies(),
 		Links:      db.Links(),
 		AccessLog:  db.AccessLog(),
@@ -83,6 +86,7 @@ func suites() []suite {
 		{"Domains", domainsContract},
 		{"PrimaryHost", primaryContract},
 		{"Deploys", deploysContract},
+		{"Previews", previewsContract},
 		{"Policies", policiesContract},
 		{"Links", linksContract},
 		{"AccessLog", accessLogContract},

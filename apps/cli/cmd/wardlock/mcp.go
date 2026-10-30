@@ -129,6 +129,8 @@ type (
 		Directory string `json:"directory,omitempty" jsonschema:"the directory to publish, relative to the root (default dir from wardlock.json in the root, else the root)"`
 		Path      string `json:"path,omitempty" jsonschema:"replace only this part of the site, such as /mockup-x/, keeping the rest live; an empty directory removes it (default path from wardlock.json)"`
 		Message   string `json:"message,omitempty" jsonschema:"describe this deploy in the site's history (at most 500 characters)"`
+		Preview   string `json:"preview,omitempty" jsonschema:"deploy to this preview of the site, such as pr-42, served at its own address, instead of the live site; the same name again replaces it"`
+		Expires   string `json:"expires,omitempty" jsonschema:"with preview, how long the preview lasts after this deploy: 1d to 90d, or never (default 14d, or what the preview had)"`
 	}
 	pullInput struct {
 		Site      string `json:"site" jsonschema:"the site's name, such as docs, or its hostname"`
@@ -201,7 +203,8 @@ func (m *mcpServer) newServer() *mcp.Server {
 	addMCPTool(m, s, mcpTool{name: "deploy_directory", title: "Deploy a directory", scope: "deploy", changesSite: true,
 		description: "Publishes a directory inside the root to a site, creating the site for a new name, as wardlock deploy does: " +
 			"the same files are left out (.git/, node_modules/, dotfiles, symbolic links and .wardlockignore entries) and wardlock.json in the root applies. " +
-			"The deploy goes live at once. With path, only that part of the site is replaced."},
+			"The deploy goes live at once. With path, only that part of the site is replaced. " +
+			"With preview, it goes to that preview of the site and its own address instead, and the live site is left as it is."},
 		m.deployDirectory)
 	addMCPTool(m, s, mcpTool{name: "pull_deploy", title: "Pull a deploy",
 		description: "Downloads the files of a site's live deploy, or of an earlier one, into a new or empty directory inside the root."},
@@ -395,6 +398,12 @@ func (m *mcpServer) deployDirectory(ctx context.Context, a *app, in deployInput)
 	}
 	if in.Message != "" {
 		args = append(args, "--message", in.Message)
+	}
+	if in.Preview != "" {
+		args = append(args, "--preview", in.Preview)
+	}
+	if in.Expires != "" {
+		args = append(args, "--expires", in.Expires)
 	}
 	args = append(args, "--", dir)
 	if in.Site != "" {

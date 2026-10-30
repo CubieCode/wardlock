@@ -51,6 +51,9 @@ var tokenScopes = map[string][]string{
 	"UploadDeployBlob":   {"deploy"},
 	"ActivateDeploy":     {"deploy"},
 	"RollbackSite":       {"deploy"},
+	"ListPreviews":       {"deploy", "manage"},
+	"DeletePreview":      {"deploy"},
+	"PromotePreview":     {"deploy"},
 
 	"ListDomains":  {"deploy", "manage"},
 	"GetDomain":    {"deploy", "manage"},

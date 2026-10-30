@@ -38,6 +38,9 @@ var implemented = map[string]bool{
 	"UploadDeployBlob": true,
 	"ActivateDeploy":   true,
 	"RollbackSite":     true,
+	"ListPreviews":     true,
+	"DeletePreview":    true,
+	"PromotePreview":   true,
 
 	// Reading deploys back (C1.14).
 	"ListDeployFiles":    true,
@@ -135,6 +138,7 @@ var pathValues = map[string]string{
 	"linkId":    "q4v7m2xkpa",
 	"groupId":   "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70",
 	"tagId":     "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80",
+	"preview":   "pr-42",
 }
 
 var pathParam = regexp.MustCompile(`\{(\w+)\}`)

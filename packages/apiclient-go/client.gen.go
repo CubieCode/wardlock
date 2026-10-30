@@ -121,6 +121,7 @@ const (
 	DeployStatusActive   DeployStatus = "active"
 	DeployStatusInactive DeployStatus = "inactive"
 	DeployStatusPending  DeployStatus = "pending"
+	DeployStatusPreview  DeployStatus = "preview"
 )
 
 // Valid indicates whether the value is a known member of the DeployStatus enum.
@@ -131,6 +132,8 @@ func (e DeployStatus) Valid() bool {
 	case DeployStatusInactive:
 		return true
 	case DeployStatusPending:
+		return true
+	case DeployStatusPreview:
 		return true
 	default:
 		return false
@@ -462,6 +465,11 @@ type AccessLogEntry struct {
 	// Path The requested path, without the query string.
 	Path string `json:"path"`
 
+	// Preview The preview the request reached (C1.19); absent for the live site. Analytics never counts preview requests.
+	//
+	// Examples: pr-42
+	Preview *PreviewName `json:"preview,omitempty"`
+
 	// Status The HTTP status of the response.
 	Status int32 `json:"status"`
 
@@ -488,7 +496,10 @@ type AccessVia string
 // Activation defines model for Activation.
 type Activation struct {
 	Deploy Deploy `json:"deploy"`
-	Site   Site   `json:"site"`
+
+	// Preview The preview, as it is now, when a preview deploy was activated or a preview promoted (C1.19).
+	Preview *Preview `json:"preview,omitempty"`
+	Site    Site     `json:"site"`
 }
 
 // AddDomainRequest defines model for AddDomainRequest.
@@ -822,6 +833,16 @@ type CreateDeployRequest struct {
 	// Examples: /mockup-x/
 	Path *DeployPath `json:"path,omitempty"`
 
+	// Preview Deploy to this preview of the site instead of the live site (see `createDeploy`).
+	//
+	// Examples: pr-42
+	Preview *PreviewName `json:"preview,omitempty"`
+
+	// PreviewExpires How long a preview lasts after each deploy: `<days>d`, 1 to 90 days, or `never`. Left out, `14d` for a new preview, or the preview's own setting.
+	//
+	// Examples: 14d, never
+	PreviewExpires *PreviewExpires `json:"previewExpires,omitempty"`
+
 	// Redirects Redirect rules, in order. Left out, none, or with `path` the base deploy's; `[]` for none.
 	Redirects *[]Redirect `json:"redirects,omitempty"`
 
@@ -935,7 +956,7 @@ type DenyCliLoginRequest struct {
 
 // Deploy defines model for Deploy.
 type Deploy struct {
-	// ActivatedAt When it was last activated. Absent while pending.
+	// ActivatedAt When it was last activated on the live site. Absent while pending, and for a preview deploy that was never promoted.
 	//
 	// Examples: 1767225600000
 	ActivatedAt *Timestamp `json:"activatedAt,omitempty"`
@@ -963,20 +984,25 @@ type Deploy struct {
 	// Examples: /mockup-x/
 	Path *DeployPath `json:"path,omitempty"`
 
+	// Preview The preview the deploy was made for (C1.19); absent for a deploy to the live site.
+	//
+	// Examples: pr-42
+	Preview *PreviewName `json:"preview,omitempty"`
+
 	// Redirects The deploy's redirect rules in order, each with its status. Absent when it has none.
 	Redirects *[]Redirect `json:"redirects,omitempty"`
 
 	// Spa Whether missing paths without a file extension serve `/index.html` while this deploy is active.
 	Spa bool `json:"spa"`
 
-	// Status `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from.
+	// Status `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from; `preview` for a preview deploy activated as its preview and never on the live site (C1.19), which is not a rollback target until promoted.
 	Status DeployStatus `json:"status"`
 
 	// TotalSize Sum of file sizes in bytes.
 	TotalSize int64 `json:"totalSize"`
 }
 
-// DeployStatus `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from.
+// DeployStatus `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from; `preview` for a preview deploy activated as its preview and never on the live site (C1.19), which is not a rollback target until promoted.
 type DeployStatus string
 
 // DeployFile defines model for DeployFile.
@@ -1534,6 +1560,58 @@ type PolicyVisibility string
 // PollCliLoginRequest defines model for PollCliLoginRequest.
 type PollCliLoginRequest struct {
 	DeviceCode string `json:"deviceCode"`
+}
+
+// Preview defines model for Preview.
+type Preview struct {
+	// CreatedAt When the preview was first deployed.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+	Deploy    Deploy    `json:"deploy"`
+
+	// DeployedAt When its deploy went live as the preview.
+	//
+	// Examples: 1767225600000
+	DeployedAt Timestamp `json:"deployedAt"`
+
+	// ExpiresAt When it stops being served. Absent when it never expires.
+	//
+	// Examples: 1767225600000
+	ExpiresAt *Timestamp `json:"expiresAt,omitempty"`
+
+	// Hostname `<site>--<name>.<base domain>`.
+	//
+	// Examples: docs.example.com
+	Hostname Hostname `json:"hostname"`
+
+	// Name A preview's name (C1.19): 1-20 characters of a-z, 0-9 and '-', not starting or ending with '-' and without '--'. The preview is served at `<site>--<name>.<base domain>`, a label of at most 63 characters.
+	//
+	// Examples: pr-42
+	Name PreviewName `json:"name"`
+
+	// Url The preview's URL.
+	Url string `json:"url"`
+}
+
+// PreviewExpires How long a preview lasts after each deploy: `<days>d`, 1 to 90 days, or `never`. Left out, `14d` for a new preview, or the preview's own setting.
+//
+// Examples: 14d, never
+type PreviewExpires = string
+
+// PreviewName A preview's name (C1.19): 1-20 characters of a-z, 0-9 and '-', not starting or ending with '-' and without '--'. The preview is served at `<site>--<name>.<base domain>`, a label of at most 63 characters.
+//
+// Examples: pr-42
+type PreviewName = string
+
+// PreviewPage defines model for PreviewPage.
+type PreviewPage struct {
+	Items []Preview `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
 }
 
 // Redirect Applied, first match wins, only to a request path that serves no file (after clean URLs, before the 404 page and the SPA fallback), once the visitor may read that path. See SPEC "Redirects and response headers".
@@ -2254,6 +2332,15 @@ type ListPoliciesParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListPreviewsParams defines parameters for ListPreviews.
+type ListPreviewsParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListApiTokensParams defines parameters for ListApiTokens.
 type ListApiTokensParams struct {
 	// Limit Page size.
@@ -2937,6 +3024,7 @@ type ClientInterface interface {
 	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 	// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 	// `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
+	// With `preview` (a name such as `pr-42`), the deploy goes to that preview of the site (C1.19), served at `<site>--<preview>.<base domain>`, instead of the live site: activating it makes it the preview's deploy and leaves the site as it is, and deploying to the same name again replaces it. A name that is not 1 to 20 characters of a-z, 0-9 and '-', starts or ends with '-' or contains '--', or whose hostname label would pass 63 characters, answers `400 invalid_preview_name`; a label that is an existing site's name answers `409 site_name_taken`, both with target `preview`. With `path` too, the base is the live site's active deploy, as for any path deploy. `previewExpires` sets how long the preview lasts after this deploy is activated, `14d` by default (or the preview's own setting when it already exists); it needs `preview` (`400 invalid_request` otherwise). A preview deploy counts towards quotas and is screened like any other.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -2948,6 +3036,7 @@ type ClientInterface interface {
 	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 	// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 	// `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
+	// With `preview` (a name such as `pr-42`), the deploy goes to that preview of the site (C1.19), served at `<site>--<preview>.<base domain>`, instead of the live site: activating it makes it the preview's deploy and leaves the site as it is, and deploying to the same name again replaces it. A name that is not 1 to 20 characters of a-z, 0-9 and '-', starts or ends with '-' or contains '--', or whose hostname label would pass 63 characters, answers `400 invalid_preview_name`; a label that is an existing site's name answers `409 site_name_taken`, both with target `preview`. With `path` too, the base is the live site's active deploy, as for any path deploy. `previewExpires` sets how long the preview lasts after this deploy is activated, `14d` by default (or the preview's own setting when it already exists); it needs `preview` (`400 invalid_request` otherwise). A preview deploy counts towards quotas and is screened like any other.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2956,7 +3045,7 @@ type ClientInterface interface {
 
 	// ActivateDeploy Make a pending deploy the site's active deploy.
 	//
-	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`.
+	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`. A preview deploy (C1.19) becomes its preview's deploy instead, its expiry starting again from now, and the site keeps its active deploy; the answer then carries `preview`.
 	//
 	// Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
 	ActivateDeploy(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3138,6 +3227,27 @@ type ClientInterface interface {
 	// Corresponds with DELETE /api/v0/sites/{site}/policies/{policyId} (the `DeletePolicy` operationId).
 	DeletePolicy(ctx context.Context, site SiteName, policyId PolicyId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListPreviews List a site's previews.
+	//
+	// The site's previews (C1.19) by name, each with the deploy it serves. An expired preview is not listed: it answers as an unknown host until garbage collection removes it. A site the operator has taken down still lists them.
+	//
+	// Corresponds with GET /api/v0/sites/{site}/previews (the `ListPreviews` operationId).
+	ListPreviews(ctx context.Context, site SiteName, params *ListPreviewsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeletePreview Delete a preview.
+	//
+	// Stops serving the preview at once; garbage collection removes its deploy unless it is the site's active deploy or in its history after a promotion. A missing or expired preview, and another owner's, answer `404 not_found`. A site the operator has taken down answers `409 site_unavailable`.
+	//
+	// Corresponds with DELETE /api/v0/sites/{site}/previews/{preview} (the `DeletePreview` operationId).
+	DeletePreview(ctx context.Context, site SiteName, preview PreviewName, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PromotePreview Put a preview's deploy live.
+	//
+	// Activates the preview's deploy on the live site: an ordinary activation that enters the site's history and can be rolled back from. The preview keeps serving the same deploy. Promoting the deploy that is already live changes nothing. A path preview made on a live deploy the site no longer serves answers `409 stale_base`, so what went live since is never dropped: deploy the preview again, then promote it. A missing or expired preview, and another owner's, answer `404 not_found`; a site the operator has taken down answers `409 site_unavailable`.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/previews/{preview}/promote (the `PromotePreview` operationId).
+	PromotePreview(ctx context.Context, site SiteName, preview PreviewName, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ClearPrimaryHost Stop redirecting to a primary hostname.
 	//
 	// Leaves the site with no primary hostname, so every one of its hostnames serves it again. Clearing a site with none changes nothing. A site the operator has taken down answers `409 site_unavailable`.
@@ -3165,7 +3275,7 @@ type ClientInterface interface {
 
 	// RollbackSiteWithBody Reactivate an earlier deploy.
 	//
-	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
+	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated on the live site, including a preview deploy that was never promoted, answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -3174,7 +3284,7 @@ type ClientInterface interface {
 
 	// RollbackSite Reactivate an earlier deploy.
 	//
-	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
+	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated on the live site, including a preview deploy that was never promoted, answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -4192,6 +4302,7 @@ func (c *Client) ListDeploys(ctx context.Context, site SiteName, params *ListDep
 // Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 // With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 // `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
+// With `preview` (a name such as `pr-42`), the deploy goes to that preview of the site (C1.19), served at `<site>--<preview>.<base domain>`, instead of the live site: activating it makes it the preview's deploy and leaves the site as it is, and deploying to the same name again replaces it. A name that is not 1 to 20 characters of a-z, 0-9 and '-', starts or ends with '-' or contains '--', or whose hostname label would pass 63 characters, answers `400 invalid_preview_name`; a label that is an existing site's name answers `409 site_name_taken`, both with target `preview`. With `path` too, the base is the live site's active deploy, as for any path deploy. `previewExpires` sets how long the preview lasts after this deploy is activated, `14d` by default (or the preview's own setting when it already exists); it needs `preview` (`400 invalid_request` otherwise). A preview deploy counts towards quotas and is screened like any other.
 //
 // Takes any type of body and a specified content type.
 //
@@ -4213,6 +4324,7 @@ func (c *Client) CreateDeployWithBody(ctx context.Context, site SiteName, conten
 // Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 // With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 // `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
+// With `preview` (a name such as `pr-42`), the deploy goes to that preview of the site (C1.19), served at `<site>--<preview>.<base domain>`, instead of the live site: activating it makes it the preview's deploy and leaves the site as it is, and deploying to the same name again replaces it. A name that is not 1 to 20 characters of a-z, 0-9 and '-', starts or ends with '-' or contains '--', or whose hostname label would pass 63 characters, answers `400 invalid_preview_name`; a label that is an existing site's name answers `409 site_name_taken`, both with target `preview`. With `path` too, the base is the live site's active deploy, as for any path deploy. `previewExpires` sets how long the preview lasts after this deploy is activated, `14d` by default (or the preview's own setting when it already exists); it needs `preview` (`400 invalid_request` otherwise). A preview deploy counts towards quotas and is screened like any other.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -4231,7 +4343,7 @@ func (c *Client) CreateDeploy(ctx context.Context, site SiteName, body CreateDep
 
 // ActivateDeploy Make a pending deploy the site's active deploy.
 //
-// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`.
+// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`. A preview deploy (C1.19) becomes its preview's deploy instead, its expiry starting again from now, and the site keeps its active deploy; the answer then carries `preview`.
 //
 // Corresponds with POST /api/v0/sites/{site}/deploys/{deployId}/activate (the `ActivateDeploy` operationId).
 func (c *Client) ActivateDeploy(ctx context.Context, site SiteName, deployId DeployId, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4653,6 +4765,57 @@ func (c *Client) DeletePolicy(ctx context.Context, site SiteName, policyId Polic
 	return c.Client.Do(req)
 }
 
+// ListPreviews List a site's previews.
+//
+// The site's previews (C1.19) by name, each with the deploy it serves. An expired preview is not listed: it answers as an unknown host until garbage collection removes it. A site the operator has taken down still lists them.
+//
+// Corresponds with GET /api/v0/sites/{site}/previews (the `ListPreviews` operationId).
+func (c *Client) ListPreviews(ctx context.Context, site SiteName, params *ListPreviewsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPreviewsRequest(c.Server, site, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeletePreview Delete a preview.
+//
+// Stops serving the preview at once; garbage collection removes its deploy unless it is the site's active deploy or in its history after a promotion. A missing or expired preview, and another owner's, answer `404 not_found`. A site the operator has taken down answers `409 site_unavailable`.
+//
+// Corresponds with DELETE /api/v0/sites/{site}/previews/{preview} (the `DeletePreview` operationId).
+func (c *Client) DeletePreview(ctx context.Context, site SiteName, preview PreviewName, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeletePreviewRequest(c.Server, site, preview)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PromotePreview Put a preview's deploy live.
+//
+// Activates the preview's deploy on the live site: an ordinary activation that enters the site's history and can be rolled back from. The preview keeps serving the same deploy. Promoting the deploy that is already live changes nothing. A path preview made on a live deploy the site no longer serves answers `409 stale_base`, so what went live since is never dropped: deploy the preview again, then promote it. A missing or expired preview, and another owner's, answer `404 not_found`; a site the operator has taken down answers `409 site_unavailable`.
+//
+// Corresponds with POST /api/v0/sites/{site}/previews/{preview}/promote (the `PromotePreview` operationId).
+func (c *Client) PromotePreview(ctx context.Context, site SiteName, preview PreviewName, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPromotePreviewRequest(c.Server, site, preview)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ClearPrimaryHost Stop redirecting to a primary hostname.
 //
 // Leaves the site with no primary hostname, so every one of its hostnames serves it again. Clearing a site with none changes nothing. A site the operator has taken down answers `409 site_unavailable`.
@@ -4710,7 +4873,7 @@ func (c *Client) SetPrimaryHost(ctx context.Context, site SiteName, body SetPrim
 
 // RollbackSiteWithBody Reactivate an earlier deploy.
 //
-// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
+// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated on the live site, including a preview deploy that was never promoted, answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -4729,7 +4892,7 @@ func (c *Client) RollbackSiteWithBody(ctx context.Context, site SiteName, conten
 
 // RollbackSite Reactivate an earlier deploy.
 //
-// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
+// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated on the live site, including a preview deploy that was never promoted, answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -7590,6 +7753,161 @@ func NewDeletePolicyRequest(server string, site SiteName, policyId PolicyId) (*h
 	return req, nil
 }
 
+// NewListPreviewsRequest constructs an http.Request for the ListPreviews method
+func NewListPreviewsRequest(server string, site SiteName, params *ListPreviewsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/previews", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeletePreviewRequest constructs an http.Request for the DeletePreview method
+func NewDeletePreviewRequest(server string, site SiteName, preview PreviewName) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "preview", preview, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/previews/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPromotePreviewRequest constructs an http.Request for the PromotePreview method
+func NewPromotePreviewRequest(server string, site SiteName, preview PreviewName) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "preview", preview, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/previews/%s/promote", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewClearPrimaryHostRequest constructs an http.Request for the ClearPrimaryHost method
 func NewClearPrimaryHostRequest(server string, site SiteName) (*http.Request, error) {
 	var err error
@@ -8510,6 +8828,7 @@ type ClientWithResponsesInterface interface {
 	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 	// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 	// `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
+	// With `preview` (a name such as `pr-42`), the deploy goes to that preview of the site (C1.19), served at `<site>--<preview>.<base domain>`, instead of the live site: activating it makes it the preview's deploy and leaves the site as it is, and deploying to the same name again replaces it. A name that is not 1 to 20 characters of a-z, 0-9 and '-', starts or ends with '-' or contains '--', or whose hostname label would pass 63 characters, answers `400 invalid_preview_name`; a label that is an existing site's name answers `409 site_name_taken`, both with target `preview`. With `path` too, the base is the live site's active deploy, as for any path deploy. `previewExpires` sets how long the preview lasts after this deploy is activated, `14d` by default (or the preview's own setting when it already exists); it needs `preview` (`400 invalid_request` otherwise). A preview deploy counts towards quotas and is screened like any other.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -8521,6 +8840,7 @@ type ClientWithResponsesInterface interface {
 	// Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 	// With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 	// `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
+	// With `preview` (a name such as `pr-42`), the deploy goes to that preview of the site (C1.19), served at `<site>--<preview>.<base domain>`, instead of the live site: activating it makes it the preview's deploy and leaves the site as it is, and deploying to the same name again replaces it. A name that is not 1 to 20 characters of a-z, 0-9 and '-', starts or ends with '-' or contains '--', or whose hostname label would pass 63 characters, answers `400 invalid_preview_name`; a label that is an existing site's name answers `409 site_name_taken`, both with target `preview`. With `path` too, the base is the live site's active deploy, as for any path deploy. `previewExpires` sets how long the preview lasts after this deploy is activated, `14d` by default (or the preview's own setting when it already exists); it needs `preview` (`400 invalid_request` otherwise). A preview deploy counts towards quotas and is screened like any other.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -8529,7 +8849,7 @@ type ClientWithResponsesInterface interface {
 
 	// ActivateDeployWithResponse Make a pending deploy the site's active deploy.
 	//
-	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`.
+	// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`. A preview deploy (C1.19) becomes its preview's deploy instead, its expiry starting again from now, and the site keeps its active deploy; the answer then carries `preview`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -8741,6 +9061,33 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with DELETE /api/v0/sites/{site}/policies/{policyId} (the `DeletePolicy` operationId).
 	DeletePolicyWithResponse(ctx context.Context, site SiteName, policyId PolicyId, reqEditors ...RequestEditorFn) (*DeletePolicyResponse, error)
 
+	// ListPreviewsWithResponse List a site's previews.
+	//
+	// The site's previews (C1.19) by name, each with the deploy it serves. An expired preview is not listed: it answers as an unknown host until garbage collection removes it. A site the operator has taken down still lists them.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/sites/{site}/previews (the `ListPreviews` operationId).
+	ListPreviewsWithResponse(ctx context.Context, site SiteName, params *ListPreviewsParams, reqEditors ...RequestEditorFn) (*ListPreviewsResponse, error)
+
+	// DeletePreviewWithResponse Delete a preview.
+	//
+	// Stops serving the preview at once; garbage collection removes its deploy unless it is the site's active deploy or in its history after a promotion. A missing or expired preview, and another owner's, answer `404 not_found`. A site the operator has taken down answers `409 site_unavailable`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/sites/{site}/previews/{preview} (the `DeletePreview` operationId).
+	DeletePreviewWithResponse(ctx context.Context, site SiteName, preview PreviewName, reqEditors ...RequestEditorFn) (*DeletePreviewResponse, error)
+
+	// PromotePreviewWithResponse Put a preview's deploy live.
+	//
+	// Activates the preview's deploy on the live site: an ordinary activation that enters the site's history and can be rolled back from. The preview keeps serving the same deploy. Promoting the deploy that is already live changes nothing. A path preview made on a live deploy the site no longer serves answers `409 stale_base`, so what went live since is never dropped: deploy the preview again, then promote it. A missing or expired preview, and another owner's, answer `404 not_found`; a site the operator has taken down answers `409 site_unavailable`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/previews/{preview}/promote (the `PromotePreview` operationId).
+	PromotePreviewWithResponse(ctx context.Context, site SiteName, preview PreviewName, reqEditors ...RequestEditorFn) (*PromotePreviewResponse, error)
+
 	// ClearPrimaryHostWithResponse Stop redirecting to a primary hostname.
 	//
 	// Leaves the site with no primary hostname, so every one of its hostnames serves it again. Clearing a site with none changes nothing. A site the operator has taken down answers `409 site_unavailable`.
@@ -8770,7 +9117,7 @@ type ClientWithResponsesInterface interface {
 
 	// RollbackSiteWithBodyWithResponse Reactivate an earlier deploy.
 	//
-	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
+	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated on the live site, including a preview deploy that was never promoted, answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -8779,7 +9126,7 @@ type ClientWithResponsesInterface interface {
 
 	// RollbackSiteWithResponse Reactivate an earlier deploy.
 	//
-	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
+	// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated on the live site, including a preview deploy that was never promoted, answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -13029,6 +13376,227 @@ func (r DeletePolicyResponse) ContentType() string {
 	return ""
 }
 
+type ListPreviewsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PreviewPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListPreviewsResponse) GetJSON200() *PreviewPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListPreviewsResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListPreviewsResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListPreviewsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListPreviewsResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListPreviewsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListPreviewsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPreviewsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPreviewsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListPreviewsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeletePreviewResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeletePreviewResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeletePreviewResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeletePreviewResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeletePreviewResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeletePreviewResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeletePreviewResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeletePreviewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeletePreviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeletePreviewResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PromotePreviewResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Activation
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PromotePreviewResponse) GetJSON200() *Activation {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r PromotePreviewResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r PromotePreviewResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r PromotePreviewResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r PromotePreviewResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PromotePreviewResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PromotePreviewResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PromotePreviewResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PromotePreviewResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PromotePreviewResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ClearPrimaryHostResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -14520,6 +15088,7 @@ func (c *ClientWithResponses) ListDeploysWithResponse(ctx context.Context, site 
 // Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 // With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 // `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
+// With `preview` (a name such as `pr-42`), the deploy goes to that preview of the site (C1.19), served at `<site>--<preview>.<base domain>`, instead of the live site: activating it makes it the preview's deploy and leaves the site as it is, and deploying to the same name again replaces it. A name that is not 1 to 20 characters of a-z, 0-9 and '-', starts or ends with '-' or contains '--', or whose hostname label would pass 63 characters, answers `400 invalid_preview_name`; a label that is an existing site's name answers `409 site_name_taken`, both with target `preview`. With `path` too, the base is the live site's active deploy, as for any path deploy. `previewExpires` sets how long the preview lasts after this deploy is activated, `14d` by default (or the preview's own setting when it already exists); it needs `preview` (`400 invalid_request` otherwise). A preview deploy counts towards quotas and is screened like any other.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -14537,6 +15106,7 @@ func (c *ClientWithResponses) CreateDeployWithBodyWithResponse(ctx context.Conte
 // Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
 // With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
 // `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
+// With `preview` (a name such as `pr-42`), the deploy goes to that preview of the site (C1.19), served at `<site>--<preview>.<base domain>`, instead of the live site: activating it makes it the preview's deploy and leaves the site as it is, and deploying to the same name again replaces it. A name that is not 1 to 20 characters of a-z, 0-9 and '-', starts or ends with '-' or contains '--', or whose hostname label would pass 63 characters, answers `400 invalid_preview_name`; a label that is an existing site's name answers `409 site_name_taken`, both with target `preview`. With `path` too, the base is the live site's active deploy, as for any path deploy. `previewExpires` sets how long the preview lasts after this deploy is activated, `14d` by default (or the preview's own setting when it already exists); it needs `preview` (`400 invalid_request` otherwise). A preview deploy counts towards quotas and is screened like any other.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -14551,7 +15121,7 @@ func (c *ClientWithResponses) CreateDeployWithResponse(ctx context.Context, site
 
 // ActivateDeployWithResponse Make a pending deploy the site's active deploy.
 //
-// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`.
+// Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`. A preview deploy (C1.19) becomes its preview's deploy instead, its expiry starting again from now, and the site keeps its active deploy; the answer then carries `preview`.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -14907,6 +15477,51 @@ func (c *ClientWithResponses) DeletePolicyWithResponse(ctx context.Context, site
 	return ParseDeletePolicyResponse(rsp)
 }
 
+// ListPreviewsWithResponse List a site's previews.
+//
+// The site's previews (C1.19) by name, each with the deploy it serves. An expired preview is not listed: it answers as an unknown host until garbage collection removes it. A site the operator has taken down still lists them.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/sites/{site}/previews (the `ListPreviews` operationId).
+func (c *ClientWithResponses) ListPreviewsWithResponse(ctx context.Context, site SiteName, params *ListPreviewsParams, reqEditors ...RequestEditorFn) (*ListPreviewsResponse, error) {
+	rsp, err := c.ListPreviews(ctx, site, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPreviewsResponse(rsp)
+}
+
+// DeletePreviewWithResponse Delete a preview.
+//
+// Stops serving the preview at once; garbage collection removes its deploy unless it is the site's active deploy or in its history after a promotion. A missing or expired preview, and another owner's, answer `404 not_found`. A site the operator has taken down answers `409 site_unavailable`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/sites/{site}/previews/{preview} (the `DeletePreview` operationId).
+func (c *ClientWithResponses) DeletePreviewWithResponse(ctx context.Context, site SiteName, preview PreviewName, reqEditors ...RequestEditorFn) (*DeletePreviewResponse, error) {
+	rsp, err := c.DeletePreview(ctx, site, preview, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeletePreviewResponse(rsp)
+}
+
+// PromotePreviewWithResponse Put a preview's deploy live.
+//
+// Activates the preview's deploy on the live site: an ordinary activation that enters the site's history and can be rolled back from. The preview keeps serving the same deploy. Promoting the deploy that is already live changes nothing. A path preview made on a live deploy the site no longer serves answers `409 stale_base`, so what went live since is never dropped: deploy the preview again, then promote it. A missing or expired preview, and another owner's, answer `404 not_found`; a site the operator has taken down answers `409 site_unavailable`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/previews/{preview}/promote (the `PromotePreview` operationId).
+func (c *ClientWithResponses) PromotePreviewWithResponse(ctx context.Context, site SiteName, preview PreviewName, reqEditors ...RequestEditorFn) (*PromotePreviewResponse, error) {
+	rsp, err := c.PromotePreview(ctx, site, preview, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePromotePreviewResponse(rsp)
+}
+
 // ClearPrimaryHostWithResponse Stop redirecting to a primary hostname.
 //
 // Leaves the site with no primary hostname, so every one of its hostnames serves it again. Clearing a site with none changes nothing. A site the operator has taken down answers `409 site_unavailable`.
@@ -14954,7 +15569,7 @@ func (c *ClientWithResponses) SetPrimaryHostWithResponse(ctx context.Context, si
 
 // RollbackSiteWithBodyWithResponse Reactivate an earlier deploy.
 //
-// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
+// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated on the live site, including a preview deploy that was never promoted, answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -14969,7 +15584,7 @@ func (c *ClientWithResponses) RollbackSiteWithBodyWithResponse(ctx context.Conte
 
 // RollbackSiteWithResponse Reactivate an earlier deploy.
 //
-// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
+// Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated on the live site, including a preview deploy that was never promoted, answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -18547,6 +19162,185 @@ func ParseDeletePolicyResponse(rsp *http.Response) (*DeletePolicyResponse, error
 	switch {
 	case rsp.StatusCode == 204:
 		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListPreviewsResponse parses an HTTP response from a ListPreviewsWithResponse call
+func ParseListPreviewsResponse(rsp *http.Response) (*ListPreviewsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPreviewsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PreviewPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeletePreviewResponse parses an HTTP response from a DeletePreviewWithResponse call
+func ParseDeletePreviewResponse(rsp *http.Response) (*DeletePreviewResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeletePreviewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePromotePreviewResponse parses an HTTP response from a PromotePreviewWithResponse call
+func ParsePromotePreviewResponse(rsp *http.Response) (*PromotePreviewResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PromotePreviewResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Activation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest Unauthenticated

@@ -70,8 +70,9 @@ type fakeAPI struct {
 	// to see a path deploy's base go stale.
 	beforeActivate func(s *fakeSite)
 	// ignorePath makes deploy creation drop the path, as a server older
-	// than path deploys (C1.13) does with a field it does not know.
-	ignorePath bool
+	// than path deploys (C1.13) does with a field it does not know;
+	// ignorePreview does the same for previews (C1.19).
+	ignorePath, ignorePreview bool
 	// downloads counts blob GETs by hash; failDownloads makes the next
 	// GETs fail like this, in order: an HTTP status, dropConnection,
 	// corruptBody, truncateBody or a 429 with Retry-After. withheld hashes answer 451,
@@ -109,6 +110,8 @@ type fakeSite struct {
 	set []map[string]any
 	// allowlist is the "/" policy's allowlist as listed.
 	allowlist apiclient.PolicyAllowlist
+	// previews are the site's previews by name (preview_test.go).
+	previews map[string]*apiclient.Preview
 }
 
 const (
@@ -131,6 +134,8 @@ type fakeDeploy struct {
 	// on ("" for none).
 	files []apiclient.ManifestFile
 	base  string
+	// expires is the preview lifetime the deploy was created with.
+	expires *string
 }
 
 const fakeBase = "wardlock.example.test"
@@ -191,6 +196,7 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 	f.handleLinks(handle)
 	f.handleDomains(handle)
 	f.handleOrganisation(handle)
+	f.handlePreviews(handle)
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f
@@ -319,6 +325,13 @@ func (f *fakeAPI) createDeploy(w http.ResponseWriter, r *http.Request, s *fakeSi
 	if f.ignorePath {
 		body.Path = nil
 	}
+	if f.ignorePreview {
+		body.Preview, body.PreviewExpires = nil, nil
+	}
+	if p := body.Preview; p != nil && !previewNamePattern.MatchString(*p) {
+		reply(w, http.StatusBadRequest, apiclient.Error{Code: "invalid_preview_name", Message: "Invalid preview name.", Target: ptr("preview")})
+		return
+	}
 	if err != nil || (len(body.Files) == 0 && body.Path == nil) {
 		reply(w, http.StatusBadRequest, apiErr("invalid_request", "Invalid manifest."))
 		return
@@ -335,7 +348,7 @@ func (f *fakeAPI) createDeploy(w http.ResponseWriter, r *http.Request, s *fakeSi
 	f.created = append(f.created, body)
 	d := &fakeDeploy{Deploy: apiclient.Deploy{Id: f.id(), Status: apiclient.DeployStatusPending, CreatedAt: 1_800_000_000_000,
 		Message: body.Message, Spa: body.Spa != nil && *body.Spa,
-		ImmutableAssets: body.ImmutableAssets != nil && *body.ImmutableAssets}}
+		ImmutableAssets: body.ImmutableAssets != nil && *body.ImmutableAssets, Preview: body.Preview}, expires: body.PreviewExpires}
 	files := body.Files
 	if body.Path != nil {
 		// A path deploy: the active deploy's files outside the prefix plus
@@ -482,6 +495,11 @@ func (f *fakeAPI) activate(w http.ResponseWriter, r *http.Request, s *fakeSite) 
 				reply(w, http.StatusConflict, apiErr("blobs_missing", "Upload every file first."))
 				return
 			}
+		}
+		if d.Preview != nil {
+			p := f.setPreview(s, d)
+			reply(w, http.StatusOK, apiclient.Activation{Site: s.site, Deploy: d.Deploy, Preview: p})
+			return
 		}
 		f.setActive(s, d)
 		reply(w, http.StatusOK, apiclient.Activation{Site: s.site, Deploy: d.Deploy})

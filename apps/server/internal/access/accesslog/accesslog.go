@@ -50,6 +50,9 @@ type Entry struct {
 	LinkPublicID string // set exactly when Via is store.ViaLink
 	IP           string
 	UserAgent    string
+	// Preview is the preview the request reached (C1.19), "" for the live
+	// site; such entries are left out of the traffic rollup.
+	Preview string
 }
 
 // Repository is the part of store.AccessLog the writer uses.

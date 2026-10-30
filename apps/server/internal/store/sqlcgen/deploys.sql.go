@@ -14,24 +14,26 @@ import (
 )
 
 const createDeploy = `-- name: CreateDeploy :exec
-INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, immutable_assets, created_at, activated_at, path_prefix, base_deploy_id, redirects, headers)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, immutable_assets, created_at, activated_at, path_prefix, base_deploy_id, redirects, headers, preview, preview_lifetime_days)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
 `
 
 type CreateDeployParams struct {
-	ID              string
-	SiteID          string
-	Message         sql.NullString
-	FileCount       int64
-	TotalSize       int64
-	Spa             int64
-	ImmutableAssets int64
-	CreatedAt       int64
-	ActivatedAt     sql.NullInt64
-	PathPrefix      sql.NullString
-	BaseDeployID    sql.NullString
-	Redirects       sql.NullString
-	Headers         sql.NullString
+	ID                  string
+	SiteID              string
+	Message             sql.NullString
+	FileCount           int64
+	TotalSize           int64
+	Spa                 int64
+	ImmutableAssets     int64
+	CreatedAt           int64
+	ActivatedAt         sql.NullInt64
+	PathPrefix          sql.NullString
+	BaseDeployID        sql.NullString
+	Redirects           sql.NullString
+	Headers             sql.NullString
+	Preview             sql.NullString
+	PreviewLifetimeDays sql.NullInt64
 }
 
 func (q *Queries) CreateDeploy(ctx context.Context, arg CreateDeployParams) error {
@@ -49,6 +51,8 @@ func (q *Queries) CreateDeploy(ctx context.Context, arg CreateDeployParams) erro
 		arg.BaseDeployID,
 		arg.Redirects,
 		arg.Headers,
+		arg.Preview,
+		arg.PreviewLifetimeDays,
 	)
 	return err
 }
@@ -94,7 +98,7 @@ func (q *Queries) DeleteDeploy(ctx context.Context, arg DeleteDeployParams) (int
 }
 
 const getDeploy = `-- name: GetDeploy :one
-SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers, deploys.preview, deploys.preview_lifetime_days, deploys.preview_activated_at
 FROM deploys JOIN sites ON sites.id = deploys.site_id
 WHERE deploys.id = ?1 AND deploys.site_id = ?2 AND sites.owner_id = ?3
 `
@@ -106,19 +110,22 @@ type GetDeployParams struct {
 }
 
 type GetDeployRow struct {
-	ID              string
-	SiteID          string
-	Message         sql.NullString
-	FileCount       int64
-	TotalSize       int64
-	Spa             int64
-	ImmutableAssets int64
-	CreatedAt       int64
-	ActivatedAt     sql.NullInt64
-	PathPrefix      sql.NullString
-	BaseDeployID    sql.NullString
-	Redirects       sql.NullString
-	Headers         sql.NullString
+	ID                  string
+	SiteID              string
+	Message             sql.NullString
+	FileCount           int64
+	TotalSize           int64
+	Spa                 int64
+	ImmutableAssets     int64
+	CreatedAt           int64
+	ActivatedAt         sql.NullInt64
+	PathPrefix          sql.NullString
+	BaseDeployID        sql.NullString
+	Redirects           sql.NullString
+	Headers             sql.NullString
+	Preview             sql.NullString
+	PreviewLifetimeDays sql.NullInt64
+	PreviewActivatedAt  sql.NullInt64
 }
 
 func (q *Queries) GetDeploy(ctx context.Context, arg GetDeployParams) (GetDeployRow, error) {
@@ -138,6 +145,9 @@ func (q *Queries) GetDeploy(ctx context.Context, arg GetDeployParams) (GetDeploy
 		&i.BaseDeployID,
 		&i.Redirects,
 		&i.Headers,
+		&i.Preview,
+		&i.PreviewLifetimeDays,
+		&i.PreviewActivatedAt,
 	)
 	return i, err
 }
@@ -242,7 +252,7 @@ func (q *Queries) ListDeployFiles(ctx context.Context, deployID string) ([]ListD
 }
 
 const listDeploys = `-- name: ListDeploys :many
-SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers, deploys.preview, deploys.preview_lifetime_days, deploys.preview_activated_at
 FROM deploys JOIN sites ON sites.id = deploys.site_id
 WHERE deploys.site_id = ?1 AND sites.owner_id = ?2
   AND (deploys.created_at < ?3
@@ -260,19 +270,22 @@ type ListDeploysParams struct {
 }
 
 type ListDeploysRow struct {
-	ID              string
-	SiteID          string
-	Message         sql.NullString
-	FileCount       int64
-	TotalSize       int64
-	Spa             int64
-	ImmutableAssets int64
-	CreatedAt       int64
-	ActivatedAt     sql.NullInt64
-	PathPrefix      sql.NullString
-	BaseDeployID    sql.NullString
-	Redirects       sql.NullString
-	Headers         sql.NullString
+	ID                  string
+	SiteID              string
+	Message             sql.NullString
+	FileCount           int64
+	TotalSize           int64
+	Spa                 int64
+	ImmutableAssets     int64
+	CreatedAt           int64
+	ActivatedAt         sql.NullInt64
+	PathPrefix          sql.NullString
+	BaseDeployID        sql.NullString
+	Redirects           sql.NullString
+	Headers             sql.NullString
+	Preview             sql.NullString
+	PreviewLifetimeDays sql.NullInt64
+	PreviewActivatedAt  sql.NullInt64
 }
 
 // Newest first, strictly before the cursor (created_at, id); the first page
@@ -306,6 +319,9 @@ func (q *Queries) ListDeploys(ctx context.Context, arg ListDeploysParams) ([]Lis
 			&i.BaseDeployID,
 			&i.Redirects,
 			&i.Headers,
+			&i.Preview,
+			&i.PreviewLifetimeDays,
+			&i.PreviewActivatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -486,6 +502,21 @@ type MarkDeployActivatedParams struct {
 
 func (q *Queries) MarkDeployActivated(ctx context.Context, arg MarkDeployActivatedParams) error {
 	_, err := q.db.ExecContext(ctx, markDeployActivated, arg.ActivatedAt, arg.ID)
+	return err
+}
+
+const markDeployPreviewActivated = `-- name: MarkDeployPreviewActivated :exec
+UPDATE deploys SET preview_activated_at = ?1 WHERE id = ?2
+`
+
+type MarkDeployPreviewActivatedParams struct {
+	PreviewActivatedAt sql.NullInt64
+	ID                 string
+}
+
+// A preview deploy went live as its preview (C1.19).
+func (q *Queries) MarkDeployPreviewActivated(ctx context.Context, arg MarkDeployPreviewActivatedParams) error {
+	_, err := q.db.ExecContext(ctx, markDeployPreviewActivated, arg.PreviewActivatedAt, arg.ID)
 	return err
 }
 

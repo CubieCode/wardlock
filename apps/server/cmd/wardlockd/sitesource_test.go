@@ -47,7 +47,7 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 		DashboardHost: "wardlock.localhost",
 		Dashboard:     http.NotFoundHandler(),
 		Health:        http.NotFoundHandler(),
-		Sites:         siteSource{baseDomain: "wardlock.localhost", owners: db.Owners(), sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(), renditions: db.Renditions()},
+		Sites:         siteSource{baseDomain: "wardlock.localhost", owners: db.Owners(), sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(), previews: db.Previews(), renditions: db.Renditions()},
 		Blobs:         blobs,
 		Invalidator:   notifier,
 		Access:        acc,

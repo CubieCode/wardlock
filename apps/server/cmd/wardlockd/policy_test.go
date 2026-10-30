@@ -55,6 +55,9 @@ type policyEdge struct {
 	// mailLogs is the sink's own log, kept apart from logs.
 	mailDir  string
 	mailLogs *bytes.Buffer
+	// siteHost is the host visit uses when none is given: host unless a
+	// matrix runs on a preview (C1.19).
+	siteHost string
 }
 
 // Record keeps the edge's access records for assertions.
@@ -109,10 +112,10 @@ func newPolicyEdge(t testing.TB, opts ...func(*access.Config)) *policyEdge {
 	t.Cleanup(acc.Close)
 	p.acc = acc
 	p.deploys = deploys.NewService(deploys.Config{
-		Sites: db.Sites(), Deploys: db.Deploys(), Blobs: blobs, Notifier: notifier,
+		Sites: db.Sites(), Deploys: db.Deploys(), Previews: db.Previews(), Blobs: blobs, Notifier: notifier,
 		Limits: deploys.DefaultLimits(), Now: p.now, Renditions: db.Renditions(),
 	})
-	p.e = p.newEdge(siteSource{baseDomain: "wardlock.localhost", owners: db.Owners(), sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(), renditions: db.Renditions()}, notifier)
+	p.e = p.newEdge(siteSource{baseDomain: "wardlock.localhost", owners: db.Owners(), sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(), previews: db.Previews(), renditions: db.Renditions(), now: p.now}, notifier)
 	t.Cleanup(p.e.Close)
 	p.h = platform.LogRequests(log, p.e)
 	p.owner = store.Owner{ID: store.NewID(), Email: "owner@example.test", CreatedAt: p.now()}
@@ -140,6 +143,7 @@ func (p *policyEdge) newEdge(src siteSource, inv edge.Invalidator) *edge.Edge {
 		Recorder:        p,
 		Withheld:        p.quarantine,
 		Log:             p.log,
+		Now:             p.now,
 	})
 	if err != nil {
 		p.t.Fatal(err)
@@ -156,7 +160,7 @@ func (p *policyEdge) screening() *deploys.LocalNotifier {
 	db := p.db
 	p.e = p.newEdge(siteSource{
 		baseDomain: "wardlock.localhost", owners: db.Owners(), sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(),
-		renditions: db.Renditions(), moderation: db.Moderation(),
+		previews: db.Previews(), renditions: db.Renditions(), moderation: db.Moderation(), now: p.now,
 	}, invalidators{p.notifier, screened})
 	p.t.Cleanup(p.e.Close)
 	p.h = platform.LogRequests(p.log, p.e)
@@ -179,8 +183,16 @@ func (p *policyEdge) publish(name string) store.Site {
 	if err := p.db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
-	var m deploys.Manifest
-	for path, body := range policyFiles {
+	p.deployFiles(name, deploys.Manifest{}, policyFiles)
+	return site
+}
+
+// deployFiles creates, uploads and activates a deploy of files (path to
+// body) on the site called name, with m's settings.
+func (p *policyEdge) deployFiles(name string, m deploys.Manifest, files map[string]string) store.Deploy {
+	t, ctx := p.t, p.t.Context()
+	t.Helper()
+	for path, body := range files {
 		sum := sha256.Sum256([]byte(body))
 		m.Files = append(m.Files, store.DeployFile{Path: path, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(body))})
 	}
@@ -189,14 +201,14 @@ func (p *policyEdge) publish(name string) store.Site {
 		t.Fatal(err)
 	}
 	for _, f := range m.Files {
-		if err := p.deploys.Upload(ctx, p.owner.ID, name, d.ID, f.SHA256, strings.NewReader(policyFiles[f.Path])); err != nil {
+		if err := p.deploys.Upload(ctx, p.owner.ID, name, d.ID, f.SHA256, strings.NewReader(files[f.Path])); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := p.deploys.Activate(ctx, p.owner.ID, name, d.ID); err != nil {
+	if _, d, err = p.deploys.Activate(ctx, p.owner.ID, name, d.ID); err != nil {
 		t.Fatal(err)
 	}
-	return site
+	return d
 }
 
 func (p *policyEdge) set(site, prefix string, vis store.Visibility, links bool) store.Policy {
@@ -280,6 +292,9 @@ var (
 )
 
 const host, otherHost = "docs.wardlock.localhost", "other.wardlock.localhost"
+
+// previewHost is docs's preview pr-1 (C1.19).
+const previewHost = "docs--pr-1.wardlock.localhost"
 
 // TestPoliciesThroughTheEdge checks policies end to end: the public default
 // for a site with no policy row, opting in, precedence, sessions, cookie

@@ -55,8 +55,8 @@ type GCConfig struct {
 	Now     func() time.Time
 }
 
-// GC removes deploys beyond each site's history limit and then blobs that
-// no deploy references. It is instance-wide: it runs from wardlockd serve
+// GC removes expired previews (C1.19), deploys beyond each site's history
+// limit and then blobs that no deploy references. It is instance-wide: it runs from wardlockd serve
 // on an interval and from `wardlockd gc`, never for one owner.
 //
 // A blob is deleted only inside a store transaction that re-checks it is
@@ -83,8 +83,10 @@ func NewGC(c GCConfig) *GC {
 
 // GCResult counts what one run removed.
 type GCResult struct {
-	DeploysPruned int
-	BlobsDeleted  int
+	// PreviewsExpired counts expired previews deleted (C1.19).
+	PreviewsExpired int
+	DeploysPruned   int
+	BlobsDeleted    int
 	// FilesDeleted counts stored files with no blob record and abandoned
 	// temporary uploads.
 	FilesDeleted int
@@ -92,14 +94,22 @@ type GCResult struct {
 	BytesFreed int64
 }
 
-// Run prunes deploy history, then deletes unreferenced blobs, then (with
-// Files) unrecorded files, and logs the result. It stops at the first
+// Run deletes expired previews, prunes deploy history, then deletes
+// unreferenced blobs, then (with Files) unrecorded files, and logs the
+// result. It stops at the first
 // error, returning what was removed until then.
 func (g *GC) Run(ctx context.Context) (GCResult, error) {
 	start := g.c.Now()
 	cutoff := start.Add(-g.c.Grace)
 	var res GCResult
-	err := g.pruneDeploys(ctx, cutoff, &res)
+	n, err := g.c.Repo.DeleteExpiredPreviews(ctx, start)
+	if err != nil {
+		err = fmt.Errorf("delete expired previews: %w", err)
+	}
+	res.PreviewsExpired = int(n)
+	if err == nil {
+		err = g.pruneDeploys(ctx, cutoff, &res)
+	}
 	if err == nil {
 		err = g.deleteBlobs(ctx, cutoff, &res)
 	}
@@ -107,6 +117,7 @@ func (g *GC) Run(ctx context.Context) (GCResult, error) {
 		err = g.deleteUnrecorded(ctx, cutoff, &res)
 	}
 	attrs := []any{
+		slog.Int("previews_expired", res.PreviewsExpired),
 		slog.Int("deploys_pruned", res.DeploysPruned),
 		slog.Int("blobs_deleted", res.BlobsDeleted),
 		slog.Int("files_deleted", res.FilesDeleted),

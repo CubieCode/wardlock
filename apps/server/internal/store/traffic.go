@@ -267,7 +267,7 @@ func (b *trafficBatch) write(ctx context.Context, q *sqlcgen.Queries) error {
 }
 
 // addTraffic counts entries into the rollup inside q's transaction, once
-// the backfill has run.
+// the backfill has run. Preview entries (C1.19) are never counted.
 func addTraffic(ctx context.Context, q *sqlcgen.Queries, entries []AccessEntry) error {
 	done, err := q.TrafficBackfilled(ctx)
 	if err != nil {
@@ -278,7 +278,9 @@ func addTraffic(ctx context.Context, q *sqlcgen.Queries, entries []AccessEntry) 
 	}
 	b := newTrafficBatch()
 	for _, e := range entries {
-		b.add(e)
+		if e.Preview == "" {
+			b.add(e)
+		}
 	}
 	return b.write(ctx, q)
 }

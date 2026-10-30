@@ -35,6 +35,7 @@ type command struct {
 var commands = []command{
 	{"deploy", "Publish a directory to a site", runDeploy},
 	{"list", "List your sites, or one site's deploys", runList},
+	{"preview", "List, delete and promote a site's previews", runPreview},
 	{"rollback", "Reactivate an earlier deploy of a site", runRollback},
 	{"pull", "Download the files of a site's deploy", runPull},
 	{"teardown", "Delete a site with all its deploys", runTeardown},

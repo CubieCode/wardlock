@@ -95,5 +95,6 @@ func (a accessRecorder) Record(r edge.AccessRecord) {
 		LinkPublicID: r.LinkPublicID,
 		IP:           r.RemoteIP,
 		UserAgent:    r.UserAgent,
+		Preview:      r.Preview,
 	})
 }

@@ -18,9 +18,11 @@ import (
 // client address after trusted-proxy resolution. The recorder still scrubs
 // every field before storing it.
 type AccessRecord struct {
-	Time         time.Time
-	SiteID       string
-	Host         string
+	Time   time.Time
+	SiteID string
+	Host   string
+	// Preview is the preview the host serves (C1.19), "" for the live site.
+	Preview      string
 	Path         string
 	Status       int
 	Via          access.Via
@@ -56,6 +58,7 @@ func (e *Edge) recordAccess(w http.ResponseWriter, r *http.Request, site ServedS
 			Time:         start,
 			SiteID:       site.ID,
 			Host:         canonicalHost(r.Host),
+			Preview:      site.Preview,
 			Path:         clean,
 			Status:       status,
 			Via:          d.Via,

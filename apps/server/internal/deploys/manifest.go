@@ -81,6 +81,14 @@ type Manifest struct {
 	// empty list is none for either.
 	Redirects *[]store.Redirect
 	Headers   *[]store.HeaderRule
+	// Preview, when set, makes the deploy go to that preview of the site
+	// (C1.19) instead of the live site; with Path, its base is still the
+	// live site's active deploy.
+	Preview string
+	// PreviewDays is the preview's lifetime after this deploy, 1 to
+	// store.MaxPreviewDays or 0 for never; nil keeps the preview's own, or
+	// store.DefaultPreviewDays for a new one. Only with Preview.
+	PreviewDays *int
 }
 
 // NormalisePath turns backslashes into forward slashes and checks the

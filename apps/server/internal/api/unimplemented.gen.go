@@ -304,6 +304,21 @@ func (Unimplemented) DeletePolicy(context.Context, DeletePolicyRequestObject) (D
 	return nil, ErrNotImplemented
 }
 
+// ListPreviews is not implemented yet.
+func (Unimplemented) ListPreviews(context.Context, ListPreviewsRequestObject) (ListPreviewsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeletePreview is not implemented yet.
+func (Unimplemented) DeletePreview(context.Context, DeletePreviewRequestObject) (DeletePreviewResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// PromotePreview is not implemented yet.
+func (Unimplemented) PromotePreview(context.Context, PromotePreviewRequestObject) (PromotePreviewResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // ClearPrimaryHost is not implemented yet.
 func (Unimplemented) ClearPrimaryHost(context.Context, ClearPrimaryHostRequestObject) (ClearPrimaryHostResponseObject, error) {
 	return nil, ErrNotImplemented

@@ -206,6 +206,17 @@ func TestMCPDeployDirectory(t *testing.T) {
 	if res.Path != "/mockup-x/" || res.SiteCreated {
 		t.Fatalf("path deploy: %+v", res)
 	}
+	// A preview (C1.19) leaves the live site alone and answers its address.
+	live := deref(srv.sites["docs"].site.ActiveDeployId)
+	var preview deployResult
+	mustCall(t, cs, "deploy_directory", map[string]any{"directory": "mock", "preview": "pr-42", "expires": "never"}, &preview)
+	if preview.Preview != "pr-42" || preview.URL != "https://docs--pr-42."+fakeBase+"/" || deref(srv.sites["docs"].site.ActiveDeployId) != live {
+		t.Fatalf("preview deploy: %+v", preview)
+	}
+	if sent := srv.created[len(srv.created)-1]; deref(sent.Preview) != "pr-42" || deref(sent.PreviewExpires) != "never" {
+		t.Fatalf("sent preview %v expires %v", sent.Preview, sent.PreviewExpires)
+	}
+	mustFail(t, cs, "deploy_directory", map[string]any{"directory": "mock", "expires": "14d"}, "--expires needs --preview")
 	var fromConfig deployResult
 	mustCall(t, cs, "deploy_directory", nil, &fromConfig)
 	if fromConfig.Path != "" || fromConfig.Site.Name != "docs" || fromConfig.Deploy.FileCount != 2 {

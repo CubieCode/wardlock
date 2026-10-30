@@ -221,6 +221,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Deploys: deploys.NewService(deploys.Config{
 			Sites:    db.Sites(),
 			Deploys:  db.Deploys(),
+			Previews: db.Previews(),
 			Blobs:    blobs,
 			Notifier: notifier,
 			Limits: deploys.Limits{
@@ -258,6 +259,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			sites:      db.Sites(),
 			domains:    db.Domains(),
 			deploys:    db.Deploys(),
+			previews:   db.Previews(),
 			renditions: db.Renditions(),
 			moderation: screenedSites(modSvc, db),
 		},

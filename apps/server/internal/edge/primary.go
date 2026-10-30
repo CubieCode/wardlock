@@ -14,9 +14,10 @@ import "net/http"
 
 // redirectsToPrimary reports whether a request for site at host goes to
 // the site's primary hostname instead. Every exemption by host belongs
-// here.
+// here: a preview host (C1.19) is never redirected, since it serves
+// another deploy than the primary does.
 func redirectsToPrimary(site ServedSite, host string) bool {
-	return site.PrimaryHost != "" && host != site.PrimaryHost
+	return site.PrimaryHost != "" && host != site.PrimaryHost && site.Preview == ""
 }
 
 // toPrimary answers 308 to the request's path and query, as received, on

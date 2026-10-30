@@ -581,6 +581,7 @@ export interface paths {
      * @description Records the manifest and answers with the SHA-256 hashes the server still needs. Upload each with `uploadDeployBlob`, then call `activateDeploy`. Files whose content the server already holds for the owner are not listed, so an unchanged re-deploy uploads nothing. Paths are normalised to forward slashes and must be valid UTF-8, without `..`, empty segments, control characters or a leading `.wardlock/`; a rejected path answers `400 invalid_path` with the path as `target`. A duplicate path answers `400 invalid_manifest`, and so does a file whose content (its `sha256`) the owner has already uploaded but whose listed `size` is not that content's size, with the path as `target` and a message naming both sizes; only the owner's own uploads are compared, never another owner's. Exceeding the file count, file size or total size limits, or the lower per-file limit for video files (by extension: `.mp4`, `.webm`, `.mov` and the like), answers `413 limit_exceeded` with the file's path as `target`; a server that refuses video answers the same for any video file. A file whose extension the operator has blocked answers `422 file_type_blocked` with its path as `target`. The deploy also counts against the owner's quotas at once, before any upload: bytes stored (each distinct file once, however many of the owner's deploys list it, so unchanged files cost nothing), answered `413 limit_exceeded` with target `files`, and deploys created in any 24 hours, answered `413 limit_exceeded` with target `deploys`. A refused deploy counts towards neither. A site the operator has taken down answers `409 site_unavailable`.
      *     With `path` (a prefix such as `/mockup-x/`), the deploy replaces only that prefix of the site and keeps everything else. The server pins the site's active deploy as the base; the new deploy lists the base's files outside the prefix unchanged plus `files` placed under the prefix (`index.html` becomes `mockup-x/index.html`), and `files` may be empty to remove the prefix. A site with nothing live takes the prefix's files alone. `spa` and `immutableAssets` carry over from the base unless given. Limits, blocked file types, the video limit and quotas apply to the merged deploy exactly as to a full one, and `fileCount` and `totalSize` describe it; listed sizes are checked against the owner's uploads for `files` only, since the base's were checked when it was created. A prefix that is `/`, does not start and end with `/`, breaks the path rules or lies under `/.wardlock/` answers `400 invalid_path` with target `path`. Activation refuses a path deploy with `409 stale_base` once the site serves another deploy than its base; create it again (nothing needs uploading again).
      *     `redirects` and `headers` are the deploy's rules (SPEC "Redirects and response headers"), recorded on it like `spa`, so rollback restores them. Left out, a full deploy has none and a path deploy keeps its base's; an empty list has none either way. A malformed rule, a status other than 301, 302, 307 or 308, a `to` that is not a path on the site or an `https://` URL, a control character, a `from` or `path` under `/.wardlock/`, or a header name outside the allowlist answers `400 invalid_config` with the rule (`redirects[3]`, `headers[0]`) as `target`. More than 1,000 redirects or 100 header rules answers `413 limit_exceeded` with target `redirects` or `headers`; a value over 8 KiB, with the rule as target; more than 64 KiB in all rules, with the list that passed it (redirects are counted first).
+     *     With `preview` (a name such as `pr-42`), the deploy goes to that preview of the site (C1.19), served at `<site>--<preview>.<base domain>`, instead of the live site: activating it makes it the preview's deploy and leaves the site as it is, and deploying to the same name again replaces it. A name that is not 1 to 20 characters of a-z, 0-9 and '-', starts or ends with '-' or contains '--', or whose hostname label would pass 63 characters, answers `400 invalid_preview_name`; a label that is an existing site's name answers `409 site_name_taken`, both with target `preview`. With `path` too, the base is the live site's active deploy, as for any path deploy. `previewExpires` sets how long the preview lasts after this deploy is activated, `14d` by default (or the preview's own setting when it already exists); it needs `preview` (`400 invalid_request` otherwise). A preview deploy counts towards quotas and is screened like any other.
      */
     post: operations['createDeploy'];
     delete?: never;
@@ -682,7 +683,7 @@ export interface paths {
     put?: never;
     /**
      * Make a pending deploy the site's active deploy.
-     * @description Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`.
+     * @description Atomic: visitors see the previous deploy or this one, never a mix. A deploy with blobs still missing answers `409 blobs_missing`; one that is not pending answers `409 deploy_not_pending` (use `rollbackSite` to return to an earlier deploy). A path deploy whose base is no longer the site's active deploy answers `409 stale_base`: another deploy or rollback went live after it was created, so create it again, which pins the new base. A deploy listing a file whose content (its `sha256`) the owner holds at a size other than the listed one answers `400 invalid_manifest` with the path as `target` and a message naming both sizes, as `createDeploy` does; this happens when that content was uploaded through another deploy after this one was created. Such a deploy can never be activated: create a new one with the right sizes. A site the operator has taken down answers `409 site_unavailable`. A preview deploy (C1.19) becomes its preview's deploy instead, its expiry starting again from now, and the site keeps its active deploy; the answer then carries `preview`.
      */
     post: operations['activateDeploy'];
     delete?: never;
@@ -708,7 +709,7 @@ export interface paths {
     put?: never;
     /**
      * Reactivate an earlier deploy.
-     * @description Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
+     * @description Reactivates `deployId`, or without it the deploy that was active before the current one, instantly and with no upload. A deploy that was never activated on the live site, including a preview deploy that was never promoted, answers `409 deploy_not_activated`; a site with no earlier deploy answers `409 no_previous_deploy`; a site the operator has taken down answers `409 site_unavailable`.
      */
     post: operations['rollbackSite'];
     delete?: never;
@@ -835,6 +836,94 @@ export interface paths {
      * @description Leaves the site with no primary hostname, so every one of its hostnames serves it again. Clearing a site with none changes nothing. A site the operator has taken down answers `409 site_unavailable`.
      */
     delete: operations['clearPrimaryHost'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/previews': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    /**
+     * List a site's previews.
+     * @description The site's previews (C1.19) by name, each with the deploy it serves. An expired preview is not listed: it answers as an unknown host until garbage collection removes it. A site the operator has taken down still lists them.
+     */
+    get: operations['listPreviews'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/previews/{preview}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The preview's name.
+         * @example pr-42
+         */
+        preview: components['parameters']['PreviewName'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Delete a preview.
+     * @description Stops serving the preview at once; garbage collection removes its deploy unless it is the site's active deploy or in its history after a promotion. A missing or expired preview, and another owner's, answer `404 not_found`. A site the operator has taken down answers `409 site_unavailable`.
+     */
+    delete: operations['deletePreview'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/previews/{preview}/promote': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The preview's name.
+         * @example pr-42
+         */
+        preview: components['parameters']['PreviewName'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Put a preview's deploy live.
+     * @description Activates the preview's deploy on the live site: an ordinary activation that enters the site's history and can be rolled back from. The preview keeps serving the same deploy. Promoting the deploy that is already live changes nothing. A path preview made on a live deploy the site no longer serves answers `409 stale_base`, so what went live since is never dropped: deploy the preview again, then promote it. A missing or expired preview, and another owner's, answer `404 not_found`; a site the operator has taken down answers `409 site_unavailable`.
+     */
+    post: operations['promotePreview'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -1653,12 +1742,12 @@ export interface components {
     Deploy: {
       id: components['schemas']['Id'];
       /**
-       * @description `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from.
+       * @description `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from; `preview` for a preview deploy activated as its preview and never on the live site (C1.19), which is not a rollback target until promoted.
        * @enum {string}
        */
-      status: 'pending' | 'active' | 'inactive';
+      status: 'pending' | 'active' | 'inactive' | 'preview';
       createdAt: components['schemas']['Timestamp'];
-      /** @description When it was last activated. Absent while pending. */
+      /** @description When it was last activated on the live site. Absent while pending, and for a preview deploy that was never promoted. */
       activatedAt?: components['schemas']['Timestamp'];
       /** Format: int32 */
       fileCount: number;
@@ -1678,6 +1767,8 @@ export interface components {
       redirects?: components['schemas']['Redirect'][];
       /** @description The deploy's header rules in order, with canonical header names. Absent when it has none. */
       headers?: components['schemas']['HeaderRule'][];
+      /** @description The preview the deploy was made for (C1.19); absent for a deploy to the live site. */
+      preview?: components['schemas']['PreviewName'];
     };
     /** @description Applied, first match wins, only to a request path that serves no file (after clean URLs, before the 404 page and the SPA fallback), once the visitor may read that path. See SPEC "Redirects and response headers". */
     Redirect: {
@@ -1767,6 +1858,9 @@ export interface components {
       redirects?: components['schemas']['Redirect'][];
       /** @description Header rules, in order. Left out, none, or with `path` the base deploy's; `[]` for none. */
       headers?: components['schemas']['HeaderRule'][];
+      /** @description Deploy to this preview of the site instead of the live site (see `createDeploy`). */
+      preview?: components['schemas']['PreviewName'];
+      previewExpires?: components['schemas']['PreviewExpires'];
     };
     CreatedDeploy: {
       deploy: components['schemas']['Deploy'];
@@ -1780,6 +1874,40 @@ export interface components {
     Activation: {
       site: components['schemas']['Site'];
       deploy: components['schemas']['Deploy'];
+      /** @description The preview, as it is now, when a preview deploy was activated or a preview promoted (C1.19). */
+      preview?: components['schemas']['Preview'];
+    };
+    /**
+     * @description A preview's name (C1.19): 1-20 characters of a-z, 0-9 and '-', not starting or ending with '-' and without '--'. The preview is served at `<site>--<name>.<base domain>`, a label of at most 63 characters.
+     * @example pr-42
+     */
+    PreviewName: string;
+    /**
+     * @description How long a preview lasts after each deploy: `<days>d`, 1 to 90 days, or `never`. Left out, `14d` for a new preview, or the preview's own setting.
+     * @example 14d
+     * @example never
+     */
+    PreviewExpires: string;
+    Preview: {
+      name: components['schemas']['PreviewName'];
+      /** @description `<site>--<name>.<base domain>`. */
+      hostname: components['schemas']['Hostname'];
+      /**
+       * Format: uri
+       * @description The preview's URL.
+       */
+      url: string;
+      /** @description When the preview was first deployed. */
+      createdAt: components['schemas']['Timestamp'];
+      /** @description When its deploy went live as the preview. */
+      deployedAt: components['schemas']['Timestamp'];
+      /** @description When it stops being served. Absent when it never expires. */
+      expiresAt?: components['schemas']['Timestamp'];
+      deploy: components['schemas']['Deploy'];
+    };
+    PreviewPage: {
+      items: components['schemas']['Preview'][];
+      nextCursor?: components['schemas']['Cursor'];
     };
     DnsRecord: {
       /** @enum {string} */
@@ -1953,6 +2081,8 @@ export interface components {
       occurredAt: components['schemas']['Timestamp'];
       /** @description The host the request named. */
       host: string;
+      /** @description The preview the request reached (C1.19); absent for the live site. Analytics never counts preview requests. */
+      preview?: components['schemas']['PreviewName'];
       /** @description The requested path, without the query string. */
       path: string;
       /**
@@ -2475,6 +2605,11 @@ export interface components {
      * @example docs
      */
     SiteName: components['schemas']['SiteName'];
+    /**
+     * @description The preview's name.
+     * @example pr-42
+     */
+    PreviewName: components['schemas']['PreviewName'];
     /**
      * @description The deploy's ID.
      * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10
@@ -4371,6 +4506,143 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['Site'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  listPreviews: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+      };
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One page of previews. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "name": "pr-42",
+           *           "hostname": "docs--pr-42.wardlock.example",
+           *           "url": "https://docs--pr-42.wardlock.example/",
+           *           "createdAt": 1767225600000,
+           *           "deployedAt": 1767225660000,
+           *           "expiresAt": 1768435260000,
+           *           "deploy": {
+           *             "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10",
+           *             "status": "preview",
+           *             "createdAt": 1767225600000,
+           *             "fileCount": 42,
+           *             "totalSize": 1532918,
+           *             "message": "Try the new navigation",
+           *             "spa": false,
+           *             "immutableAssets": false,
+           *             "preview": "pr-42"
+           *           }
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['PreviewPage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  deletePreview: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The preview's name.
+         * @example pr-42
+         */
+        preview: components['parameters']['PreviewName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  promotePreview: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+        /**
+         * @description The preview's name.
+         * @example pr-42
+         */
+        preview: components['parameters']['PreviewName'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Promoted. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Activation'];
         };
       };
       401: components['responses']['Unauthenticated'];

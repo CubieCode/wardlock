@@ -122,6 +122,7 @@ const (
 	DeployStatusActive   DeployStatus = "active"
 	DeployStatusInactive DeployStatus = "inactive"
 	DeployStatusPending  DeployStatus = "pending"
+	DeployStatusPreview  DeployStatus = "preview"
 )
 
 // Valid indicates whether the value is a known member of the DeployStatus enum.
@@ -132,6 +133,8 @@ func (e DeployStatus) Valid() bool {
 	case DeployStatusInactive:
 		return true
 	case DeployStatusPending:
+		return true
+	case DeployStatusPreview:
 		return true
 	default:
 		return false
@@ -463,6 +466,11 @@ type AccessLogEntry struct {
 	// Path The requested path, without the query string.
 	Path string `json:"path"`
 
+	// Preview The preview the request reached (C1.19); absent for the live site. Analytics never counts preview requests.
+	//
+	// Examples: pr-42
+	Preview *PreviewName `json:"preview,omitempty"`
+
 	// Status The HTTP status of the response.
 	Status int32 `json:"status"`
 
@@ -489,7 +497,10 @@ type AccessVia string
 // Activation defines model for Activation.
 type Activation struct {
 	Deploy Deploy `json:"deploy"`
-	Site   Site   `json:"site"`
+
+	// Preview The preview, as it is now, when a preview deploy was activated or a preview promoted (C1.19).
+	Preview *Preview `json:"preview,omitempty"`
+	Site    Site     `json:"site"`
 }
 
 // AddDomainRequest defines model for AddDomainRequest.
@@ -823,6 +834,16 @@ type CreateDeployRequest struct {
 	// Examples: /mockup-x/
 	Path *DeployPath `json:"path,omitempty"`
 
+	// Preview Deploy to this preview of the site instead of the live site (see `createDeploy`).
+	//
+	// Examples: pr-42
+	Preview *PreviewName `json:"preview,omitempty"`
+
+	// PreviewExpires How long a preview lasts after each deploy: `<days>d`, 1 to 90 days, or `never`. Left out, `14d` for a new preview, or the preview's own setting.
+	//
+	// Examples: 14d, never
+	PreviewExpires *PreviewExpires `json:"previewExpires,omitempty"`
+
 	// Redirects Redirect rules, in order. Left out, none, or with `path` the base deploy's; `[]` for none.
 	Redirects *[]Redirect `json:"redirects,omitempty"`
 
@@ -936,7 +957,7 @@ type DenyCliLoginRequest struct {
 
 // Deploy defines model for Deploy.
 type Deploy struct {
-	// ActivatedAt When it was last activated. Absent while pending.
+	// ActivatedAt When it was last activated on the live site. Absent while pending, and for a preview deploy that was never promoted.
 	//
 	// Examples: 1767225600000
 	ActivatedAt *Timestamp `json:"activatedAt,omitempty"`
@@ -964,20 +985,25 @@ type Deploy struct {
 	// Examples: /mockup-x/
 	Path *DeployPath `json:"path,omitempty"`
 
+	// Preview The preview the deploy was made for (C1.19); absent for a deploy to the live site.
+	//
+	// Examples: pr-42
+	Preview *PreviewName `json:"preview,omitempty"`
+
 	// Redirects The deploy's redirect rules in order, each with its status. Absent when it has none.
 	Redirects *[]Redirect `json:"redirects,omitempty"`
 
 	// Spa Whether missing paths without a file extension serve `/index.html` while this deploy is active.
 	Spa bool `json:"spa"`
 
-	// Status `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from.
+	// Status `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from; `preview` for a preview deploy activated as its preview and never on the live site (C1.19), which is not a rollback target until promoted.
 	Status DeployStatus `json:"status"`
 
 	// TotalSize Sum of file sizes in bytes.
 	TotalSize int64 `json:"totalSize"`
 }
 
-// DeployStatus `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from.
+// DeployStatus `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from; `preview` for a preview deploy activated as its preview and never on the live site (C1.19), which is not a rollback target until promoted.
 type DeployStatus string
 
 // DeployFile defines model for DeployFile.
@@ -1535,6 +1561,58 @@ type PolicyVisibility string
 // PollCliLoginRequest defines model for PollCliLoginRequest.
 type PollCliLoginRequest struct {
 	DeviceCode string `json:"deviceCode"`
+}
+
+// Preview defines model for Preview.
+type Preview struct {
+	// CreatedAt When the preview was first deployed.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+	Deploy    Deploy    `json:"deploy"`
+
+	// DeployedAt When its deploy went live as the preview.
+	//
+	// Examples: 1767225600000
+	DeployedAt Timestamp `json:"deployedAt"`
+
+	// ExpiresAt When it stops being served. Absent when it never expires.
+	//
+	// Examples: 1767225600000
+	ExpiresAt *Timestamp `json:"expiresAt,omitempty"`
+
+	// Hostname `<site>--<name>.<base domain>`.
+	//
+	// Examples: docs.example.com
+	Hostname Hostname `json:"hostname"`
+
+	// Name A preview's name (C1.19): 1-20 characters of a-z, 0-9 and '-', not starting or ending with '-' and without '--'. The preview is served at `<site>--<name>.<base domain>`, a label of at most 63 characters.
+	//
+	// Examples: pr-42
+	Name PreviewName `json:"name"`
+
+	// Url The preview's URL.
+	Url string `json:"url"`
+}
+
+// PreviewExpires How long a preview lasts after each deploy: `<days>d`, 1 to 90 days, or `never`. Left out, `14d` for a new preview, or the preview's own setting.
+//
+// Examples: 14d, never
+type PreviewExpires = string
+
+// PreviewName A preview's name (C1.19): 1-20 characters of a-z, 0-9 and '-', not starting or ending with '-' and without '--'. The preview is served at `<site>--<name>.<base domain>`, a label of at most 63 characters.
+//
+// Examples: pr-42
+type PreviewName = string
+
+// PreviewPage defines model for PreviewPage.
+type PreviewPage struct {
+	Items []Preview `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
 }
 
 // Redirect Applied, first match wins, only to a request path that serves no file (after clean URLs, before the 404 page and the SPA fallback), once the visitor may read that path. See SPEC "Redirects and response headers".
@@ -2255,6 +2333,15 @@ type ListPoliciesParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListPreviewsParams defines parameters for ListPreviews.
+type ListPreviewsParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListApiTokensParams defines parameters for ListApiTokens.
 type ListApiTokensParams struct {
 	// Limit Page size.
@@ -2619,6 +2706,15 @@ type ServerInterface interface {
 	// DeletePolicy Delete a path policy.
 	// (DELETE /api/v0/sites/{site}/policies/{policyId})
 	DeletePolicy(w http.ResponseWriter, r *http.Request, site SiteName, policyId PolicyId)
+	// ListPreviews List a site's previews.
+	// (GET /api/v0/sites/{site}/previews)
+	ListPreviews(w http.ResponseWriter, r *http.Request, site SiteName, params ListPreviewsParams)
+	// DeletePreview Delete a preview.
+	// (DELETE /api/v0/sites/{site}/previews/{preview})
+	DeletePreview(w http.ResponseWriter, r *http.Request, site SiteName, preview PreviewName)
+	// PromotePreview Put a preview's deploy live.
+	// (POST /api/v0/sites/{site}/previews/{preview}/promote)
+	PromotePreview(w http.ResponseWriter, r *http.Request, site SiteName, preview PreviewName)
 	// ClearPrimaryHost Stop redirecting to a primary hostname.
 	// (DELETE /api/v0/sites/{site}/primary-host)
 	ClearPrimaryHost(w http.ResponseWriter, r *http.Request, site SiteName)
@@ -4401,6 +4497,131 @@ func (siw *ServerInterfaceWrapper) DeletePolicy(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListPreviews operation middleware
+func (siw *ServerInterfaceWrapper) ListPreviews(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPreviewsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPreviews(w, r, site, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePreview operation middleware
+func (siw *ServerInterfaceWrapper) DeletePreview(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "preview" -------------
+	var preview PreviewName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "preview", r.PathValue("preview"), &preview, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "preview", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePreview(w, r, site, preview)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PromotePreview operation middleware
+func (siw *ServerInterfaceWrapper) PromotePreview(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "site" -------------
+	var site SiteName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "site", r.PathValue("site"), &site, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "site", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "preview" -------------
+	var preview PreviewName
+
+	err = runtime.BindStyledParameterWithOptions("simple", "preview", r.PathValue("preview"), &preview, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "preview", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PromotePreview(w, r, site, preview)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ClearPrimaryHost operation middleware
 func (siw *ServerInterfaceWrapper) ClearPrimaryHost(w http.ResponseWriter, r *http.Request) {
 
@@ -4809,6 +5030,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/domains/{hostname}/verify", wrapper.VerifyDomain)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/primary-host", wrapper.ClearPrimaryHost)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v0/sites/{site}/primary-host", wrapper.SetPrimaryHost)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/previews", wrapper.ListPreviews)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/previews/{preview}", wrapper.DeletePreview)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/sites/{site}/previews/{preview}/promote", wrapper.PromotePreview)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sites/{site}/policies", wrapper.ListPolicies)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v0/sites/{site}/policies", wrapper.SetPolicy)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sites/{site}/policies/{policyId}", wrapper.DeletePolicy)
@@ -9940,6 +10164,288 @@ func (response DeletePolicydefaultJSONResponse) VisitDeletePolicyResponse(w http
 	return err
 }
 
+type ListPreviewsRequestObject struct {
+	Site   SiteName `json:"site"`
+	Params ListPreviewsParams
+}
+
+type ListPreviewsResponseObject interface {
+	VisitListPreviewsResponse(w http.ResponseWriter) error
+}
+
+type ListPreviews200JSONResponse PreviewPage
+
+func (response ListPreviews200JSONResponse) VisitListPreviewsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPreviews400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListPreviews400JSONResponse) VisitListPreviewsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPreviews401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListPreviews401JSONResponse) VisitListPreviewsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPreviews403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response ListPreviews403JSONResponse) VisitListPreviewsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPreviews404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListPreviews404JSONResponse) VisitListPreviewsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPreviewsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListPreviewsdefaultJSONResponse) VisitListPreviewsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePreviewRequestObject struct {
+	Site    SiteName    `json:"site"`
+	Preview PreviewName `json:"preview"`
+}
+
+type DeletePreviewResponseObject interface {
+	VisitDeletePreviewResponse(w http.ResponseWriter) error
+}
+
+type DeletePreview204Response struct {
+}
+
+func (response DeletePreview204Response) VisitDeletePreviewResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeletePreview401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeletePreview401JSONResponse) VisitDeletePreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePreview403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response DeletePreview403JSONResponse) VisitDeletePreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePreview404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response DeletePreview404JSONResponse) VisitDeletePreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePreview409JSONResponse struct{ ConflictJSONResponse }
+
+func (response DeletePreview409JSONResponse) VisitDeletePreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePreviewdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeletePreviewdefaultJSONResponse) VisitDeletePreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PromotePreviewRequestObject struct {
+	Site    SiteName    `json:"site"`
+	Preview PreviewName `json:"preview"`
+}
+
+type PromotePreviewResponseObject interface {
+	VisitPromotePreviewResponse(w http.ResponseWriter) error
+}
+
+type PromotePreview200JSONResponse Activation
+
+func (response PromotePreview200JSONResponse) VisitPromotePreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PromotePreview401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response PromotePreview401JSONResponse) VisitPromotePreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PromotePreview403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response PromotePreview403JSONResponse) VisitPromotePreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PromotePreview404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response PromotePreview404JSONResponse) VisitPromotePreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PromotePreview409JSONResponse struct{ ConflictJSONResponse }
+
+func (response PromotePreview409JSONResponse) VisitPromotePreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PromotePreviewdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response PromotePreviewdefaultJSONResponse) VisitPromotePreviewResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ClearPrimaryHostRequestObject struct {
 	Site SiteName `json:"site"`
 }
@@ -11011,6 +11517,15 @@ type StrictServerInterface interface {
 	// DeletePolicy Delete a path policy.
 	// (DELETE /api/v0/sites/{site}/policies/{policyId})
 	DeletePolicy(ctx context.Context, request DeletePolicyRequestObject) (DeletePolicyResponseObject, error)
+	// ListPreviews List a site's previews.
+	// (GET /api/v0/sites/{site}/previews)
+	ListPreviews(ctx context.Context, request ListPreviewsRequestObject) (ListPreviewsResponseObject, error)
+	// DeletePreview Delete a preview.
+	// (DELETE /api/v0/sites/{site}/previews/{preview})
+	DeletePreview(ctx context.Context, request DeletePreviewRequestObject) (DeletePreviewResponseObject, error)
+	// PromotePreview Put a preview's deploy live.
+	// (POST /api/v0/sites/{site}/previews/{preview}/promote)
+	PromotePreview(ctx context.Context, request PromotePreviewRequestObject) (PromotePreviewResponseObject, error)
 	// ClearPrimaryHost Stop redirecting to a primary hostname.
 	// (DELETE /api/v0/sites/{site}/primary-host)
 	ClearPrimaryHost(ctx context.Context, request ClearPrimaryHostRequestObject) (ClearPrimaryHostResponseObject, error)
@@ -12674,6 +13189,87 @@ func (sh *strictHandler) DeletePolicy(w http.ResponseWriter, r *http.Request, si
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DeletePolicyResponseObject); ok {
 		if err := validResponse.VisitDeletePolicyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPreviews operation middleware
+func (sh *strictHandler) ListPreviews(w http.ResponseWriter, r *http.Request, site SiteName, params ListPreviewsParams) {
+	var request ListPreviewsRequestObject
+
+	request.Site = site
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPreviews(ctx, request.(ListPreviewsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPreviews")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPreviewsResponseObject); ok {
+		if err := validResponse.VisitListPreviewsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeletePreview operation middleware
+func (sh *strictHandler) DeletePreview(w http.ResponseWriter, r *http.Request, site SiteName, preview PreviewName) {
+	var request DeletePreviewRequestObject
+
+	request.Site = site
+	request.Preview = preview
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePreview(ctx, request.(DeletePreviewRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePreview")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeletePreviewResponseObject); ok {
+		if err := validResponse.VisitDeletePreviewResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PromotePreview operation middleware
+func (sh *strictHandler) PromotePreview(w http.ResponseWriter, r *http.Request, site SiteName, preview PreviewName) {
+	var request PromotePreviewRequestObject
+
+	request.Site = site
+	request.Preview = preview
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PromotePreview(ctx, request.(PromotePreviewRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PromotePreview")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PromotePreviewResponseObject); ok {
+		if err := validResponse.VisitPromotePreviewResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

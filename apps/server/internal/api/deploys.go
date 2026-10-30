@@ -69,12 +69,18 @@ func failed(err error) (*failure, error) {
 		{sites.ErrTagNameTaken, http.StatusConflict, "tag_name_taken", "You already have a tag with this name.", "name"},
 		{sites.ErrTooMany, http.StatusRequestEntityTooLarge, "limit_exceeded", message, target},
 		{deploys.ErrNotFound, http.StatusNotFound, "not_found", "Not found.", ""},
-		{sites.ErrInvalidName, http.StatusBadRequest, "invalid_site_name", "name must be 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-'.", "name"},
+		{sites.ErrInvalidName, http.StatusBadRequest, "invalid_site_name", "name must be 1-63 characters of a-z, 0-9 and '-', not starting or ending with '-' and without '--'.", "name"},
 		{sites.ErrReservedName, http.StatusBadRequest, "reserved_site_name", "This site name is reserved.", "name"},
 		{sites.ErrNameTaken, http.StatusConflict, "site_name_taken", "This site name is taken.", "name"},
 		{deploys.ErrInvalidPath, http.StatusBadRequest, "invalid_path", message, target},
 		{deploys.ErrInvalidManifest, http.StatusBadRequest, "invalid_manifest", message, target},
 		{deploys.ErrInvalidConfig, http.StatusBadRequest, "invalid_config", message, target},
+		{deploys.ErrInvalidPreview, http.StatusBadRequest, "invalid_preview_name", message, target},
+		{deploys.ErrInvalidPreviewExpiry, http.StatusBadRequest, "invalid_request", message, target},
+		{deploys.ErrPreviewNameTaken, http.StatusConflict, "site_name_taken", message, target},
+		{deploys.ErrInvalidPreview, http.StatusBadRequest, "invalid_preview_name", message, target},
+		{deploys.ErrInvalidPreviewExpiry, http.StatusBadRequest, "invalid_request", message, target},
+		{deploys.ErrPreviewNameTaken, http.StatusConflict, "site_name_taken", message, target},
 		{sites.ErrLimitExceeded, http.StatusRequestEntityTooLarge, "limit_exceeded", siteLimit, "name"},
 		{deploys.ErrLimitExceeded, http.StatusRequestEntityTooLarge, "limit_exceeded", message, target},
 		{deploys.ErrBlockedType, http.StatusUnprocessableEntity, "file_type_blocked", message, target},
@@ -84,7 +90,7 @@ func failed(err error) (*failure, error) {
 		{deploys.ErrNotPending, http.StatusConflict, "deploy_not_pending", "This deploy has been activated before; use rollback to return to it.", ""},
 		{deploys.ErrNotActivated, http.StatusConflict, "deploy_not_activated", "This deploy was never activated.", ""},
 		{deploys.ErrNoPreviousDeploy, http.StatusConflict, "no_previous_deploy", "The site has no earlier deploy to roll back to.", ""},
-		{deploys.ErrStaleBase, http.StatusConflict, "stale_base", "Another deploy went live on this site after this path deploy was created; create it again.", ""},
+		{deploys.ErrStaleBase, http.StatusConflict, "stale_base", "Another deploy went live on this site after this path deploy was created; create it again (for a preview, deploy the preview again).", ""},
 		{deploys.ErrWithheld, http.StatusUnavailableForLegalReasons, "file_withheld", "The operator of this server has withheld this file, so it cannot be downloaded.", ""},
 		{deploys.ErrSiteUnavailable, http.StatusConflict, "site_unavailable", siteUnavailable, ""},
 		{sites.ErrUnavailable, http.StatusConflict, "site_unavailable", siteUnavailable, ""},
@@ -202,6 +208,9 @@ func deployBody(site store.Site, d store.Deploy) Deploy {
 	}
 	if !d.ActivatedAt.IsZero() {
 		out.ActivatedAt = millis(d.ActivatedAt)
+	}
+	if d.Preview != "" {
+		out.Preview = &d.Preview
 	}
 	return out
 }
@@ -403,6 +412,17 @@ func (s *Server) CreateDeploy(ctx context.Context, req CreateDeployRequestObject
 		}
 		m.Path = *req.Body.Path
 	}
+	if req.Body.Preview != nil {
+		m.Preview = *req.Body.Preview
+	}
+	if req.Body.PreviewExpires != nil {
+		days, ok := previewDays(*req.Body.PreviewExpires)
+		if !ok {
+			return CreateDeploydefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_request",
+				fmt.Sprintf("previewExpires must be 1d to %dd, or never.", store.MaxPreviewDays), "previewExpires")), nil
+		}
+		m.PreviewDays = &days
+	}
 	d, missing, err := s.Deploys.Create(ctx, owner, req.Site, m)
 	if err != nil {
 		f, err := failed(err)
@@ -451,7 +471,16 @@ func (s *Server) ActivateDeploy(ctx context.Context, req ActivateDeployRequestOb
 	if err != nil {
 		return nil, err
 	}
-	return ActivateDeploy200JSONResponse{Site: body, Deploy: deployBody(site, d)}, nil
+	out := ActivateDeploy200JSONResponse{Site: body, Deploy: deployBody(site, d)}
+	if d.Preview != "" {
+		_, p, err := s.Deploys.Preview(ctx, owner, req.Site, d.Preview)
+		if err != nil {
+			return nil, err
+		}
+		pb := s.previewBody(site, p, d)
+		out.Preview = &pb
+	}
+	return out, nil
 }
 
 // RollbackSite reactivates an earlier deploy.

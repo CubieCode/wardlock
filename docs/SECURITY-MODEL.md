@@ -168,6 +168,22 @@ A site with a primary hostname (C1.18, SPEC "Primary hostname in detail") answer
 
 </details>
 
+### Preview hosts
+
+A preview (C1.19, SPEC "Preview deploys") is another hostname of the same site, `<site>--<name>.<base domain>`, serving another deploy. It is protected exactly as the live site is: the site's policies and share links apply, so **a site-wide share link also opens every preview of that site**, and a path-scoped link opens that path on each. Sessions are host-only per preview hostname, and every preview response is `noindex`.
+
+<details>
+<summary>Decision (C1.19): previews are the site's, on hostnames of their own</summary>
+
+- **Same site, same access.** A preview belongs to its site: the access step is asked with the site's ID, so the governing policy, its methods and allowlist, share links and their path scopes, use limits, rate limits and the access log are the live site's. Owners should expect a link they shared for the site to open its previews too, including content not yet published; to keep a preview from someone holding a site-wide link, protect it with a path policy or do not create it. A link cannot be limited to one preview.
+- **Sessions.** Site session cookies are host-only, so a session earned on `docs.<base>` is never sent to `docs--pr-42.<base>` and the visitor signs in again there, as on a custom domain. The cookie names the site, not the host, so its value would satisfy the site's policy on any of the site's hostnames if a client sent it there; that is no more than the visitor already holds. A cookie from another site's preview names that site and is refused and cleared. OAuth runs through the auth origin unchanged: the flow and its code are bound to the host the sign-in started on, so the code returns to the preview's own `/.wardlock/callback` and is refused on any other host. The dashboard never takes a site cookie.
+- **Sibling previews.** Previews are sibling subdomains under the base domain like every site, so the cookie-tossing and embedding protections above apply to them unchanged; a preview's deploy is the owner's content, as the live site's is.
+- **Names cannot be taken over.** The edge looks a label up as a site's name first, so an exact site name always wins; new site names may not contain `--`, and a preview whose label is an existing site's name is refused, so no owner can claim another site's preview hostname or put a preview on a hostname another site serves. Custom domains never serve previews, and the primary-hostname redirect never applies to a preview hostname, so no token is carried to or from one.
+- **Expiry and deletion.** An expired or deleted preview answers as an unknown host at once, cache or not; nothing about it is served while garbage collection catches up.
+- **Indexing.** Every preview response, Wardlock's own pages and errors included, carries `X-Robots-Tag: noindex`, so a preview of a public site is not indexed either. This is a request to crawlers, not access control: a preview anyone may read is public.
+
+</details>
+
 ### Brute force and enumeration
 
 Tokens carry 256 bits of secret, so guessing is infeasible; even so, failed token checks are rate-limited per IP and per site, as are password attempts and email-code sends and verifications. Responses never reveal whether a link, address or path exists, and no flood of guesses or of invented addresses lets anyone in, though a determined attacker with six or more networks can hold one site's sign-in method shut (accepted, below).

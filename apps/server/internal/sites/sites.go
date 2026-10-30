@@ -106,14 +106,19 @@ func ValidName(name string) bool {
 	return true
 }
 
-// CheckName returns ErrInvalidName or ErrReservedName for a name no site
-// may take, or nil.
+// CheckName returns ErrInvalidName or ErrReservedName for a name no new
+// site may take, or nil. New names may not contain "--", which joins a site
+// and a preview in a preview's hostname (C1.19); sites named before keep
+// working, since ValidName still accepts them.
 func (s *Service) CheckName(name string) error {
 	if !ValidName(name) {
 		return ErrInvalidName
 	}
 	if reserved[name] || strings.HasPrefix(name, "xn--") || name == s.dashboardLabel() {
 		return ErrReservedName
+	}
+	if strings.Contains(name, "--") {
+		return ErrInvalidName
 	}
 	return nil
 }

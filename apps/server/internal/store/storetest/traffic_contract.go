@@ -32,7 +32,8 @@ func testBrowser(userAgent string) store.Browser {
 var allFrom, allTo = now.Add(-1000 * 24 * time.Hour), now.Add(1000 * 24 * time.Hour)
 
 // recount is the rollup computed straight from entries, as Report should
-// answer it for all of an owner's sites.
+// answer it for all of an owner's sites: preview entries (C1.19) are left
+// out.
 func recount(entries []store.AccessEntry, siteNames map[string]string) store.TrafficReport {
 	type key struct{ a, b string }
 	hours := map[int64]*store.TrafficCount{}
@@ -63,7 +64,7 @@ func recount(entries []store.AccessEntry, siteNames map[string]string) store.Tra
 	}
 	for _, e := range entries {
 		name, ok := siteNames[e.SiteID]
-		if !ok {
+		if !ok || e.Preview != "" {
 			continue
 		}
 		h := e.OccurredAt.UTC().Truncate(time.Hour).UnixMilli()
@@ -228,6 +229,10 @@ func trafficContract(t *testing.T, open Opener) {
 			at := now.Add(time.Duration(i%30)*time.Hour + time.Duration(i)*time.Second)
 			e := f.entry(site.ID, at, statuses[i%len(statuses)], via, link, fmt.Sprintf("/p%d", i%12), agents[i%len(agents)])
 			e.Country = countries[i%len(countries)]
+			if i%7 == 0 {
+				// Preview requests are logged, never counted (C1.19).
+				e.Preview = "pr-1"
+			}
 			entries = append(entries, e)
 		}
 		// An entry of a site that no longer exists is logged, not counted.

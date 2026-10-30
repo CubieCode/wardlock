@@ -1,34 +1,41 @@
 -- Deploys beyond each site's newest keep_count, oldest first, after the
--- (created_at, id) cursor. Never the site's active deploy, nor a pending
--- deploy created at or after pending_before, whose upload may be in flight,
--- nor any deploy of a taken-down site or a suspended owner's site, kept as
--- evidence (A2.13).
+-- (created_at, id) cursor. Never the site's active deploy, nor a deploy a
+-- preview serves (C1.19), nor a pending deploy created at or after
+-- pending_before, whose upload may be in flight, nor any deploy of a
+-- taken-down site or a suspended owner's site, kept as evidence (A2.13).
+-- A deploy made for a preview and never promoted is not history: it is
+-- prunable as soon as no preview serves it, and never counts towards
+-- keep_count.
 -- name: ListPrunableDeploys :many
 SELECT deploys.id, deploys.site_id, deploys.created_at FROM deploys
 WHERE (deploys.created_at > sqlc.arg(after_created_at)
     OR (deploys.created_at = sqlc.arg(after_created_at) AND deploys.id > sqlc.arg(after_id)))
   AND NOT EXISTS (SELECT 1 FROM sites WHERE sites.active_deploy_id = deploys.id)
-  AND (deploys.activated_at IS NOT NULL OR deploys.created_at < sqlc.arg(pending_before))
+  AND NOT EXISTS (SELECT 1 FROM previews WHERE previews.deploy_id = deploys.id)
+  AND (deploys.activated_at IS NOT NULL OR deploys.preview_activated_at IS NOT NULL OR deploys.created_at < sqlc.arg(pending_before))
   AND NOT EXISTS (
     SELECT 1 FROM sites JOIN owners ON owners.id = sites.owner_id
     WHERE sites.id = deploys.site_id AND (sites.taken_down_at IS NOT NULL OR owners.suspended_at IS NOT NULL)
   )
-  AND (
+  AND ((deploys.preview IS NOT NULL AND deploys.activated_at IS NULL) OR (
     SELECT COUNT(*) FROM deploys AS newer
     WHERE newer.site_id = deploys.site_id
+      AND (newer.preview IS NULL OR newer.activated_at IS NOT NULL)
       AND (newer.created_at > deploys.created_at OR (newer.created_at = deploys.created_at AND newer.id > deploys.id))
-  ) >= CAST(sqlc.arg(keep_count) AS INTEGER)
+  ) >= CAST(sqlc.arg(keep_count) AS INTEGER))
 ORDER BY deploys.created_at, deploys.id
 LIMIT sqlc.arg(row_limit);
 
--- Deletes one deploy unless it has become its site's active deploy or is a
--- young pending deploy, or its site has been taken down or its owner
--- suspended since; its manifest goes with it (ON DELETE CASCADE).
+-- Deletes one deploy unless it has become its site's active deploy or a
+-- preview's or is a young pending deploy, or its site has been taken down
+-- or its owner suspended since; its manifest goes with it (ON DELETE
+-- CASCADE).
 -- name: DeletePrunableDeploy :execrows
 DELETE FROM deploys
 WHERE deploys.id = sqlc.arg(id)
   AND NOT EXISTS (SELECT 1 FROM sites WHERE sites.active_deploy_id = deploys.id)
-  AND (deploys.activated_at IS NOT NULL OR deploys.created_at < sqlc.arg(pending_before))
+  AND NOT EXISTS (SELECT 1 FROM previews WHERE previews.deploy_id = deploys.id)
+  AND (deploys.activated_at IS NOT NULL OR deploys.preview_activated_at IS NOT NULL OR deploys.created_at < sqlc.arg(pending_before))
   AND NOT EXISTS (
     SELECT 1 FROM sites JOIN owners ON owners.id = sites.owner_id
     WHERE sites.id = deploys.site_id AND (sites.taken_down_at IS NOT NULL OR owners.suspended_at IS NOT NULL)

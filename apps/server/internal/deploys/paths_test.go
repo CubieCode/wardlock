@@ -60,7 +60,7 @@ func newPathWorld(t *testing.T, opts ...func(*deploys.Config)) *pathWorld {
 	t.Helper()
 	w := &pathWorld{t: t, db: storetest.New(t), bodies: map[string]string{}, clock: gcEpoch}
 	c := deploys.Config{
-		Sites: w.db.Sites(), Deploys: w.db.Deploys(), Blobs: deploys.NewFSBlobStore(t.TempDir()),
+		Sites: w.db.Sites(), Deploys: w.db.Deploys(), Previews: w.db.Previews(), Blobs: deploys.NewFSBlobStore(t.TempDir()),
 		Notifier: deploys.NewLocalNotifier(), Limits: deploys.DefaultLimits(),
 		Now: func() time.Time { w.clock = w.clock.Add(time.Second); return w.clock },
 	}

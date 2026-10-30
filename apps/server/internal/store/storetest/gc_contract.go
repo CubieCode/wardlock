@@ -127,6 +127,116 @@ func gcContract(t *testing.T, open Opener) {
 			t.Fatal("old pending deploy was kept")
 		}
 	})
+	// previewAt creates a deploy for preview name at now+at and activates
+	// it as that preview, with a lifetime of days.
+	previewAt := func(f *fixture, ownerID, siteID, name string, at time.Duration, days int) store.Deploy {
+		f.t.Helper()
+		d := f.validDeploy(siteID)
+		d.CreatedAt, d.Preview, d.PreviewDays = now.Add(at), name, &days
+		f.must(f.r.Deploys.Create(f.t.Context(), ownerID, d, []store.DeployFile{{Path: "index.html", SHA256: sha('d'), Size: 5}}, store.Quotas{}))
+		f.uploadAll(ownerID, siteID, d.ID)
+		d, err := f.r.Deploys.Activate(f.t.Context(), ownerID, siteID, d.ID, d.CreatedAt)
+		f.must(err)
+		return d
+	}
+	t.Run("PrunableDeploysWithPreviews", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		live := deployAt(f, o.ID, s.ID, 0, sha('a'))
+		activate(f, o.ID, s.ID, live)
+		// Two previews replaced in turn, then a third serving: the replaced
+		// ones are not history and go at once; the serving one stays.
+		first := previewAt(f, o.ID, s.ID, "pr-1", time.Second, 14)
+		second := previewAt(f, o.ID, s.ID, "pr-1", 2*time.Second, 14)
+		serving := previewAt(f, o.ID, s.ID, "pr-1", 3*time.Second, 14)
+		// A pending preview deploy inside the grace period is kept too.
+		young := f.validDeploy(s.ID)
+		young.CreatedAt, young.Preview = now.Add(4*time.Second), "pr-2"
+		f.must(f.r.Deploys.Create(t.Context(), o.ID, young, []store.DeployFile{{Path: "index.html", SHA256: sha('e'), Size: 5}}, store.Quotas{}))
+
+		got, err := f.r.GC.PrunableDeploys(t.Context(), 1, young.CreatedAt, store.DeployCursor{}, 10)
+		wantErr(t, err, nil)
+		if want := []string{first.ID, second.ID}; !slices.Equal(ids(got), want) {
+			t.Fatalf("prunable = %v, want the replaced previews %v", ids(got), want)
+		}
+		// Preview deploys never count towards the history limit: with keep
+		// 1 the live deploy has no newer history and stays.
+		for _, d := range []store.Deploy{serving, young, live} {
+			if deleted, err := f.r.GC.DeletePrunableDeploy(t.Context(), d.ID, young.CreatedAt); err != nil || deleted {
+				t.Fatalf("DeletePrunableDeploy(%s) = %t, %v; want kept", d.ID, deleted, err)
+			}
+		}
+		// An older live deploy beyond the limit goes, though newer preview
+		// deploys exist.
+		older := deployAt(f, o.ID, s.ID, -time.Second, sha('f'))
+		activate(f, o.ID, s.ID, older)
+		_, _, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, live.ID, now.Add(5*time.Second))
+		wantErr(t, err, nil)
+		got, err = f.r.GC.PrunableDeploys(t.Context(), 1, young.CreatedAt, store.DeployCursor{}, 10)
+		wantErr(t, err, nil)
+		if want := []string{older.ID, first.ID, second.ID}; !slices.Equal(ids(got), want) {
+			t.Fatalf("prunable = %v, want %v", ids(got), want)
+		}
+		// Promoted, a preview deploy is history like any other, and the
+		// preview still serves it.
+		_, _, err = f.r.Previews.Promote(t.Context(), o.ID, s.ID, "pr-1", now.Add(5*time.Second))
+		wantErr(t, err, nil)
+		if deleted, err := f.r.GC.DeletePrunableDeploy(t.Context(), serving.ID, young.CreatedAt); err != nil || deleted {
+			t.Fatalf("DeletePrunableDeploy(promoted) = %t, %v; want kept", deleted, err)
+		}
+		wantErr(t, f.r.Previews.Delete(t.Context(), o.ID, s.ID, "pr-1", now), nil)
+		activate(f, o.ID, s.ID, deployAt(f, o.ID, s.ID, 6*time.Second, sha('1')))
+		got, err = f.r.GC.PrunableDeploys(t.Context(), 1, young.CreatedAt, store.DeployCursor{}, 10)
+		wantErr(t, err, nil)
+		if !slices.Contains(ids(got), serving.ID) || !slices.Contains(ids(got), live.ID) {
+			t.Fatalf("prunable = %v, want the promoted deploy and the live one beyond the limit", ids(got))
+		}
+	})
+	t.Run("DeleteExpiredPreviews", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		short := previewAt(f, o.ID, s.ID, "short", 0, 1)
+		previewAt(f, o.ID, s.ID, "long", 0, 30)
+		previewAt(f, o.ID, s.ID, "never", 0, 0)
+		// A taken-down site's and a suspended owner's expired previews are
+		// evidence and kept.
+		down := f.site(o.ID)
+		previewAt(f, o.ID, down.ID, "short", 0, 1)
+		f.must(f.r.Sites.TakeDown(t.Context(), down.ID, now))
+		suspended := f.owner()
+		theirs := f.site(suspended.ID)
+		previewAt(f, suspended.ID, theirs.ID, "short", 0, 1)
+		f.must(f.r.Owners.Suspend(t.Context(), suspended.ID, now))
+
+		n, err := f.r.GC.DeleteExpiredPreviews(t.Context(), now.Add(day-time.Millisecond))
+		if err != nil || n != 0 {
+			t.Fatalf("DeleteExpiredPreviews() before expiry = %d, %v", n, err)
+		}
+		n, err = f.r.GC.DeleteExpiredPreviews(t.Context(), now.Add(day))
+		if err != nil || n != 1 {
+			t.Fatalf("DeleteExpiredPreviews() = %d, %v; want 1", n, err)
+		}
+		left, err := f.r.Previews.List(t.Context(), o.ID, s.ID, "", 10, now)
+		wantErr(t, err, nil)
+		if want := []string{"long", "never"}; !slices.Equal(previewNames(left), want) {
+			t.Fatalf("previews left = %v, want %v", previewNames(left), want)
+		}
+		for _, k := range []struct{ owner, site string }{{o.ID, down.ID}, {suspended.ID, theirs.ID}} {
+			if _, err := f.r.Previews.Get(t.Context(), k.owner, k.site, "short", now); err != nil {
+				t.Fatalf("kept preview of %s: %v", k.site, err)
+			}
+		}
+		// Its deploy is then prunable.
+		got, err := f.r.GC.PrunableDeploys(t.Context(), 50, now, store.DeployCursor{}, 10)
+		wantErr(t, err, nil)
+		if !slices.Equal(ids(got), []string{short.ID}) {
+			t.Fatalf("prunable = %v, want the expired preview's deploy", ids(got))
+		}
+	})
 	t.Run("UnreferencedBlobs", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, open)
