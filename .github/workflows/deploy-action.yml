@@ -28,8 +28,11 @@ on:
       - .github/workflows/**
 permissions:
   contents: read
+# Grouped by pull request number, not github.ref, as in docs-site.yml: a
+# pull_request run's ref can be the base branch, which would put it in main's
+# group.
 concurrency:
-  group: deploy-action-${{ github.ref }}
+  group: deploy-action-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: true
 jobs:
   lint:

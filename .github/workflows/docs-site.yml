@@ -19,6 +19,16 @@ name: Docs site
 # with preview deploys (C1.19). Pull requests from forks get no secrets and
 # never deploy.
 #
+# Concurrency: pull request runs are grouped by pull request number, never by
+# github.ref. For the `closed` event of a merged pull request github.ref is
+# the base branch (refs/heads/main), so a ref-keyed group put that run in
+# main's group and cancelled the production deploy of the merge commit (run
+# 41025681285, cancelled by the close run 41025682156). Within one pull
+# request a newer run still cancels an older one; when `closed` cancels an
+# in-flight preview deploy, the group waits for that run to stop before the
+# close run deletes the preview, so no preview is left behind. Pushes to
+# main still cancel superseded main runs.
+#
 # Runners: vars.RUNNER as in ci.yml (unset means ubuntu-latest); pull
 # requests from forks always run on ubuntu-latest.
 on:
@@ -34,7 +44,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: docs-site-${{ github.ref }}
+  group: docs-site-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: true
 jobs:
   build:
