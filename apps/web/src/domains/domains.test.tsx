@@ -641,7 +641,7 @@ describe('the primary hostname', () => {
     fireEvent.click(save());
     expect(
       await within(picker()).findByText(
-        'Saved. Every other hostname now redirects to a.example.test.',
+        'Saved. a.example.test is the primary hostname.',
       ),
     ).toBeTruthy();
     expect(
@@ -677,7 +677,7 @@ describe('the primary hostname', () => {
     fireEvent.click(choice('docs.sites.example.test'));
     fireEvent.click(save());
     await within(picker()).findByText(
-      'Saved. Every other hostname now redirects to docs.sites.example.test.',
+      'Saved. docs.sites.example.test is the primary hostname.',
     );
     expect(
       calls.find((c) => c.route === `PUT ${base}/primary-host`)?.body,

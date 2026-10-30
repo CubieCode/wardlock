@@ -225,6 +225,11 @@
   .deploy-row-action {
     grid-column: 3;
   }
+
+  /* With its rules open, the row reads from the top. */
+  .deploy-row:has(.deploy-rules[open]) {
+    align-items: start;
+  }
 }
 
 /* A deploy's redirect and header rules, read-only */

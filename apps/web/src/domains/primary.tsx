@@ -145,7 +145,7 @@ export function PrimaryHostCard({
     if (result?.data) {
       setSaved(
         current
-          ? `Saved. Every other hostname now redirects to ${current}.`
+          ? `Saved. ${current} is the primary hostname.`
           : 'Saved. Every hostname serves the site, with no redirects.',
       );
       return onSaved(result.data);
@@ -176,7 +176,7 @@ export function PrimaryHostCard({
         </p>
       ) : (
         <form className="domain-primary-form" onSubmit={save} noValidate>
-          <Fieldset legend="Primary hostname">
+          <Fieldset legend="Choose the primary">
             <Radio
               name="primary"
               value=""
