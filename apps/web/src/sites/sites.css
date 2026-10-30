@@ -225,6 +225,83 @@
   .deploy-row-action {
     grid-column: 3;
   }
+
+  /* With its rules open, the row reads from the top. */
+  .deploy-row:has(.deploy-rules[open]) {
+    align-items: start;
+  }
+}
+
+/* A deploy's redirect and header rules, read-only */
+.deploy-rules {
+  font-size: var(--text-sm);
+}
+
+.deploy-rules > summary {
+  cursor: pointer;
+  inline-size: fit-content;
+  color: var(--color-primary);
+}
+
+.deploy-rules-body {
+  display: grid;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted);
+  min-width: 0;
+}
+
+.deploy-rules-heading {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.deploy-rules-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding-inline-start: var(--space-6);
+}
+
+.deploy-redirect {
+  overflow-wrap: anywhere;
+}
+
+.deploy-redirect > * + * {
+  margin-inline-start: var(--space-2);
+}
+
+.deploy-header-rule {
+  overflow-wrap: anywhere;
+}
+
+.deploy-header-rule dl {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+}
+
+.deploy-header-rule dl > div {
+  display: grid;
+  gap: 0 var(--space-2);
+}
+
+.deploy-header-rule dt {
+  color: var(--color-text-muted);
+}
+
+.deploy-header-rule dd {
+  margin: 0;
+}
+
+@media (min-width: 48rem) {
+  .deploy-header-rule dl > div {
+    grid-template-columns: minmax(10rem, max-content) minmax(0, 1fr);
+  }
 }
 
 /* Rollback confirmation */

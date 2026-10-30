@@ -581,3 +581,221 @@ describe('custom domains on the site page', () => {
     await screen.findByRole('heading', { name: 'No custom domains yet' });
   });
 });
+
+describe('the primary hostname', () => {
+  const picker = () => screen.getByRole('region', { name: 'Primary hostname' });
+  const choice = (label: string) =>
+    within(picker()).getByRole('radio', { name: label }) as HTMLInputElement;
+  const save = () =>
+    within(picker()).getByRole('button', { name: 'Save primary hostname' });
+  const redirecting = () =>
+    within(
+      within(picker()).getByRole('list', { name: 'Redirecting hostnames' }),
+    )
+      .getAllByRole('listitem')
+      .map((item) => item.textContent);
+
+  it('offers only served hostnames, with none chosen by default', async () => {
+    const { api } = fakeServer(
+      sitePage([
+        domain('a.example.test', 'active'),
+        domain('p.example.test', 'pending'),
+        domain('l.example.test', 'lapsed'),
+      ]),
+    );
+    render(<App api={api} />);
+    await screen.findByRole('region', { name: 'Primary hostname' });
+    expect(picker().textContent).toContain(
+      'No primary hostname: every hostname serves the site.',
+    );
+    expect(choice('None').checked).toBe(true);
+    expect(choice('docs.sites.example.test').disabled).toBe(false);
+    expect(choice('a.example.test').disabled).toBe(false);
+    // Hostnames that are not served cannot be chosen, and say why.
+    expect(choice('p.example.test').disabled).toBe(true);
+    expect(choice('l.example.test').disabled).toBe(true);
+    expect(picker().textContent).toContain(
+      'Pending: it can be the primary once its DNS record checks out.',
+    );
+    // Nothing to save until the choice changes.
+    expect((save() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('chooses a custom domain and shows which hostnames redirect to it', async () => {
+    let current = docs;
+    const { api, calls } = fakeServer({
+      ...sitePage([
+        domain('a.example.test', 'active'),
+        domain('b.example.test', 'active'),
+        domain('p.example.test', 'pending'),
+      ]),
+      [`GET ${base}`]: () => Response.json(current),
+      [`PUT ${base}/primary-host`]: () => {
+        current = { ...docs, primaryHost: 'a.example.test' };
+        return Response.json(current);
+      },
+    });
+    render(<App api={api} />);
+    await screen.findByRole('region', { name: 'Primary hostname' });
+    fireEvent.click(choice('a.example.test'));
+    fireEvent.click(save());
+    expect(
+      await within(picker()).findByText(
+        'Saved. a.example.test is the primary hostname.',
+      ),
+    ).toBeTruthy();
+    expect(
+      calls.find((c) => c.route === `PUT ${base}/primary-host`)?.body,
+    ).toEqual({ host: 'a.example.test' });
+    // The site's own address and the other active domain redirect; the
+    // pending one is not served at all.
+    expect(redirecting()).toEqual([
+      'docs.sites.example.test',
+      'b.example.test',
+    ]);
+    expect(within(row('a.example.test')).getByText('Primary')).toBeTruthy();
+    expect(row('b.example.test').textContent).toContain(
+      'Redirects to the primary hostname, a.example.test.',
+    );
+    expect(row('p.example.test').textContent).not.toContain('Redirects to');
+    expect(choice('b.example.test').parentElement!.textContent).toContain(
+      'Redirects to a.example.test now.',
+    );
+    await waitFor(() =>
+      expect((save() as HTMLButtonElement).disabled).toBe(true),
+    );
+  });
+
+  it('chooses the site’s own address', async () => {
+    const { api, calls } = fakeServer({
+      ...sitePage([domain('a.example.test', 'active')]),
+      [`PUT ${base}/primary-host`]: () =>
+        Response.json({ ...docs, primaryHost: docs.hostname }),
+    });
+    render(<App api={api} />);
+    await screen.findByRole('region', { name: 'Primary hostname' });
+    fireEvent.click(choice('docs.sites.example.test'));
+    fireEvent.click(save());
+    await within(picker()).findByText(
+      'Saved. docs.sites.example.test is the primary hostname.',
+    );
+    expect(
+      calls.find((c) => c.route === `PUT ${base}/primary-host`)?.body,
+    ).toEqual({ host: 'docs.sites.example.test' });
+    expect(redirecting()).toEqual(['a.example.test']);
+  });
+
+  it('turns the primary off', async () => {
+    const chosen = { ...docs, primaryHost: 'a.example.test' };
+    const { api, calls } = fakeServer({
+      ...sitePage([domain('a.example.test', 'active', { primary: true })]),
+      [`GET ${base}`]: () => Response.json(chosen),
+      [`DELETE ${base}/primary-host`]: () => Response.json(docs),
+    });
+    render(<App api={api} />);
+    await screen.findByRole('region', { name: 'Primary hostname' });
+    expect(choice('a.example.test').checked).toBe(true);
+    expect(redirecting()).toEqual(['docs.sites.example.test']);
+    fireEvent.click(choice('None'));
+    fireEvent.click(save());
+    expect(
+      await within(picker()).findByText(
+        'Saved. Every hostname serves the site, with no redirects.',
+      ),
+    ).toBeTruthy();
+    expect(calls.some((c) => c.route === `DELETE ${base}/primary-host`)).toBe(
+      true,
+    );
+    expect(picker().textContent).toContain('No primary hostname');
+    expect(within(row('a.example.test')).queryByText('Primary')).toBeNull();
+  });
+
+  it('says nothing redirects while the primary domain has lapsed', async () => {
+    // A lapsed primary is not in effect: the site has no primaryHost.
+    const { api } = fakeServer(
+      sitePage([
+        domain('a.example.test', 'active'),
+        domain('l.example.test', 'lapsed', { primary: true }),
+      ]),
+    );
+    render(<App api={api} />);
+    await screen.findByRole('region', { name: 'Primary hostname' });
+    expect(picker().textContent).toContain(
+      'l.example.test is the primary hostname, but it has lapsed, so nothing redirects',
+    );
+    expect(
+      within(picker()).queryByRole('list', { name: 'Redirecting hostnames' }),
+    ).toBeNull();
+    // Still the owner's choice, so it stays checked and the badge stays.
+    expect(choice('l.example.test').checked).toBe(true);
+    expect(within(row('l.example.test')).getByText('Primary')).toBeTruthy();
+    expect(row('a.example.test').textContent).not.toContain('Redirects to');
+    // Another served hostname can take over.
+    expect(choice('a.example.test').disabled).toBe(false);
+  });
+
+  it('forgets the choice when the primary domain is removed', async () => {
+    const chosen = { ...docs, primaryHost: 'a.example.test' };
+    const { api } = fakeServer({
+      ...sitePage([domain('a.example.test', 'active', { primary: true })]),
+      [`GET ${base}`]: () => Response.json(chosen),
+      [`DELETE ${base}/domains/a.example.test`]: () =>
+        new Response(null, { status: 204 }),
+    });
+    render(<App api={api} />);
+    await screen.findByRole('listitem', { name: 'a.example.test' });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Remove a.example.test' }),
+    );
+    fireEvent.click(
+      within(
+        await screen.findByRole('dialog', { name: 'Remove a.example.test?' }),
+      ).getByRole('button', { name: 'Remove domain' }),
+    );
+    await screen.findByRole('heading', { name: 'No custom domains yet' });
+    await waitFor(() =>
+      expect(picker().textContent).toContain('No primary hostname'),
+    );
+    expect(choice('None').checked).toBe(true);
+  });
+
+  it('explains a refusal from the server', async () => {
+    const { api } = fakeServer({
+      ...sitePage([domain('a.example.test', 'active')]),
+      [`PUT ${base}/primary-host`]: () =>
+        Response.json(
+          { code: 'domain_not_active', message: 'Not active.' },
+          { status: 409 },
+        ),
+    });
+    render(<App api={api} />);
+    await screen.findByRole('region', { name: 'Primary hostname' });
+    fireEvent.click(choice('a.example.test'));
+    fireEvent.click(save());
+    expect(
+      await within(picker()).findByText(
+        'a.example.test is not active, so it cannot be the primary yet. Choose it once its DNS record checks out.',
+      ),
+    ).toBeTruthy();
+    expect(picker().textContent).toContain('No primary hostname');
+  });
+
+  it('shows the primary but offers no change on a taken-down site', async () => {
+    const { api } = fakeServer({
+      ...sitePage([domain('a.example.test', 'active', { primary: true })]),
+      [`GET ${base}`]: () =>
+        Response.json({
+          ...docs,
+          unavailable: true,
+          primaryHost: 'a.example.test',
+        }),
+    });
+    render(<App api={api} />);
+    await screen.findByRole('region', { name: 'Primary hostname' });
+    expect(picker().textContent).toContain(
+      'a.example.test is the primary hostname.',
+    );
+    expect(within(picker()).queryByRole('radio')).toBeNull();
+    expect(within(picker()).queryByRole('button')).toBeNull();
+  });
+});

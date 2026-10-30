@@ -14,6 +14,7 @@ import {
   type Site,
 } from './format.js';
 import { RollbackDialog } from './rollback.js';
+import { siteHref } from './site-page-tabs.js';
 
 /** The Deploys tab: the history, newest first, with rollback. */
 export function DeploysTab({
@@ -45,7 +46,9 @@ export function DeploysTab({
   return (
     <Card title="Deploys">
       <p className="site-card-lead">
-        Newest first. Rolling back makes an earlier deploy live at once.
+        Newest first. Rolling back makes an earlier deploy live at once; a
+        preview’s deploy goes live when you promote it on{' '}
+        <a href={siteHref(site.name, 'previews')}>Previews</a>.
       </p>
       {rolledBack && (
         <Notice>
@@ -116,7 +119,102 @@ export function DeployStatus({ deploy }: { deploy: Deploy }) {
   if (deploy.status === 'active')
     return <StatusTag tone="success">Live</StatusTag>;
   if (deploy.status === 'inactive') return <StatusTag>Not live</StatusTag>;
+  if (deploy.status === 'preview')
+    return <StatusTag tone="primary">Preview</StatusTag>;
   return <StatusTag>Not activated</StatusTag>;
+}
+
+const plural = (count: number, one: string, many: string) =>
+  `${new Intl.NumberFormat('en-NZ').format(count)} ${count === 1 ? one : many}`;
+
+/** "2 redirects, 1 header rule"; empty when the deploy has neither. */
+export function ruleCounts(deploy: Deploy) {
+  const redirects = deploy.redirects?.length ?? 0;
+  const headers = deploy.headers?.length ?? 0;
+  return [
+    ...(redirects ? [plural(redirects, 'redirect', 'redirects')] : []),
+    ...(headers ? [plural(headers, 'header rule', 'header rules')] : []),
+  ].join(', ');
+}
+
+const redirectKinds: Record<number, string> = {
+  301: 'permanent',
+  302: 'temporary',
+  307: 'temporary',
+  308: 'permanent',
+};
+
+/**
+ * A deploy's redirect and header rules, read-only: they come from the
+ * `wardlock.json` it was deployed with, so changing them is a new deploy.
+ */
+export function DeployRules({ deploy }: { deploy: Deploy }) {
+  const counts = ruleCounts(deploy);
+  if (!counts) return null;
+  const id = shortId(deploy.id);
+  return (
+    <details className="deploy-rules">
+      <summary>{counts}</summary>
+      <div className="deploy-rules-body">
+        <p className="deploy-row-muted">
+          From the <code>wardlock.json</code> this deploy was made with. Deploy
+          again to change them.
+        </p>
+        {deploy.redirects?.length ? (
+          <>
+            <h3 className="deploy-rules-heading">Redirects</h3>
+            <p className="deploy-row-muted">
+              In order; the first match wins, only where no file is served.
+            </p>
+            <ol
+              className="deploy-rules-list"
+              aria-label={`Redirects of deploy ${id}`}
+            >
+              {deploy.redirects.map((rule, i) => (
+                <li key={i} className="deploy-redirect">
+                  <code>{rule.from}</code>
+                  <span aria-hidden="true">→</span>
+                  <span className="wl-visually-hidden">to</span>
+                  <code>{rule.to}</code>
+                  <span className="deploy-row-muted">
+                    {rule.status ?? 301} {redirectKinds[rule.status ?? 301]}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </>
+        ) : null}
+        {deploy.headers?.length ? (
+          <>
+            <h3 className="deploy-rules-heading">Response headers</h3>
+            <p className="deploy-row-muted">
+              Every matching rule applies; a later one replaces the same header.
+            </p>
+            <ol
+              className="deploy-rules-list"
+              aria-label={`Header rules of deploy ${id}`}
+            >
+              {deploy.headers.map((rule, i) => (
+                <li key={i} className="deploy-header-rule">
+                  <code>{rule.path}</code>
+                  <dl>
+                    {Object.entries(rule.set).map(([name, value]) => (
+                      <div key={name}>
+                        <dt>{name}</dt>
+                        <dd>
+                          <code>{value}</code>
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </li>
+              ))}
+            </ol>
+          </>
+        ) : null}
+      </div>
+    </details>
+  );
 }
 
 /** Files, size and the long-term caching option, for one deploy. */
@@ -129,8 +227,8 @@ export function deployFacts(deploy: Deploy) {
 }
 
 /**
- * One deploy: its status word, ID, the path a path deploy replaced,
- * message, time, size and rollback.
+ * One deploy: its status word, ID, the preview it was made for, the path a
+ * path deploy replaced, message, time, size, its rules and rollback.
  */
 function DeployRow({
   deploy,
@@ -149,6 +247,12 @@ function DeployRow({
       <div className="deploy-row-main">
         <p className="deploy-row-title">
           <code>{id}</code>
+          {deploy.preview !== undefined && (
+            <span className="deploy-row-path">
+              <span className="deploy-row-muted">Preview</span>{' '}
+              <code>{deploy.preview}</code>
+            </span>
+          )}
           {deploy.path !== undefined && (
             // Only this part of the site changed; the rest is the deploy
             // that was live before.
@@ -175,6 +279,7 @@ function DeployRow({
           {' · '}
           {deployFacts(deploy)}
         </p>
+        <DeployRules deploy={deploy} />
       </div>
       {deploy.status === 'inactive' && onRollback ? (
         <Button

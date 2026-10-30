@@ -8,6 +8,7 @@ import {
   CopyField,
   EmptyState,
   Notice,
+  StatusTag,
   TextField,
   type NoticeTone,
 } from '@wardlock/ui';
@@ -23,6 +24,7 @@ import {
   type DnsRecord,
   type Domain,
 } from './format.js';
+import { primaryOf, PrimaryHostCard } from './primary.js';
 import { RemoveDomainDialog } from './remove.js';
 import './domains.css';
 
@@ -62,9 +64,19 @@ function LiveNotice({
 /**
  * A site's custom domains: add a hostname, see the DNS record to create
  * (and the TXT fallback) with copy actions, follow each one's status and
- * last check, check it now, and remove it.
+ * last check, check it now, and remove it. Then the primary hostname, which
+ * the other hostnames redirect to.
  */
-export function DomainsCard({ api, site }: { api: ApiClient; site: Site }) {
+export function DomainsCard({
+  api,
+  site,
+  onSiteChange,
+}: {
+  api: ApiClient;
+  site: Site;
+  /** The site as the server answered, after its primary hostname changed. */
+  onSiteChange: (site: Site) => void;
+}) {
   const [state, setState] = useState<ListState>({ kind: 'loading' });
   const [removing, setRemoving] = useState<Domain | null>(null);
   const [done, setDone] = useState<Message>(null);
@@ -239,7 +251,8 @@ export function DomainsCard({ api, site }: { api: ApiClient; site: Site }) {
         </p>
       </EmptyState>
     );
-  else
+  else {
+    const { effective } = primaryOf(site, state.domains);
     body = (
       <ul className="domain-list" aria-label="Custom domains">
         {state.domains.map((domain) => (
@@ -248,6 +261,13 @@ export function DomainsCard({ api, site }: { api: ApiClient; site: Site }) {
             api={api}
             site={site}
             domain={domain}
+            redirectsTo={
+              effective &&
+              effective !== domain.hostname &&
+              domain.status === 'active'
+                ? effective
+                : undefined
+            }
             onChecked={replace}
             onGone={() => {
               update((domains) => domains.filter((d) => d.id !== domain.id));
@@ -267,71 +287,98 @@ export function DomainsCard({ api, site }: { api: ApiClient; site: Site }) {
         ))}
       </ul>
     );
+  }
 
   return (
-    <Card title="Custom domains">
-      <p>
-        Serve this site at an address you own too, with the same access
-        settings. Visitors sign in separately on each address.
-      </p>
-      {site.unavailable ? (
+    <>
+      <Card title="Custom domains">
         <p>
-          While the operator has taken this site down, its domains stay as they
-          are: none can be added or removed.
+          Serve this site at an address you own too, with the same access
+          settings. Visitors sign in separately on each address.
         </p>
-      ) : (
-        <AddDomainForm
-          api={api}
-          site={site}
-          onAdded={(domain) => {
-            update((domains) => [...domains, domain].sort(byHostname));
-            announce({
-              tone: 'info',
-              text:
-                domain.status === 'active'
-                  ? `Added ${domain.hostname}. Its DNS record already checks out, so it is live.`
-                  : `Added ${domain.hostname}. Create its DNS record below; Wardlock checks it automatically.`,
-            });
-          }}
-        />
-      )}
-      <LiveNotice ref={doneRef} message={done} />
-      {body}
-      {more === 'error' && (
-        <Notice tone="danger">Could not load more domains. Try again.</Notice>
-      )}
-      {state.kind === 'ready' && state.nextCursor ? (
-        <div>
-          <Button
-            type="button"
-            disabled={more === 'loading'}
-            onClick={loadMore}
-          >
-            {more === 'loading' ? 'Loading…' : 'Show more domains'}
-          </Button>
-        </div>
-      ) : null}
-
-      {removing && (
-        <RemoveDomainDialog
-          api={api}
-          site={site}
-          domain={removing}
-          onClose={() => setRemoving(null)}
-          onRemoved={() => {
-            update((domains) => domains.filter((d) => d.id !== removing.id));
-            announce(
-              {
+        {site.unavailable ? (
+          <p>
+            While the operator has taken this site down, its domains stay as
+            they are: none can be added or removed.
+          </p>
+        ) : (
+          <AddDomainForm
+            api={api}
+            site={site}
+            onAdded={(domain) => {
+              update((domains) => [...domains, domain].sort(byHostname));
+              announce({
                 tone: 'info',
-                text: `Removed ${removing.hostname}. Remember to delete its DNS record.`,
-              },
-              true,
+                text:
+                  domain.status === 'active'
+                    ? `Added ${domain.hostname}. Its DNS record already checks out, so it is live.`
+                    : `Added ${domain.hostname}. Create its DNS record below; Wardlock checks it automatically.`,
+              });
+            }}
+          />
+        )}
+        <LiveNotice ref={doneRef} message={done} />
+        {body}
+        {more === 'error' && (
+          <Notice tone="danger">Could not load more domains. Try again.</Notice>
+        )}
+        {state.kind === 'ready' && state.nextCursor ? (
+          <div>
+            <Button
+              type="button"
+              disabled={more === 'loading'}
+              onClick={loadMore}
+            >
+              {more === 'loading' ? 'Loading…' : 'Show more domains'}
+            </Button>
+          </div>
+        ) : null}
+
+        {removing && (
+          <RemoveDomainDialog
+            api={api}
+            site={site}
+            domain={removing}
+            onClose={() => setRemoving(null)}
+            onRemoved={() => {
+              update((domains) => domains.filter((d) => d.id !== removing.id));
+              // Removing the primary domain clears the choice for good.
+              if (removing.primary) {
+                const next = { ...site };
+                delete next.primaryHost;
+                onSiteChange(next);
+              }
+              announce(
+                {
+                  tone: 'info',
+                  text: `Removed ${removing.hostname}. Remember to delete its DNS record.`,
+                },
+                true,
+              );
+              setRemoving(null);
+            }}
+          />
+        )}
+      </Card>
+      {state.kind === 'ready' && (
+        <PrimaryHostCard
+          api={api}
+          site={site}
+          domains={state.domains}
+          onSaved={(saved) => {
+            update((domains) =>
+              domains.map((d) => {
+                const next = { ...d };
+                if (d.hostname === saved.primaryHost) next.primary = true;
+                else delete next.primary;
+                return next;
+              }),
             );
-            setRemoving(null);
+            onSiteChange(saved);
           }}
         />
       )}
-    </Card>
+    </>
   );
 }
 
@@ -433,6 +480,7 @@ function DomainRow({
   api,
   site,
   domain,
+  redirectsTo,
   onChecked,
   onGone,
   onRemove,
@@ -440,6 +488,8 @@ function DomainRow({
   api: ApiClient;
   site: Site;
   domain: Domain;
+  /** The primary hostname, when this domain redirects to it. */
+  redirectsTo: string | undefined;
   onChecked: (domain: Domain) => void;
   onGone: () => void;
   onRemove: () => void;
@@ -519,6 +569,7 @@ function DomainRow({
         <p className="domain-row-title">
           <DomainStatus domain={domain} />
           <code className="domain-host">{domain.hostname}</code>
+          {domain.primary && <StatusTag tone="primary">Primary</StatusTag>}
         </p>
         <div className="domain-row-actions">
           <Button
@@ -542,6 +593,11 @@ function DomainRow({
         </div>
       </div>
       <p>{statusSummary(domain)}</p>
+      {redirectsTo && (
+        <p>
+          Redirects to the primary hostname, <code>{redirectsTo}</code>.
+        </p>
+      )}
       <p className="domain-row-meta">
         <CheckTimes domain={domain} />
         {domain.status === 'pending' &&

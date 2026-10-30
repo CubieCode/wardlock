@@ -192,6 +192,7 @@ describe('site detail', () => {
       ['Access', '/sites/docs/access'],
       ['Domains', '/sites/docs/domains'],
       ['Deploys', '/sites/docs/deploys'],
+      ['Previews', '/sites/docs/previews'],
       ['Access log', '/sites/docs/access-log'],
       ['Settings', '/sites/docs/settings'],
     ]);
@@ -267,6 +268,74 @@ describe('site detail', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: 'docs' }),
     ).toBeTruthy();
+  });
+
+  it('marks preview deploys and shows each deploy’s rules read-only', async () => {
+    at('/sites/docs/deploys');
+    const preview = deploy('00000005', {
+      status: 'preview',
+      preview: 'pr-42',
+      createdAt: now - 30 * 60_000,
+      redirects: [
+        { from: '/old', to: '/new', status: 301 },
+        {
+          from: '/blog/*',
+          to: 'https://news.example.test/:splat',
+          status: 302,
+        },
+      ],
+      headers: [
+        {
+          path: '/*',
+          set: { 'X-Frame-Options': 'DENY', 'Permissions-Policy': 'camera=()' },
+        },
+      ],
+    });
+    delete preview.activatedAt;
+    // Promoted from a preview: live, and still naming it.
+    const promoted = { ...live, preview: 'launch', headers: preview.headers! };
+    const { api } = fakeServer(oneSite(docs, [preview, promoted, earlier]));
+    render(<App api={api} />);
+    const list = await screen.findByRole('list', { name: 'Deploy history' });
+    // The deploy rows themselves, not the rule lists inside them.
+    const [first, second, third] = Array.from(list.children) as HTMLElement[];
+    expect(
+      within(first!).getByText('Preview', { selector: '.wl-status-tag' }),
+    ).toBeTruthy();
+    expect(first!.textContent).toContain('Preview pr-42');
+    expect(first!.textContent).not.toContain('Not activated');
+    // A preview deploy is not a rollback target.
+    expect(within(first!).queryByRole('button')).toBeNull();
+    expect(second!.textContent).toContain('Live');
+    expect(second!.textContent).toContain('Preview launch');
+    expect(third!.textContent).not.toContain('Preview');
+
+    // Counts show on deploys that have rules, opening into the rules.
+    const rules = within(first!).getByText('2 redirects, 1 header rule');
+    expect(rules.tagName).toBe('SUMMARY');
+    expect(within(second!).getByText('1 header rule').tagName).toBe('SUMMARY');
+    expect(third!.querySelector('details')).toBeNull();
+    fireEvent.click(rules);
+    const redirects = await within(first!).findByRole('list', {
+      name: 'Redirects of deploy 00000005',
+    });
+    expect(
+      within(redirects)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      '/old→to/new301 permanent',
+      '/blog/*→tohttps://news.example.test/:splat302 temporary',
+    ]);
+    const headers = await within(first!).findByRole('list', {
+      name: 'Header rules of deploy 00000005',
+    });
+    expect(headers.textContent).toContain('/*');
+    expect(headers.textContent).toContain('X-Frame-OptionsDENY');
+    expect(headers.textContent).toContain('Permissions-Policycamera=()');
+    // Read-only: they come from wardlock.json.
+    expect(first!.textContent).toContain('Deploy again to change them.');
+    expect(within(first!).queryByRole('textbox')).toBeNull();
   });
 
   it('explains a taken-down site and offers no action it would refuse', async () => {

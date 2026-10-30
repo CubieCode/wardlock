@@ -140,12 +140,18 @@ export function OverviewTab({
           <li>
             <code>{site.hostname}</code>
             <StatusTag>Default</StatusTag>
+            {site.primaryHost === site.hostname && (
+              <StatusTag tone="primary">Primary</StatusTag>
+            )}
           </li>
           {domains.kind === 'ready' &&
             domains.items.map((domain) => (
               <li key={domain.id}>
                 <code>{domain.hostname}</code>
                 <DomainStatus domain={domain} />
+                {domain.primary && (
+                  <StatusTag tone="primary">Primary</StatusTag>
+                )}
               </li>
             ))}
         </ul>
