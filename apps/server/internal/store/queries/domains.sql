@@ -9,15 +9,16 @@ FROM domains
 WHERE hostname = sqlc.arg(hostname) AND status = 'active';
 
 -- One of the owner's sites' domains by hostname, whatever its status.
+-- is_primary is 1 for the site's chosen primary (C1.18).
 -- name: GetDomain :one
-SELECT domains.id, domains.site_id, domains.hostname, domains.status, domains.verification_token, domains.created_at, domains.last_checked_at, domains.verified_at, domains.failing_since, domains.last_failure_reason, domains.failure_detail
+SELECT sqlc.embed(domains), CAST(CASE WHEN sites.primary_domain_id = domains.id THEN 1 ELSE 0 END AS BIGINT) AS is_primary
 FROM domains JOIN sites ON sites.id = domains.site_id
 WHERE domains.site_id = sqlc.arg(site_id) AND domains.hostname = sqlc.arg(hostname) AND sites.owner_id = sqlc.arg(owner_id);
 
 -- One of the owner's sites' domains ordered by hostname, after
 -- after_hostname ('' for the first page).
 -- name: ListDomains :many
-SELECT domains.id, domains.site_id, domains.hostname, domains.status, domains.verification_token, domains.created_at, domains.last_checked_at, domains.verified_at, domains.failing_since, domains.last_failure_reason, domains.failure_detail
+SELECT sqlc.embed(domains), CAST(CASE WHEN sites.primary_domain_id = domains.id THEN 1 ELSE 0 END AS BIGINT) AS is_primary
 FROM domains JOIN sites ON sites.id = domains.site_id
 WHERE domains.site_id = sqlc.arg(site_id) AND sites.owner_id = sqlc.arg(owner_id)
   AND domains.hostname > sqlc.arg(after_hostname)

@@ -42,6 +42,11 @@ type ServedSite struct {
 	// every matching header rule in order.
 	Redirects []Redirect
 	Headers   []HeaderRule
+	// PrimaryHost is the canonical host the site's other hostnames answer
+	// 308 to (C1.18), or "" for none: every hostname serves. A SiteSource
+	// names only a host that is served (the base-domain host or an active
+	// custom domain).
+	PrimaryHost string
 }
 
 // Redirect sends a request path that serves no file elsewhere (SPEC

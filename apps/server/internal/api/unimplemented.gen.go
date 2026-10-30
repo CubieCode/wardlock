@@ -304,6 +304,16 @@ func (Unimplemented) DeletePolicy(context.Context, DeletePolicyRequestObject) (D
 	return nil, ErrNotImplemented
 }
 
+// ClearPrimaryHost is not implemented yet.
+func (Unimplemented) ClearPrimaryHost(context.Context, ClearPrimaryHostRequestObject) (ClearPrimaryHostResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// SetPrimaryHost is not implemented yet.
+func (Unimplemented) SetPrimaryHost(context.Context, SetPrimaryHostRequestObject) (SetPrimaryHostResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // RollbackSite is not implemented yet.
 func (Unimplemented) RollbackSite(context.Context, RollbackSiteRequestObject) (RollbackSiteResponseObject, error) {
 	return nil, ErrNotImplemented

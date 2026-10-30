@@ -32,6 +32,15 @@ type Site struct {
 	// PinnedAt is when the owner pinned the site (V5.3, read only; zero
 	// while it is not pinned).
 	PinnedAt time.Time
+	// The owner's choice of primary hostname (C1.18, read only; see
+	// Sites.SetPrimaryBase and SetPrimaryDomain): PrimaryBase for the
+	// base-domain hostname, or PrimaryDomain, the hostname of one of the
+	// site's custom domains whatever its status, with PrimaryDomainActive
+	// while it is active. A chosen domain is in effect only while active;
+	// removing it clears the choice.
+	PrimaryBase         bool
+	PrimaryDomain       string
+	PrimaryDomainActive bool
 }
 
 // OperatorSite is a site as `wardlockd admin list-sites` shows it.
@@ -81,6 +90,15 @@ type Sites interface {
 	// SetActiveDeploy points the site at one of its own deploys. A
 	// taken-down site is ErrNotFound.
 	SetActiveDeploy(ctx context.Context, ownerID, siteID, deployID string) error
+	// SetPrimaryBase makes the site's base-domain hostname its primary
+	// (C1.18), and SetPrimaryDomain the custom domain domainID, which must
+	// be one of the site's and active; ClearPrimary leaves it with none.
+	// Each replaces any earlier choice. A taken-down site, another owner's
+	// site and, for SetPrimaryDomain, a domain that is not the site's or is
+	// not active are ErrNotFound and change nothing.
+	SetPrimaryBase(ctx context.Context, ownerID, siteID string) error
+	SetPrimaryDomain(ctx context.Context, ownerID, siteID, domainID string) error
+	ClearPrimary(ctx context.Context, ownerID, siteID string) error
 	// Delete removes the site with its domains, deploys, policies, share
 	// links and site sessions, freeing the name and the storage only its
 	// deploys held. A taken-down site is ErrNotFound: only the operator can
@@ -199,6 +217,21 @@ func (r sitesRepo) SetActiveDeploy(ctx context.Context, ownerID, siteID, deployI
 	return rowsAffected("set active deploy", n, err)
 }
 
+func (r sitesRepo) SetPrimaryBase(ctx context.Context, ownerID, siteID string) error {
+	n, err := r.db.q.SetPrimaryBase(ctx, sqlcgen.SetPrimaryBaseParams{ID: siteID, OwnerID: ownerID})
+	return rowsAffected("set primary hostname", n, err)
+}
+
+func (r sitesRepo) SetPrimaryDomain(ctx context.Context, ownerID, siteID, domainID string) error {
+	n, err := r.db.q.SetPrimaryDomain(ctx, sqlcgen.SetPrimaryDomainParams{DomainID: nullString(domainID), ID: siteID, OwnerID: ownerID})
+	return rowsAffected("set primary domain", n, err)
+}
+
+func (r sitesRepo) ClearPrimary(ctx context.Context, ownerID, siteID string) error {
+	n, err := r.db.q.ClearPrimary(ctx, sqlcgen.ClearPrimaryParams{ID: siteID, OwnerID: ownerID})
+	return rowsAffected("clear primary hostname", n, err)
+}
+
 func (r sitesRepo) Delete(ctx context.Context, ownerID, id string) error {
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		if err := requireSite(ctx, q, ownerID, id); err != nil {
@@ -249,6 +282,7 @@ func (r sitesRepo) ListAll(ctx context.Context, afterName string, limit int) ([]
 			ID: row.ID, OwnerID: row.OwnerID, Name: row.Name, ActiveDeployID: row.ActiveDeployID,
 			CreatedAt: row.CreatedAt, ActivatedAt: row.ActivatedAt, TakenDownAt: row.TakenDownAt,
 			GroupID: row.GroupID, PinnedAt: row.PinnedAt,
+			PrimaryBase: row.PrimaryBase, PrimaryDomain: row.PrimaryDomain, PrimaryDomainStatus: row.PrimaryDomainStatus,
 		}, nil)
 		out[i] = OperatorSite{Site: s, OwnerEmail: row.OwnerEmail, OwnerSuspendedAt: fromNullMs(row.OwnerSuspendedAt)}
 	}
@@ -277,6 +311,10 @@ func siteFrom(what string, row sqlcgen.GetSiteRow, err error) (Site, error) {
 		TakenDownAt:    fromNullMs(row.TakenDownAt),
 		GroupID:        row.GroupID.String,
 		PinnedAt:       fromNullMs(row.PinnedAt),
+		PrimaryBase:    row.PrimaryBase == 1,
+		PrimaryDomain:  row.PrimaryDomain.String,
+		// The column is NULL only without a chosen domain.
+		PrimaryDomainActive: row.PrimaryDomainStatus.String == string(DomainActive),
 	}, nil
 }
 

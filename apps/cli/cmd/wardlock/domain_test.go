@@ -102,7 +102,50 @@ func (f *fakeAPI) handleDomains(handle func(pattern, scope string, h func(w http
 				break
 			}
 		}
+		if d.Primary != nil {
+			s.site.PrimaryHost = nil // removing the primary clears it
+		}
 		w.WriteHeader(http.StatusNoContent)
+	}))
+	// The primary hostname (C1.18): the site's own hostname or an active
+	// custom domain; anything else is the same 404 as a missing site.
+	setPrimary := func(s *fakeSite, host string, d *apiclient.Domain) {
+		for _, other := range f.domains[s.site.Name] {
+			other.Primary = nil
+		}
+		s.site.PrimaryHost = nil
+		if host != "" {
+			s.site.PrimaryHost = &host
+		}
+		if d != nil {
+			d.Primary = ptr(true)
+		}
+	}
+	handle("PUT /api/v0/sites/{site}/primary-host", "manage", f.withSite(func(w http.ResponseWriter, r *http.Request, s *fakeSite) {
+		var body apiclient.SetPrimaryHostRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Host == "" {
+			reply(w, http.StatusBadRequest, apiErr("invalid_request", "host is required."))
+			return
+		}
+		host := strings.TrimSuffix(strings.ToLower(body.Host), ".")
+		d := find(s, host)
+		switch {
+		case host == s.site.Hostname:
+			setPrimary(s, host, nil)
+		case d == nil:
+			reply(w, http.StatusNotFound, notFound)
+			return
+		case d.Status != apiclient.DomainStatusActive:
+			reply(w, http.StatusConflict, apiErr("domain_not_active", "Only an active custom domain can be the primary hostname: this one is not served until its DNS checks pass."))
+			return
+		default:
+			setPrimary(s, host, d)
+		}
+		reply(w, http.StatusOK, s.site)
+	}))
+	handle("DELETE /api/v0/sites/{site}/primary-host", "manage", f.withSite(func(w http.ResponseWriter, _ *http.Request, s *fakeSite) {
+		setPrimary(s, "", nil)
+		reply(w, http.StatusOK, s.site)
 	}))
 }
 
@@ -154,7 +197,7 @@ func TestDomainAdd(t *testing.T) {
 		{[]string{"domain", "add", "docs", "a b.example.com"}, "is not a hostname", 2},
 		{[]string{"domain", "add", "docs", "c.example.com", "--wiat"}, "flag provided but not defined", 2},
 		{[]string{"domain", "frob", "docs"}, `unknown domain command "frob"`, 2},
-		{[]string{"domain"}, "Usage: wardlock domain <add|list|verify|remove>", 2},
+		{[]string{"domain"}, "Usage: wardlock domain <add|list|verify|remove|primary>", 2},
 	} {
 		out.Reset()
 		errOut.Reset()
@@ -357,5 +400,137 @@ func TestDomainNeedsManageScope(t *testing.T) {
 	err := run(t.Context(), a, []string{"domain", "add", "docs", "www.example.com"})
 	if code := exitCode(errOut, err); code != 1 || !strings.Contains(errOut.String(), "scope") {
 		t.Fatalf("exit %d %q", code, errOut)
+	}
+}
+
+func TestDomainPrimary(t *testing.T) {
+	srv := newFakeAPI(t)
+	docs := srv.addSite("docs", apiclient.PolicyVisibilityPublic)
+	a, out, errOut := ciApp(t, srv)
+	ctx := t.Context()
+	for _, h := range []string{"www.example.com", "pending.example.com"} {
+		if err := run(ctx, a, []string{"--json", "domain", "add", "docs", h}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv.verifyPasses = 1
+	if err := run(ctx, a, []string{"--json", "domain", "verify", "docs", "www.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Nothing chosen yet.
+	out.Reset()
+	if err := run(ctx, a, []string{"domain", "primary", "docs"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "docs has no primary hostname in effect: every hostname serves it") {
+		t.Fatalf("show none %q", out)
+	}
+
+	// An active custom domain, in any spelling.
+	out.Reset()
+	if err := run(ctx, a, []string{"domain", "primary", "docs", "WWW.example.com."}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "www.example.com is now the primary hostname of docs") {
+		t.Fatalf("set %q", out)
+	}
+	out.Reset()
+	if err := run(ctx, a, []string{"domain", "primary", "docs"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "www.example.com is the primary hostname of docs") {
+		t.Fatalf("show %q", out)
+	}
+	out.Reset()
+	if err := run(ctx, a, []string{"domain", "list", "docs"}); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 5 || !strings.HasPrefix(lines[0], "Primary hostname: www.example.com.") || !strings.Contains(lines[2], "PRIMARY") {
+		t.Fatalf("list:\n%s", out)
+	}
+	for _, line := range lines[3:] {
+		fields := strings.Fields(line)
+		if (fields[0] == "www.example.com") != (fields[2] == "yes") {
+			t.Fatalf("list marks the wrong primary:\n%s", out)
+		}
+	}
+
+	// A lapsed primary is named, but not redirecting.
+	srv.mu.Lock()
+	for _, d := range srv.domains["docs"] {
+		if d.Hostname == "www.example.com" {
+			d.Status = apiclient.DomainStatusLapsed
+		}
+	}
+	docs.site.PrimaryHost = nil
+	srv.mu.Unlock()
+	out.Reset()
+	if err := run(ctx, a, []string{"domain", "list", "docs"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Primary hostname: www.example.com, not redirecting while it is lapsed") ||
+		!strings.Contains(out.String(), "yes, not redirecting") {
+		t.Fatalf("lapsed list:\n%s", out)
+	}
+
+	// Refusals explain themselves.
+	for host, want := range map[string]string{
+		"www.example.com":     "www.example.com is not active, so it cannot be the primary: wardlock domain verify docs www.example.com",
+		"pending.example.com": "pending.example.com is not active",
+		"other.example.org":   "other.example.org is not one of docs's hostnames: use docs.",
+	} {
+		errOut.Reset()
+		err := run(ctx, a, []string{"domain", "primary", "docs", host})
+		if code := exitCode(errOut, err); code != 1 || !strings.Contains(errOut.String(), want) {
+			t.Fatalf("%s: exit %d %q, want %q", host, code, errOut, want)
+		}
+	}
+
+	// The site's own hostname, then --none; --json answers the site.
+	out.Reset()
+	if err := run(ctx, a, []string{"--json", "domain", "primary", "docs", docs.site.Hostname}); err != nil {
+		t.Fatal(err)
+	}
+	m := assertJSONKeys(t, out.Bytes(), "site")
+	var site apiclient.Site
+	if err := json.Unmarshal(m["site"], &site); err != nil || site.PrimaryHost == nil || *site.PrimaryHost != docs.site.Hostname {
+		t.Fatalf("--json %s (%v)", out, err)
+	}
+	out.Reset()
+	if err := run(ctx, a, []string{"domain", "primary", "docs", "--none"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "docs has no primary hostname now: every hostname serves it") || docs.site.PrimaryHost != nil {
+		t.Fatalf("--none %q", out)
+	}
+
+	// Usage errors exit 2 before any request.
+	for _, args := range [][]string{
+		{"domain", "primary"},
+		{"domain", "primary", "docs", "www.example.com", "--none"},
+		{"domain", "primary", "docs", "a.example.com", "b.example.com"},
+		{"domain", "primary", "docs", "https://www.example.com/"},
+	} {
+		errOut.Reset()
+		err := run(ctx, a, args)
+		if code := exitCode(errOut, err); code != 2 {
+			t.Fatalf("%v: exit %d %q, want 2", args, code, errOut)
+		}
+	}
+}
+
+func TestDomainPrimaryNeedsManageScope(t *testing.T) {
+	srv := newFakeAPI(t)
+	srv.addSite("docs", apiclient.PolicyVisibilityPublic)
+	srv.scopes = []string{"deploy"}
+	a, _, errOut := ciApp(t, srv)
+	for _, args := range [][]string{{"domain", "primary", "docs", "docs.wardlock.example"}, {"domain", "primary", "docs", "--none"}} {
+		errOut.Reset()
+		err := run(t.Context(), a, args)
+		if code := exitCode(errOut, err); code != 1 || !strings.Contains(errOut.String(), "scope") {
+			t.Fatalf("%v: exit %d %q", args, code, errOut)
+		}
 	}
 }

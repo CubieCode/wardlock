@@ -58,6 +58,9 @@ var tokenScopes = map[string][]string{
 	"RemoveDomain": {"manage"},
 	"VerifyDomain": {"manage"},
 
+	"SetPrimaryHost":   {"manage"},
+	"ClearPrimaryHost": {"manage"},
+
 	"ListPolicies": {"deploy", "manage"},
 	"SetPolicy":    {"manage"},
 	"DeletePolicy": {"manage"},

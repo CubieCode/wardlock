@@ -81,6 +81,7 @@ func suites() []suite {
 		{"APITokens", apiTokensContract},
 		{"Sites", sitesContract},
 		{"Domains", domainsContract},
+		{"PrimaryHost", primaryContract},
 		{"Deploys", deploysContract},
 		{"Policies", policiesContract},
 		{"Links", linksContract},
