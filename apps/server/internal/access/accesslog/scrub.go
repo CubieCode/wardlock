@@ -126,5 +126,6 @@ func (w *Writer) scrub(e Entry) (_ store.AccessEntry, ok bool) {
 		LinkPublicID: link,
 		IP:           w.cfg.Truncation.Truncate(e.IP),
 		UserAgent:    limit(redactTokens(e.UserAgent), maxUserAgentBytes),
+		Preview:      limit(e.Preview, 20),
 	}, true
 }

@@ -47,6 +47,14 @@ type ServedSite struct {
 	// names only a host that is served (the base-domain host or an active
 	// custom domain).
 	PrimaryHost string
+	// Preview names the preview of the site this host serves (C1.19), or
+	// "" for the live site: ActiveDeployID, ActivatedAt and the deploy's
+	// settings are then the preview's deploy's, every response carries
+	// X-Robots-Tag: noindex and PrimaryHost never redirects it.
+	Preview string
+	// ExpiresAt is when the preview stops being served, zero for never:
+	// from then on its host answers as an unknown host.
+	ExpiresAt time.Time
 }
 
 // Redirect sends a request path that serves no file elsewhere (SPEC
@@ -91,8 +99,10 @@ type Rendition struct {
 // scoped: the host alone decides which site a visitor reaches.
 type SiteSource interface {
 	// SiteForHost returns the site at a canonical host: a single label
-	// under the base domain, or an active custom domain. ErrNoSite when
-	// there is none.
+	// under the base domain, which is a site's name or else
+	// <site>--<preview> for one of a site's previews that has not expired
+	// (C1.19), or an active custom domain, which never serves a preview.
+	// ErrNoSite when there is none.
 	SiteForHost(ctx context.Context, host string) (ServedSite, error)
 	// ActiveFiles returns the manifest of site's active deploy, with each
 	// HTML file's renditions.

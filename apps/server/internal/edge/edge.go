@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"wardlock.nz/server/internal/access"
 )
@@ -63,6 +64,9 @@ type Config struct {
 	// served. nil withholds nothing.
 	Withheld Withheld
 	Log      *slog.Logger
+	// Now is the clock preview expiry is checked against (C1.19); nil is
+	// time.Now.
+	Now func() time.Time
 }
 
 // Edge is the edge handler.
@@ -92,6 +96,9 @@ func New(cfg Config) (*Edge, error) {
 	}
 	if e.log == nil {
 		e.log = slog.New(slog.DiscardHandler)
+	}
+	if e.cfg.Now == nil {
+		e.cfg.Now = time.Now
 	}
 	e.unsubscribe = cfg.Invalidator.Subscribe(e.cache.invalidate)
 	return e, nil
@@ -139,6 +146,16 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		e.log.ErrorContext(r.Context(), "look up site", slog.Any("error", err))
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+	if s.site.Preview != "" {
+		// An expired preview is an unknown host until garbage collection
+		// removes it; the cache may still hold it.
+		if !s.site.ExpiresAt.IsZero() && !e.cfg.Now().Before(s.site.ExpiresAt) {
+			noSite(w)
+			return
+		}
+		// Previews are never indexed, whatever their policy (C1.19).
+		w.Header().Set("X-Robots-Tag", "noindex")
 	}
 
 	// A site with nothing published is indistinguishable from no site,

@@ -367,6 +367,8 @@ erDiagram
   sites |o--o| domains : "primary_domain_id"
   deploys ||--o{ deploy_files : "deploy_id"
   deploys |o--o{ deploys : "base_deploy_id"
+  sites ||--o{ previews : "site_id"
+  deploys ||--o{ previews : "deploy_id"
   deploy_files ||--o{ deploy_renditions : "(deploy_id, path)"
   blobs |o..o{ deploy_files : "sha256, no FK"
   blobs |o..o{ owner_blobs : "sha256, no FK"
@@ -513,6 +515,18 @@ erDiagram
     TEXT base_deploy_id FK
     TEXT redirects "JSON rules"
     TEXT headers "JSON rules"
+    TEXT preview "preview deploys"
+    INTEGER preview_lifetime_days
+    INTEGER preview_activated_at
+  }
+  previews {
+    TEXT site_id PK, FK
+    TEXT name PK
+    TEXT deploy_id FK
+    INTEGER lifetime_days "0 never"
+    INTEGER created_at
+    INTEGER deployed_at
+    INTEGER expires_at
   }
   blobs {
     TEXT sha256 PK
@@ -634,6 +648,7 @@ erDiagram
     TEXT ip
     TEXT user_agent
     TEXT country "ISO 3166-1 alpha-2 or unknown"
+    TEXT preview
   }
   traffic_hours {
     TEXT site_id PK, FK

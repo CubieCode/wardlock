@@ -42,7 +42,8 @@ func (q *Queries) ConfirmModeration(ctx context.Context, arg ConfirmModerationPa
 
 const countModerationTextPaths = `-- name: CountModerationTextPaths :one
 SELECT COUNT(*) FROM deploy_files
-JOIN sites ON sites.active_deploy_id = deploy_files.deploy_id
+JOIN sites ON (sites.active_deploy_id = deploy_files.deploy_id
+  OR EXISTS (SELECT 1 FROM previews WHERE previews.site_id = sites.id AND previews.deploy_id = deploy_files.deploy_id))
 JOIN owners ON owners.id = sites.owner_id
 WHERE deploy_files.sha256 = ?1
   AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
@@ -156,7 +157,8 @@ INSERT INTO moderation_results (sha256, status, attempts, queued_at, next_attemp
 SELECT DISTINCT deploy_files.sha256, 'pending', 0, ?1, ?1
 FROM sites
 JOIN owners ON owners.id = sites.owner_id
-JOIN deploy_files ON deploy_files.deploy_id = sites.active_deploy_id
+JOIN deploy_files ON (deploy_files.deploy_id = sites.active_deploy_id
+  OR deploy_files.deploy_id IN (SELECT previews.deploy_id FROM previews WHERE previews.site_id = sites.id))
 WHERE sites.id = ?2
   AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
   AND NOT EXISTS (SELECT 1 FROM moderation_results WHERE moderation_results.sha256 = deploy_files.sha256)
@@ -168,7 +170,8 @@ type EnqueueSiteParams struct {
 	SiteID string
 }
 
-// Queues every file the site's active deploy lists that was never queued,
+// Queues every file the site's active deploy or one of its previews' deploys
+// (C1.19) lists that was never queued,
 // when the site is serving and its owner is neither exempt nor suspended.
 // What is sent is decided from the bytes when the hash is screened.
 func (q *Queries) EnqueueSite(ctx context.Context, arg EnqueueSiteParams) (int64, error) {
@@ -322,10 +325,11 @@ func (q *Queries) ListModerationReview(ctx context.Context) ([]ModerationResult,
 }
 
 const listModerationUses = `-- name: ListModerationUses :many
-SELECT sites.id AS site_id, sites.name AS site_name, owners.id AS owner_id, owners.email AS owner_email, deploy_files.path,
+SELECT DISTINCT sites.id AS site_id, sites.name AS site_name, owners.id AS owner_id, owners.email AS owner_email, deploy_files.path,
   sites.taken_down_at, owners.suspended_at
 FROM deploy_files
-JOIN sites ON sites.active_deploy_id = deploy_files.deploy_id
+JOIN sites ON (sites.active_deploy_id = deploy_files.deploy_id
+  OR EXISTS (SELECT 1 FROM previews WHERE previews.site_id = sites.id AND previews.deploy_id = deploy_files.deploy_id))
 JOIN owners ON owners.id = sites.owner_id
 WHERE deploy_files.sha256 = ?1
 ORDER BY sites.name, deploy_files.path
@@ -341,7 +345,8 @@ type ListModerationUsesRow struct {
 	SuspendedAt sql.NullInt64
 }
 
-// Every site whose active deploy lists the hash, with the path and owner,
+// Every site whose active deploy or a preview's lists the hash, with the
+// path and owner (once, if both list it at the path),
 // exempt or not, taken down or not: who is affected when the hash is
 // withheld.
 func (q *Queries) ListModerationUses(ctx context.Context, sha256 string) ([]ListModerationUsesRow, error) {
@@ -405,7 +410,8 @@ func (q *Queries) ListQuarantinedHashes(ctx context.Context) ([]string, error) {
 const listScreenedSites = `-- name: ListScreenedSites :many
 SELECT sites.id FROM sites
 JOIN owners ON owners.id = sites.owner_id
-WHERE sites.id > ?1 AND sites.active_deploy_id IS NOT NULL
+WHERE sites.id > ?1
+  AND (sites.active_deploy_id IS NOT NULL OR EXISTS (SELECT 1 FROM previews WHERE previews.site_id = sites.id))
   AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
 ORDER BY sites.id
 LIMIT ?2
@@ -417,7 +423,8 @@ type ListScreenedSitesParams struct {
 }
 
 // The sites screening sweeps, in ID order after a cursor: each serving site
-// with an active deploy of an owner neither exempt nor suspended.
+// with an active deploy or a preview, of an owner neither exempt nor
+// suspended.
 func (q *Queries) ListScreenedSites(ctx context.Context, arg ListScreenedSitesParams) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listScreenedSites, arg.After, arg.RowLimit)
 	if err != nil {
@@ -444,14 +451,15 @@ func (q *Queries) ListScreenedSites(ctx context.Context, arg ListScreenedSitesPa
 const moderationSource = `-- name: ModerationSource :one
 SELECT deploy_files.size
 FROM deploy_files
-JOIN sites ON sites.active_deploy_id = deploy_files.deploy_id
+JOIN sites ON (sites.active_deploy_id = deploy_files.deploy_id
+  OR EXISTS (SELECT 1 FROM previews WHERE previews.site_id = sites.id AND previews.deploy_id = deploy_files.deploy_id))
 JOIN owners ON owners.id = sites.owner_id
 WHERE deploy_files.sha256 = ?1
   AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
 LIMIT 1
 `
 
-// The size of the hash as a file listed in an active deploy on a serving
+// The size of the hash as a file listed in an active or preview deploy on a serving
 // site of an owner who is not exempt: there is something screening may
 // send.
 func (q *Queries) ModerationSource(ctx context.Context, sha256 string) (int64, error) {
@@ -525,7 +533,8 @@ WHERE next_attempt_at IS NULL AND status NOT IN ('pending', 'quarantined') AND k
     SELECT deploy_files.sha256
     FROM sites
     JOIN owners ON owners.id = sites.owner_id
-    JOIN deploy_files ON deploy_files.deploy_id = sites.active_deploy_id
+    JOIN deploy_files ON (deploy_files.deploy_id = sites.active_deploy_id
+      OR deploy_files.deploy_id IN (SELECT previews.deploy_id FROM previews WHERE previews.site_id = sites.id))
     WHERE sites.id = ?2
       AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
       AND (lower(deploy_files.path) LIKE '%.html' OR lower(deploy_files.path) LIKE '%.htm'
@@ -544,7 +553,7 @@ type RequeueSiteTextParams struct {
 }
 
 // Queues again, keeping the verdict, each screened hash the site's active
-// deploy lists under a path the edge serves as displayed text
+// or preview deploys list under a path the edge serves as displayed text
 // (edge.TextTypes: .html, .htm, .shtml, .xhtml, .xht, .xhtm, .svg, .txt,
 // .text, .md, .markdown, .csv, .json, .xml) when its text was never
 // screened. A quarantined hash is withheld already, so it is left alone.

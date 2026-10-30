@@ -171,8 +171,9 @@ func (q *Queries) AddTrafficPath(ctx context.Context, arg AddTrafficPathParams) 
 const listAccessLogForRollup = `-- name: ListAccessLogForRollup :many
 SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.user_agent, access_log.country
 FROM access_log JOIN sites ON sites.id = access_log.site_id
-WHERE access_log.occurred_at > ?1
-  OR (access_log.occurred_at = ?1 AND access_log.id > ?2)
+WHERE (access_log.occurred_at > ?1
+    OR (access_log.occurred_at = ?1 AND access_log.id > ?2))
+  AND access_log.preview IS NULL
 ORDER BY access_log.occurred_at, access_log.id
 LIMIT ?3
 `
@@ -197,6 +198,7 @@ type ListAccessLogForRollupRow struct {
 
 // The backfill reads the log oldest first, after the cursor (occurred_at,
 // id), for sites that exist: a deleted site's entries have nowhere to go.
+// Preview requests (C1.19) are never counted.
 func (q *Queries) ListAccessLogForRollup(ctx context.Context, arg ListAccessLogForRollupParams) ([]ListAccessLogForRollupRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAccessLogForRollup, arg.AfterOccurredAt, arg.AfterID, arg.RowLimit)
 	if err != nil {

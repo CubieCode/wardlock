@@ -1,12 +1,12 @@
 -- name: InsertAccessLogEntry :exec
-INSERT INTO access_log (id, occurred_at, site_id, host, path, status, via, link_public_id, ip, user_agent, country)
-VALUES (sqlc.arg(id), sqlc.arg(occurred_at), sqlc.arg(site_id), sqlc.arg(host), sqlc.arg(path), sqlc.arg(status), sqlc.arg(via), sqlc.narg(link_public_id), sqlc.narg(ip), sqlc.narg(user_agent), sqlc.narg(country));
+INSERT INTO access_log (id, occurred_at, site_id, host, path, status, via, link_public_id, ip, user_agent, country, preview)
+VALUES (sqlc.arg(id), sqlc.arg(occurred_at), sqlc.arg(site_id), sqlc.arg(host), sqlc.arg(path), sqlc.arg(status), sqlc.arg(via), sqlc.narg(link_public_id), sqlc.narg(ip), sqlc.narg(user_agent), sqlc.narg(country), sqlc.narg(preview));
 
 -- A site's entries, newest first, strictly before the cursor (occurred_at,
 -- id), for the owner of a site that still exists. The first page passes the
 -- largest occurred_at.
 -- name: ListAccessLogBySite :many
-SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.host, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.ip, access_log.user_agent, access_log.country
+SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.host, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.ip, access_log.user_agent, access_log.country, access_log.preview
 FROM access_log JOIN sites ON sites.id = access_log.site_id
 WHERE access_log.site_id = sqlc.arg(site_id) AND sites.owner_id = sqlc.arg(owner_id)
   AND (access_log.occurred_at < sqlc.arg(before_occurred_at)
@@ -16,7 +16,7 @@ LIMIT sqlc.arg(row_limit);
 
 -- One share link's entries on a site, paged like ListAccessLogBySite.
 -- name: ListAccessLogByLink :many
-SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.host, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.ip, access_log.user_agent, access_log.country
+SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.host, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.ip, access_log.user_agent, access_log.country, access_log.preview
 FROM access_log JOIN sites ON sites.id = access_log.site_id
 WHERE access_log.link_public_id = sqlc.arg(link_public_id) AND access_log.site_id = sqlc.arg(site_id)
   AND sites.owner_id = sqlc.arg(owner_id)

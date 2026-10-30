@@ -41,6 +41,10 @@ type AccessEntry struct {
 	// looked IP up as, CountryUnknown when the database had no match, or ""
 	// when the lookup is off or no IP is stored (V5.13).
 	Country string
+	// Preview is the preview the request reached (C1.19), "" for the live
+	// site. Preview entries are logged but never counted in the traffic
+	// rollup.
+	Preview string
 	// Browser is the family the writer classified UserAgent as, for the
 	// traffic rollup (V5.4); the log row does not store it. Append counts
 	// "" as BrowserOther. Lists leave it "".
@@ -66,8 +70,8 @@ const (
 type AccessLog interface {
 	// Append writes entries in one transaction, all or none, and adds them
 	// to the traffic rollup in the same transaction once its backfill has
-	// run (see Traffic). Entries of a site that no longer exists are
-	// logged but not counted.
+	// run (see Traffic). Entries of a site that no longer exists, and
+	// preview entries, are logged but not counted.
 	Append(ctx context.Context, entries []AccessEntry) error
 	// ListBySite returns up to limit (1 to MaxAccessListLimit) of
 	// ownerID's site's entries, newest first, before the cursor. A missing
@@ -102,6 +106,7 @@ func (r accessLogRepo) Append(ctx context.Context, entries []AccessEntry) error 
 				Ip:           nullString(e.IP),
 				UserAgent:    nullString(e.UserAgent),
 				Country:      nullString(e.Country),
+				Preview:      nullString(e.Preview),
 			})
 			if err != nil {
 				return mapErr("append access log", err)
@@ -179,6 +184,7 @@ func accessEntriesFrom(rows []sqlcgen.AccessLog) []AccessEntry {
 			IP:           row.Ip.String,
 			UserAgent:    row.UserAgent.String,
 			Country:      row.Country.String,
+			Preview:      row.Preview.String,
 		})
 	}
 	return entries

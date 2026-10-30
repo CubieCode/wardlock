@@ -308,5 +308,8 @@ func accessLogEntryBody(e access.LoggedAccess, withCountry bool) AccessLogEntry 
 	if withCountry && e.Country != "" {
 		out.Country = &e.Country
 	}
+	if e.Preview != "" {
+		out.Preview = &e.Preview
+	}
 	return out
 }

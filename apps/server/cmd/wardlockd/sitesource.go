@@ -7,7 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
+	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/edge"
 	"wardlock.nz/server/internal/sites"
 	"wardlock.nz/server/internal/store"
@@ -21,14 +24,18 @@ type siteSource struct {
 	sites      store.Sites
 	domains    store.Domains
 	deploys    store.Deploys
+	previews   store.Previews
 	renditions store.Renditions
 	// moderation is set when content screening is on (A2.15): sites of
 	// owners who are not exempt are Screened, with each file's state.
 	moderation store.Moderation
+	// now is the clock preview expiry is read against (C1.19); nil is
+	// time.Now.
+	now func() time.Time
 }
 
 func (s siteSource) SiteForHost(ctx context.Context, host string) (edge.ServedSite, error) {
-	site, err := s.find(ctx, host)
+	site, preview, err := s.find(ctx, host)
 	if errors.Is(err, store.ErrNotFound) {
 		return edge.ServedSite{}, edge.ErrNoSite
 	}
@@ -43,6 +50,11 @@ func (s siteSource) SiteForHost(ctx context.Context, host string) (edge.ServedSi
 		Unavailable:    !site.TakenDownAt.IsZero(),
 		PrimaryHost:    sites.PrimaryHost(site, s.baseDomain),
 	}
+	if preview.Name != "" {
+		// A preview serves its own deploy, whatever is live.
+		served.Preview, served.ExpiresAt = preview.Name, preview.ExpiresAt
+		served.ActiveDeployID, served.ActivatedAt = preview.DeployID, preview.DeployedAt
+	}
 	if !served.Unavailable {
 		// A suspended owner's sites are unavailable too (A2.13).
 		o, err := s.owners.Get(ctx, site.OwnerID)
@@ -51,11 +63,11 @@ func (s siteSource) SiteForHost(ctx context.Context, host string) (edge.ServedSi
 		}
 		served.Unavailable = !o.SuspendedAt.IsZero()
 	}
-	if served.Unavailable || site.ActiveDeployID == "" {
+	if served.Unavailable || served.ActiveDeployID == "" {
 		return served, nil
 	}
 	// The owner comes from the site row: this is routing, not an owner request.
-	d, err := s.deploys.Get(ctx, site.OwnerID, site.ID, site.ActiveDeployID)
+	d, err := s.deploys.Get(ctx, site.OwnerID, site.ID, served.ActiveDeployID)
 	if err != nil {
 		return edge.ServedSite{}, fmt.Errorf("get active deploy: %w", err)
 	}
@@ -77,17 +89,42 @@ func (s siteSource) SiteForHost(ctx context.Context, host string) (edge.ServedSi
 	return served, nil
 }
 
-// find resolves a base-domain label by site name and any other host as an
-// active custom domain.
-func (s siteSource) find(ctx context.Context, host string) (store.Site, error) {
-	if name, ok := edge.SiteLabel(host, s.baseDomain); ok {
-		return s.sites.GetByName(ctx, name)
+// find resolves a base-domain label by site name, or else as
+// <site>--<preview> for a preview that has not expired (C1.19), split at
+// the last "--" since preview names never contain one: an exact site name
+// always wins. Any other host is an active custom domain, which never
+// serves a preview.
+func (s siteSource) find(ctx context.Context, host string) (store.Site, store.Preview, error) {
+	name, ok := edge.SiteLabel(host, s.baseDomain)
+	if !ok {
+		d, err := s.domains.GetActiveByHostname(ctx, host)
+		if err != nil {
+			return store.Site{}, store.Preview{}, err
+		}
+		site, err := s.sites.GetByID(ctx, d.SiteID)
+		return site, store.Preview{}, err
 	}
-	d, err := s.domains.GetActiveByHostname(ctx, host)
+	site, err := s.sites.GetByName(ctx, name)
+	i := strings.LastIndex(name, deploys.PreviewSeparator)
+	if !errors.Is(err, store.ErrNotFound) || i < 0 {
+		return site, store.Preview{}, err
+	}
+	siteName, previewName := name[:i], name[i+len(deploys.PreviewSeparator):]
+	if !deploys.ValidPreviewName(previewName) {
+		return store.Site{}, store.Preview{}, err
+	}
+	if site, err = s.sites.GetByName(ctx, siteName); err != nil {
+		return store.Site{}, store.Preview{}, err
+	}
+	now := time.Now
+	if s.now != nil {
+		now = s.now
+	}
+	p, err := s.previews.Served(ctx, site.ID, previewName, now())
 	if err != nil {
-		return store.Site{}, err
+		return store.Site{}, store.Preview{}, err
 	}
-	return s.sites.GetByID(ctx, d.SiteID)
+	return site, p, nil
 }
 
 func (s siteSource) ActiveFiles(ctx context.Context, site edge.ServedSite) ([]edge.ServedFile, error) {

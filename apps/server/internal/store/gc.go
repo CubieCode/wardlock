@@ -28,13 +28,20 @@ type PrunableDeploy struct {
 // must order them too, for example with a per-hash advisory lock that
 // all four take.
 type GC interface {
+	// DeleteExpiredPreviews deletes every preview (C1.19) that expired at
+	// or before now, except those of a taken-down site or a suspended
+	// owner's site, and returns how many it deleted. Their deploys are
+	// then prunable.
+	DeleteExpiredPreviews(ctx context.Context, now time.Time) (int64, error)
 	// PrunableDeploys returns up to limit deploys that have at least keep
 	// newer deploys on their site, oldest first, strictly after the cursor
-	// (zero starts at the oldest). It never returns a site's active deploy
-	// or a pending deploy created at or after pendingBefore.
+	// (zero starts at the oldest). It never returns a site's active deploy,
+	// a deploy a preview serves or a pending deploy created at or after
+	// pendingBefore. A preview deploy never promoted is not history: it
+	// needs no newer deploys and counts as none.
 	PrunableDeploys(ctx context.Context, keep int, pendingBefore time.Time, after DeployCursor, limit int) ([]PrunableDeploy, error)
 	// DeletePrunableDeploy deletes the deploy and its manifest unless, when
-	// the delete runs, it is its site's active deploy or a pending deploy
+	// the delete runs, it is its site's active deploy, a preview's, or a pending deploy
 	// created at or after pendingBefore. deleted reports which. Storage
 	// only it held goes back to its owner's quota (A2.14).
 	DeletePrunableDeploy(ctx context.Context, id string, pendingBefore time.Time) (deleted bool, err error)

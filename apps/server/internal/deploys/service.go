@@ -65,6 +65,9 @@ const (
 	StatusPending  Status = "pending"  // never activated
 	StatusActive   Status = "active"   // the site's active deploy
 	StatusInactive Status = "inactive" // activated before, since replaced
+	// StatusPreview is a preview deploy activated as its preview and never
+	// on the live site (C1.19), whether or not the preview still serves it.
+	StatusPreview Status = "preview"
 )
 
 // StatusOf returns d's status on site.
@@ -72,10 +75,12 @@ func StatusOf(site store.Site, d store.Deploy) Status {
 	switch {
 	case d.ID == site.ActiveDeployID:
 		return StatusActive
-	case d.ActivatedAt.IsZero():
-		return StatusPending
-	default:
+	case !d.ActivatedAt.IsZero():
 		return StatusInactive
+	case !d.PreviewActivatedAt.IsZero():
+		return StatusPreview
+	default:
+		return StatusPending
 	}
 }
 
@@ -83,6 +88,7 @@ func StatusOf(site store.Site, d store.Deploy) Status {
 type Config struct {
 	Sites    store.Sites
 	Deploys  store.Deploys
+	Previews store.Previews
 	Blobs    BlobStore
 	Notifier Notifier
 	Limits   Limits
@@ -148,13 +154,18 @@ func (s *Service) changeable(ctx context.Context, ownerID, name string) (store.S
 //
 // With m.Path, the deploy is the site's active deploy (its base) with only
 // that prefix replaced by m.Files; limits and quotas apply to the merged
-// deploy exactly as to a full one.
+// deploy exactly as to a full one. With m.Preview it is a preview deploy
+// (C1.19), checked like any other, whose name must be valid and whose
+// hostname label no site may hold (ErrInvalidPreview, ErrPreviewNameTaken).
 func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manifest) (store.Deploy, []string, error) {
 	site, err := s.changeable(ctx, ownerID, siteName)
 	if err != nil {
 		return store.Deploy{}, nil, err
 	}
-	d := store.Deploy{ID: store.NewID(), SiteID: site.ID, Message: m.Message}
+	if err := s.checkPreview(ctx, site, &m); err != nil {
+		return store.Deploy{}, nil, err
+	}
+	d := store.Deploy{ID: store.NewID(), SiteID: site.ID, Message: m.Message, Preview: m.Preview, PreviewDays: m.PreviewDays}
 	if m.Path != "" {
 		if err := s.merge(ctx, ownerID, site, &m, &d); err != nil {
 			return store.Deploy{}, nil, err
@@ -407,7 +418,8 @@ func (c *countingReader) Read(p []byte) (int, error) {
 }
 
 // Activate generates the renditions of the deploy's HTML files, then makes
-// it the site's active deploy atomically and notifies subscribers. It fails with ErrBlobsMissing until the owner has
+// it the site's active deploy atomically, or a preview deploy its preview's
+// (C1.19) leaving the site as it is, and notifies subscribers. It fails with ErrBlobsMissing until the owner has
 // uploaded every blob, ErrNotPending once activated (see Rollback),
 // ErrStaleBase for a path deploy whose base the site no longer serves and
 // ErrInvalidManifest, for good, when the deploy lists a hash the owner holds
@@ -454,6 +466,11 @@ func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID stri
 	d, err = s.c.Deploys.Activate(ctx, ownerID, site.ID, deployID, s.now())
 	if err != nil {
 		return store.Site{}, store.Deploy{}, heldSizeErr("activate deploy", err)
+	}
+	if d.Preview != "" {
+		// The preview serves it; the live site is as it was.
+		s.c.Notifier.Notify(ctx, site.ID)
+		return site, d, nil
 	}
 	return s.served(ctx, site, d), d, nil
 }

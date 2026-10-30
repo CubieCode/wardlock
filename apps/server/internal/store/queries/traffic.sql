@@ -62,11 +62,13 @@ SET allowed = traffic_paths.allowed + excluded.allowed, refused = traffic_paths.
 
 -- The backfill reads the log oldest first, after the cursor (occurred_at,
 -- id), for sites that exist: a deleted site's entries have nowhere to go.
+-- Preview requests (C1.19) are never counted.
 -- name: ListAccessLogForRollup :many
 SELECT access_log.id, access_log.occurred_at, access_log.site_id, access_log.path, access_log.status, access_log.via, access_log.link_public_id, access_log.user_agent, access_log.country
 FROM access_log JOIN sites ON sites.id = access_log.site_id
-WHERE access_log.occurred_at > sqlc.arg(after_occurred_at)
-  OR (access_log.occurred_at = sqlc.arg(after_occurred_at) AND access_log.id > sqlc.arg(after_id))
+WHERE (access_log.occurred_at > sqlc.arg(after_occurred_at)
+    OR (access_log.occurred_at = sqlc.arg(after_occurred_at) AND access_log.id > sqlc.arg(after_id)))
+  AND access_log.preview IS NULL
 ORDER BY access_log.occurred_at, access_log.id
 LIMIT sqlc.arg(row_limit);
 

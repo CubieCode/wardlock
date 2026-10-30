@@ -23,6 +23,7 @@ type AccessLog struct {
 	Ip           sql.NullString
 	UserAgent    sql.NullString
 	Country      sql.NullString
+	Preview      sql.NullString
 }
 
 type ApiToken struct {
@@ -61,19 +62,22 @@ type CliLoginRequest struct {
 }
 
 type Deploy struct {
-	ID              string
-	SiteID          string
-	Message         sql.NullString
-	FileCount       int64
-	TotalSize       int64
-	CreatedAt       int64
-	ActivatedAt     sql.NullInt64
-	Spa             int64
-	ImmutableAssets int64
-	PathPrefix      sql.NullString
-	BaseDeployID    sql.NullString
-	Redirects       sql.NullString
-	Headers         sql.NullString
+	ID                  string
+	SiteID              string
+	Message             sql.NullString
+	FileCount           int64
+	TotalSize           int64
+	CreatedAt           int64
+	ActivatedAt         sql.NullInt64
+	Spa                 int64
+	ImmutableAssets     int64
+	PathPrefix          sql.NullString
+	BaseDeployID        sql.NullString
+	Redirects           sql.NullString
+	Headers             sql.NullString
+	Preview             sql.NullString
+	PreviewLifetimeDays sql.NullInt64
+	PreviewActivatedAt  sql.NullInt64
 }
 
 type DeployFile struct {
@@ -207,6 +211,16 @@ type PolicyAllowlist struct {
 	SiteID   string
 	Kind     string
 	Value    string
+}
+
+type Preview struct {
+	SiteID       string
+	Name         string
+	DeployID     string
+	LifetimeDays int64
+	CreatedAt    int64
+	DeployedAt   int64
+	ExpiresAt    sql.NullInt64
 }
 
 type SchemaMigration struct {

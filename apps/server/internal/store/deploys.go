@@ -37,9 +37,22 @@ type Deploy struct {
 	Redirects []Redirect
 	// Headers are applied in order, each matching rule in turn (C1.17);
 	// nil for none.
-	Headers     []HeaderRule
+	Headers []HeaderRule
+	// Preview is the preview the deploy was created for (C1.19), "" for
+	// the live site. Activating it makes it that preview's deploy, never
+	// the site's; only Previews.Promote puts it live.
+	Preview string
+	// PreviewDays is the preview lifetime the deploy asked for, in days
+	// after its activation: 1 to MaxPreviewDays, or 0 for never. nil keeps
+	// the preview's own, or DefaultPreviewDays for a new one.
+	PreviewDays *int
 	CreatedAt   time.Time
-	ActivatedAt time.Time // most recent activation; zero if never
+	// ActivatedAt is the most recent activation on the live site; zero if
+	// never, as for a preview deploy that was not promoted.
+	ActivatedAt time.Time
+	// PreviewActivatedAt is when a preview deploy went live as its preview;
+	// zero until then and for other deploys.
+	PreviewActivatedAt time.Time
 }
 
 // Redirect is one redirect rule of a deploy (C1.17), validated by the
@@ -166,7 +179,9 @@ type Deploys interface {
 	// Recording either again is a no-op.
 	RecordUpload(ctx context.Context, ownerID string, b Blob) error
 	// Activate makes a pending deploy the site's active deploy in one
-	// transaction, stamping it with at. It fails with ErrDeployNotPending if
+	// transaction, stamping it with at; a preview deploy becomes its
+	// preview's deploy instead (C1.19), stamped as PreviewActivatedAt, and
+	// the preview's expiry starts again from at (see Previews). It fails with ErrDeployNotPending if
 	// the deploy was activated before, ErrBlobsMissing unless ownerID has
 	// recorded every blob in its manifest, a *SizeMismatchError as
 	// CheckHeldSizes, and ErrStaleBase for a path
@@ -212,19 +227,21 @@ func (r deploysRepo) Create(ctx context.Context, ownerID string, d Deploy, files
 			return err
 		}
 		err = q.CreateDeploy(ctx, sqlcgen.CreateDeployParams{
-			ID:              d.ID,
-			SiteID:          d.SiteID,
-			Message:         nullString(d.Message),
-			FileCount:       int64(d.FileCount),
-			TotalSize:       d.TotalSize,
-			Spa:             boolInt(d.SPA),
-			ImmutableAssets: boolInt(d.ImmutableAssets),
-			CreatedAt:       ms(d.CreatedAt),
-			ActivatedAt:     nullMs(d.ActivatedAt),
-			PathPrefix:      nullString(d.PathPrefix),
-			BaseDeployID:    nullString(d.BaseDeployID),
-			Redirects:       redirects,
-			Headers:         headers,
+			ID:                  d.ID,
+			SiteID:              d.SiteID,
+			Message:             nullString(d.Message),
+			FileCount:           int64(d.FileCount),
+			TotalSize:           d.TotalSize,
+			Spa:                 boolInt(d.SPA),
+			ImmutableAssets:     boolInt(d.ImmutableAssets),
+			CreatedAt:           ms(d.CreatedAt),
+			ActivatedAt:         nullMs(d.ActivatedAt),
+			PathPrefix:          nullString(d.PathPrefix),
+			BaseDeployID:        nullString(d.BaseDeployID),
+			Redirects:           redirects,
+			Headers:             headers,
+			Preview:             nullString(d.Preview),
+			PreviewLifetimeDays: previewDays(d.PreviewDays),
 		})
 		if err != nil {
 			return mapErr("create deploy", err)
@@ -339,21 +356,36 @@ func deployFrom(row sqlcgen.GetDeployRow) (Deploy, error) {
 	if err != nil {
 		return Deploy{}, fmt.Errorf("decode headers of deploy %s: %w", row.ID, err)
 	}
-	return Deploy{
-		ID:              row.ID,
-		SiteID:          row.SiteID,
-		Message:         row.Message.String,
-		FileCount:       int(row.FileCount),
-		TotalSize:       row.TotalSize,
-		SPA:             row.Spa == 1,
-		ImmutableAssets: row.ImmutableAssets == 1,
-		PathPrefix:      row.PathPrefix.String,
-		BaseDeployID:    row.BaseDeployID.String,
-		Redirects:       redirects,
-		Headers:         headers,
-		CreatedAt:       fromMs(row.CreatedAt),
-		ActivatedAt:     fromNullMs(row.ActivatedAt),
-	}, nil
+	d := Deploy{
+		ID:                 row.ID,
+		SiteID:             row.SiteID,
+		Message:            row.Message.String,
+		FileCount:          int(row.FileCount),
+		TotalSize:          row.TotalSize,
+		SPA:                row.Spa == 1,
+		ImmutableAssets:    row.ImmutableAssets == 1,
+		PathPrefix:         row.PathPrefix.String,
+		BaseDeployID:       row.BaseDeployID.String,
+		Redirects:          redirects,
+		Headers:            headers,
+		Preview:            row.Preview.String,
+		CreatedAt:          fromMs(row.CreatedAt),
+		ActivatedAt:        fromNullMs(row.ActivatedAt),
+		PreviewActivatedAt: fromNullMs(row.PreviewActivatedAt),
+	}
+	if row.PreviewLifetimeDays.Valid {
+		days := int(row.PreviewLifetimeDays.Int64)
+		d.PreviewDays = &days
+	}
+	return d, nil
+}
+
+// previewDays stores a deploy's preview lifetime; nil is NULL.
+func previewDays(days *int) sql.NullInt64 {
+	if days == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(*days), Valid: true}
 }
 
 func (r deploysRepo) List(ctx context.Context, ownerID, siteID string, before DeployCursor, limit int) ([]Deploy, error) {
@@ -513,7 +545,7 @@ func (r deploysRepo) Activate(ctx context.Context, ownerID, siteID, deployID str
 		if d, err = getDeploy(ctx, q, ownerID, siteID, deployID); err != nil {
 			return err
 		}
-		if !d.ActivatedAt.IsZero() {
+		if !d.ActivatedAt.IsZero() || !d.PreviewActivatedAt.IsZero() {
 			return fmt.Errorf("activate deploy: %w", ErrDeployNotPending)
 		}
 		missing, err := q.MissingOwnerBlobs(ctx, sqlcgen.MissingOwnerBlobsParams{DeployID: deployID, OwnerID: ownerID})
@@ -534,6 +566,9 @@ func (r deploysRepo) Activate(ctx context.Context, ownerID, siteID, deployID str
 			if site.ActiveDeployID.String != d.BaseDeployID {
 				return fmt.Errorf("activate deploy: %w", ErrStaleBase)
 			}
+		}
+		if d.Preview != "" {
+			return setPreview(ctx, q, &d, at)
 		}
 		return setActive(ctx, q, ownerID, &d, at)
 	})
