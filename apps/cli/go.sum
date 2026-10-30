@@ -35,3 +35,5 @@ golang.org/x/text v0.43.0 h1:1QivrlhwAsnMOcqgOdl9my7s9OyZl8O5/UGUTJVXoWc=
 golang.org/x/text v0.43.0/go.mod h1:hbSIYA/amXcRXTFSZqh8tWHEoqRvvbKPJ2uz/KU+a+s=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
+wardlock.nz/apiclient v0.3.0 h1:UYd2z/hVBJO71MhJEhYk00wjnCobHCzWsAFVArqAgJM=
+wardlock.nz/apiclient v0.3.0/go.mod h1:XHeHCLjKPH20Gen4zIlkf7dgQT6HefXjshU1gYHqD/M=
