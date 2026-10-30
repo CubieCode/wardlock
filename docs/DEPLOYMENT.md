@@ -1058,6 +1058,31 @@ The server's tests (`TestBackupAndRestore` in `apps/server/cmd/wardlockd`) do ex
 
 Replace the binary or image and restart. Migrations are forward-only and run on start. Back up first; downgrading after a migration needs the backup.
 
+## Deploying from CI
+
+Sites are deployed with the `wardlock` CLI and an API token with only the `deploy` scope (I6.1). On GitHub, use the deploy action in this repository, [`actions/deploy`](../actions/deploy/README.md): it downloads and verifies the CLI, deploys, and on pull requests deploys a preview (`<site>--pr-<number>`), comments its address on the pull request and deletes it when the pull request closes.
+
+```yaml
+- uses: CubieCode/wardlock/actions/deploy@vX.Y.Z
+  with:
+    server: https://app.wardlock.example
+    token: ${{ secrets.WARDLOCK_TOKEN }}
+    directory: dist
+    site: docs
+```
+
+Elsewhere, run the CLI with the token in `WARDLOCK_TOKEN` and `--json` for machine-readable output: `wardlock --json --server https://app.wardlock.example deploy dist docs [--preview NAME]`.
+
+<details>
+<summary>Tokens, forks and previews</summary>
+
+- **The token.** Create an API token with only the `deploy` scope (the API's `createApiToken`, `POST /api/v0/tokens`, from a signed-in dashboard session; it is shown once) and store it as a CI secret. It can create sites and deploy to, roll back, promote and delete previews of any site its owner has, but cannot change policies, domains or delete sites. Revoke it from the API (`DELETE /api/v0/tokens/{tokenId}`) if it leaks.
+- **Pull requests from forks** get no secrets on GitHub, so the action ends with a notice and deploys nothing. Never use `pull_request_target` with a checkout of the fork's code to get round it: the fork's code would run with your token. The [action's README](../actions/deploy/README.md#pull-requests-from-forks) explains, and how to preview an outside contribution safely.
+- **Previews** need a server release with preview deploys (C1.19; v0.3.0 and earlier have none). They follow the site's policies, path policies and share links, expire 14 days after their last deploy and are never indexed ([Preview deploys](SPEC.md#preview-deploys-c119)). Each counts towards the owner's daily deploy quota and storage.
+- **This repository's docs site** (`docs-site.yml`) deploys from `main` through the action with the CLI built from source. Its pull request previews stay off until the repository variable `DOCS_PREVIEWS` is `true`; set it only once the instance in `WARDLOCK_SERVER` runs a release with preview deploys.
+
+</details>
+
 ## Go import paths
 
 The Go modules use vanity import paths on the project's own domain: `wardlock.nz/server`, `wardlock.nz/cli` and `wardlock.nz/apiclient`. This lets the repository move without breaking imports. The page that serves the `go-import` metadata is [`home-site/`](../home-site/README.md), deployed as the site `home` with `wardlock.nz` as its custom domain; the `Home site` workflow deploys it from `main`. Local builds on `main` use `go.work` and the `replace` directives in `apps/server/go.mod` and `apps/cli/go.mod`, so they build against the client in this repository; a release commit drops them ([Releases and module tags](#releases-and-module-tags)).

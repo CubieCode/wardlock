@@ -9,6 +9,7 @@ export default defineConfig({
       'packages/*/src/**/*.test.{ts,tsx}',
       'scripts/**/*.test.mjs',
       'docs-site/src/**/*.test.mjs',
+      'actions/**/*.test.mjs',
     ],
     environment: 'node',
   },

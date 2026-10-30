@@ -23,7 +23,7 @@ This writes `docs-site/dist` and then checks every link in it without network ac
 
 ## Deploy
 
-The `Docs site` workflow's deploy job publishes the site on every push to `main` that changes `docs/` or `docs-site/`, and on a manual run from `main`; pull requests only build. It deploys to the instance in the `WARDLOCK_SERVER` repository variable with the `WARDLOCK_TOKEN` secret, an API token with the deploy scope only. To deploy by hand instead, with the CLI logged in to the target instance:
+The `Docs site` workflow's deploy job publishes the site on every push to `main` that changes `docs/` or `docs-site/`, and on a manual run from `main`, through this repository's deploy action ([`actions/deploy`](../actions/deploy/README.md)) with the CLI built from source. It deploys to the instance in the `WARDLOCK_SERVER` repository variable with the `WARDLOCK_TOKEN` secret, an API token with the deploy scope only. Pull requests only build, unless the repository variable `DOCS_PREVIEWS` is `true`: then a pull request from a branch of this repository also gets the preview `docs--pr-<number>` with a comment giving its address, deleted when the pull request closes. Set it only once that instance runs a release with preview deploys (C1.19). To deploy by hand instead, with the CLI logged in to the target instance:
 
 ```sh
 pnpm docs:build

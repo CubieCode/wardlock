@@ -66,7 +66,7 @@ jobs:
         # Built from the pinned module (checked against the Go checksum
         # database) outside the repository, so no go.sum changes.
         run: |
-          GOWORK=off GOFLAGS= GOBIN="$RUNNER_TEMP/syft" go -C "$RUNNER_TEMP" install github.com/anchore/syft/cmd/syft@v1.52.0
+          GOWORK=off GOFLAGS='' GOBIN="$RUNNER_TEMP/syft" go -C "$RUNNER_TEMP" install github.com/anchore/syft/cmd/syft@v1.52.0
           echo "$RUNNER_TEMP/syft" >> "$GITHUB_PATH"
       - name: Choose the snapshot's base version
         # GoReleaser versions a snapshot from the nearest tag, but main's

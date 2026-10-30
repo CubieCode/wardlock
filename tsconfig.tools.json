@@ -9,6 +9,7 @@
     "vitest.config.ts",
     "eslint.config.js",
     "scripts/**/*.mjs",
-    "docs-site/src/**/*.mjs"
+    "docs-site/src/**/*.mjs",
+    "actions/**/*.mjs"
   ]
 }
