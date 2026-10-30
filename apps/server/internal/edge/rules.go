@@ -4,6 +4,8 @@
 package edge
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"net/http"
 	"net/url"
 	"strings"
@@ -97,4 +99,69 @@ func ownerHeaders(h http.Header, s *served, clean string, protected bool) {
 	if protected {
 		protectedHeaders(h)
 	}
+}
+
+// stripCSPSource is the CSP hash source that allows stripScript.
+var stripCSPSource = func() string {
+	sum := sha256.Sum256([]byte(stripJS))
+	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+}()
+
+// allowStripScript adds stripCSPSource to each policy in a deploy's
+// Content-Security-Policy value (policies are comma-separated), so the
+// share-link strip script runs on the page the token opened. Only the
+// directive governing inline script elements changes (script-src-elem,
+// else script-src, else default-src), and only when the policy has one:
+// one that already allows inline script (a bare 'unsafe-inline') is kept,
+// since a hash would switch that off, and a lone 'none' becomes the hash.
+// Every other directive is left byte for byte.
+func allowStripScript(csp string) string {
+	policies := strings.Split(csp, ",")
+	for i, p := range policies {
+		policies[i] = allowStripInPolicy(p)
+	}
+	return strings.Join(policies, ",")
+}
+
+func allowStripInPolicy(policy string) string {
+	dirs := strings.Split(policy, ";")
+	at := -1
+	for _, want := range []string{"script-src-elem", "script-src", "default-src"} {
+		for i, d := range dirs {
+			// Browsers ignore a repeated directive, so the first one counts.
+			if f := strings.Fields(d); len(f) > 0 && strings.EqualFold(f[0], want) {
+				at = i
+				break
+			}
+		}
+		if at >= 0 {
+			break
+		}
+	}
+	if at < 0 {
+		return policy
+	}
+	sources := strings.Fields(dirs[at])[1:]
+	inline, keyed := false, false
+	for _, src := range sources {
+		lower := strings.ToLower(src)
+		switch {
+		case lower == "'unsafe-inline'":
+			inline = true
+		case lower == "'strict-dynamic'", strings.HasPrefix(lower, "'nonce-"), strings.HasPrefix(lower, "'sha256-"),
+			strings.HasPrefix(lower, "'sha384-"), strings.HasPrefix(lower, "'sha512-"):
+			keyed = true
+		}
+	}
+	if inline && !keyed {
+		return policy
+	}
+	d := dirs[at]
+	trimmed := strings.TrimRight(d, " \t")
+	if len(sources) == 1 && strings.EqualFold(sources[0], "'none'") {
+		name := strings.Fields(d)[0]
+		trimmed = d[:strings.Index(d, name)+len(name)]
+	}
+	dirs[at] = trimmed + " " + stripCSPSource + d[len(strings.TrimRight(d, " \t")):]
+	return strings.Join(dirs, ";")
 }

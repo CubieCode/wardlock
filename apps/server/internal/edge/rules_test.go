@@ -5,6 +5,7 @@ package edge_test
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -214,5 +215,39 @@ func TestDeployHeadersOnProtectedPolicies(t *testing.T) {
 	}
 	if rec := h.do(http.MethodGet, rulesHost, "/old", withCookie); rec.Code != 301 || rec.Header().Get("Location") != "/new" {
 		t.Errorf("protected redirect with a session: %d %v", rec.Code, rec.Header())
+	}
+}
+
+// TestDeployCSPAllowsTheStripScript: a page a share-link token opened from
+// the URL carries the strip script, so the deploy's CSP gains its hash
+// there; every other response sends the deploy's CSP as given, and the
+// report-only header is never changed.
+func TestDeployCSPAllowsTheStripScript(t *testing.T) {
+	const token = "wl_abcdefgh23_dGVzdC1vbmx5LW5vdC1yZWFsLXRva2VuLXNlY3JldHg"
+	a := &fakeAccess{fn: func(r access.Request) (access.Decision, error) {
+		d := allow(true)
+		d.LinkPublicID, d.TokenAccepted = "abcdefgh23", r.Token != ""
+		return d, nil
+	}}
+	h := rulesHarness(t, a, false)
+	owner := allowlisted["Content-Security-Policy"]
+	report := allowlisted["Content-Security-Policy-Report-Only"]
+	stripped := h.do(http.MethodGet, rulesHost, "/?t="+token, nil)
+	csp := stripped.Header().Get("Content-Security-Policy")
+	if !strings.Contains(stripped.Body.String(), "history.replaceState") ||
+		!strings.HasPrefix(csp, owner+" 'sha256-") || !strings.HasSuffix(csp, "='") {
+		t.Fatalf("stripped page: CSP %q, body %q", csp, stripped.Body.String())
+	}
+	if got := stripped.Header().Get("Content-Security-Policy-Report-Only"); got != report {
+		t.Fatalf("report-only CSP %q, want %q", got, report)
+	}
+	for name, rec := range map[string]*httptest.ResponseRecorder{
+		"page by Bearer": h.do(http.MethodGet, rulesHost, "/", http.Header{"Authorization": {"Bearer " + token}}),
+		"page":           h.do(http.MethodGet, rulesHost, "/", nil),
+		"CSS by ?t=":     h.do(http.MethodGet, rulesHost, "/style.css?t="+token, nil),
+	} {
+		if strings.Contains(rec.Body.String(), "history.replaceState") || rec.Header().Get("Content-Security-Policy") != owner {
+			t.Errorf("%s: CSP %q, want the deploy's %q", name, rec.Header().Get("Content-Security-Policy"), owner)
+		}
 	}
 }
