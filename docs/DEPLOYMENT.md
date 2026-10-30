@@ -710,7 +710,7 @@ The active deploy is never pruned. Deploys not yet activated and bodies uploaded
 | `WARDLOCK_GC_GRACE_HOURS`      | `24`    | hours that new uploads and pending deploys are protected, 1 to 8760   |
 | `WARDLOCK_DEPLOY_HISTORY`      | `50`    | newest deploys kept per site, 1 to 100000; the active one is kept too |
 
-Every run logs `garbage collection finished` with `deploys_pruned`, `blobs_deleted`, `files_deleted` (stored files with no database record, left by a crash mid-upload, and abandoned temporary uploads) and `bytes_freed`, or `garbage collection failed` with the error; a failed run is retried at the next interval.
+Every run logs `garbage collection finished` with `previews_expired` (expired previews deleted, C1.19), `deploys_pruned`, `blobs_deleted`, `files_deleted` (stored files with no database record, left by a crash mid-upload, and abandoned temporary uploads) and `bytes_freed`, or `garbage collection failed` with the error; a failed run is retried at the next interval.
 
 </details>
 
