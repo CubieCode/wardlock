@@ -50,7 +50,7 @@ jobs:
         # Built from the pinned module (checked against the Go checksum
         # database) outside the repository, so no go.sum changes.
         run: |
-          GOWORK=off GOFLAGS= GOBIN="$RUNNER_TEMP/actionlint" go -C "$RUNNER_TEMP" install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          GOWORK=off GOFLAGS='' GOBIN="$RUNNER_TEMP/actionlint" go -C "$RUNNER_TEMP" install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           echo "$RUNNER_TEMP/actionlint" >> "$GITHUB_PATH"
       # Also runs shellcheck on every run: block.
       - run: actionlint -color
@@ -315,7 +315,8 @@ jobs:
             jq -r '.jobs[] | select(.name == "e2e") | .id')
           [[ -n $job ]] || { echo "::error::no e2e job in this run"; exit 1; }
           curl -fsSL "${auth[@]}" -o e2e.log "$API/jobs/$job/logs"
-          grep -q 'Wardlock preview deployed' e2e.log || { echo "::error::e2e's log does not show the action ran"; exit 1; }
+          # The log shows a notice's message without its title.
+          grep -q '##\[notice\]http://action-ci--' e2e.log || { echo "::error::e2e's log does not show the action ran"; exit 1; }
           if grep -Eq "wl_${PUBLIC_ID}_|wl_[a-z0-9]{10}_[A-Za-z0-9_-]{20,}" e2e.log; then
             echo "::error::an API token appears in e2e's log"
             exit 1
