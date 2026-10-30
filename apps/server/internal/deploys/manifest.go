@@ -76,6 +76,11 @@ type Manifest struct {
 	// prefix of the site's active deploy. Files may then be empty, which
 	// removes the prefix.
 	Path string
+	// Redirects and Headers are the deploy's rules (C1.17). nil is none
+	// for a full deploy and the base's rules for a path deploy; a non-nil
+	// empty list is none for either.
+	Redirects *[]store.Redirect
+	Headers   *[]store.HeaderRule
 }
 
 // NormalisePath turns backslashes into forward slashes and checks the

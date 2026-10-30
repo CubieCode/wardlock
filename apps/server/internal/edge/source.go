@@ -37,6 +37,26 @@ type ServedSite struct {
 	// it decompresses to exactly its file, and brotli siblings, which the
 	// server cannot check, are never offered.
 	Screened bool
+	// Redirects and Headers are the active deploy's rules (C1.17), checked
+	// when the deploy was created: redirects in order, first match wins;
+	// every matching header rule in order.
+	Redirects []Redirect
+	Headers   []HeaderRule
+}
+
+// Redirect sends a request path that serves no file elsewhere (SPEC
+// "Redirects and response headers").
+type Redirect struct {
+	From   string // exact clean path, or a prefix ending in /*
+	To     string // a path on the site or an https:// URL; :splat in its path
+	Status int    // 301, 302, 307 or 308
+}
+
+// HeaderRule sets response headers on deploy responses whose request path
+// it matches.
+type HeaderRule struct {
+	Path string            // exact clean path, or a prefix ending in /*
+	Set  map[string]string // canonical names from the deploy allowlist
 }
 
 // ServedFile is one entry of the active deploy's manifest.

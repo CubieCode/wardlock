@@ -59,19 +59,25 @@ func firstQueryValue(rawQuery, key string) (string, bool) {
 // parameter removed and the rest kept byte for byte: where the
 // interstitial returns the visitor.
 func withoutToken(r *http.Request) string {
+	p := r.URL.EscapedPath()
+	if q := queryWithoutToken(r.URL.RawQuery); q != "" {
+		p += "?" + q
+	}
+	return p
+}
+
+// queryWithoutToken is rawQuery with every t parameter, in any spelling,
+// and empty parts removed.
+func queryWithoutToken(rawQuery string) string {
 	var kept []string
-	for part := range strings.SplitSeq(r.URL.RawQuery, "&") {
+	for part := range strings.SplitSeq(rawQuery, "&") {
 		k, _, _ := strings.Cut(part, "=")
 		if dk, err := url.QueryUnescape(k); part == "" || (err == nil && dk == tokenParam) {
 			continue
 		}
 		kept = append(kept, part)
 	}
-	p := r.URL.EscapedPath()
-	if len(kept) > 0 {
-		p += "?" + strings.Join(kept, "&")
-	}
-	return p
+	return strings.Join(kept, "&")
 }
 
 // navigation reports whether r is a browser loading a page: a GET that

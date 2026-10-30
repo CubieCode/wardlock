@@ -6,6 +6,7 @@ package storetest
 import (
 	"errors"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -88,6 +89,49 @@ func deploysContract(t *testing.T, open Opener) {
 				{name: "negative size", mutate: func(_ *fixture, b *store.Blob) { b.Size = -1 }, want: store.ErrConstraint},
 			})
 	})
+	t.Run("Rules", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		o := f.owner()
+		s := f.site(o.ID)
+		want := f.validDeploy(s.ID)
+		want.Redirects = []store.Redirect{
+			{From: "/old", To: "/new", Status: 301},
+			{From: "/blog/*", To: "https://blog.example.test/:splat", Status: 308},
+		}
+		want.Headers = []store.HeaderRule{
+			{Path: "/*", Set: map[string]string{"X-Frame-Options": "DENY"}},
+			{Path: "/embed/*", Set: map[string]string{"X-Frame-Options": "SAMEORIGIN", "Content-Security-Policy": "frame-ancestors 'self'"}},
+		}
+		f.must(f.r.Deploys.Create(t.Context(), o.ID, want, []store.DeployFile{{Path: "index.html", SHA256: sha('a'), Size: 5}}, store.Quotas{}))
+		none := f.validDeploy(s.ID)
+		none.CreatedAt = now.Add(time.Second)
+		f.must(f.r.Deploys.Create(t.Context(), o.ID, none, []store.DeployFile{{Path: "index.html", SHA256: sha('a'), Size: 5}}, store.Quotas{}))
+		for _, d := range []store.Deploy{want, none} {
+			got, err := f.r.Deploys.Get(t.Context(), o.ID, s.ID, d.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, d) {
+				t.Fatalf("Get() = %+v, want %+v", got, d)
+			}
+		}
+		list, err := f.r.Deploys.List(t.Context(), o.ID, s.ID, store.DeployCursor{}, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(list, []store.Deploy{none, want}) {
+			t.Fatalf("List() = %+v, want the rules kept in order", list)
+		}
+		// Rollback reads the deploy, rules and all, from the same row.
+		f.must(f.r.Sites.SetActiveDeploy(t.Context(), o.ID, s.ID, want.ID))
+		got, err := f.r.Deploys.Get(t.Context(), o.ID, s.ID, want.ID)
+		if err != nil || !reflect.DeepEqual(got.Redirects, want.Redirects) || !reflect.DeepEqual(got.Headers, want.Headers) {
+			t.Fatalf("Get(active) = %+v, %v; want its rules", got, err)
+		}
+		_, err = f.r.Deploys.Get(t.Context(), f.owner().ID, s.ID, want.ID)
+		wantErr(t, err, store.ErrNotFound)
+	})
 	t.Run("Get", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, open)
@@ -100,7 +144,7 @@ func deploysContract(t *testing.T, open Opener) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got != want {
+		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("Get() = %+v, want %+v", got, want)
 		}
 		_, err = f.r.Deploys.Get(t.Context(), f.owner().ID, s.ID, want.ID)
@@ -156,7 +200,7 @@ func deploysContract(t *testing.T, open Opener) {
 			last := page[len(page)-1]
 			cursor = store.DeployCursor{CreatedAt: last.CreatedAt, ID: last.ID}
 		}
-		if !slices.Equal(paged, all) {
+		if !reflect.DeepEqual(paged, all) {
 			t.Fatalf("paged List() = %+v, want %+v", paged, all)
 		}
 		other, err := f.r.Deploys.List(t.Context(), f.owner().ID, s.ID, store.DeployCursor{}, 10)
@@ -233,14 +277,14 @@ func deploysContract(t *testing.T, open Opener) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got != want {
+		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("Get() = %+v, want %+v", got, want)
 		}
 		list, err := f.r.Deploys.List(t.Context(), o.ID, s.ID, store.DeployCursor{}, 10)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if i := slices.IndexFunc(list, func(d store.Deploy) bool { return d.ID == want.ID }); i < 0 || list[i] != want {
+		if i := slices.IndexFunc(list, func(d store.Deploy) bool { return d.ID == want.ID }); i < 0 || !reflect.DeepEqual(list[i], want) {
 			t.Fatalf("List() = %+v, want it to hold %+v", list, want)
 		}
 		bad := f.validDeploy(s.ID)

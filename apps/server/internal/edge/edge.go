@@ -216,7 +216,7 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Only HTML answers to a token in the URL get the strip script.
 	strip := d.TokenAccepted && tokenInURL
 
-	res, ok := resolve(s, strings.TrimPrefix(clean, "/"))
+	res, ok := resolve(s, strings.TrimPrefix(clean, "/"), r.URL.RawQuery)
 	if ok && res.redirect == "" && (!sameDirectory(clean, res.file.Path) || d.IndexApart && "/"+res.file.Path != clean) {
 		// 404.html, the SPA index or a clean URL's page.html answers from
 		// another path, which may sit behind a stricter policy: it must
@@ -241,18 +241,14 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case !ok:
+		ownerHeaders(w.Header(), s, clean, protected)
 		w.Header().Set("Cache-Control", cacheControl(protected))
 		http.NotFound(w, r)
 	case res.redirect != "":
-		// An absolute path: cleaning leaves no empty first segment, so it
-		// cannot become a scheme-relative //host URL.
-		target := res.redirect
-		if r.URL.RawQuery != "" {
-			target += "?" + r.URL.RawQuery
-		}
+		ownerHeaders(w.Header(), s, clean, protected)
 		w.Header().Set("Cache-Control", cacheControl(protected))
-		w.Header().Set("Location", target)
-		w.WriteHeader(http.StatusMovedPermanently)
+		w.Header().Set("Location", res.redirect)
+		w.WriteHeader(res.status)
 	default:
 		// Long-term caching only for a hashed asset answering its own
 		// path, never a fallback (SPEC "Serving"); a response that sets a
@@ -261,6 +257,7 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			e.withheldFile(w, r, res.file, protected)
 			return
 		}
+		ownerHeaders(w.Header(), s, clean, protected)
 		// Never long-term while screening may still withhold it.
 		immutable := s.site.ImmutableAssets && res.status == http.StatusOK && !res.file.Pending &&
 			"/"+res.file.Path == clean && hashedAsset(res.file.Path)
