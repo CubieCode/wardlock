@@ -789,6 +789,7 @@ Global flags: `--server URL` (default from `wardlock.json`, then `WARDLOCK_SERVE
 | `wardlock tag delete NAME [--yes]`                                                                                                              | Delete a tag after confirmation (`--yes` required without a TTY) and remove it from its sites.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `wardlock site organise SITE... [--group NAME \| --no-group] [--tag NAME]... [--untag NAME]...`                                                 | Put every SITE in a group or take them out of theirs, and add or remove tags, all or nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `wardlock pin SITE...`, `wardlock unpin SITE...`                                                                                                | Pin or unpin sites, all or nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `wardlock mcp [--root DIR]`                                                                                                                     | Serve the Model Context Protocol on stdin and stdout for AI tools: [MCP server](#mcp-server-i65).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `wardlock version [--server URL]`                                                                                                               | Built in F0.1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 Only built commands appear in `--help`.
@@ -845,6 +846,50 @@ With `--json`, stdout carries exactly one JSON object and nothing else; on failu
 | `tag delete`                   | `{deleted: true, tag: Tag}`: the tag as it was before deletion.                                                                                                                                                                                                                                                                                                                                                                  |
 | `site organise`                | `{prior: [SiteOrganisation], sites: [Site]}`: the API's `OrganiseSitesResult` (each site's group, tags and pin from before, in the order named) and each site as it is now.                                                                                                                                                                                                                                                      |
 | `pin`, `unpin`                 | `{sites: [Site]}`: each site as it is now.                                                                                                                                                                                                                                                                                                                                                                                       |
+
+</details>
+
+### MCP server (I6.5)
+
+`wardlock mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio, so AI tools such as Claude Code, Claude Desktop and editors can publish and share pages with the CLI's credentials (`wardlock login` or `WARDLOCK_TOKEN`) and no new server endpoint. Each tool wraps one CLI command and returns that command's `--json` output.
+
+| Tool                | Wraps                                                                                              | Asks first | Scope    |
+| ------------------- | -------------------------------------------------------------------------------------------------- | ---------- | -------- |
+| `list_sites`        | `wardlock list`                                                                                    | no         | either   |
+| `get_site`          | the site, its policies, custom domains and live deploy, as `{site, policies, domains, liveDeploy}` | no         | either   |
+| `list_deploys`      | `wardlock list DOMAIN`                                                                             | no         | either   |
+| `deploy_directory`  | `wardlock deploy DIR DOMAIN [--path P] [--message M]`                                              | yes        | `deploy` |
+| `pull_deploy`       | `wardlock pull DOMAIN DIR [--deploy ID] [--path P]`                                                | no         | either   |
+| `rollback`          | `wardlock rollback DOMAIN [DEPLOY_ID]`                                                             | yes        | `deploy` |
+| `set_policy`        | `wardlock policy set` without `--password`                                                         | yes        | `manage` |
+| `create_share_link` | `wardlock share create`                                                                            | no         | `manage` |
+| `list_share_links`  | `wardlock share list`                                                                              | no         | either   |
+| `revoke_share_link` | `wardlock share revoke`                                                                            | yes        | `manage` |
+
+Add it to a client with the directory it may deploy from and pull into as `--root` (default the directory it starts in). Claude Code: `claude mcp add wardlock -- wardlock mcp --root ~/sites`. Clients configured with JSON, such as Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "wardlock": {
+      "command": "wardlock",
+      "args": ["mcp", "--root", "/home/ana/sites"]
+    }
+  }
+}
+```
+
+<details>
+<summary>Root, confirmations, secrets and errors</summary>
+
+- **Not exposed.** Teardown, custom domains, groups and tags, share link rotation, and token or owner management have no tool. A remote MCP endpoint in `wardlockd` is not planned yet.
+- **Root.** `deploy_directory` and `pull_deploy` take directories relative to the root, or absolute inside it, and refuse any that leave it by `..`, an absolute path or a symbolic link (one that leads nowhere included). `wardlock.json` in the root applies as it does to the CLI run from there, and its `dir` is held to the root too. Without `directory`, `deploy_directory` uses `dir` from `wardlock.json`, else the root; `pull_deploy` needs one.
+- **Same deploy.** `deploy_directory` runs `wardlock deploy` itself, so the same files are left out, `.wardlockignore` and `wardlock.json` apply, and the deploy goes live at once. An empty directory with `path` removes that part of the site, as `wardlock deploy --path --yes` does: the tool's confirmation is the client's.
+- **Confirmations.** Tools that change what visitors see (`deploy_directory`, `rollback`, `set_policy`, `revoke_share_link`) carry MCP's `destructiveHint`, so clients ask before running them; the read tools carry `readOnlyHint`. `create_share_link` and `pull_deploy` change nothing visitors see; `pull_deploy` writes only into a new or empty directory (there is no `--force`).
+- **Passwords.** `set_policy` never takes a password, since one given to a tool passes through the AI client. The `password` method keeps the policy's current password; when it has none, the API's `400 invalid_policy` comes back as a tool error saying to set one with `wardlock policy set DOMAIN --protected --password` in a terminal.
+- **Share link URLs.** `create_share_link` returns the URL once, in its result, as `wardlock share create --json` prints it. `list_share_links` never shows URLs.
+- **Logs.** The server logs to stderr: each tool's name, outcome and duration, and the error message on failure. Arguments, results, tokens and share link URLs are never logged.
+- **Errors.** A failed command is a tool error carrying the CLI's message. A token without the scope a tool needs gets the API's `403`, reported as `<tool> needs a token with the <scope> scope`. Without a login or `WARDLOCK_TOKEN`, `wardlock mcp` exits with the CLI's error before serving.
 
 </details>
 

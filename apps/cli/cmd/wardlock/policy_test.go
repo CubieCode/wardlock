@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -33,6 +34,11 @@ func (f *fakeAPI) setPolicy(w http.ResponseWriter, r *http.Request, s *fakeSite)
 	}
 	if body.Visibility == apiclient.PolicyVisibilityPublic && len(methods) > 0 {
 		reply(w, http.StatusBadRequest, apiErr("invalid_policy", "A public policy takes no methods."))
+		return
+	}
+	if slices.Contains(methods, apiclient.PolicyMethodPassword) && body.Password == nil &&
+		!slices.ContainsFunc(s.set, func(m map[string]any) bool { return m["password"] != nil }) {
+		reply(w, http.StatusBadRequest, apiErr("invalid_policy", "The password method needs a password."))
 		return
 	}
 	allow := apiclient.PolicyAllowlist{Emails: []string{}, Domains: []string{}}
