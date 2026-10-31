@@ -48,6 +48,12 @@ WHERE id = sqlc.arg(id) AND status IN ('pending', 'sending', 'held');
 UPDATE notification_outbox SET status = 'failed', finished_at = sqlc.arg(at)
 WHERE channel = sqlc.arg(channel) AND status = 'sending';
 
+-- Makes every row of a channel left 'sending' due again at at, for a channel
+-- whose receivers cope with a repeat.
+-- name: RequeueInterruptedNotifications :execrows
+UPDATE notification_outbox SET status = 'pending', next_attempt_at = sqlc.arg(at)
+WHERE channel = sqlc.arg(channel) AND status = 'sending';
+
 -- How many of the owner's rows went out on the channel at or after since.
 -- name: CountSentNotifications :one
 SELECT COUNT(*) FROM notification_outbox
@@ -80,7 +86,7 @@ WHERE finished_at <= sqlc.arg(finished_before) AND status IN ('sent', 'failed', 
 
 -- Domains that became active at or after since.
 -- name: ListVerifiedDomainNotices :many
-SELECT sites.owner_id, sites.name AS site_name, domains.id, domains.hostname, domains.verified_at
+SELECT sites.owner_id, sites.id AS site_id, sites.name AS site_name, domains.id, domains.hostname, domains.verified_at
 FROM domains
 JOIN sites ON sites.id = domains.site_id
 JOIN owners ON owners.id = sites.owner_id
@@ -111,7 +117,7 @@ ORDER BY domains.id;
 
 -- Lapsed domains whose failures began at or after since.
 -- name: ListLapsedDomainNotices :many
-SELECT sites.owner_id, sites.name AS site_name, domains.id, domains.hostname, domains.failing_since
+SELECT sites.owner_id, sites.id AS site_id, sites.name AS site_name, domains.id, domains.hostname, domains.failing_since
 FROM domains
 JOIN sites ON sites.id = domains.site_id
 JOIN owners ON owners.id = sites.owner_id
@@ -125,7 +131,7 @@ ORDER BY domains.id;
 
 -- Unrevoked links used up at or after since.
 -- name: ListUsedUpLinkNotices :many
-SELECT sites.owner_id, sites.name AS site_name, share_links.id, share_links.public_id, share_links.label, share_links.used_up_at
+SELECT sites.owner_id, sites.id AS site_id, sites.name AS site_name, share_links.id, share_links.public_id, share_links.label, share_links.used_up_at
 FROM share_links
 JOIN sites ON sites.id = share_links.site_id
 JOIN owners ON owners.id = sites.owner_id

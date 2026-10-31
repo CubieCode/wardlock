@@ -237,7 +237,15 @@ func TestBackupAndRestore(t *testing.T) {
 		}
 	})
 	wg.Go(func() {
-		for writeCtx.Err() == nil {
+		// Visits are paced by the sites: unpaced, they fill the access log's
+		// buffer until its writer takes SQLite's write lock batch after
+		// batch and starves the API past busy_timeout. Lock fairness is not
+		// what this test checks.
+		const maxLead = 25
+		for visits := int64(0); writeCtx.Err() == nil; visits++ {
+			for visits >= (created.Load()+1)*maxLead && writeCtx.Err() == nil {
+				time.Sleep(time.Millisecond)
+			}
 			if code, _, _, err := a.try(a.addr, http.MethodGet, "docs.wardlock.localhost", "/", nil); err != nil || code != http.StatusOK {
 				writeErr.Store(fmt.Sprintf("visit: %d %v", code, err))
 				return

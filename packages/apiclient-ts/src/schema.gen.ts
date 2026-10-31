@@ -394,6 +394,144 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/webhooks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the owner's webhooks.
+     * @description Oldest first; an owner has at most 10. Signing secrets are never returned. A webhook's `url` can hold the receiver's own secret, so reading one needs the `manage` scope too.
+     */
+    get: operations['listWebhooks'];
+    put?: never;
+    /**
+     * Register a webhook.
+     * @description The response is the only time the signing secret is shown. `url` must use `https` (`http` also in local mode) and hold no credentials or fragment. Leaving out `events` or `sites` means all of them. A site in `sites` that the owner does not have answers `404`. An owner with 10 webhooks gets `413 limit_exceeded`. See SPEC "Webhooks".
+     */
+    post: operations['createWebhook'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/webhooks/{webhookId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The webhook's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+         */
+        webhookId: components['parameters']['WebhookId'];
+      };
+      cookie?: never;
+    };
+    /** Get a webhook. */
+    get: operations['getWebhook'];
+    put?: never;
+    post?: never;
+    /**
+     * Delete a webhook.
+     * @description Its deliveries go with it, and anything queued is not sent.
+     */
+    delete: operations['deleteWebhook'];
+    options?: never;
+    head?: never;
+    /**
+     * Change a webhook, or turn it off or on.
+     * @description Fields left out keep their value; the secret never changes. `allEvents` and `allSites` widen a webhook back to everything and cannot be sent with `events` or `sites`. `enabled: true` turns a disabled webhook back on and forgets its failures, as does a new `url`.
+     */
+    patch: operations['updateWebhook'];
+    trace?: never;
+  };
+  '/api/v0/webhooks/{webhookId}/test': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The webhook's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+         */
+        webhookId: components['parameters']['WebhookId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Send a webhook a `ping`.
+     * @description Queues the ping and answers at once, with its delivery; read `listWebhookDeliveries` for how it went. A disabled webhook answers `409 webhook_disabled`.
+     */
+    post: operations['testWebhook'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/webhooks/{webhookId}/deliveries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The webhook's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+         */
+        webhookId: components['parameters']['WebhookId'];
+      };
+      cookie?: never;
+    };
+    /**
+     * List a webhook's recent deliveries.
+     * @description The newest 50, newest first. A delivery is one event going to this webhook, however many attempts it took; the fields describe the latest attempt. Neither what was sent nor the receiver's response body is returned.
+     */
+    get: operations['listWebhookDeliveries'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The webhook's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+         */
+        webhookId: components['parameters']['WebhookId'];
+        /**
+         * @description The delivery's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31
+         */
+        deliveryId: components['parameters']['DeliveryId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Send a delivery again.
+     * @description Queues the same event, with the same `id` and body and a new signature, as a new delivery whose `redeliveryOf` names this one. A disabled webhook answers `409 webhook_disabled`.
+     */
+    post: operations['redeliverWebhookDelivery'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v0/cli-login': {
     parameters: {
       query?: never;
@@ -1614,6 +1752,103 @@ export interface components {
       /** @description The secret token. Shown only in this response. */
       token: string;
     };
+    /**
+     * @description An event a webhook can ask for. SPEC "Webhooks" gives each one's payload.
+     * @enum {string}
+     */
+    WebhookEvent:
+      | 'deploy.activated'
+      | 'preview.deployed'
+      | 'preview.deleted'
+      | 'site.created'
+      | 'site.deleted'
+      | 'domain.status_changed'
+      | 'link.created'
+      | 'link.revoked'
+      | 'link.used_up'
+      | 'file.withheld';
+    Webhook: {
+      id: components['schemas']['Id'];
+      url: string;
+      description: string;
+      /** @description The events it wants; absent means all of them. */
+      events?: components['schemas']['WebhookEvent'][];
+      /** @description The sites it wants events from, by name; absent means all of them. A listed site that was deleted leaves the list, so it can be empty. */
+      sites?: components['schemas']['SiteName'][];
+      enabled: boolean;
+      /**
+       * @description Set while it is off: `failing` after 3 days of failed deliveries, `owner` when turned off with `updateWebhook`.
+       * @enum {string}
+       */
+      disabledReason?: 'failing' | 'owner';
+      disabledAt?: components['schemas']['Timestamp'];
+      /** @description When its current run of failures began, if it is in one. */
+      failingSince?: components['schemas']['Timestamp'];
+      createdAt: components['schemas']['Timestamp'];
+    };
+    WebhookList: {
+      items: components['schemas']['Webhook'][];
+    };
+    CreateWebhookRequest: {
+      url: string;
+      description?: string;
+      events?: components['schemas']['WebhookEvent'][];
+      sites?: components['schemas']['SiteName'][];
+    };
+    UpdateWebhookRequest: {
+      url?: string;
+      description?: string;
+      events?: components['schemas']['WebhookEvent'][];
+      /** @description Send `true` to want every event. */
+      allEvents?: boolean;
+      sites?: components['schemas']['SiteName'][];
+      /** @description Send `true` to want every site. */
+      allSites?: boolean;
+      enabled?: boolean;
+    };
+    CreatedWebhook: {
+      webhook: components['schemas']['Webhook'];
+      /** @description The signing secret. Shown only in this response. */
+      secret: string;
+    };
+    WebhookDelivery: {
+      id: components['schemas']['Id'];
+      /** @description The event's `id`, the same on every delivery of it, so a receiver can tell a repeat. */
+      eventId: components['schemas']['Id'];
+      /** @description A `WebhookEvent`, or `ping`. */
+      type: string;
+      /**
+       * @description `pending` while attempts remain, `succeeded`, `failed` once they have run out, or `dropped` if the webhook was turned off first.
+       * @enum {string}
+       */
+      status: 'pending' | 'succeeded' | 'failed' | 'dropped';
+      /** Format: int32 */
+      attempts: number;
+      /**
+       * Format: int32
+       * @description The latest attempt's status code; absent with no answer.
+       */
+      responseCode?: number;
+      /**
+       * Format: int64
+       * @description How long the latest attempt took.
+       */
+      durationMs?: number;
+      /**
+       * @description Why the latest attempt failed.
+       * @enum {string}
+       */
+      error?:
+        'status' | 'timeout' | 'dns' | 'tls' | 'connection' | 'refused_address';
+      /** @description The delivery this one repeats. */
+      redeliveryOf?: components['schemas']['Id'];
+      createdAt: components['schemas']['Timestamp'];
+      lastAttemptAt?: components['schemas']['Timestamp'];
+      finishedAt?: components['schemas']['Timestamp'];
+    };
+    WebhookDeliveryList: {
+      items: components['schemas']['WebhookDelivery'][];
+    };
     StartCliLoginRequest: {
       /** @description How the CLI describes itself, such as `wardlock 0.1.0 on build-laptop`. It becomes the default name of the API token the login creates, unless the approving owner names the token. It is not shown on the approval page. */
       clientName?: string;
@@ -2679,6 +2914,16 @@ export interface components {
      */
     TokenId: components['schemas']['Id'];
     /**
+     * @description The webhook's ID.
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+     */
+    WebhookId: components['schemas']['Id'];
+    /**
+     * @description The delivery's ID.
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31
+     */
+    DeliveryId: components['schemas']['Id'];
+    /**
      * @description The policy's ID.
      * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41
      */
@@ -3486,6 +3731,347 @@ export interface operations {
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  listWebhooks: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The owner's webhooks. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30",
+           *           "url": "https://hooks.example.com/wardlock",
+           *           "description": "Deploys channel",
+           *           "enabled": true,
+           *           "createdAt": 1767225600000
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['WebhookList'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      default: components['responses']['Error'];
+    };
+  };
+  createWebhook: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "url": "https://hooks.example.com/wardlock",
+         *       "description": "Deploys channel",
+         *       "events": [
+         *         "deploy.activated"
+         *       ],
+         *       "sites": [
+         *         "docs"
+         *       ]
+         *     }
+         */
+        'application/json': components['schemas']['CreateWebhookRequest'];
+      };
+    };
+    responses: {
+      /** @description Created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CreatedWebhook'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      413: components['responses']['TooLarge'];
+      default: components['responses']['Error'];
+    };
+  };
+  getWebhook: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The webhook's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+         */
+        webhookId: components['parameters']['WebhookId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The webhook. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30",
+           *       "url": "https://hooks.example.com/wardlock",
+           *       "description": "Deploys channel",
+           *       "events": [
+           *         "deploy.activated"
+           *       ],
+           *       "sites": [
+           *         "docs"
+           *       ],
+           *       "enabled": true,
+           *       "createdAt": 1767225600000
+           *     }
+           */
+          'application/json': components['schemas']['Webhook'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  deleteWebhook: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The webhook's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+         */
+        webhookId: components['parameters']['WebhookId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  updateWebhook: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The webhook's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+         */
+        webhookId: components['parameters']['WebhookId'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "enabled": true
+         *     }
+         */
+        'application/json': components['schemas']['UpdateWebhookRequest'];
+      };
+    };
+    responses: {
+      /** @description The webhook as it is now. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30",
+           *       "url": "https://hooks.example.com/wardlock",
+           *       "description": "Deploys channel",
+           *       "events": [
+           *         "deploy.activated"
+           *       ],
+           *       "sites": [
+           *         "docs"
+           *       ],
+           *       "enabled": true,
+           *       "createdAt": 1767225600000
+           *     }
+           */
+          'application/json': components['schemas']['Webhook'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  testWebhook: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The webhook's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+         */
+        webhookId: components['parameters']['WebhookId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Queued. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31",
+           *       "eventId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e32",
+           *       "type": "ping",
+           *       "status": "pending",
+           *       "attempts": 0,
+           *       "createdAt": 1767225600000
+           *     }
+           */
+          'application/json': components['schemas']['WebhookDelivery'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  listWebhookDeliveries: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The webhook's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+         */
+        webhookId: components['parameters']['WebhookId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The webhook's recent deliveries. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31",
+           *           "eventId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e32",
+           *           "type": "deploy.activated",
+           *           "status": "succeeded",
+           *           "attempts": 1,
+           *           "responseCode": 204,
+           *           "durationMs": 120,
+           *           "createdAt": 1767225600000,
+           *           "lastAttemptAt": 1767225600120,
+           *           "finishedAt": 1767225600120
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['WebhookDeliveryList'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  redeliverWebhookDelivery: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The webhook's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+         */
+        webhookId: components['parameters']['WebhookId'];
+        /**
+         * @description The delivery's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31
+         */
+        deliveryId: components['parameters']['DeliveryId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Queued. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31",
+           *       "eventId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e32",
+           *       "type": "ping",
+           *       "status": "pending",
+           *       "attempts": 0,
+           *       "createdAt": 1767225600000
+           *     }
+           */
+          'application/json': components['schemas']['WebhookDelivery'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
       default: components['responses']['Error'];
     };
   };

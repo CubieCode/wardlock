@@ -578,10 +578,22 @@ func TestAdminOperatorCommands(t *testing.T) {
 	if _, err := admin("teardown-site", "docs"); err == nil || !strings.Contains(err.Error(), "not taken down") {
 		t.Fatalf("teardown of a live site: %v", err)
 	}
+	hook := store.Webhook{
+		ID: store.NewID(), OwnerID: site.OwnerID, URL: "https://hooks.example.test/", AllEvents: true,
+		Sites: []store.WebhookSite{{ID: site.ID}}, SecretSalt: "salt", CreatedAt: time.Now(),
+	}
+	if err := db.Webhooks().Create(t.Context(), hook, 10); err != nil {
+		t.Fatal(err)
+	}
 	must("takedown-site", "docs")
 	must("teardown-site", "docs")
 	if _, err := db.Sites().GetByID(t.Context(), site.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("site after teardown: %v", err)
+	}
+	// The running server's worker sends what this process queued.
+	queued, err := db.Webhooks().Deliveries(t.Context(), site.OwnerID, hook.ID, 10)
+	if err != nil || len(queued) != 1 || queued[0].Event != "site.deleted" {
+		t.Fatalf("queued after teardown: %+v, %v", queued, err)
 	}
 
 	for _, bad := range [][]string{

@@ -378,3 +378,43 @@ func (Unimplemented) CreateApiToken(context.Context, CreateApiTokenRequestObject
 func (Unimplemented) RevokeApiToken(context.Context, RevokeApiTokenRequestObject) (RevokeApiTokenResponseObject, error) {
 	return nil, ErrNotImplemented
 }
+
+// ListWebhooks is not implemented yet.
+func (Unimplemented) ListWebhooks(context.Context, ListWebhooksRequestObject) (ListWebhooksResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// CreateWebhook is not implemented yet.
+func (Unimplemented) CreateWebhook(context.Context, CreateWebhookRequestObject) (CreateWebhookResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeleteWebhook is not implemented yet.
+func (Unimplemented) DeleteWebhook(context.Context, DeleteWebhookRequestObject) (DeleteWebhookResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// GetWebhook is not implemented yet.
+func (Unimplemented) GetWebhook(context.Context, GetWebhookRequestObject) (GetWebhookResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// UpdateWebhook is not implemented yet.
+func (Unimplemented) UpdateWebhook(context.Context, UpdateWebhookRequestObject) (UpdateWebhookResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListWebhookDeliveries is not implemented yet.
+func (Unimplemented) ListWebhookDeliveries(context.Context, ListWebhookDeliveriesRequestObject) (ListWebhookDeliveriesResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// RedeliverWebhookDelivery is not implemented yet.
+func (Unimplemented) RedeliverWebhookDelivery(context.Context, RedeliverWebhookDeliveryRequestObject) (RedeliverWebhookDeliveryResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// TestWebhook is not implemented yet.
+func (Unimplemented) TestWebhook(context.Context, TestWebhookRequestObject) (TestWebhookResponseObject, error) {
+	return nil, ErrNotImplemented
+}

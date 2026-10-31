@@ -115,12 +115,14 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	}
 
 	notifier := deploys.NewLocalNotifier()
+	notifySvc := newNotifications(cfg, log, db, mailer, dashURL.String())
 	accessSvc, err := access.New(access.Config{
 		Sites:    db.Sites(),
 		Policies: db.Policies(),
 		Sessions: db.Sessions(),
 		Links:    db.Links(),
 		Notifier: notifier,
+		Events:   notifySvc,
 
 		PasswordSessions: db.PasswordSessions(),
 		AccessLog:        db.AccessLog(),
@@ -174,14 +176,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		return err
 	}
 	screened := deploys.NewLocalNotifier()
-	notifySvc := notify.New(notify.Config{
-		Store:        db.Notifications(),
-		Mailer:       mailer,
-		DashboardURL: dashURL.String(),
-		Cap:          cfg.MaxOwnerNotificationsPerHour,
-		Log:          log,
-	})
-	modSvc := newModeration(cfg, log, db, blobs, mailer, notifySvc, quarantine, screened)
+	modSvc := newModeration(cfg, log, db, blobs, mailer, notifySvc, notifySvc, quarantine, screened)
 	stopModeration := startModeration(ctx, log, db, modSvc, quarantine, notifier)
 	defer stopModeration()
 	metrics := platform.NewMetrics(time.Now())
@@ -194,6 +189,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Organisation:  db.Organisation(),
 		Domains:       db.Domains(),
 		Notifier:      notifier,
+		Events:        notifySvc,
 		Resolver:      sites.NewNetResolver(cfg.DNSResolvers),
 		BaseDomain:    cfg.BaseDomain,
 		DashboardHost: cfg.DashboardHost,
@@ -236,6 +232,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 			Previews: db.Previews(),
 			Blobs:    blobs,
 			Notifier: notifier,
+			Events:   notifySvc,
 			Limits: deploys.Limits{
 				MaxFileSize:       cfg.MaxFileSize,
 				MaxFiles:          cfg.MaxDeployFiles,
@@ -381,6 +378,23 @@ func startDomainChecks(ctx context.Context, svc *sites.Service) func() {
 		cancel()
 		wg.Wait()
 	}
+}
+
+// newNotifications is the notification service: its worker runs only in
+// serve, but anything may queue for it.
+func newNotifications(cfg platform.Config, log *slog.Logger, db *store.DB, mailer mail.Mailer, dashboardURL string) *notify.Service {
+	return notify.New(notify.Config{
+		Store:        db.Notifications(),
+		Mailer:       mailer,
+		DashboardURL: dashboardURL,
+		Cap:          cfg.MaxOwnerNotificationsPerHour,
+		Log:          log,
+		Webhooks:     db.Webhooks(),
+		Sites:        db.Sites(),
+		SigningKey:   cfg.Secret,
+		AllowHTTP:    cfg.TLS.Mode == platform.TLSLocal,
+		AllowPrivate: cfg.WebhookAllowPrivate,
+	})
 }
 
 // startNotifications runs the owner notification worker until the returned

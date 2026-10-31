@@ -125,22 +125,34 @@ var implemented = map[string]bool{
 	"ListSignInProviders": true,
 
 	"ListExpiringLinks": true,
+
+	// Webhooks (I6.3).
+	"ListWebhooks":             true,
+	"CreateWebhook":            true,
+	"GetWebhook":               true,
+	"UpdateWebhook":            true,
+	"DeleteWebhook":            true,
+	"TestWebhook":              true,
+	"ListWebhookDeliveries":    true,
+	"RedeliverWebhookDelivery": true,
 }
 
 // pathValues are valid values for every path parameter in the contract.
 var pathValues = map[string]string{
-	"site":      "docs",
-	"deployId":  "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10",
-	"sessionId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e0f",
-	"tokenId":   "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20",
-	"sha256":    strings.Repeat("ab", 32),
-	"hostname":  "docs.example.com",
-	"policyId":  "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41",
-	"passkeyId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40",
-	"linkId":    "q4v7m2xkpa",
-	"groupId":   "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70",
-	"tagId":     "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80",
-	"preview":   "pr-42",
+	"site":       "docs",
+	"deployId":   "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10",
+	"sessionId":  "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e0f",
+	"tokenId":    "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20",
+	"sha256":     strings.Repeat("ab", 32),
+	"hostname":   "docs.example.com",
+	"policyId":   "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e41",
+	"passkeyId":  "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e40",
+	"linkId":     "q4v7m2xkpa",
+	"groupId":    "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e70",
+	"tagId":      "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80",
+	"preview":    "pr-42",
+	"webhookId":  "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30",
+	"deliveryId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31",
 }
 
 var pathParam = regexp.MustCompile(`\{(\w+)\}`)

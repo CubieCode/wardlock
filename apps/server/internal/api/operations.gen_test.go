@@ -93,4 +93,12 @@ var operations = []operation{
 	{id: "ListApiTokens", method: "GET", path: "/api/v0/tokens", jsonBody: false, security: []string{"sessionCookie"}},
 	{id: "CreateApiToken", method: "POST", path: "/api/v0/tokens", jsonBody: true, security: []string{"sessionCookie"}},
 	{id: "RevokeApiToken", method: "DELETE", path: "/api/v0/tokens/{tokenId}", jsonBody: false, security: []string{"sessionCookie"}},
+	{id: "ListWebhooks", method: "GET", path: "/api/v0/webhooks", jsonBody: false, security: []string{"sessionCookie", "apiToken:manage"}},
+	{id: "CreateWebhook", method: "POST", path: "/api/v0/webhooks", jsonBody: true, security: []string{"sessionCookie", "apiToken:manage"}},
+	{id: "DeleteWebhook", method: "DELETE", path: "/api/v0/webhooks/{webhookId}", jsonBody: false, security: []string{"sessionCookie", "apiToken:manage"}},
+	{id: "GetWebhook", method: "GET", path: "/api/v0/webhooks/{webhookId}", jsonBody: false, security: []string{"sessionCookie", "apiToken:manage"}},
+	{id: "UpdateWebhook", method: "PATCH", path: "/api/v0/webhooks/{webhookId}", jsonBody: true, security: []string{"sessionCookie", "apiToken:manage"}},
+	{id: "ListWebhookDeliveries", method: "GET", path: "/api/v0/webhooks/{webhookId}/deliveries", jsonBody: false, security: []string{"sessionCookie", "apiToken:manage"}},
+	{id: "RedeliverWebhookDelivery", method: "POST", path: "/api/v0/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver", jsonBody: false, security: []string{"sessionCookie", "apiToken:manage"}},
+	{id: "TestWebhook", method: "POST", path: "/api/v0/webhooks/{webhookId}/test", jsonBody: false, security: []string{"sessionCookie", "apiToken:manage"}},
 }

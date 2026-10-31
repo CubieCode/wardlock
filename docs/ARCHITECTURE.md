@@ -95,6 +95,7 @@ Every v1 item in the foundation, core, access, dashboard and operations areas is
 | V5.4  | The traffic rollup (`traffic_*` tables, `store.Traffic`, `accesslog.Classify` and `Backfill`) and `getAnalytics` (`access.Service.Analytics`)                                                                                                                                                                                                                                                            | Access log pipeline, Data model, SPEC "Analytics"                           |
 | V5.5  | `listSiteSummaries` and `getSiteCounts` (`sites.Service.SiteSummaries` and `SiteCounts` over `store.Sites.Summaries`) and `listSignInProviders` (`access.Service.SignInProviders`)                                                                                                                                                                                                                       | SPEC "Site summaries", SPEC "OAuth and OIDC"                                |
 | V5.11 | `listExpiringLinks` (`sites.Service.ExpiringLinks` over `store.Sites.ExpiringLinks`, the same rule as `expiringLinks`)                                                                                                                                                                                                                                                                                   | SPEC "Site summaries"                                                       |
+| I6.3  | Webhooks: the `webhook` channel in `internal/notify`, `store.Webhooks`, `webhooks`, `webhook_events`, `webhook_sites` and `webhook_deliveries`, per-channel recovery, the `webhook` CLI commands                                                                                                                                                                                                         | SPEC "Webhooks"                                                             |
 | I6.2  | Owner notifications: `internal/notify`, `store.Notifications`, `notification_outbox` and `notification_opt_outs`, `share_links.used_up_at`, the Notifications page                                                                                                                                                                                                                                       | SPEC "Notifications"                                                        |
 
 O4.4, O4.6 and O4.7 changed documents only (the launch checklist, the alpha documentation refresh and the CLA text).
@@ -359,6 +360,10 @@ erDiagram
   owners ||--o{ owner_deploy_log : "owner_id"
   owners ||--o{ notification_opt_outs : "owner_id"
   owners ||--o{ notification_outbox : "owner_id"
+  owners ||--o{ webhooks : "owner_id"
+  webhooks ||--o{ webhook_events : "webhook_id"
+  webhooks ||--o{ webhook_sites : "webhook_id"
+  webhooks ||--o{ webhook_deliveries : "webhook_id"
   api_tokens |o--o| cli_login_requests : "api_token_id"
   owners ||--o{ sites : "owner_id"
   owners ||--o{ site_groups : "owner_id"
@@ -646,6 +651,43 @@ erDiagram
     INTEGER next_attempt_at
     INTEGER finished_at
   }
+  webhooks {
+    TEXT id PK
+    TEXT owner_id FK
+    TEXT url
+    TEXT description
+    INTEGER all_events
+    INTEGER all_sites
+    TEXT secret_salt
+    INTEGER created_at
+    INTEGER failing_since
+    INTEGER disabled_at
+    TEXT disabled_reason
+  }
+  webhook_events {
+    TEXT webhook_id PK, FK
+    TEXT event PK
+  }
+  webhook_sites {
+    TEXT webhook_id PK, FK
+    TEXT site_id PK
+  }
+  webhook_deliveries {
+    TEXT id PK
+    TEXT webhook_id FK
+    TEXT event_id
+    TEXT event
+    TEXT body
+    TEXT status
+    INTEGER attempts
+    INTEGER response_code
+    INTEGER duration_ms
+    TEXT error
+    TEXT redelivery_of
+    INTEGER created_at
+    INTEGER last_attempt_at
+    INTEGER finished_at
+  }
   site_sessions {
     TEXT id PK
     TEXT site_id FK
@@ -813,9 +855,39 @@ flowchart LR
 - **At most once.** `Recover` runs before the first pass and fails every row still `sending`: a crash between the SMTP answer and `Settle` leaves the outcome unknown, and the item asks for at most once.
 - **Cap.** `capped` counts `sent` rows in the last hour. A capped row becomes `held`; `summarise` waits until the count is under the cap, then `Summarise` queues one summary and marks the rows `summarised` in one transaction, using a key built from the first held ID. `file_withheld` and `summary` are mandatory: neither the opt-out nor the cap applies, but they are counted.
 - **Payload.** JSON written when the event is noticed: a `mail.Notice` whose `URL` is a dashboard path (the origin and settings link are added at send time, so a changed dashboard host applies to queued rows) or a `mail.Withheld`, rendered by the same template as before. `mail.Notice` is built only from names, labels and public IDs: no code path that builds one has a token or link URL to hand.
-- **Webhooks (I6.3).** `channel` and the store's channel arguments are there so webhooks can use the same table: a channel of their own, one row per webhook and event, `Due`, `Claim`, `Reschedule` and `Settle` as they are. Webhooks want at-least-once, so that channel would requeue rows `Recover` finds rather than failing them.
 - **Settings.** Opt-outs are rows, so every event, including one added later, is on until turned off. `setNotificationSettings` is a `PATCH`: a boolean left out of the body cannot be told from `false` otherwise, and the dashboard sends one setting at a time, so two tabs do not overwrite each other. `requireTokenScopes` gives tokens their `403`.
 - **Wiring.** `cmd/wardlockd/serve.go` builds the service, passes it to moderation and the API, and starts it with `startNotifications`. Only `serve` delivers: `Recover` assumes one process.
+
+</details>
+
+## Webhooks (I6.3)
+
+Webhooks are a second channel on the same outbox. The services that make things happen tell `notify` through small `Events` interfaces of their own; what the store already shows, it reads on `Detect`. Either way `publish` matches the event against the owner's webhooks and queues one row per webhook, and a worker of its own sends what is due through the guarded client, so a slow receiver never delays email.
+
+```mermaid
+flowchart LR
+  SV[sites, deploys, access, moderation] -->|Events, as it happens| PUB[publish]
+  ST[(domains, share_links)] -->|Detect, every 5 min| PUB
+  PUB -->|one row per webhook that wants it| OB[(notification_outbox + webhook_deliveries)]
+  OB -->|DeliverWebhooks, woken by publish| GUARD{dialler: address allowed?}
+  GUARD -->|yes| POST[signed POST]
+  POST -->|2xx| DONE[succeeded]
+  POST -->|otherwise| RETRY[backoff for 24 hours]
+  RETRY -->|failing for 3 days| OFF[disabled, mandatory email]
+```
+
+<details>
+<summary>Implementation detail</summary>
+
+- **Two tables.** A row of `notification_outbox` (channel `webhook`) schedules attempts with `Due`, `Claim`, `Reschedule` and `Settle` as email does. `webhook_deliveries` shares its ID and holds what the owner sees and what a redelivery repeats, including the signed body, because outbox rows are pruned by age while the last 50 deliveries are kept by count. `Enqueue` writes both in one transaction; the keys are `<webhook id>:<event key>`, so a repeated `Detect` queues nothing.
+- **At least once.** `Recover` is per channel: it fails email rows left `sending` and requeues webhook rows, because a receiver can deduplicate on the event `id` and an email reader cannot. A shutdown mid-attempt reschedules the row without recording a failure.
+- **Events.** `sites`, `deploys`, `access` and `moderation` each declare an `Events` interface, nil-safe, and call it after their own commit, so a crash in that gap loses the event: nothing else about these events is durable before then, and the alternative is a write in every one of those transactions. A failure to enqueue is logged and never fails the request. `access` is passed a stored link, never a token, and takes no new imports. `notify` imports `sites`, so the interfaces cannot be the other way round.
+- **Scans.** `domain.status_changed` and `link.used_up` reuse I6.2's scans with the empty event, which no owner can have opted out of. An event carries when it happened, and a webhook made later skips it, since the scans read back hours. A lapse is dated `failing_since + LapseAfter`.
+- **Scope.** `all_events` and `all_sites` are explicit so that an empty list can mean nothing rather than everything. `webhook_sites.site_id` has no foreign key: `site.deleted` is matched against the row after the site has gone, and `ForgetSite` removes it afterwards.
+- **Delivery.** `DeliverWebhooks` runs up to 8 attempts at once. `ToSend` reads the webhook at attempt time, so an edit, a disable or a delete applies to what is queued. `RecordAttempt` records the result, sets or clears `failing_since` and trims finished rows to the newest 50 in one transaction. `Disable` and its email are one transaction too, keyed by the moment, so they cannot be separated by a crash and two failures at once send one email.
+- **The client.** `webhookClient` is the only way out: `net.Dialer.ControlContext` applies `addressPolicy` to each address about to be connected, with keep-alives off so every attempt dials and is checked, no proxy, no redirects and a limit on response headers as well as the body. SECURITY-MODEL says why.
+- **Secrets.** `signingSecret` is HMAC-SHA-256 of the server key over the ID and `secret_salt`; only the salt is stored. Errors from the HTTP client carry the URL, so `failureClass` reduces them to a class before anything is stored or logged.
+- **Wiring.** `serve` builds the service first, since `access` needs it. `wardlockd admin` builds one with no worker, so `teardown-site` queues `site.deleted` for `serve` to send on its next pass.
 
 </details>
 

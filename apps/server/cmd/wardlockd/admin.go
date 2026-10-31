@@ -20,6 +20,7 @@ import (
 	"wardlock.nz/server/internal/deploys"
 	"wardlock.nz/server/internal/mail"
 	"wardlock.nz/server/internal/moderation"
+	"wardlock.nz/server/internal/notify"
 	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/platform"
 	"wardlock.nz/server/internal/sites"
@@ -148,8 +149,11 @@ func openAdmin(ctx context.Context, getenv func(string) string, stderr io.Writer
 	// No certificate manager: a running server in auto TLS mode keeps a
 	// torn-down site's certificates until they expire, and renews none for
 	// hostnames no longer in the database.
+	// Webhooks hear of a torn-down site from serve's worker, which reads the
+	// same queue.
 	sitesSvc := sites.NewService(sites.Config{
 		Sites: db.Sites(), Domains: db.Domains(), Notifier: deploys.NewLocalNotifier(),
+		Events:     notify.New(notify.Config{Store: db.Notifications(), Webhooks: db.Webhooks(), Sites: db.Sites(), Log: log}),
 		BaseDomain: cfg.BaseDomain, DashboardHost: cfg.DashboardHost, Now: time.Now, Log: log,
 	})
 	mod := moderation.New(moderation.Config{Store: db.Moderation(), Now: time.Now, Log: log})

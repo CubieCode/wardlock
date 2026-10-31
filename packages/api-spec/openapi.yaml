@@ -118,6 +118,8 @@ tags:
     description: Groups, tags and pins (V5.3).
   - name: analytics
     description: Requests over time from the traffic rollup (V5.4).
+  - name: webhooks
+    description: Signed event deliveries to owners' endpoints (I6.3).
 security: []
 paths:
   /api/v0/health:
@@ -831,6 +833,306 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/webhooks:
+    get:
+      operationId: listWebhooks
+      summary: List the owner's webhooks.
+      description: >-
+        Oldest first; an owner has at most 10. Signing secrets are never
+        returned. A webhook's `url` can hold the receiver's own secret, so
+        reading one needs the `manage` scope too.
+      tags: [webhooks]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      responses:
+        '200':
+          description: The owner's webhooks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookList'
+              example:
+                items:
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+                    url: https://hooks.example.com/wardlock
+                    description: Deploys channel
+                    enabled: true
+                    createdAt: 1767225600000
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createWebhook
+      summary: Register a webhook.
+      description: >-
+        The response is the only time the signing secret is shown. `url`
+        must use `https` (`http` also in local mode) and hold no credentials
+        or fragment. Leaving out `events` or `sites` means all of them. A
+        site in `sites` that the owner does not have answers `404`. An owner
+        with 10 webhooks gets `413 limit_exceeded`. See SPEC "Webhooks".
+      tags: [webhooks]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookRequest'
+            example:
+              url: https://hooks.example.com/wardlock
+              description: Deploys channel
+              events: [deploy.activated]
+              sites: [docs]
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedWebhook'
+              examples:
+                createdWebhook:
+                  $ref: '#/components/examples/CreatedWebhook'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/webhooks/{webhookId}:
+    parameters:
+      - $ref: '#/components/parameters/WebhookId'
+    get:
+      operationId: getWebhook
+      summary: Get a webhook.
+      tags: [webhooks]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      responses:
+        '200':
+          description: The webhook.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+              example:
+                id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+                url: https://hooks.example.com/wardlock
+                description: Deploys channel
+                events: [deploy.activated]
+                sites: [docs]
+                enabled: true
+                createdAt: 1767225600000
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: updateWebhook
+      summary: Change a webhook, or turn it off or on.
+      description: >-
+        Fields left out keep their value; the secret never changes.
+        `allEvents` and `allSites` widen a webhook back to everything and
+        cannot be sent with `events` or `sites`. `enabled: true` turns a
+        disabled webhook back on and forgets its failures, as does a new
+        `url`.
+      tags: [webhooks]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWebhookRequest'
+            example:
+              enabled: true
+      responses:
+        '200':
+          description: The webhook as it is now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+              example:
+                id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+                url: https://hooks.example.com/wardlock
+                description: Deploys channel
+                events: [deploy.activated]
+                sites: [docs]
+                enabled: true
+                createdAt: 1767225600000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteWebhook
+      summary: Delete a webhook.
+      description: Its deliveries go with it, and anything queued is not sent.
+      tags: [webhooks]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/webhooks/{webhookId}/test:
+    parameters:
+      - $ref: '#/components/parameters/WebhookId'
+    post:
+      operationId: testWebhook
+      summary: Send a webhook a `ping`.
+      description: >-
+        Queues the ping and answers at once, with its delivery; read
+        `listWebhookDeliveries` for how it went. A disabled webhook answers
+        `409 webhook_disabled`.
+      tags: [webhooks]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      responses:
+        '202':
+          description: Queued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookDelivery'
+              example:
+                id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31
+                eventId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e32
+                type: ping
+                status: pending
+                attempts: 0
+                createdAt: 1767225600000
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/webhooks/{webhookId}/deliveries:
+    parameters:
+      - $ref: '#/components/parameters/WebhookId'
+    get:
+      operationId: listWebhookDeliveries
+      summary: List a webhook's recent deliveries.
+      description: >-
+        The newest 50, newest first. A delivery is one event going to this
+        webhook, however many attempts it took; the fields describe the
+        latest attempt. Neither what was sent nor the receiver's response
+        body is returned.
+      tags: [webhooks]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      responses:
+        '200':
+          description: The webhook's recent deliveries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookDeliveryList'
+              example:
+                items:
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31
+                    eventId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e32
+                    type: deploy.activated
+                    status: succeeded
+                    attempts: 1
+                    responseCode: 204
+                    durationMs: 120
+                    createdAt: 1767225600000
+                    lastAttemptAt: 1767225600120
+                    finishedAt: 1767225600120
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver:
+    parameters:
+      - $ref: '#/components/parameters/WebhookId'
+      - $ref: '#/components/parameters/DeliveryId'
+    post:
+      operationId: redeliverWebhookDelivery
+      summary: Send a delivery again.
+      description: >-
+        Queues the same event, with the same `id` and body and a new
+        signature, as a new delivery whose `redeliveryOf` names this one. A
+        disabled webhook answers `409 webhook_disabled`.
+      tags: [webhooks]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      responses:
+        '202':
+          description: Queued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookDelivery'
+              example:
+                id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31
+                eventId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e32
+                type: ping
+                status: pending
+                attempts: 0
+                createdAt: 1767225600000
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         default:
           $ref: '#/components/responses/Error'
 
@@ -3343,6 +3645,22 @@ components:
       schema:
         $ref: '#/components/schemas/Id'
       example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20
+    WebhookId:
+      name: webhookId
+      in: path
+      required: true
+      description: The webhook's ID.
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+    DeliveryId:
+      name: deliveryId
+      in: path
+      required: true
+      description: The delivery's ID.
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31
     PolicyId:
       name: policyId
       in: path
@@ -3574,6 +3892,18 @@ components:
           createdAt: 1767225600000
         credential: apiToken
         scopes: [deploy]
+    CreatedWebhook:
+      summary: A new webhook with its signing secret.
+      value:
+        webhook:
+          id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30
+          url: https://hooks.example.com/wardlock
+          description: Deploys channel
+          events: [deploy.activated]
+          sites: [docs]
+          enabled: true
+          createdAt: 1767225600000
+        secret: wlwh_EXAMPLEonlyEXAMPLEonlyEXAMPLEonlyEXAMPLEonl
     CreatedApiToken:
       summary: A new API token with its secret.
       value:
@@ -4149,6 +4479,199 @@ components:
           type: string
           description: The secret token. Shown only in this response.
           pattern: ^wl_[a-z2-7]{10}_[A-Za-z0-9_-]{43}$
+
+    WebhookEvent:
+      type: string
+      description: An event a webhook can ask for. SPEC "Webhooks" gives each one's payload.
+      enum:
+        - deploy.activated
+        - preview.deployed
+        - preview.deleted
+        - site.created
+        - site.deleted
+        - domain.status_changed
+        - link.created
+        - link.revoked
+        - link.used_up
+        - file.withheld
+
+    Webhook:
+      type: object
+      additionalProperties: false
+      required: [id, url, description, enabled, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        url:
+          type: string
+          maxLength: 2048
+        description:
+          type: string
+          maxLength: 200
+        events:
+          type: array
+          description: The events it wants; absent means all of them.
+          items:
+            $ref: '#/components/schemas/WebhookEvent'
+        sites:
+          type: array
+          description: >-
+            The sites it wants events from, by name; absent means all of
+            them. A listed site that was deleted leaves the list, so it can
+            be empty.
+          items:
+            $ref: '#/components/schemas/SiteName'
+        enabled:
+          type: boolean
+        disabledReason:
+          type: string
+          description: >-
+            Set while it is off: `failing` after 3 days of failed deliveries,
+            `owner` when turned off with `updateWebhook`.
+          enum: [failing, owner]
+        disabledAt:
+          $ref: '#/components/schemas/Timestamp'
+        failingSince:
+          allOf:
+            - $ref: '#/components/schemas/Timestamp'
+          description: When its current run of failures began, if it is in one.
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+
+    WebhookList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/Webhook'
+
+    CreateWebhookRequest:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          maxLength: 2048
+        description:
+          type: string
+          maxLength: 200
+        events:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WebhookEvent'
+        sites:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/SiteName'
+
+    UpdateWebhookRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+          maxLength: 2048
+        description:
+          type: string
+          maxLength: 200
+        events:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WebhookEvent'
+        allEvents:
+          type: boolean
+          description: Send `true` to want every event.
+        sites:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/SiteName'
+        allSites:
+          type: boolean
+          description: Send `true` to want every site.
+        enabled:
+          type: boolean
+
+    CreatedWebhook:
+      type: object
+      additionalProperties: false
+      required: [webhook, secret]
+      properties:
+        webhook:
+          $ref: '#/components/schemas/Webhook'
+        secret:
+          type: string
+          description: The signing secret. Shown only in this response.
+          pattern: ^wlwh_[A-Za-z0-9_-]{43}$
+
+    WebhookDelivery:
+      type: object
+      additionalProperties: false
+      required: [id, eventId, type, status, attempts, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        eventId:
+          allOf:
+            - $ref: '#/components/schemas/Id'
+          description: >-
+            The event's `id`, the same on every delivery of it, so a receiver
+            can tell a repeat.
+        type:
+          type: string
+          description: A `WebhookEvent`, or `ping`.
+        status:
+          type: string
+          description: >-
+            `pending` while attempts remain, `succeeded`, `failed` once they
+            have run out, or `dropped` if the webhook was turned off first.
+          enum: [pending, succeeded, failed, dropped]
+        attempts:
+          type: integer
+          format: int32
+        responseCode:
+          type: integer
+          format: int32
+          description: The latest attempt's status code; absent with no answer.
+        durationMs:
+          type: integer
+          format: int64
+          description: How long the latest attempt took.
+        error:
+          type: string
+          description: Why the latest attempt failed.
+          enum: [status, timeout, dns, tls, connection, refused_address]
+        redeliveryOf:
+          allOf:
+            - $ref: '#/components/schemas/Id'
+          description: The delivery this one repeats.
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        lastAttemptAt:
+          $ref: '#/components/schemas/Timestamp'
+        finishedAt:
+          $ref: '#/components/schemas/Timestamp'
+
+    WebhookDeliveryList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/WebhookDelivery'
 
     StartCliLoginRequest:
       type: object

@@ -57,12 +57,22 @@ type notifier interface {
 	Subscribe(fn func(siteID string)) (unsubscribe func())
 }
 
+// Events hears of share links created and revoked, for webhooks (I6.3).
+// notify's Service satisfies it. It is passed the stored link, whose token
+// hash goes no further, never the token.
+type Events interface {
+	LinkCreated(ctx context.Context, site store.Site, l store.ShareLink)
+	LinkRevoked(ctx context.Context, site store.Site, l store.ShareLink)
+}
+
 // Config holds a Service's dependencies.
 type Config struct {
 	Sites    store.Sites
 	Policies store.Policies
 	Sessions store.Sessions
 	Links    store.Links
+	// Events is told of links created and revoked; nil tells nobody.
+	Events Events
 	// PasswordSessions stores password sessions only while the password
 	// they were checked against still holds (A2.3).
 	PasswordSessions store.PasswordSessions

@@ -162,6 +162,9 @@ func (s *Service) CreateLink(ctx context.Context, ownerID, siteName string, n Ne
 	}
 	s.log.LogAttrs(ctx, slog.LevelInfo, "share link created",
 		slog.String("site_id", site.ID), slog.String("public_id", l.PublicID), slog.String("path", l.PathPrefix))
+	if s.c.Events != nil {
+		s.c.Events.LinkCreated(ctx, site, l)
+	}
 	return l, token, nil
 }
 
@@ -202,6 +205,14 @@ func (s *Service) RevokeLink(ctx context.Context, ownerID, siteName, publicID st
 		return fmt.Errorf("revoke share link: %w", err)
 	}
 	s.log.LogAttrs(ctx, slog.LevelInfo, "share link revoked", slog.String("site_id", site.ID), slog.String("public_id", publicID))
+	if s.c.Events != nil {
+		l, err := s.c.Links.GetByPublicID(ctx, publicID)
+		if err != nil {
+			s.log.LogAttrs(ctx, slog.LevelError, "read revoked share link", slog.String("public_id", publicID), slog.String("error", err.Error()))
+			return nil
+		}
+		s.c.Events.LinkRevoked(ctx, site, l)
+	}
 	return nil
 }
 

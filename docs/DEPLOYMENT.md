@@ -496,6 +496,10 @@ The server certificate is always verified against the system roots. Percent-enco
 
 </details>
 
+## Webhooks
+
+Owners' [webhooks](SPEC.md#webhooks-i63) need no setup, only outbound HTTPS from the server. Wardlock will not connect to loopback, private or link-local addresses. To let webhooks reach a self-hosted chat server on your network, list its range in `WARDLOCK_WEBHOOK_ALLOW_PRIVATE`, as comma-separated CIDR ranges such as `10.20.0.5/32`. The server does not start with a range that is not private, and loopback and link-local addresses cannot be opened. Changing `WARDLOCK_SECRET` changes every signing secret, so webhooks must then be replaced.
+
 ## OAuth and OIDC
 
 Visitors can sign in to protected sites with GitHub, Google or one generic OpenID Connect provider (A2.5), once the operator registers Wardlock with the provider and an owner enables the OAuth method on a policy with an allowlist. Each provider is configured when its client ID is set; the secret is then required, and setting only one of the pair is a startup error. None configured leaves the method unavailable: enabling it is refused.

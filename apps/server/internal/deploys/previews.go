@@ -118,10 +118,14 @@ func (s *Service) DeletePreview(ctx context.Context, ownerID, siteName, name str
 	if err != nil {
 		return err
 	}
-	if err := s.c.Previews.Delete(ctx, ownerID, site.ID, name, s.now()); err != nil {
+	now := s.now()
+	if err := s.c.Previews.Delete(ctx, ownerID, site.ID, name, now); err != nil {
 		return storeErr("delete preview", err)
 	}
 	s.c.Notifier.Notify(ctx, site.ID)
+	if s.c.Events != nil {
+		s.c.Events.PreviewDeleted(ctx, site, name, now)
+	}
 	return nil
 }
 
@@ -146,7 +150,7 @@ func (s *Service) Promote(ctx context.Context, ownerID, siteName, name string) (
 		site.ActiveDeployID, site.ActivatedAt = d.ID, d.ActivatedAt
 		return site, d, p, nil
 	}
-	return s.served(ctx, site, d), d, p, nil
+	return s.served(ctx, site, d, CausePromote), d, p, nil
 }
 
 // Deploy returns one of site's deploys, which ownerID's site must be.

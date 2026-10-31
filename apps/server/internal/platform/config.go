@@ -77,6 +77,9 @@ type Config struct {
 	// MaxOwnerNotificationsPerHour caps an owner's notification emails
 	// (I6.2), 20 by default; 0 means no cap.
 	MaxOwnerNotificationsPerHour int64
+	// WebhookAllowPrivate lists the private ranges webhooks may connect to
+	// (WARDLOCK_WEBHOOK_ALLOW_PRIVATE); empty refuses them all.
+	WebhookAllowPrivate []netip.Prefix
 	// Access log: client IPs keep only the first AccessLogIPv4Prefix or
 	// AccessLogIPv6Prefix bits (0 stores none), entries older than
 	// AccessLogRetention are pruned (0 keeps them forever) and at most
@@ -297,6 +300,11 @@ func (c *Config) loadQuotas(get func(key, fallback string) string) error {
 		}
 		*l.dst = v
 	}
+	allowed, err := parseWebhookPrivate(get("WARDLOCK_WEBHOOK_ALLOW_PRIVATE", ""))
+	if err != nil {
+		return err
+	}
+	c.WebhookAllowPrivate = allowed
 	exts, err := ParseExtensions(get("WARDLOCK_BLOCKED_EXTENSIONS", ""))
 	if err != nil {
 		return fmt.Errorf("%w: WARDLOCK_BLOCKED_EXTENSIONS: %w", ErrInvalidConfig, err)
@@ -586,6 +594,37 @@ func parseTLSConfig(get func(key, fallback string) string, base, dashboard strin
 		return TLSConfig{}, fmt.Errorf("%w: WARDLOCK_DNS_API_TOKEN is required when WARDLOCK_TLS_MODE=auto", ErrInvalidConfig)
 	}
 	return t, nil
+}
+
+// privateRanges are the only ranges WARDLOCK_WEBHOOK_ALLOW_PRIVATE can open.
+// Loopback and link-local stay shut: the first is the server itself and the
+// second holds cloud metadata services.
+var privateRanges = []netip.Prefix{
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("fc00::/7"),
+}
+
+// parseWebhookPrivate reads comma-separated private CIDR ranges.
+func parseWebhookPrivate(raw string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for item := range strings.SplitSeq(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		p, err := netip.ParsePrefix(item)
+		if err != nil {
+			return nil, fmt.Errorf("%w: WARDLOCK_WEBHOOK_ALLOW_PRIVATE: %q is not a CIDR range", ErrInvalidConfig, item)
+		}
+		if !slices.ContainsFunc(privateRanges, func(r netip.Prefix) bool { return r.Bits() <= p.Bits() && r.Contains(p.Addr()) }) {
+			return nil, fmt.Errorf("%w: WARDLOCK_WEBHOOK_ALLOW_PRIVATE: %q is not a private range", ErrInvalidConfig, item)
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
 }
 
 // parseTrustedProxies reads comma-separated IP addresses and CIDR ranges.

@@ -799,6 +799,7 @@ Wardlock emails an owner when something needs them, instead of waiting for them 
 | `tokenExpiring`   | an API token expires within 7 days                                                        |
 | `previewExpiring` | a preview expires within 2 days                                                           |
 | none              | content screening withholds a file ([Notices](#content-screening-a215)): always sent      |
+| none              | a [webhook](#webhooks-i63) is turned off after failing for 3 days: always sent            |
 
 - **Content.** Plain text with a simple HTML part, naming the site and what happened, linking to the relevant dashboard page and to the settings. An email never contains a token or a share-link URL: a link is named by its label, or its public ID without one.
 - **Once each.** Every event is delivered at most once, across restarts, and a mail failure is retried with backoff.
@@ -818,6 +819,118 @@ Wardlock emails an owner when something needs them, instead of waiting for them 
 - **Addresses.** An email goes to the owner's address at the time of sending; the queue stores no address.
 
 </details>
+
+## Webhooks (I6.3)
+
+A webhook sends signed JSON to an HTTPS endpoint of the owner's when something happens, for chat notifications and automation. An owner registers up to 10, each with a URL, a description, the events it wants (or all) and the sites it wants them from (or all). The **signing secret** is shown once, when the webhook is created.
+
+Every operation (`listWebhooks`, `createWebhook`, `getWebhook`, `updateWebhook`, `deleteWebhook`, `testWebhook`, `listWebhookDeliveries` and `redeliverWebhookDelivery`) takes a dashboard session or a token with the `manage` scope. The CLI has `wardlock webhook add`, `list`, `remove`, `test` and `deliveries` ([CLI](#cli-c15-c17-c19-c114)).
+
+- **Delivery.** Each event is a `POST` of the JSON below with `Wardlock-Event` and `Wardlock-Signature` headers. Any 2xx answer within 10 seconds is success.
+- **At least once.** A failed delivery is retried with backoff for 24 hours, and an event can arrive twice, so receivers deduplicate on its `id`.
+- **Disabling.** A webhook failing for 3 days in a row is turned off and its owner emailed, whatever their notification settings. It stays off until turned back on with `updateWebhook`.
+- **History.** The last 50 deliveries of each webhook are kept, with status, duration and response code, and any can be redelivered.
+
+<details>
+<summary>Retries, disabling, history and what is refused</summary>
+
+- **Timing.** An event is sent at once, unless the server noticed it on its 5-minute look at the store (`domain.status_changed` and `link.used_up`). Deliveries are attempted 8 at a time.
+- **Retries.** A delivery fails on a non-2xx answer (a redirect included: none is followed), a 10-second timeout covering the whole attempt, or a connection error. The next try comes after 1 minute, doubling to 1 hour, until 24 hours after the event. The body and event `id` stay the same; the signature is made afresh.
+- **Crashes.** A delivery cut off by a crash or a shutdown is sent again, unlike an email: its outcome is unknown, and a repeat is what the event `id` is for.
+- **Disabling.** A webhook is failing from its first failed attempt until an attempt succeeds. An attempt that fails 3 days or more into that turns it off, ends the delivery and drops whatever is queued for it. Without further events nothing retries after 24 hours, so a webhook nobody needs can stay marked failing without being turned off. Turning it back on, or giving it a new URL, forgets the failures. The email goes once each time it is disabled, names only the URL's host, cannot be turned off and passes the hourly cap.
+- **The email cap.** Webhook deliveries do not count towards `WARDLOCK_MAX_OWNER_NOTIFICATIONS_PER_HOUR`.
+- **Turned off.** A webhook that is off gets nothing, and `testWebhook` and `redeliverWebhookDelivery` answer `409 webhook_disabled`. Suspended owners' deliveries are dropped.
+- **History.** A delivery is one event going to one webhook, however many attempts it takes, and shows the latest. `error` says why that attempt failed: `status`, `timeout`, `dns`, `tls`, `connection` or `refused_address`. Nothing of a response but its status code is kept, and at most 4 KiB of one, headers or body, is read. A redelivery is a new delivery of the same event, with `redeliveryOf` naming the original.
+- **Scope.** Sites are given by name and matched by ID, so a new site that reuses a deleted site's name is not listed. A listed site that is deleted sends its `site.deleted` and leaves the list; a list left empty matches nothing, and does not become every site. `sites` and `events` are replaced whole; `allSites` and `allEvents` widen a webhook back. A webhook made after an event the server noticed from the store does not hear of it.
+- **What is not sent.** `preview.deleted` is for a preview the owner deleted, not one that expired. `deploy.activated` does not fire for a preview, which has `preview.deployed`, or for a rollback to what is already active. Email opt-outs do not affect webhooks. Domains and links on a site the operator took down send nothing.
+- **URLs.** `https://` only (`http://` as well in local mode), with no credentials or fragment. Wardlock refuses to connect to loopback, private, link-local, unique-local, multicast and unspecified addresses ([Webhooks and SSRF](SECURITY-MODEL.md#webhooks-and-ssrf)); `WARDLOCK_WEBHOOK_ALLOW_PRIVATE` opens private ranges, for a self-hosted chat server. A URL can hold the receiver's own secret, so reading one needs `manage`, it is not logged, and emails name only its host.
+
+</details>
+
+### Events
+
+Every delivery has the same envelope, and `data` depends on `type`. `created` is Unix milliseconds, as everywhere in the API. Payloads carry names and IDs, never tokens, share-link secrets, visitors' email addresses or file content.
+
+```json
+{
+  "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e50",
+  "type": "deploy.activated",
+  "created": 1767225600000,
+  "data": {
+    "site": { "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01", "name": "docs" },
+    "deploy": {
+      "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e10",
+      "activatedAt": 1767225600000
+    },
+    "cause": "deploy"
+  }
+}
+```
+
+| `type`                  | When                                                    | `data`, besides `site` (`{id, name}`)                                                                         |
+| ----------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `deploy.activated`      | A deploy goes live: a deploy, a rollback or a promotion | `deploy` (`{id, activatedAt, path?}`, `path` for a path deploy) and `cause` (`deploy`, `rollback`, `promote`) |
+| `preview.deployed`      | A deploy goes live on a preview                         | `preview` (`{name, deployId}`)                                                                                |
+| `preview.deleted`       | The owner deletes a preview                             | `preview` (`{name}`)                                                                                          |
+| `site.created`          | A site is created                                       | none                                                                                                          |
+| `site.deleted`          | A site is deleted, by its owner or the operator         | none                                                                                                          |
+| `domain.status_changed` | A custom domain becomes `active` or `lapsed`            | `domain` (`{id, hostname, status}`)                                                                           |
+| `link.created`          | A share link is created                                 | `link` (`{id, publicId, label?, path}`)                                                                       |
+| `link.revoked`          | A share link is revoked                                 | `link` (`{id, publicId, label?, path}`)                                                                       |
+| `link.used_up`          | A use-limited link's last use is spent                  | `link` (`{id, publicId, label?}`)                                                                             |
+| `file.withheld`         | Content screening withholds files on a site             | `paths`, the site's paths serving them                                                                        |
+| `ping`                  | `testWebhook`; it cannot be asked for                   | `webhook` (`{id}`), and no `site`                                                                             |
+
+### Verifying a signature
+
+`Wardlock-Signature` is `t=<unix seconds>,v1=<hex>`, where the hex is HMAC-SHA-256 of `<t>.<body>` keyed by the whole signing secret, `wlwh_` included. To check a delivery, compute that over the raw body, before parsing it, compare in constant time, and reject an old `t` so a captured request cannot be replayed.
+
+```go
+func verify(secret string, body []byte, header string, now time.Time) bool {
+	var t, v1 string
+	for part := range strings.SplitSeq(header, ",") {
+		k, v, _ := strings.Cut(part, "=")
+		switch k {
+		case "t":
+			t = v
+		case "v1":
+			v1 = v
+		}
+	}
+	unix, err := strconv.ParseInt(t, 10, 64)
+	if err != nil || now.Sub(time.Unix(unix, 0)).Abs() > 5*time.Minute {
+		return false
+	}
+	got, err := hex.DecodeString(v1)
+	if err != nil {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(t + "."))
+	mac.Write(body)
+	return hmac.Equal(got, mac.Sum(nil))
+}
+```
+
+```js
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+function verify(secret, body, header, now = Date.now()) {
+  const parts = Object.fromEntries(
+    header.split(',').map((p) => p.split('=', 2)),
+  );
+  const age = Math.abs(now / 1000 - Number(parts.t));
+  if (!(age <= 300)) return false;
+  const want = createHmac('sha256', secret)
+    .update(`${parts.t}.`)
+    .update(body)
+    .digest();
+  const got = Buffer.from(parts.v1 ?? '', 'hex');
+  return got.length === want.length && timingSafeEqual(got, want);
+}
+```
+
+`body` is the request's raw bytes (a `Buffer` in Node, `express.raw()` rather than `express.json()`), since re-encoded JSON will not match.
 
 ## Reserved path
 
@@ -885,6 +998,10 @@ Global flags: `--server URL` (default from `wardlock.json`, then `WARDLOCK_SERVE
 | `wardlock tag delete NAME [--yes]`                                                                                                                                    | Delete a tag after confirmation (`--yes` required without a TTY) and remove it from its sites.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `wardlock site organise SITE... [--group NAME \| --no-group] [--tag NAME]... [--untag NAME]...`                                                                       | Put every SITE in a group or take them out of theirs, and add or remove tags, all or nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `wardlock pin SITE...`, `wardlock unpin SITE...`                                                                                                                      | Pin or unpin sites, all or nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `wardlock webhook add URL [--event E]... [--site S]... [--description D]`                                                                                             | Register a [webhook](#webhooks-i63) and print its signing secret, shown only this once. Without `--event` it gets every event, and without `--site` events from every site.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `wardlock webhook list`, `wardlock webhook deliveries ID`                                                                                                             | List webhooks, or one webhook's last 50 deliveries with status, attempts, response and duration.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `wardlock webhook test ID`                                                                                                                                            | Queue a `ping`; `webhook deliveries` shows how it went.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `wardlock webhook remove ID [--yes]`                                                                                                                                  | Delete a webhook. Asks you to type its ID; `--yes` is required without a TTY or with `--json`. Changing a webhook, turning it back on and redelivering are API operations (`updateWebhook`, `redeliverWebhookDelivery`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `wardlock mcp [--root DIR]`                                                                                                                                           | Serve the Model Context Protocol on stdin and stdout for AI tools: [MCP server](#mcp-server-i65).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `wardlock version [--server URL]`                                                                                                                                     | Built in F0.1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
@@ -916,7 +1033,7 @@ Groups and tags are named on the command line and looked up among the owner's ([
 
 ### `--json` output (C1.5)
 
-With `--json`, stdout carries exactly one JSON object and nothing else; on failure stdout is empty and the exit status and stderr say why. `Site`, `Deploy`, `Activation`, `Domain`, `Group`, `Tag` and `SiteOrganisation` are the API schemas in `packages/api-spec/openapi.yaml`, so optional fields (`activeDeployId`, `activatedAt`, `message`) are absent when unset. New fields may be added; existing ones keep their meaning.
+With `--json`, stdout carries exactly one JSON object and nothing else; on failure stdout is empty and the exit status and stderr say why. `Site`, `Deploy`, `Activation`, `Domain`, `Group`, `Tag`, `SiteOrganisation`, `Webhook` and `WebhookDelivery` are the API schemas in `packages/api-spec/openapi.yaml`, so optional fields (`activeDeployId`, `activatedAt`, `message`) are absent when unset. New fields may be added; existing ones keep their meaning.
 
 <details>
 <summary>Output per command</summary>
@@ -947,6 +1064,11 @@ With `--json`, stdout carries exactly one JSON object and nothing else; on failu
 | `tag delete`                   | `{deleted: true, tag: Tag}`: the tag as it was before deletion.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `site organise`                | `{prior: [SiteOrganisation], sites: [Site]}`: the API's `OrganiseSitesResult` (each site's group, tags and pin from before, in the order named) and each site as it is now.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `pin`, `unpin`                 | `{sites: [Site]}`: each site as it is now.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `webhook add`                  | `CreatedWebhook`: `{webhook, secret}`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `webhook list`                 | `{webhooks: [Webhook]}`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `webhook test`                 | The queued `WebhookDelivery`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `webhook deliveries`           | `{deliveries: [WebhookDelivery]}`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `webhook remove`               | `{removed: true, id}`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 </details>
 
