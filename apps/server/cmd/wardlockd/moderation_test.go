@@ -25,6 +25,7 @@ import (
 	"wardlock.nz/server/internal/moderation"
 	"wardlock.nz/server/internal/moderation/moderationtest"
 	"wardlock.nz/server/internal/moderation/testimages"
+	"wardlock.nz/server/internal/notify"
 	"wardlock.nz/server/internal/sites/sitestest"
 	"wardlock.nz/server/internal/store"
 )
@@ -161,16 +162,20 @@ func TestContentScreeningThroughTheEdge(t *testing.T) {
 	fake.Flag("bad-image-bytes", "sexual")
 	fake.Flag("minors-marker", "sexual/minors")
 	fake.Flag("violent-marker", "violence")
+	mailer := mail.NewDevSink(mail.Config{DevDir: p.mailDir, Logger: p.log, Now: p.now})
+	notices := notify.New(notify.Config{Store: p.db.Notifications(), Mailer: mailer, Now: p.now, Log: p.log})
 	mod := moderation.New(moderation.Config{
 		Store: p.db.Moderation(), Blobs: p.blobs, Moderator: fake,
 		Policy:     moderation.Policy{Quarantine: []string{"sexual/minors", "sexual"}},
 		Quarantine: p.quarantine,
-		Mailer:     mail.NewDevSink(mail.Config{DevDir: p.mailDir, Logger: p.log, Now: p.now}),
+		Mailer:     mailer,
+		Notices:    notices,
 		AbuseEmail: "abuse@example.test", DashboardHost: "wardlock.localhost",
 		Now: p.now, Jitter: func() float64 { return 0 }, Log: p.log,
 	})
 	mod.Pass(ctx)
 	mod.Pass(ctx)
+	notices.Deliver(ctx)
 
 	// Each unique image and page once: the pages of docs, lost, app and
 	// shop (index.html bodies differ) and two images. Nothing of the
