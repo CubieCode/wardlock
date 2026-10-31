@@ -30,8 +30,12 @@ export const jumpPages = [
 /** The places in the bottom bar below 48rem. */
 export const barPlaces = ['Overview', 'Sites', 'Analytics'];
 /** The places in the Account sheet below 48rem. */
-export const sheetPlaces = ['Groups and tags', 'Passkeys', 'API tokens'];
-export const sheetPlaces = ['Groups and tags', 'Passkeys', 'Notifications'];
+export const sheetPlaces = [
+  'Groups and tags',
+  'Passkeys',
+  'API tokens',
+  'Notifications',
+];
 
 export const isMobile = (info: TestInfo) => info.project.name === 'mobile';
 
