@@ -228,8 +228,8 @@ func TestListGroupsAndTags(t *testing.T) {
 	}
 	var raw struct{ Sites []json.RawMessage }
 	_ = json.Unmarshal(out.Bytes(), &raw)
-	assertJSONKeys(t, raw.Sites[0], "id", "name", "hostname", "url", "createdAt", "unavailable", "tagIds", "pinned", "policy", "tags")
-	assertJSONKeys(t, raw.Sites[1], "id", "name", "hostname", "url", "createdAt", "unavailable", "groupId", "tagIds", "pinned", "policy", "group", "tags")
+	assertJSONKeys(t, raw.Sites[0], "id", "name", "owner", "hostname", "url", "createdAt", "unavailable", "tagIds", "pinned", "policy", "tags")
+	assertJSONKeys(t, raw.Sites[1], "id", "name", "owner", "hostname", "url", "createdAt", "unavailable", "groupId", "tagIds", "pinned", "policy", "group", "tags")
 
 	for args, want := range map[string]string{
 		"--group board":                "docs",

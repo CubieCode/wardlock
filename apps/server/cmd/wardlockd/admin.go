@@ -36,10 +36,19 @@ Owners:
   suspend-owner ADDRESS    Sign the owner out everywhere, refuse their sign-ins and
                            API tokens, and make their sites unavailable
   reinstate-owner ADDRESS  Lift a suspension: API tokens and sites work again
-  quota ADDRESS [--storage SIZE] [--sites N] [--deploys-per-day N]
+  quota ADDRESS [--storage SIZE] [--sites N] [--deploys-per-day N] [--teams N]
                            Show the owner's quotas and usage, or override them:
                            SIZE is bytes or a number with KiB, MiB, GiB or TiB;
                            0 is unlimited and "default" follows the instance
+
+Teams:
+  list-teams               List every team with its members and their roles
+  revoke-team-tokens TEAM  Revoke every token of a team, by ID
+  set-team-role TEAM ADDRESS ROLE
+                           Give an owner a role in a team, adding them if needed:
+                           for a team with no working admin
+  team-quota TEAM [--storage SIZE] [--sites N] [--deploys-per-day N]
+                           The same, for a team by ID: its quotas are its own
 
 Sites (by name or any hostname they answer on):
   list-sites               List every site, its owner and whether it is serving
@@ -76,7 +85,9 @@ func admin(ctx context.Context, args []string, getenv func(string) string, stdou
 	case "create":
 		return adminCreate(ctx, rest, getenv, stdout, stderr)
 	case "quota":
-		return adminQuota(ctx, rest, getenv, stdout, stderr)
+		return adminQuota(ctx, rest, getenv, stdout, stderr, ownerQuotaSubject)
+	case "team-quota":
+		return adminQuota(ctx, rest, getenv, stdout, stderr, teamQuotaSubject)
 	case "moderation":
 		return adminModeration(ctx, rest, getenv, stdout, stderr)
 	}
@@ -101,13 +112,16 @@ type adminCommand struct {
 }
 
 var adminCommands = map[string]adminCommand{
-	"list-owners":     {0, listOwners},
-	"suspend-owner":   {1, suspendOwner},
-	"reinstate-owner": {1, reinstateOwner},
-	"list-sites":      {0, listSites},
-	"takedown-site":   {1, takedownSite},
-	"restore-site":    {1, restoreSite},
-	"teardown-site":   {1, teardownSite},
+	"list-owners":        {0, listOwners},
+	"list-teams":         {0, listTeams},
+	"revoke-team-tokens": {1, revokeTeamTokens},
+	"set-team-role":      {3, setTeamRole},
+	"suspend-owner":      {1, suspendOwner},
+	"reinstate-owner":    {1, reinstateOwner},
+	"list-sites":         {0, listSites},
+	"takedown-site":      {1, takedownSite},
+	"restore-site":       {1, restoreSite},
+	"teardown-site":      {1, teardownSite},
 }
 
 // adminEnv is what the operator commands work with: the database and the
@@ -118,6 +132,8 @@ type adminEnv struct {
 	sites  *sites.Service
 	// quotas are the instance's per-owner quotas from the environment.
 	quotas store.Quotas
+	// maxTeams is how many teams one owner may start, from the environment.
+	maxTeams int64
 	// moderation takes the operator's screening decisions; it never
 	// screens.
 	moderation *moderation.Service
@@ -157,7 +173,7 @@ func openAdmin(ctx context.Context, getenv func(string) string, stderr io.Writer
 		BaseDomain: cfg.BaseDomain, DashboardHost: cfg.DashboardHost, Now: time.Now, Log: log,
 	})
 	mod := moderation.New(moderation.Config{Store: db.Moderation(), Now: time.Now, Log: log})
-	return &adminEnv{db: db, owners: svc, sites: sitesSvc, quotas: ownerQuotas(cfg), moderation: mod}, nil
+	return &adminEnv{db: db, owners: svc, sites: sitesSvc, quotas: ownerQuotas(cfg), maxTeams: cfg.MaxOwnerTeams, moderation: mod}, nil
 }
 
 // adminOwners is the owners service as `wardlockd admin` uses it, with
@@ -236,6 +252,60 @@ func operatorErr(err error, what, ref string) error {
 	return err
 }
 
+// siteOwnerLabel names a site's owner: an address, or the team.
+func siteOwnerLabel(s store.OperatorSite) string {
+	if s.OwnerKind == store.AccountTeam {
+		return "team " + s.OwnerName
+	}
+	return s.OwnerEmail
+}
+
+func listTeams(ctx context.Context, a *adminEnv, _ []string, out io.Writer) error {
+	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "TEAM\tCREATED\tID\tMEMBER\tROLE\tSTATUS")
+	err := a.owners.ListAllTeams(ctx, func(t store.Team, members []store.TeamMember) error {
+		for _, m := range members {
+			status := "active"
+			if !m.SuspendedAt.IsZero() {
+				status = "suspended"
+			}
+			if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", t.Name, day(t.CreatedAt), t.ID, m.Email, m.Role, status); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return tw.Flush()
+}
+
+func revokeTeamTokens(ctx context.Context, a *adminEnv, args []string, out io.Writer) error {
+	n, err := a.owners.RevokeTeamTokens(ctx, args[0])
+	if err != nil {
+		return operatorErr(err, "team", args[0])
+	}
+	fmt.Fprintf(out, "Revoked %d tokens of team %s.\n", n, args[0])
+	return nil
+}
+
+func setTeamRole(ctx context.Context, a *adminEnv, args []string, out io.Writer) error {
+	o, err := a.owners.ForceTeamRole(ctx, args[0], args[1], store.Role(args[2]))
+	switch {
+	case errors.Is(err, owners.ErrInvalidRole):
+		return fmt.Errorf("%q is not a role: use admin, editor or viewer", args[2])
+	case errors.Is(err, store.ErrLastAdmin):
+		return fmt.Errorf("team %s would have no working admin", args[0])
+	case errors.Is(err, store.ErrNotFound):
+		return operatorErr(owners.ErrNotFound, "team", args[0])
+	case err != nil:
+		return operatorErr(err, "owner", args[1])
+	}
+	fmt.Fprintf(out, "%s is now %s of team %s.\n", o.Email, args[2], args[0])
+	return nil
+}
+
 func listOwners(ctx context.Context, a *adminEnv, _ []string, out io.Writer) error {
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "EMAIL\tSTATUS\tCREATED\tID")
@@ -285,7 +355,7 @@ func listSites(ctx context.Context, a *adminEnv, _ []string, out io.Writer) erro
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tOWNER\tSTATUS\tID")
 	err := a.sites.ListAll(ctx, func(s store.OperatorSite) error {
-		_, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", s.Name, s.OwnerEmail, siteStatus(s), s.ID)
+		_, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", s.Name, siteOwnerLabel(s), siteStatus(s), s.ID)
 		return err
 	})
 	if err != nil {
@@ -340,14 +410,82 @@ func teardownSite(ctx context.Context, a *adminEnv, args []string, out io.Writer
 	return nil
 }
 
-// adminQuota shows the owner's quotas and usage, after applying any
+// quotaSubject is who `quota` and `team-quota` are about. teams is a
+// person's own limit on how many teams they may start, so only an owner has
+// it.
+type quotaSubject struct {
+	what string
+	read func(ctx context.Context, a *adminEnv, ref string) (quotaView, error)
+	set  func(ctx context.Context, a *adminEnv, ref string, over store.QuotaOverrides, teams *quotaChange) error
+}
+
+// quotaView is what a subject shows.
+type quotaView struct {
+	label, id string
+	over      store.QuotaOverrides
+	usage     store.OwnerUsage
+	// teams is the row for an owner's team quota, when they have one.
+	teams *quotaRow
+}
+
+type quotaRow struct {
+	used, limit int64
+	override    *int64
+}
+
+var ownerQuotaSubject = quotaSubject{
+	what: "owner",
+	read: func(ctx context.Context, a *adminEnv, email string) (quotaView, error) {
+		o, over, usage, err := a.owners.Quotas(ctx, email)
+		if err != nil {
+			return quotaView{}, err
+		}
+		teams, err := a.owners.OwnerTeamQuota(ctx, o.ID)
+		if err != nil {
+			return quotaView{}, err
+		}
+		used, err := a.owners.TeamsStarted(ctx, o.ID)
+		if err != nil {
+			return quotaView{}, err
+		}
+		limit := a.maxTeams
+		if teams != nil {
+			limit = *teams
+		}
+		return quotaView{label: o.Email, id: o.ID, over: over, usage: usage, teams: &quotaRow{used, limit, teams}}, nil
+	},
+	set: func(ctx context.Context, a *adminEnv, email string, over store.QuotaOverrides, teams *quotaChange) error {
+		o, err := a.owners.SetQuotas(ctx, email, over)
+		if err != nil || teams == nil {
+			return err
+		}
+		return a.owners.SetOwnerTeamQuota(ctx, o.ID, teams.value)
+	},
+}
+
+var teamQuotaSubject = quotaSubject{
+	what: "team",
+	read: func(ctx context.Context, a *adminEnv, id string) (quotaView, error) {
+		t, over, usage, err := a.owners.TeamQuotas(ctx, id)
+		if err != nil {
+			return quotaView{}, err
+		}
+		return quotaView{label: t.Name, id: t.ID, over: over, usage: usage}, nil
+	},
+	set: func(ctx context.Context, a *adminEnv, id string, over store.QuotaOverrides, _ *quotaChange) error {
+		_, err := a.owners.SetTeamQuotas(ctx, id, over)
+		return err
+	},
+}
+
+// adminQuota shows the subject's quotas and usage, after applying any
 // overrides given as flags.
-func adminQuota(ctx context.Context, args []string, getenv func(string) string, stdout, stderr io.Writer) error {
+func adminQuota(ctx context.Context, args []string, getenv func(string) string, stdout, stderr io.Writer, subject quotaSubject) error {
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		fmt.Fprint(stderr, adminUsage)
 		return errUsage
 	}
-	email := args[0]
+	ref := args[0]
 	fs := flag.NewFlagSet("wardlockd admin quota", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var changes []quotaChange
@@ -373,6 +511,20 @@ func adminQuota(ctx context.Context, args []string, getenv func(string) string, 
 			return nil
 		})
 	}
+	var teams *quotaChange
+	if subject.what == "owner" {
+		fs.Func("teams", "teams they may start (N, 0 or default)", func(raw string) error {
+			teams = &quotaChange{}
+			if raw != "default" {
+				v, err := parseCount(raw)
+				if err != nil {
+					return err
+				}
+				teams.value = &v
+			}
+			return nil
+		})
+	}
 	if err := fs.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -388,46 +540,57 @@ func adminQuota(ctx context.Context, args []string, getenv func(string) string, 
 		return err
 	}
 	defer a.close()
-	if len(changes) > 0 {
-		_, over, _, err := a.owners.Quotas(ctx, email)
+	changed := len(changes) > 0 || teams != nil
+	if changed {
+		v, err := subject.read(ctx, a, ref)
 		if err != nil {
-			return operatorErr(err, "owner", email)
+			return operatorErr(err, subject.what, ref)
 		}
+		over := v.over
 		for _, c := range changes {
 			*c.field(&over) = c.value
 		}
-		if _, err := a.owners.SetQuotas(ctx, email, over); err != nil {
-			return operatorErr(err, "owner", email)
+		if err := subject.set(ctx, a, ref, over, teams); err != nil {
+			return operatorErr(err, subject.what, ref)
 		}
 	}
-	o, over, usage, err := a.owners.Quotas(ctx, email)
+	v, err := subject.read(ctx, a, ref)
 	if err != nil {
-		return operatorErr(err, "owner", email)
+		return operatorErr(err, subject.what, ref)
 	}
-	if len(changes) > 0 {
-		fmt.Fprintf(stdout, "Updated the quotas of %s (owner %s). Their next deploy or new site is checked against them.\n\n", o.Email, o.ID)
+	if changed {
+		fmt.Fprintf(stdout, "Updated the quotas of %s (%s %s). Their next deploy or new site is checked against them.\n\n", v.label, subject.what, v.id)
 	} else {
-		fmt.Fprintf(stdout, "Quotas of %s (owner %s):\n\n", o.Email, o.ID)
+		fmt.Fprintf(stdout, "Quotas of %s (%s %s):\n\n", v.label, subject.what, v.id)
 	}
 	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "QUOTA\tUSED\tLIMIT\tSET BY")
-	limits := a.quotas.Apply(over)
-	for _, row := range []struct {
+	limits := a.quotas.Apply(v.over)
+	rows := []struct {
 		name        string
 		used, limit int64
 		override    *int64
 		format      func(int64) string
 	}{
-		{"storage", usage.StoredBytes, limits.StorageBytes, over.StorageBytes, deploys.FormatBytes},
-		{"sites", usage.Sites, limits.Sites, over.Sites, formatCount},
-		{"deploys per day", usage.DeploysToday, limits.DeploysPerDay, over.DeploysPerDay, formatCount},
-	} {
+		{"storage", v.usage.StoredBytes, limits.StorageBytes, v.over.StorageBytes, deploys.FormatBytes},
+		{"sites", v.usage.Sites, limits.Sites, v.over.Sites, formatCount},
+		{"deploys per day", v.usage.DeploysToday, limits.DeploysPerDay, v.over.DeploysPerDay, formatCount},
+	}
+	if v.teams != nil {
+		rows = append(rows, struct {
+			name        string
+			used, limit int64
+			override    *int64
+			format      func(int64) string
+		}{"teams", v.teams.used, v.teams.limit, v.teams.override, formatCount})
+	}
+	for _, row := range rows {
 		limit, by := "unlimited", "instance"
 		if row.limit > 0 {
 			limit = row.format(row.limit)
 		}
 		if row.override != nil {
-			by = "this owner"
+			by = "this " + subject.what
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", row.name, row.format(row.used), limit, by)
 	}

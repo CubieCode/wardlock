@@ -43,15 +43,15 @@ type CertRemover interface {
 // on the base domain.
 func (s *Service) RoutingTarget(siteName string) string { return s.Hostname(siteName) }
 
-// AddDomain attaches hostname to ownerID's site and checks its DNS straight
+// AddDomain attaches hostname to the actor's site and checks its DNS straight
 // away. The returned domain is pending unless that first check passed. A
 // taken-down site takes no new domains (ErrUnavailable).
-func (s *Service) AddDomain(ctx context.Context, ownerID, siteName, hostname string) (store.Domain, error) {
+func (s *Service) AddDomain(ctx context.Context, actor store.Actor, siteName, hostname string) (store.Domain, error) {
 	h, err := s.CheckHostname(hostname)
 	if err != nil {
 		return store.Domain{}, err
 	}
-	site, err := s.Get(ctx, ownerID, siteName)
+	site, err := s.editable(ctx, actor, siteName)
 	if err != nil {
 		return store.Domain{}, err
 	}
@@ -68,7 +68,8 @@ func (s *Service) AddDomain(ctx context.Context, ownerID, siteName, hostname str
 		VerificationToken: rand.Text(),
 		CreatedAt:         s.now(),
 	}
-	err = s.c.Domains.Create(ctx, ownerID, d)
+	d.CreatedBy, d.CreatedByToken = actor.MadeBy()
+	err = s.c.Domains.Create(ctx, actor, d)
 	switch {
 	case errors.Is(err, store.ErrConflict):
 		return store.Domain{}, ErrDomainTaken
@@ -78,7 +79,7 @@ func (s *Service) AddDomain(ctx context.Context, ownerID, siteName, hostname str
 	checked, err := s.check(ctx, d, site.Name)
 	if errors.Is(err, errSuperseded) {
 		// The worker got there first; answer with what it recorded.
-		return s.reread(ctx, ownerID, d)
+		return s.reread(ctx, actor, d)
 	}
 	if err != nil {
 		// The domain exists; the worker checks it on its next pass.
@@ -89,33 +90,36 @@ func (s *Service) AddDomain(ctx context.Context, ownerID, siteName, hostname str
 	return checked, nil
 }
 
-// GetDomain returns one of ownerID's site's domains, whatever its status.
-func (s *Service) GetDomain(ctx context.Context, ownerID, siteName, hostname string) (store.Domain, error) {
-	_, d, err := s.ownedDomain(ctx, ownerID, siteName, hostname)
+// GetDomain returns one of the actor's site's domains, whatever its status.
+func (s *Service) GetDomain(ctx context.Context, actor store.Actor, siteName, hostname string) (store.Domain, error) {
+	_, d, err := s.ownedDomain(ctx, actor, siteName, hostname)
 	return d, err
 }
 
-// ListDomains returns up to limit of ownerID's site's domains ordered by
+// ListDomains returns up to limit of the actor's site's domains ordered by
 // hostname, after afterHostname ("" for the first page).
-func (s *Service) ListDomains(ctx context.Context, ownerID, siteName, afterHostname string, limit int) ([]store.Domain, error) {
-	site, err := s.Get(ctx, ownerID, siteName)
+func (s *Service) ListDomains(ctx context.Context, actor store.Actor, siteName, afterHostname string, limit int) ([]store.Domain, error) {
+	site, err := s.Get(ctx, actor, siteName)
 	if err != nil {
 		return nil, err
 	}
-	ds, err := s.c.Domains.List(ctx, ownerID, site.ID, afterHostname, limit)
+	ds, err := s.c.Domains.List(ctx, actor, site.ID, afterHostname, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list domains: %w", err)
 	}
 	return ds, nil
 }
 
-// VerifyDomain checks one of ownerID's domains now and returns the
+// VerifyDomain checks one of the actor's domains now and returns the
 // outcome. It refuses with a CheckTooSoonError within VerifyCooldown of the
 // last check.
-func (s *Service) VerifyDomain(ctx context.Context, ownerID, siteName, hostname string) (store.Domain, error) {
-	site, d, err := s.ownedDomain(ctx, ownerID, siteName, hostname)
+func (s *Service) VerifyDomain(ctx context.Context, actor store.Actor, siteName, hostname string) (store.Domain, error) {
+	site, d, err := s.ownedDomain(ctx, actor, siteName, hostname)
 	if err != nil {
 		return store.Domain{}, err
+	}
+	if err := actor.Require(site.OwnerID, store.RoleEditor); err != nil {
+		return store.Domain{}, fmt.Errorf("verify domain: %w", err)
 	}
 	if wait := d.LastCheckedAt.Add(VerifyCooldown).Sub(s.now()); !d.LastCheckedAt.IsZero() && wait > 0 {
 		return store.Domain{}, &CheckTooSoonError{RetryAfter: wait}
@@ -124,30 +128,33 @@ func (s *Service) VerifyDomain(ctx context.Context, ownerID, siteName, hostname 
 	if errors.Is(err, errSuperseded) {
 		// Another check (the worker's, or a concurrent request) was
 		// recorded while this one ran: answer with the newer result.
-		return s.reread(ctx, ownerID, d)
+		return s.reread(ctx, actor, d)
 	}
 	return checked, storeErr("verify domain", err)
 }
 
 // reread returns d as currently stored.
-func (s *Service) reread(ctx context.Context, ownerID string, d store.Domain) (store.Domain, error) {
-	cur, err := s.c.Domains.Get(ctx, ownerID, d.SiteID, d.Hostname)
+func (s *Service) reread(ctx context.Context, actor store.Actor, d store.Domain) (store.Domain, error) {
+	cur, err := s.c.Domains.Get(ctx, actor, d.SiteID, d.Hostname)
 	return cur, storeErr("get domain", err)
 }
 
-// RemoveDomain detaches one of ownerID's domains: serving it stops at once
+// RemoveDomain detaches one of the actor's domains: serving it stops at once
 // and its certificate is deleted. A taken-down site's domains cannot be
 // removed (ErrUnavailable).
-func (s *Service) RemoveDomain(ctx context.Context, ownerID, siteName, hostname string) error {
-	site, d, err := s.ownedDomain(ctx, ownerID, siteName, hostname)
+func (s *Service) RemoveDomain(ctx context.Context, actor store.Actor, siteName, hostname string) error {
+	site, d, err := s.ownedDomain(ctx, actor, siteName, hostname)
 	if err != nil {
 		return err
+	}
+	if err := actor.Require(site.OwnerID, store.RoleEditor); err != nil {
+		return fmt.Errorf("remove domain: %w", err)
 	}
 	if !site.TakenDownAt.IsZero() {
 		// A taken-down site's domains are frozen with it (A2.13).
 		return ErrUnavailable
 	}
-	if err := s.c.Domains.Delete(ctx, ownerID, site.ID, d.Hostname); err != nil {
+	if err := s.c.Domains.Delete(ctx, actor, site.ID, d.Hostname); err != nil {
 		return storeErr("remove domain", err)
 	}
 	s.c.Notifier.Notify(ctx, site.ID)
@@ -157,11 +164,11 @@ func (s *Service) RemoveDomain(ctx context.Context, ownerID, siteName, hostname 
 	return nil
 }
 
-// ownedDomain finds ownerID's site and one of its domains. Hostnames are
+// ownedDomain finds the actor's site and one of its domains. Hostnames are
 // matched in their normalised form, so any spelling of one finds it; one
 // that cannot be normalised is simply not found.
-func (s *Service) ownedDomain(ctx context.Context, ownerID, siteName, hostname string) (store.Site, store.Domain, error) {
-	site, err := s.Get(ctx, ownerID, siteName)
+func (s *Service) ownedDomain(ctx context.Context, actor store.Actor, siteName, hostname string) (store.Site, store.Domain, error) {
+	site, err := s.Get(ctx, actor, siteName)
 	if err != nil {
 		return store.Site{}, store.Domain{}, err
 	}
@@ -169,7 +176,7 @@ func (s *Service) ownedDomain(ctx context.Context, ownerID, siteName, hostname s
 	if err != nil {
 		return store.Site{}, store.Domain{}, fmt.Errorf("get domain: %w", ErrNotFound)
 	}
-	d, err := s.c.Domains.Get(ctx, ownerID, site.ID, h)
+	d, err := s.c.Domains.Get(ctx, actor, site.ID, h)
 	if err != nil {
 		return store.Site{}, store.Domain{}, storeErr("get domain", err)
 	}

@@ -120,7 +120,7 @@ func TestPreviewDeployRefusals(t *testing.T) {
 	hs := newHarness(t, deploys.DefaultLimits())
 	hs.createSite(hs.ownerA, "docs")
 	// A site named with "--" before the rule, straight in the store.
-	if err := hs.db.Sites().Create(t.Context(), store.Site{ID: store.NewID(), OwnerID: hs.ownerB, Name: "docs--taken", CreatedAt: time.Now()}, store.Quotas{}); err != nil {
+	if err := hs.db.Sites().Create(t.Context(), store.ActorFor(store.Site{ID: store.NewID(), OwnerID: hs.ownerB, Name: "docs--taken", CreatedAt: time.Now()}.OwnerID), store.Site{ID: store.NewID(), OwnerID: hs.ownerB, Name: "docs--taken", CreatedAt: time.Now()}, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	str := func(s string) *string { return &s }

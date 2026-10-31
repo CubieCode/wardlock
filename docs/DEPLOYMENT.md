@@ -563,6 +563,9 @@ Quotas limit what each owner can use (A2.14). They are off by default; set them 
 | `WARDLOCK_MAX_OWNER_STORAGE`         | `0`     | bytes of distinct files across the owner's kept deploys; `0` is unlimited |
 | `WARDLOCK_MAX_OWNER_SITES`           | `0`     | sites per owner; `0` is unlimited                                         |
 | `WARDLOCK_MAX_OWNER_DEPLOYS_PER_DAY` | `0`     | deploys per owner in any 24 hours; `0` is unlimited                       |
+| `WARDLOCK_QUOTA_TEAMS`               | `0`     | teams one owner may start; `0` is unlimited                               |
+
+The first three also apply to each team, counted to the team and not the member who deployed (T7.1). Since each team has its own allowance, an instance that sets them should set `WARDLOCK_QUOTA_TEAMS` too, or an owner could start teams for more room.
 
 Give one owner their own values with [`wardlockd admin quota`](#operator-commands):
 
@@ -570,6 +573,8 @@ Give one owner their own values with [`wardlockd admin quota`](#operator-command
 sudo -u wardlock wardlockd admin quota owner@example.com                       # QUOTA USED LIMIT SET BY
 sudo -u wardlock wardlockd admin quota owner@example.com --storage 20GiB --sites 100
 sudo -u wardlock wardlockd admin quota owner@example.com --deploys-per-day default
+sudo -u wardlock wardlockd admin quota owner@example.com --teams 5             # how many teams they may start
+sudo -u wardlock wardlockd admin team-quota TEAM_ID --sites 100                # a team's own, by ID from list-teams
 ```
 
 <details>
@@ -809,18 +814,21 @@ For an instance others deploy to, also set `WARDLOCK_ABUSE_EMAIL` so visitors ca
 
 ### Operator commands
 
-| Command                         | What it does                                                                                                                                                         |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `admin create --email ADDRESS`  | Creates an owner and prints a one-time sign-in URL                                                                                                                   |
-| `admin list-owners`             | Lists `EMAIL STATUS CREATED ID`; status is `active`, `invited` or `suspended DATE`                                                                                   |
-| `admin suspend-owner ADDRESS`   | Signs the owner out everywhere, refuses their sign-in and API tokens, makes their sites unavailable                                                                  |
-| `admin reinstate-owner ADDRESS` | Undoes a suspension; tokens and sites work again and the owner signs in again                                                                                        |
-| `admin list-sites`              | Lists `NAME OWNER STATUS ID`; status is `serving`, `nothing published`, `taken down DATE` or `owner suspended`                                                       |
-| `admin takedown-site SITE`      | Every page of the site answers "This site is unavailable"; deploys, files and access log are kept                                                                    |
-| `admin restore-site SITE`       | Serves the same active deploy again                                                                                                                                  |
-| `admin teardown-site SITE`      | Deletes a taken-down site, as an owner's teardown does                                                                                                               |
-| `admin quota ADDRESS [flags]`   | Shows the owner's [quotas](#owner-quotas) and usage; `--storage SIZE`, `--sites N` and `--deploys-per-day N` override them (`0` unlimited, `default` the instance's) |
-| `admin moderation …`            | Reviews and decides on screened files, and exempts owners from screening: [Content screening](#content-screening)                                                    |
+| Command                                 | What it does                                                                                                                                                         |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin create --email ADDRESS`          | Creates an owner and prints a one-time sign-in URL                                                                                                                   |
+| `admin list-owners`                     | Lists `EMAIL STATUS CREATED ID`; status is `active`, `invited` or `suspended DATE`                                                                                   |
+| `admin suspend-owner ADDRESS`           | Signs the owner out everywhere, refuses their sign-in and API tokens, makes their sites unavailable                                                                  |
+| `admin reinstate-owner ADDRESS`         | Undoes a suspension; tokens and sites work again and the owner signs in again                                                                                        |
+| `admin list-sites`                      | Lists `NAME OWNER STATUS ID`; status is `serving`, `nothing published`, `taken down DATE` or `owner suspended`; a team's site shows `team NAME` as its owner         |
+| `admin list-teams`                      | Lists every team, one line per member: `TEAM CREATED ID MEMBER ROLE STATUS`. Suspending a member ends their team access; the team's sites keep serving               |
+| `admin revoke-team-tokens TEAM`         | Revokes every token of a team. Team tokens survive a member's suspension, so use this as well when acting on abuse through a team                                    |
+| `admin set-team-role TEAM ADDRESS ROLE` | Gives an owner a role in a team, adding them if needed, for a team with no working admin                                                                             |
+| `admin takedown-site SITE`              | Every page of the site answers "This site is unavailable"; deploys, files and access log are kept                                                                    |
+| `admin restore-site SITE`               | Serves the same active deploy again                                                                                                                                  |
+| `admin teardown-site SITE`              | Deletes a taken-down site, as an owner's teardown does                                                                                                               |
+| `admin quota ADDRESS [flags]`           | Shows the owner's [quotas](#owner-quotas) and usage; `--storage SIZE`, `--sites N` and `--deploys-per-day N` override them (`0` unlimited, `default` the instance's) |
+| `admin moderation …`                    | Reviews and decides on screened files, and exempts owners from screening: [Content screening](#content-screening)                                                    |
 
 `SITE` is a site name or any hostname the site answers on (its `<name>.<base domain>` host or an active custom domain), so you can paste the host from a report.
 

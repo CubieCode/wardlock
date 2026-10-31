@@ -88,7 +88,7 @@ func (o *oauthEdge) fake(provider string) *oauthtest.Provider {
 // protect makes site's prefix an OAuth policy with list.
 func (o *oauthEdge) protect(site, prefix string, list store.Allowlist) store.Policy {
 	o.t.Helper()
-	pol, err := o.acc.Set(o.t.Context(), o.owner.ID, site, access.Rule{PathPrefix: prefix, Visibility: store.Protected, OAuth: true, Allowlist: &list})
+	pol, err := o.acc.Set(o.t.Context(), store.ActorFor(o.owner.ID), site, access.Rule{PathPrefix: prefix, Visibility: store.Protected, OAuth: true, Allowlist: &list})
 	if err != nil {
 		o.t.Fatal(err)
 	}
@@ -563,7 +563,7 @@ func TestOAuthRefusals(t *testing.T) {
 		}},
 		{"policy changed before redemption", func(t *testing.T, o *oauthEdge, b *browser) {
 			_, cb := b.toCallback(host, "github", "/internal/")
-			if _, err := o.acc.Set(t.Context(), o.owner.ID, "docs", access.Rule{PathPrefix: "/", Visibility: store.Protected, OAuth: true, Links: true}); err != nil {
+			if _, err := o.acc.Set(t.Context(), store.ActorFor(o.owner.ID), "docs", access.Rule{PathPrefix: "/", Visibility: store.Protected, OAuth: true, Links: true}); err != nil {
 				t.Fatal(err)
 			}
 			refused(t, b.request(http.MethodGet, cb, nil))

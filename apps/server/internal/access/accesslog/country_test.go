@@ -55,7 +55,7 @@ func TestCountryFromStoredIP(t *testing.T) {
 	if err := db.Owners().Create(ctx, owner); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
+	if err := db.Sites().Create(ctx, store.ActorFor(site.OwnerID), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := accesslog.Backfill(ctx, db.Traffic(), time.Now, slog.New(slog.DiscardHandler)); err != nil {
@@ -94,7 +94,7 @@ func TestCountryFromStoredIP(t *testing.T) {
 			e.SiteID, e.Time, e.IP = site.ID, now, tc.ip
 			w.Record(e)
 			closeWriter(t, w)
-			got, err := db.AccessLog().ListBySite(ctx, owner.ID, site.ID, store.AccessCursor{}, 1)
+			got, err := db.AccessLog().ListBySite(ctx, store.ActorFor(owner.ID), site.ID, store.AccessCursor{}, 1)
 			if err != nil || len(got) != 1 {
 				t.Fatalf("ListBySite() = %v, %v", got, err)
 			}
@@ -104,7 +104,7 @@ func TestCountryFromStoredIP(t *testing.T) {
 		})
 	}
 
-	r, err := db.Traffic().Report(ctx, owner.ID, store.TrafficScope{}, now.Add(-time.Hour), now.Add(time.Hour))
+	r, err := db.Traffic().Report(ctx, store.ActorFor(owner.ID), owner.ID, store.TrafficScope{}, now.Add(-time.Hour), now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}

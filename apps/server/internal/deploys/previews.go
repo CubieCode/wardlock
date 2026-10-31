@@ -88,23 +88,23 @@ func (s *Service) checkPreview(ctx context.Context, site store.Site, m *Manifest
 }
 
 // Preview returns one of the owner's site's previews that has not expired.
-func (s *Service) Preview(ctx context.Context, ownerID, siteName, name string) (store.Site, store.Preview, error) {
-	site, err := s.site(ctx, ownerID, siteName)
+func (s *Service) Preview(ctx context.Context, actor store.Actor, siteName, name string) (store.Site, store.Preview, error) {
+	site, err := s.site(ctx, actor, siteName)
 	if err != nil {
 		return store.Site{}, store.Preview{}, err
 	}
-	p, err := s.c.Previews.Get(ctx, ownerID, site.ID, name, s.now())
+	p, err := s.c.Previews.Get(ctx, actor, site.ID, name, s.now())
 	return site, p, storeErr("get preview", err)
 }
 
 // Previews returns the site and up to limit of its previews that have not
 // expired, by name after afterName. A taken-down site's are listed too.
-func (s *Service) Previews(ctx context.Context, ownerID, siteName, afterName string, limit int) (store.Site, []store.Preview, error) {
-	site, err := s.site(ctx, ownerID, siteName)
+func (s *Service) Previews(ctx context.Context, actor store.Actor, siteName, afterName string, limit int) (store.Site, []store.Preview, error) {
+	site, err := s.site(ctx, actor, siteName)
 	if err != nil {
 		return store.Site{}, nil, err
 	}
-	ps, err := s.c.Previews.List(ctx, ownerID, site.ID, afterName, limit, s.now())
+	ps, err := s.c.Previews.List(ctx, actor, site.ID, afterName, limit, s.now())
 	if err != nil {
 		return store.Site{}, nil, storeErr("list previews", err)
 	}
@@ -113,13 +113,13 @@ func (s *Service) Previews(ctx context.Context, ownerID, siteName, afterName str
 
 // DeletePreview removes a preview, so its hostname stops serving at once;
 // garbage collection removes its deploy.
-func (s *Service) DeletePreview(ctx context.Context, ownerID, siteName, name string) error {
-	site, err := s.changeable(ctx, ownerID, siteName)
+func (s *Service) DeletePreview(ctx context.Context, actor store.Actor, siteName, name string) error {
+	site, err := s.writable(ctx, actor, siteName)
 	if err != nil {
 		return err
 	}
 	now := s.now()
-	if err := s.c.Previews.Delete(ctx, ownerID, site.ID, name, now); err != nil {
+	if err := s.c.Previews.Delete(ctx, actor, site.ID, name, now); err != nil {
 		return storeErr("delete preview", err)
 	}
 	s.c.Notifier.Notify(ctx, site.ID)
@@ -133,16 +133,16 @@ func (s *Service) DeletePreview(ctx context.Context, ownerID, siteName, name str
 // activation that enters the site's history, and keeps the preview. A path
 // preview made on a live deploy the site no longer serves is
 // ErrStaleBase: deploying the preview again makes it promotable.
-func (s *Service) Promote(ctx context.Context, ownerID, siteName, name string) (store.Site, store.Deploy, store.Preview, error) {
-	site, err := s.changeable(ctx, ownerID, siteName)
+func (s *Service) Promote(ctx context.Context, actor store.Actor, siteName, name string) (store.Site, store.Deploy, store.Preview, error) {
+	site, err := s.writable(ctx, actor, siteName)
 	if err != nil {
 		return store.Site{}, store.Deploy{}, store.Preview{}, err
 	}
-	d, changed, err := s.c.Previews.Promote(ctx, ownerID, site.ID, name, s.now())
+	d, changed, err := s.c.Previews.Promote(ctx, actor, site.ID, name, s.now())
 	if err != nil {
 		return store.Site{}, store.Deploy{}, store.Preview{}, storeErr("promote preview", err)
 	}
-	p, err := s.c.Previews.Get(ctx, ownerID, site.ID, name, s.now())
+	p, err := s.c.Previews.Get(ctx, actor, site.ID, name, s.now())
 	if err != nil {
 		return store.Site{}, store.Deploy{}, store.Preview{}, storeErr("get preview", err)
 	}
@@ -153,8 +153,8 @@ func (s *Service) Promote(ctx context.Context, ownerID, siteName, name string) (
 	return s.served(ctx, site, d, CausePromote), d, p, nil
 }
 
-// Deploy returns one of site's deploys, which ownerID's site must be.
-func (s *Service) Deploy(ctx context.Context, ownerID string, site store.Site, deployID string) (store.Deploy, error) {
-	d, err := s.c.Deploys.Get(ctx, ownerID, site.ID, deployID)
+// Deploy returns one of site's deploys, which the actor's site must be.
+func (s *Service) Deploy(ctx context.Context, actor store.Actor, site store.Site, deployID string) (store.Deploy, error) {
+	d, err := s.c.Deploys.Get(ctx, actor, site.ID, deployID)
 	return d, storeErr("get deploy", err)
 }

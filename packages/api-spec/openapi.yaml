@@ -44,6 +44,11 @@ info:
       configured sign-in providers are reads and accept either scope. Tokens
       never manage owners, sessions or other tokens.
 
+    A personal token acts as its owner, limited by both its scope and the
+    owner's role in a team. A team token belongs to the team, acts as an
+    editor limited by its scopes and never administers the team. An owner in
+    no team sees exactly their own sites.
+
     Each operation lists the credentials it accepts; any one of them is
     enough. Operations with no security take no credentials and are
     rate-limited.
@@ -61,9 +66,11 @@ info:
       present only when there is another page; pass it back unchanged.
       Groups and tags are not paged: an owner has at most 100 and 200, and
       their lists answer every one as `{items}`.
-    - **Owner scoping**: every resource belongs to the signed-in owner. A
-      resource that does not exist and one that belongs to another owner get
-      the same `404 not_found` with the same body.
+    - **Owner scoping**: every resource belongs to an owner or a team, and
+      the caller reaches their own and those of the teams they are in. A
+      resource that does not exist and one they cannot see get the same
+      `404 not_found` with the same body; `403 forbidden_role` is answered
+      only where they can already see it.
     - **Secrets** (API tokens, CLI device codes, share-link tokens) appear in
       exactly one response, at creation (or a share link's rotation), and are
       never returned again.
@@ -102,6 +109,8 @@ tags:
     description: Owner bootstrap, sign-in, sessions and invitations (C1.1); passkeys (C1.6).
   - name: tokens
     description: API tokens and the CLI device login (C1.7).
+  - name: teams
+    description: Teams, members, invitations, team tokens and moving sites (T7.1).
   - name: sites
     description: Sites (C1.2).
   - name: deploys
@@ -836,6 +845,639 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v0/teams:
+    get:
+      operationId: listTeams
+      summary: List the teams the caller is in.
+      description: >-
+        Every team the owner belongs to, by name, with their role in each. A
+        team token sees its own team. Not paged.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      responses:
+        '200':
+          description: Every team.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamList'
+              example:
+                items:
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+                    name: Web team
+                    role: admin
+                    createdAt: 1767225600000
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createTeam
+      summary: Create a team.
+      description: >-
+        The signed-in owner becomes its first admin. An owner who has already
+        started as many teams as the instance allows gets `413 limit_exceeded`
+        with target `name`.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeamRequest'
+            example:
+              name: Web team
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+              example:
+                id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+                name: Web team
+                role: admin
+                createdAt: 1767225600000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/teams/{teamId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      operationId: getTeam
+      summary: Get a team.
+      description: >-
+        A team the caller is not in answers the same `404` as a missing one.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+              example:
+                id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+                name: Web team
+                role: admin
+                createdAt: 1767225600000
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: updateTeam
+      summary: Rename a team.
+      description: >-
+        Admins only (`403 forbidden_role`).
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTeamRequest'
+            example:
+              name: Web team
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+              example:
+                id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+                name: Web team
+                role: admin
+                createdAt: 1767225600000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteTeam
+      summary: Delete a team.
+      description: >-
+        Admins only. A team that still has sites answers `409 team_has_sites`:
+        move or delete them first. Its tokens, groups, tags, members and
+        invitations go with it.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      responses:
+        '204':
+          description: Done.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/teams/{teamId}/members:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      operationId: listTeamMembers
+      summary: List a team's members.
+      description: >-
+        Any member, by address.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+        - apiToken: [deploy]
+        - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMemberPage'
+              example:
+                items:
+                  - ownerId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e91
+                    email: member@example.com
+                    role: editor
+                    createdAt: 1767225600000
+                    suspended: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/teams/{teamId}/members/{ownerId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/OwnerId'
+    patch:
+      operationId: setTeamMemberRole
+      summary: Change a member's role.
+      description: >-
+        Admins only. Taking the role of the last working admin answers
+        `409 team_needs_admin`.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetTeamMemberRoleRequest'
+            example:
+              role: viewer
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMember'
+              example:
+                ownerId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e91
+                email: member@example.com
+                role: editor
+                createdAt: 1767225600000
+                suspended: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: removeTeamMember
+      summary: Remove a member, or leave a team.
+      description: >-
+        An admin may remove anyone; any member may remove themselves. It ends
+        their access on their next request, and what they made stays with the
+        team. Removing the last admin answers `409 team_needs_admin`.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      responses:
+        '204':
+          description: Done.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/teams/{teamId}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      operationId: listTeamInvitations
+      summary: List a team's open invitations.
+      description: >-
+        Admins only, newest first. Not paged: expired invitations are left out.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamInvitationList'
+              example:
+                items:
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92
+                    teamId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+                    teamName: Web team
+                    email: member@example.com
+                    role: editor
+                    createdAt: 1767225600000
+                    expiresAt: 1767830400000
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: inviteTeamMember
+      summary: Invite an address to a team.
+      description: >-
+        Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An
+        address with no owner account also gets the normal owner invitation
+        when `WARDLOCK_INVITES` allows it, and is otherwise refused with
+        `403 invites_restricted`. The invitation lasts 7 days and can be
+        accepted only by an owner signed in with that address.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeamInvitationRequest'
+            example:
+              email: member@example.com
+              role: editor
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamInvitation'
+              example:
+                id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92
+                teamId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+                teamName: Web team
+                email: member@example.com
+                role: editor
+                createdAt: 1767225600000
+                expiresAt: 1767830400000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/teams/{teamId}/invitations/{invitationId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/InvitationId'
+    delete:
+      operationId: deleteTeamInvitation
+      summary: Cancel an invitation.
+      description: >-
+        Admins only.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      responses:
+        '204':
+          description: Done.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/teams/{teamId}/tokens:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    get:
+      operationId: listTeamTokens
+      summary: List a team's tokens.
+      description: >-
+        Admins only, newest first. Team tokens belong to the team, so they
+        outlive whoever made them.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiTokenPage'
+              example:
+                items:
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20
+                    publicId: k7m2q6xw4a
+                    name: CI deploys
+                    scopes: [deploy]
+                    createdAt: 1767225600000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createTeamToken
+      summary: Create a team token.
+      description: >-
+        Admins only. The response is the only time the token is shown. A team
+        token acts as an editor of its team, limited by its scopes; it never
+        administers the team.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiTokenRequest'
+            example:
+              name: CI deploys
+              scopes: [deploy]
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedApiToken'
+              examples:
+                createdApiToken:
+                  $ref: '#/components/examples/CreatedApiToken'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/teams/{teamId}/tokens/{tokenId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/TokenId'
+    delete:
+      operationId: revokeTeamToken
+      summary: Revoke a team token.
+      description: >-
+        Admins only. Takes effect on the token's next request.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      responses:
+        '204':
+          description: Done.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/team-invitations:
+    get:
+      operationId: listMyTeamInvitations
+      summary: List invitations to the signed-in owner.
+      description: >-
+        Open invitations to the owner's own verified address, newest first.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamInvitationList'
+              example:
+                items:
+                  - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92
+                    teamId: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+                    teamName: Web team
+                    email: member@example.com
+                    role: editor
+                    createdAt: 1767225600000
+                    expiresAt: 1767830400000
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/team-invitations/{invitationId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      operationId: acceptTeamInvitation
+      summary: Accept an invitation.
+      description: >-
+        Only for an invitation to the signed-in owner's own verified address,
+        read from their account and never from the request; any other, a
+        missing one and an expired one answer the same `404`. Accepting twice
+        changes nothing, while still a member.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+              example:
+                id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+                name: Web team
+                role: admin
+                createdAt: 1767225600000
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/team-invitations/{invitationId}/decline:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      operationId: declineTeamInvitation
+      summary: Decline an invitation.
+      description: >-
+        As `acceptTeamInvitation`, the invitation must be to the owner's own
+        address.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+      responses:
+        '204':
+          description: Done.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v0/sites/{site}/transfer:
+    parameters:
+      - $ref: '#/components/parameters/SiteName'
+    post:
+      operationId: transferSite
+      summary: Move a site to or from a team.
+      description: >-
+        Needs ownership or admin of the source, and to be admin of a target
+        team; moving to `owner` moves the site to the caller's own account,
+        never someone else's. Deploys, links, domains and analytics stay with
+        the site; its group and tags belong to the source, so they are
+        cleared; pins stay with each person. The target's site and storage
+        quotas apply (`413 limit_exceeded`). A taken-down site answers
+        `409 site_unavailable`.
+      tags: [teams]
+      security:
+        - sessionCookie: []
+        - apiToken: [manage]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferSiteRequest'
+            example:
+              to:
+                kind: team
+                id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Site'
+              examples:
+                site:
+                  $ref: '#/components/examples/Site'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        default:
+          $ref: '#/components/responses/Error'
+
   /api/v0/webhooks:
     get:
       operationId: listWebhooks
@@ -1297,8 +1939,9 @@ paths:
       operationId: listSites
       summary: List the owner's sites.
       description: >-
-        Ordered by name. With `hostname`, answers the owner's site served at
-        that hostname (`<name>.<base domain>` or one of its custom domains,
+        Every site the caller can see: their own and their teams', ordered
+        by name; `team` narrows it to one team. With `hostname`, answers the
+        site served at that hostname (`<name>.<base domain>` or one of its custom domains,
         whatever the domain's status), or an empty page; the CLI uses it to
         resolve the DOMAIN argument.
       tags: [sites]
@@ -1316,6 +1959,7 @@ paths:
           schema:
             $ref: '#/components/schemas/Hostname'
           example: docs.example.com
+        - $ref: '#/components/parameters/TeamFilter'
       responses:
         '200':
           description: One page of sites.
@@ -1328,6 +1972,10 @@ paths:
                   - id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
                     name: docs
                     hostname: docs.wardlock.example.net
+                    owner:
+                      kind: owner
+                      id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e00
+                      name: owner@example.com
                     url: https://docs.wardlock.example.net/
                     createdAt: 1767225600000
                     unavailable: false
@@ -1352,8 +2000,9 @@ paths:
         caller's or another owner's, answers `409 site_name_taken`; site
         names are public through DNS, so this reveals nothing secret. An
         owner who already has as many sites as their quota allows gets `413
-        limit_exceeded` with target `name`. The CLI calls this before the
-        first deploy to a new name.
+        limit_exceeded` with target `name`. `team` creates the site under a
+        team the caller can edit, counted against the team. The CLI calls
+        this before the first deploy to a new name.
       tags: [sites]
       security:
         - sessionCookie: []
@@ -1377,6 +2026,10 @@ paths:
                 id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
                 name: docs
                 hostname: docs.wardlock.example.net
+                owner:
+                  kind: owner
+                  id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e00
+                  name: owner@example.com
                 url: https://docs.wardlock.example.net/
                 createdAt: 1767225600000
                 unavailable: false
@@ -2890,6 +3543,8 @@ paths:
         - sessionCookie: []
         - apiToken: [deploy]
         - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/TeamFilter'
       responses:
         '200':
           description: Every group.
@@ -2920,6 +3575,8 @@ paths:
       security:
         - sessionCookie: []
         - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/TeamFilter'
       requestBody:
         required: true
         content:
@@ -3028,6 +3685,8 @@ paths:
         - sessionCookie: []
         - apiToken: [deploy]
         - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/TeamFilter'
       responses:
         '200':
           description: Every tag.
@@ -3060,6 +3719,8 @@ paths:
       security:
         - sessionCookie: []
         - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/TeamFilter'
       requestBody:
         required: true
         content:
@@ -3170,6 +3831,8 @@ paths:
       security:
         - sessionCookie: []
         - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/TeamFilter'
       requestBody:
         required: true
         content:
@@ -3262,6 +3925,7 @@ paths:
           schema:
             $ref: '#/components/schemas/Id'
           example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80
+        - $ref: '#/components/parameters/TeamFilter'
       responses:
         '200':
           description: The requests in the range and scope.
@@ -3400,6 +4064,7 @@ paths:
           schema:
             $ref: '#/components/schemas/SiteSort'
           example: deploy
+        - $ref: '#/components/parameters/TeamFilter'
       responses:
         '200':
           description: One page of site summaries.
@@ -3455,6 +4120,8 @@ paths:
         - sessionCookie: []
         - apiToken: [deploy]
         - apiToken: [manage]
+      parameters:
+        - $ref: '#/components/parameters/TeamFilter'
       responses:
         '200':
           description: The counts.
@@ -3502,6 +4169,7 @@ paths:
         - apiToken: [manage]
       parameters:
         - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/TeamFilter'
       responses:
         '200':
           description: The soonest-expiring links.
@@ -3597,6 +4265,41 @@ components:
       schema:
         $ref: '#/components/schemas/Cursor'
       example: c2l0ZTpkb2Nz
+    TeamId:
+      name: teamId
+      in: path
+      required: true
+      description: The team's ID.
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+    OwnerId:
+      name: ownerId
+      in: path
+      required: true
+      description: The member's owner ID.
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e91
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      description: The invitation's ID.
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92
+    TeamFilter:
+      name: team
+      in: query
+      required: false
+      description: >-
+        A team the caller is in, to use its sites, groups and tags rather
+        than the caller's own. A team they are not in answers the same `404`
+        as a missing one.
+      schema:
+        $ref: '#/components/schemas/Id'
+      example: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
     SiteName:
       name: site
       in: path
@@ -3755,8 +4458,10 @@ components:
             message: Sign in or provide an API token.
     Forbidden:
       description: >-
-        The credential lacks the scope this operation needs, or a
-        cookie-authenticated request came from another origin.
+        The credential lacks the scope this operation needs, a
+        cookie-authenticated request came from another origin, or
+        (`forbidden_role`) the caller can see the team or site but their role
+        does not allow this.
       content:
         application/json:
           schema:
@@ -3766,8 +4471,8 @@ components:
             message: This API token lacks the manage scope.
     NotFound:
       description: >-
-        No such resource for this owner. Missing resources and other owners'
-        resources get the same response.
+        No such resource for this caller. Missing resources and resources of
+        other owners and teams get the same response.
       content:
         application/json:
           schema:
@@ -3921,6 +4626,10 @@ components:
         id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
         name: docs
         hostname: docs.wardlock.example.net
+        owner:
+          kind: owner
+          id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e00
+          name: owner@example.com
         url: https://docs.wardlock.example.net/
         createdAt: 1767225600000
         unavailable: false
@@ -3935,6 +4644,10 @@ components:
         id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
         name: docs
         hostname: docs.wardlock.example.net
+        owner:
+          kind: owner
+          id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e00
+          name: owner@example.com
         url: https://docs.wardlock.example.net/
         createdAt: 1767225600000
         unavailable: false
@@ -3964,6 +4677,10 @@ components:
           id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
           name: docs
           hostname: docs.wardlock.example.net
+          owner:
+            kind: owner
+            id: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e00
+            name: owner@example.com
           url: https://docs.wardlock.example.net/
           createdAt: 1767225600000
           unavailable: false
@@ -4070,6 +4787,171 @@ components:
         failureDetail: old.example.org is a CNAME for elsewhere.example.net.
 
   schemas:
+    SiteOwner:
+      type: object
+      additionalProperties: false
+      required: [kind, id, name]
+      description: Whose a site is. `name` is an owner's address or a team's name.
+      properties:
+        kind:
+          type: string
+          enum: [owner, team]
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+    CreatedBy:
+      type: object
+      additionalProperties: false
+      required: [kind, id, name]
+      description: >-
+        Who made this: the member, kept after they leave, or the team token
+        that did. Absent where nothing was recorded.
+      properties:
+        kind:
+          type: string
+          enum: [owner, token]
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          type: string
+          description: The owner's address, or the token's name.
+    TeamRole:
+      type: string
+      description: >-
+        `admin`: members, roles, team settings and deleting the team, plus
+        everything an editor can do. `editor`: everything an owner can do to
+        a site. `viewer`: reads only, including analytics and the access log.
+      enum: [admin, editor, viewer]
+    Team:
+      type: object
+      additionalProperties: false
+      required: [id, name, role, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        name:
+          $ref: '#/components/schemas/TeamName'
+        role:
+          $ref: '#/components/schemas/TeamRole'
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+    TeamName:
+      type: string
+      minLength: 1
+      maxLength: 80
+      examples: [Web team]
+    TeamList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Team'
+    CreateTeamRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          $ref: '#/components/schemas/TeamName'
+    UpdateTeamRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          $ref: '#/components/schemas/TeamName'
+    TeamMember:
+      type: object
+      additionalProperties: false
+      required: [ownerId, email, role, createdAt, suspended]
+      properties:
+        ownerId:
+          $ref: '#/components/schemas/Id'
+        email:
+          $ref: '#/components/schemas/Email'
+        role:
+          $ref: '#/components/schemas/TeamRole'
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        suspended:
+          type: boolean
+          description: True while the operator has suspended them, which ends their access.
+    TeamMemberPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamMember'
+        nextCursor:
+          $ref: '#/components/schemas/Cursor'
+    SetTeamMemberRoleRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          $ref: '#/components/schemas/TeamRole'
+    TeamInvitation:
+      type: object
+      additionalProperties: false
+      required: [id, teamId, teamName, email, role, createdAt, expiresAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        teamId:
+          $ref: '#/components/schemas/Id'
+        teamName:
+          $ref: '#/components/schemas/TeamName'
+        email:
+          $ref: '#/components/schemas/Email'
+        role:
+          $ref: '#/components/schemas/TeamRole'
+        createdAt:
+          $ref: '#/components/schemas/Timestamp'
+        expiresAt:
+          $ref: '#/components/schemas/Timestamp'
+    TeamInvitationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamInvitation'
+    CreateTeamInvitationRequest:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        role:
+          $ref: '#/components/schemas/TeamRole'
+    TransferSiteRequest:
+      type: object
+      additionalProperties: false
+      required: [to]
+      properties:
+        to:
+          type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind:
+              type: string
+              description: "`owner` is the caller's own account."
+              enum: [owner, team]
+            id:
+              description: The team, for `team`; refused with `owner`.
+              $ref: '#/components/schemas/Id'
     Health:
       type: object
       additionalProperties: false
@@ -4231,6 +5113,18 @@ components:
       properties:
         owner:
           $ref: '#/components/schemas/Owner'
+        team:
+          description: >-
+            Set for a team token, which belongs to this team and to no person.
+            `owner` then names the team's own account.
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            name:
+              $ref: '#/components/schemas/TeamName'
         credential:
           type: string
           description: How this request was authenticated.
@@ -4772,12 +5666,14 @@ components:
       type: object
       additionalProperties: false
       required:
-        [id, name, hostname, url, createdAt, unavailable, tagIds, pinned]
+        [id, name, hostname, url, createdAt, unavailable, tagIds, pinned, owner]
       properties:
         id:
           $ref: '#/components/schemas/Id'
         name:
           $ref: '#/components/schemas/SiteName'
+        owner:
+          $ref: '#/components/schemas/SiteOwner'
         unavailable:
           type: boolean
           description: >-
@@ -4846,6 +5742,9 @@ components:
       properties:
         name:
           $ref: '#/components/schemas/SiteName'
+        team:
+          description: Create the site under this team rather than the caller's own account.
+          $ref: '#/components/schemas/Id'
     GroupName:
       type: string
       description: >-
@@ -5062,6 +5961,8 @@ components:
       required:
         [id, status, createdAt, fileCount, totalSize, spa, immutableAssets]
       properties:
+        createdBy:
+          $ref: '#/components/schemas/CreatedBy'
         id:
           $ref: '#/components/schemas/Id'
         status:
@@ -5431,6 +6332,8 @@ components:
       required:
         [id, hostname, status, routingRecord, verificationRecord, createdAt]
       properties:
+        createdBy:
+          $ref: '#/components/schemas/CreatedBy'
         id:
           $ref: '#/components/schemas/Id'
         hostname:
@@ -5606,6 +6509,8 @@ components:
           updatedAt,
         ]
       properties:
+        createdBy:
+          $ref: '#/components/schemas/CreatedBy'
         id:
           $ref: '#/components/schemas/Id'
         path:
@@ -5701,6 +6606,8 @@ components:
       additionalProperties: false
       required: [id, publicId, path, status, uses, createdAt]
       properties:
+        createdBy:
+          $ref: '#/components/schemas/CreatedBy'
         id:
           $ref: '#/components/schemas/Id'
         publicId:

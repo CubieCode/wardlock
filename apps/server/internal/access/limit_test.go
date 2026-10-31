@@ -334,17 +334,17 @@ func newFlood(t *testing.T, limits Limits) *flood {
 	if err := db.Owners().Create(t.Context(), o); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Sites().Create(t.Context(), site, store.Quotas{}); err != nil {
+	if err := db.Sites().Create(t.Context(), store.ActorFor(site.OwnerID), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Set(t.Context(), o.ID, "harbour", Rule{
+	if _, err := s.Set(t.Context(), store.ActorFor(o.ID), "harbour", Rule{
 		PathPrefix: "/", Visibility: store.Protected, Links: true, Password: true, NewPassword: floodPassword,
 		// No flood address is allowed, so sends store and mail nothing.
 		Email: true, OAuth: true, Allowlist: &store.Allowlist{Domains: []string{"crew.example.test"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, f.token, err = s.CreateLink(t.Context(), o.ID, "harbour", NewLink{})
+	_, f.token, err = s.CreateLink(t.Context(), store.ActorFor(o.ID), "harbour", NewLink{})
 	if err != nil {
 		t.Fatal(err)
 	}

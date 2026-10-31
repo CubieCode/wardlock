@@ -114,17 +114,17 @@ func TestPreviewHostResolution(t *testing.T) {
 	p.sameAs(t, unknown, "docs--short.wardlock.localhost")
 
 	// Deleting a preview stops it at once; so does tearing down its site.
-	if err := p.deploys.DeletePreview(t.Context(), p.owner.ID, "docs", "pr-1"); err != nil {
+	if err := p.deploys.DeletePreview(t.Context(), store.ActorFor(p.owner.ID), "docs", "pr-1"); err != nil {
 		t.Fatal(err)
 	}
 	p.sameAs(t, unknown, previewHost)
 	p.preview("team", "y", nil, previewFiles)
 	p.visit(visit{host: "team--y.wardlock.localhost", target: "/"}).expect(t, 200, "Preview page", "")
-	if err := p.operatorSites(nil).Delete(t.Context(), p.owner.ID, "team"); err != nil {
+	if err := p.operatorSites(nil).Delete(t.Context(), store.ActorFor(p.owner.ID), "team"); err != nil {
 		t.Fatal(err)
 	}
 	p.sameAs(t, unknown, "team--y.wardlock.localhost")
-	if _, ps, err := p.deploys.Previews(t.Context(), p.owner.ID, "team--x", "", 10); err != nil || len(ps) != 1 {
+	if _, ps, err := p.deploys.Previews(t.Context(), store.ActorFor(p.owner.ID), "team--x", "", 10); err != nil || len(ps) != 1 {
 		t.Fatalf("the legacy site's previews after another teardown = %+v, %v", ps, err)
 	}
 }
@@ -192,7 +192,7 @@ func TestPreviewResponses(t *testing.T) {
 
 	// A site with nothing live serves its previews; its own host does not.
 	empty := store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: "fresh", CreatedAt: p.now()}
-	if err := p.db.Sites().Create(t.Context(), empty, store.Quotas{}); err != nil {
+	if err := p.db.Sites().Create(t.Context(), store.ActorFor(empty.OwnerID), empty, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	p.preview("fresh", "first", nil, previewFiles)
@@ -261,7 +261,7 @@ func TestPreviewAccess(t *testing.T) {
 		t.Fatal("dashboard host not handled by the dashboard")
 	}
 	// Revoking the link ends the preview session too.
-	if err := p.acc.RevokeLink(t.Context(), p.owner.ID, "docs", review.PublicID); err != nil {
+	if err := p.acc.RevokeLink(t.Context(), store.ActorFor(p.owner.ID), "docs", review.PublicID); err != nil {
 		t.Fatal(err)
 	}
 	if r := p.visit(visit{host: previewHost, target: "/", cookie: cookie}); r.code != 401 || !r.cleared() {

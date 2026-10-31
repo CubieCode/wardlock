@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"math"
 	"time"
 
@@ -26,6 +27,11 @@ type APIToken struct {
 	ExpiresAt   time.Time // zero: never
 	LastUsedAt  time.Time
 	RevokedAt   time.Time
+	// CreatedBy is the admin who made a team token (T7.1); empty on a
+	// personal token.
+	CreatedBy string
+	// Team reports a team token: OwnerID is the team (read only).
+	Team bool
 }
 
 // APITokenQuery selects one page of an owner's usable API tokens, newest
@@ -84,6 +90,8 @@ type CLILoginDecision struct {
 
 // APITokens stores API tokens and the CLI login requests that mint them.
 type APITokens interface {
+	// Create adds t, a personal token: t.OwnerID must be a person, not a
+	// team (ErrConstraint). Teams.CreateToken makes a team's.
 	Create(ctx context.Context, t APIToken) error
 	// GetByPublicID finds a token by its public ID, whatever its state,
 	// unless its owner is suspended (ErrNotFound); callers compare the hash
@@ -98,6 +106,8 @@ type APITokens interface {
 	Revoke(ctx context.Context, ownerID, id string, at time.Time) error
 	// List returns one page of usable (unrevoked, unexpired) tokens.
 	List(ctx context.Context, q APITokenQuery) ([]APIToken, error)
+	// Name returns token id's name, revoked or not, for createdBy.
+	Name(ctx context.Context, id string) (string, error)
 
 	CreateCLILogin(ctx context.Context, r CLILoginRequest) error
 	// GetCLILoginByDeviceCodeHash finds a request by its device code hash,
@@ -127,7 +137,12 @@ func (r apiTokensRepo) Create(ctx context.Context, t APIToken) error {
 }
 
 func createAPIToken(ctx context.Context, q *sqlcgen.Queries, t APIToken) error {
-	return mapErr("create API token", q.CreateAPIToken(ctx, sqlcgen.CreateAPITokenParams{
+	return insertAPIToken(ctx, q, t, AccountOwner)
+}
+
+// insertAPIToken adds t only when t.OwnerID is an account of kind.
+func insertAPIToken(ctx context.Context, q *sqlcgen.Queries, t APIToken, kind AccountKind) error {
+	n, err := q.CreateAPIToken(ctx, sqlcgen.CreateAPITokenParams{
 		ID:          t.ID,
 		OwnerID:     t.OwnerID,
 		PublicID:    t.PublicID,
@@ -139,7 +154,16 @@ func createAPIToken(ctx context.Context, q *sqlcgen.Queries, t APIToken) error {
 		ExpiresAt:   nullMs(t.ExpiresAt),
 		LastUsedAt:  nullMs(t.LastUsedAt),
 		RevokedAt:   nullMs(t.RevokedAt),
-	}))
+		CreatedBy:   nullString(t.CreatedBy),
+		AccountKind: string(kind),
+	})
+	if err != nil {
+		return mapErr("create API token", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("create API token: %w", ErrConstraint)
+	}
+	return nil
 }
 
 func apiTokenFromRow(row sqlcgen.ApiToken) APIToken {
@@ -155,6 +179,7 @@ func apiTokenFromRow(row sqlcgen.ApiToken) APIToken {
 		ExpiresAt:   fromNullMs(row.ExpiresAt),
 		LastUsedAt:  fromNullMs(row.LastUsedAt),
 		RevokedAt:   fromNullMs(row.RevokedAt),
+		CreatedBy:   row.CreatedBy.String,
 	}
 }
 
@@ -163,7 +188,13 @@ func (r apiTokensRepo) GetByPublicID(ctx context.Context, publicID string) (APIT
 	if err != nil {
 		return APIToken{}, mapErr("get API token", err)
 	}
-	return apiTokenFromRow(row), nil
+	t := apiTokenFromRow(sqlcgen.ApiToken{
+		ID: row.ID, OwnerID: row.OwnerID, PublicID: row.PublicID, TokenHash: row.TokenHash, Name: row.Name,
+		ScopeDeploy: row.ScopeDeploy, ScopeManage: row.ScopeManage, CreatedAt: row.CreatedAt, ExpiresAt: row.ExpiresAt,
+		LastUsedAt: row.LastUsedAt, RevokedAt: row.RevokedAt, CreatedBy: row.CreatedBy,
+	})
+	t.Team = row.AccountKind == string(AccountTeam)
+	return t, nil
 }
 
 func (r apiTokensRepo) Touch(ctx context.Context, id string, at time.Time) error {
@@ -173,6 +204,11 @@ func (r apiTokensRepo) Touch(ctx context.Context, id string, at time.Time) error
 func (r apiTokensRepo) Revoke(ctx context.Context, ownerID, id string, at time.Time) error {
 	n, err := r.db.q.RevokeAPIToken(ctx, sqlcgen.RevokeAPITokenParams{ID: id, OwnerID: ownerID, RevokedAt: nullMs(at)})
 	return rowsAffected("revoke API token", n, err)
+}
+
+func (r apiTokensRepo) Name(ctx context.Context, id string) (string, error) {
+	name, err := r.db.q.GetAPITokenName(ctx, id)
+	return name, mapErr("get API token name", err)
 }
 
 func (r apiTokensRepo) List(ctx context.Context, q APITokenQuery) ([]APIToken, error) {

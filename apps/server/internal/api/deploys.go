@@ -52,9 +52,12 @@ func failed(err error) (*failure, error) {
 	if tm := (*sites.TooManyError)(nil); errors.As(err, &tm) {
 		target, message = tm.Target, tm.Message
 	}
-	siteLimit := ""
+	siteLimit, siteLimitTarget := "", "name"
 	if le := (*sites.LimitError)(nil); errors.As(err, &le) {
 		siteLimit = le.Message()
+	}
+	if le := (*sites.TransferLimitError)(nil); errors.As(err, &le) {
+		siteLimit, siteLimitTarget = le.Message(), "to"
 	}
 	for _, m := range []struct {
 		err     error
@@ -64,6 +67,7 @@ func failed(err error) (*failure, error) {
 		target  string
 	}{
 		{sites.ErrNotFound, http.StatusNotFound, "not_found", "Not found.", ""},
+		{store.ErrNotFound, http.StatusNotFound, "not_found", "Not found.", ""},
 		{sites.ErrInvalid, http.StatusBadRequest, "invalid_request", message, target},
 		{sites.ErrGroupNameTaken, http.StatusConflict, "group_name_taken", "You already have a group with this name.", "name"},
 		{sites.ErrTagNameTaken, http.StatusConflict, "tag_name_taken", "You already have a tag with this name.", "name"},
@@ -81,7 +85,7 @@ func failed(err error) (*failure, error) {
 		{deploys.ErrInvalidPreview, http.StatusBadRequest, "invalid_preview_name", message, target},
 		{deploys.ErrInvalidPreviewExpiry, http.StatusBadRequest, "invalid_request", message, target},
 		{deploys.ErrPreviewNameTaken, http.StatusConflict, "site_name_taken", message, target},
-		{sites.ErrLimitExceeded, http.StatusRequestEntityTooLarge, "limit_exceeded", siteLimit, "name"},
+		{sites.ErrLimitExceeded, http.StatusRequestEntityTooLarge, "limit_exceeded", siteLimit, siteLimitTarget},
 		{deploys.ErrLimitExceeded, http.StatusRequestEntityTooLarge, "limit_exceeded", message, target},
 		{deploys.ErrBlockedType, http.StatusUnprocessableEntity, "file_type_blocked", message, target},
 		{deploys.ErrHashMismatch, http.StatusBadRequest, "hash_mismatch", "The body does not match the sha256 and size in the manifest.", ""},
@@ -151,6 +155,7 @@ func (s *Server) siteBody(site store.Site, tagIDs []string) Site {
 		Unavailable: !site.TakenDownAt.IsZero(),
 		TagIds:      tagIDs,
 		Pinned:      !site.PinnedAt.IsZero(),
+		Owner:       SiteOwner{Kind: SiteOwnerKind(site.OwnerKind), Id: site.OwnerID, Name: site.OwnerName},
 	}
 	if site.GroupID != "" {
 		out.GroupId = &site.GroupID
@@ -172,7 +177,7 @@ func (s *Server) siteURL(host string) string {
 	return "https://" + host + "/"
 }
 
-func deployBody(site store.Site, d store.Deploy) Deploy {
+func (s *Server) deployBody(ctx context.Context, site store.Site, d store.Deploy) Deploy {
 	out := Deploy{
 		Id:              d.ID,
 		Status:          DeployStatus(deploys.StatusOf(site, d)),
@@ -181,6 +186,7 @@ func deployBody(site store.Site, d store.Deploy) Deploy {
 		TotalSize:       d.TotalSize,
 		Spa:             d.SPA,
 		ImmutableAssets: d.ImmutableAssets,
+		CreatedBy:       s.creator(ctx, d.CreatedBy, d.CreatedByToken),
 	}
 	if d.FileCount >= 0 && d.FileCount <= math.MaxInt32 {
 		out.FileCount = int32(d.FileCount)
@@ -222,19 +228,19 @@ func millis(t time.Time) *Timestamp {
 
 // ListSites lists the owner's sites by name, or the one at a hostname.
 func (s *Server) ListSites(ctx context.Context, req ListSitesRequestObject) (ListSitesResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListSitesdefaultJSONResponse(*unauthenticated), nil
 	}
 	if req.Params.Hostname != nil {
-		site, err := s.Sites.ForHostname(ctx, owner, *req.Params.Hostname)
-		if errors.Is(err, sites.ErrNotFound) {
+		site, err := s.Sites.ForHostname(ctx, actor, *req.Params.Hostname)
+		if errors.Is(err, sites.ErrNotFound) || (err == nil && req.Params.Team != nil && site.OwnerID != *req.Params.Team) {
 			return ListSites200JSONResponse{Items: []Site{}}, nil
 		}
 		if err != nil {
 			return nil, err
 		}
-		body, err := s.siteBodyWithTags(ctx, owner, site)
+		body, err := s.siteBodyWithTags(ctx, actor, site)
 		if err != nil {
 			return nil, err
 		}
@@ -248,16 +254,20 @@ func (s *Server) ListSites(ctx context.Context, req ListSitesRequestObject) (Lis
 	if !ok || (after != "" && !sites.ValidName(after)) {
 		return ListSitesdefaultJSONResponse(*badCursor), nil
 	}
-	list, err := s.Sites.List(ctx, owner, after, limit+1)
+	list, err := s.Sites.List(ctx, actor, deref(req.Params.Team), after, limit+1)
 	if err != nil {
-		return nil, err
+		f, err := failed(err)
+		if f == nil {
+			return nil, err
+		}
+		return ListSitesdefaultJSONResponse(*f), nil
 	}
 	page := ListSites200JSONResponse{Items: []Site{}}
 	if len(list) > limit {
 		list = list[:limit]
 		page.NextCursor = encodeCursor(list[limit-1].Name)
 	}
-	tags, err := s.Sites.TagIDs(ctx, owner, list...)
+	tags, err := s.Sites.TagIDs(ctx, actor, list...)
 	if err != nil {
 		return nil, err
 	}
@@ -269,14 +279,14 @@ func (s *Server) ListSites(ctx context.Context, req ListSitesRequestObject) (Lis
 
 // CreateSite creates an empty site.
 func (s *Server) CreateSite(ctx context.Context, req CreateSiteRequestObject) (CreateSiteResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return CreateSitedefaultJSONResponse(*unauthenticated), nil
 	}
 	if req.Body == nil {
 		return CreateSitedefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_request", "name is required.", "name")), nil
 	}
-	site, err := s.Sites.Create(ctx, owner, req.Body.Name)
+	site, err := s.Sites.Create(ctx, actor, deref(req.Body.Team), req.Body.Name)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -289,11 +299,11 @@ func (s *Server) CreateSite(ctx context.Context, req CreateSiteRequestObject) (C
 
 // GetSite returns one of the owner's sites.
 func (s *Server) GetSite(ctx context.Context, req GetSiteRequestObject) (GetSiteResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return GetSitedefaultJSONResponse(*unauthenticated), nil
 	}
-	site, err := s.Sites.Get(ctx, owner, req.Site)
+	site, err := s.Sites.Get(ctx, actor, req.Site)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -301,7 +311,7 @@ func (s *Server) GetSite(ctx context.Context, req GetSiteRequestObject) (GetSite
 		}
 		return GetSitedefaultJSONResponse(*f), nil
 	}
-	body, err := s.siteBodyWithTags(ctx, owner, site)
+	body, err := s.siteBodyWithTags(ctx, actor, site)
 	if err != nil {
 		return nil, err
 	}
@@ -310,11 +320,11 @@ func (s *Server) GetSite(ctx context.Context, req GetSiteRequestObject) (GetSite
 
 // DeleteSite tears a site down.
 func (s *Server) DeleteSite(ctx context.Context, req DeleteSiteRequestObject) (DeleteSiteResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return DeleteSitedefaultJSONResponse(*unauthenticated), nil
 	}
-	if err := s.Sites.Delete(ctx, owner, req.Site); err != nil {
+	if err := s.Sites.Delete(ctx, actor, req.Site); err != nil {
 		f, err := failed(err)
 		if f == nil {
 			return nil, err
@@ -326,7 +336,7 @@ func (s *Server) DeleteSite(ctx context.Context, req DeleteSiteRequestObject) (D
 
 // ListDeploys lists a site's deploys, newest first.
 func (s *Server) ListDeploys(ctx context.Context, req ListDeploysRequestObject) (ListDeploysResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListDeploysdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -338,7 +348,7 @@ func (s *Server) ListDeploys(ctx context.Context, req ListDeploysRequestObject) 
 	if !ok {
 		return ListDeploysdefaultJSONResponse(*badCursor), nil
 	}
-	site, list, err := s.Deploys.List(ctx, owner, req.Site, before, limit+1)
+	site, list, err := s.Deploys.List(ctx, actor, req.Site, before, limit+1)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -353,7 +363,7 @@ func (s *Server) ListDeploys(ctx context.Context, req ListDeploysRequestObject) 
 		page.NextCursor = encodeCursor(strconv.FormatInt(last.CreatedAt.UnixMilli(), 10) + ":" + last.ID)
 	}
 	for _, d := range list {
-		page.Items = append(page.Items, deployBody(site, d))
+		page.Items = append(page.Items, s.deployBody(ctx, site, d))
 	}
 	return page, nil
 }
@@ -374,7 +384,7 @@ func deployCursor(c *Cursor) (store.DeployCursor, bool) {
 
 // CreateDeploy records a manifest and answers with the hashes to upload.
 func (s *Server) CreateDeploy(ctx context.Context, req CreateDeployRequestObject) (CreateDeployResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return CreateDeploydefaultJSONResponse(*unauthenticated), nil
 	}
@@ -423,7 +433,7 @@ func (s *Server) CreateDeploy(ctx context.Context, req CreateDeployRequestObject
 		}
 		m.PreviewDays = &days
 	}
-	d, missing, err := s.Deploys.Create(ctx, owner, req.Site, m)
+	d, missing, err := s.Deploys.Create(ctx, actor, req.Site, m)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -432,18 +442,18 @@ func (s *Server) CreateDeploy(ctx context.Context, req CreateDeployRequestObject
 		return CreateDeploydefaultJSONResponse(*f), nil
 	}
 	return CreateDeploy201JSONResponse{
-		Deploy:  deployBody(store.Site{}, d),
+		Deploy:  s.deployBody(ctx, store.Site{}, d),
 		Missing: append([]Sha256{}, missing...),
 	}, nil
 }
 
 // UploadDeployBlob stores one file body listed in a deploy's manifest.
 func (s *Server) UploadDeployBlob(ctx context.Context, req UploadDeployBlobRequestObject) (UploadDeployBlobResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return UploadDeployBlobdefaultJSONResponse(*unauthenticated), nil
 	}
-	if err := s.Deploys.Upload(ctx, owner, req.Site, req.DeployId, req.Sha256, req.Body); err != nil {
+	if err := s.Deploys.Upload(ctx, actor, req.Site, req.DeployId, req.Sha256, req.Body); err != nil {
 		f, err := failed(err)
 		if f == nil {
 			return nil, err
@@ -455,11 +465,11 @@ func (s *Server) UploadDeployBlob(ctx context.Context, req UploadDeployBlobReque
 
 // ActivateDeploy makes a pending deploy the site's active deploy.
 func (s *Server) ActivateDeploy(ctx context.Context, req ActivateDeployRequestObject) (ActivateDeployResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ActivateDeploydefaultJSONResponse(*unauthenticated), nil
 	}
-	site, d, err := s.Deploys.Activate(ctx, owner, req.Site, req.DeployId)
+	site, d, err := s.Deploys.Activate(ctx, actor, req.Site, req.DeployId)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -467,17 +477,17 @@ func (s *Server) ActivateDeploy(ctx context.Context, req ActivateDeployRequestOb
 		}
 		return ActivateDeploydefaultJSONResponse(*f), nil
 	}
-	body, err := s.siteBodyWithTags(ctx, owner, site)
+	body, err := s.siteBodyWithTags(ctx, actor, site)
 	if err != nil {
 		return nil, err
 	}
-	out := ActivateDeploy200JSONResponse{Site: body, Deploy: deployBody(site, d)}
+	out := ActivateDeploy200JSONResponse{Site: body, Deploy: s.deployBody(ctx, site, d)}
 	if d.Preview != "" {
-		_, p, err := s.Deploys.Preview(ctx, owner, req.Site, d.Preview)
+		_, p, err := s.Deploys.Preview(ctx, actor, req.Site, d.Preview)
 		if err != nil {
 			return nil, err
 		}
-		pb := s.previewBody(site, p, d)
+		pb := s.previewBody(ctx, site, p, d)
 		out.Preview = &pb
 	}
 	return out, nil
@@ -485,7 +495,7 @@ func (s *Server) ActivateDeploy(ctx context.Context, req ActivateDeployRequestOb
 
 // RollbackSite reactivates an earlier deploy.
 func (s *Server) RollbackSite(ctx context.Context, req RollbackSiteRequestObject) (RollbackSiteResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return RollbackSitedefaultJSONResponse(*unauthenticated), nil
 	}
@@ -493,7 +503,7 @@ func (s *Server) RollbackSite(ctx context.Context, req RollbackSiteRequestObject
 	if req.Body != nil && req.Body.DeployId != nil {
 		deployID = *req.Body.DeployId
 	}
-	site, d, err := s.Deploys.Rollback(ctx, owner, req.Site, deployID)
+	site, d, err := s.Deploys.Rollback(ctx, actor, req.Site, deployID)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -501,9 +511,9 @@ func (s *Server) RollbackSite(ctx context.Context, req RollbackSiteRequestObject
 		}
 		return RollbackSitedefaultJSONResponse(*f), nil
 	}
-	body, err := s.siteBodyWithTags(ctx, owner, site)
+	body, err := s.siteBodyWithTags(ctx, actor, site)
 	if err != nil {
 		return nil, err
 	}
-	return RollbackSite200JSONResponse{Site: body, Deploy: deployBody(site, d)}, nil
+	return RollbackSite200JSONResponse{Site: body, Deploy: s.deployBody(ctx, site, d)}, nil
 }

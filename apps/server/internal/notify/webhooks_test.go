@@ -704,7 +704,7 @@ func TestWebhookListingADeletedSite(t *testing.T) {
 	})
 	s := w.hookService()
 	ctx := t.Context()
-	w.must(w.db.Sites().Delete(ctx, o.ID, docs.ID))
+	w.must(w.db.Sites().Delete(ctx, store.ActorFor(o.ID), docs.ID))
 	s.SiteDeleted(ctx, docs)
 	s.DeliverWebhooks(ctx)
 	if got := r.received(); len(got) != 1 || parse(t, got[0].body).Type != notify.EventSiteDeleted {

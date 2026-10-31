@@ -52,7 +52,7 @@ type racingPolicies struct {
 	beforeSet func()
 }
 
-func (r *racingPolicies) Set(ctx context.Context, ownerID string, p store.Policy) (store.Policy, error) {
+func (r *racingPolicies) Set(ctx context.Context, actor store.Actor, p store.Policy) (store.Policy, error) {
 	r.mu.Lock()
 	fn := r.beforeSet
 	r.beforeSet = nil
@@ -60,7 +60,7 @@ func (r *racingPolicies) Set(ctx context.Context, ownerID string, p store.Policy
 	if fn != nil {
 		fn()
 	}
-	return r.Policies.Set(ctx, ownerID, p)
+	return r.Policies.Set(ctx, actor, p)
 }
 
 type passwordHarness struct {
@@ -276,7 +276,7 @@ func TestSetPassword(t *testing.T) {
 		{"public with a password", access.Rule{PathPrefix: "/", Visibility: store.Public, Password: true, NewPassword: firstPassword}, access.ErrInvalidPolicy},
 		{"password without the method", access.Rule{PathPrefix: "/", Visibility: store.Protected, Links: true, NewPassword: firstPassword}, access.ErrInvalidPolicy},
 	} {
-		_, err := h.svc.Set(ctx, a, "harbour", tc.rule)
+		_, err := h.svc.Set(ctx, store.ActorFor(a), "harbour", tc.rule)
 		if !errors.Is(err, tc.want) {
 			t.Errorf("%s: %v, want %v", tc.name, err, tc.want)
 		}
@@ -286,7 +286,7 @@ func TestSetPassword(t *testing.T) {
 		}
 	}
 	// Eight characters, not bytes, is the minimum.
-	if _, err := h.svc.Set(ctx, a, "harbour", passwordRule("/", "ŵaŵaŵaŵ")); !errors.Is(err, access.ErrInvalidPolicy) {
+	if _, err := h.svc.Set(ctx, store.ActorFor(a), "harbour", passwordRule("/", "ŵaŵaŵaŵ")); !errors.Is(err, access.ErrInvalidPolicy) {
 		t.Fatalf("seven characters: %v", err)
 	}
 
@@ -304,10 +304,10 @@ func TestSetPassword(t *testing.T) {
 
 	// B cannot change A's password, and gets the same error as for a
 	// missing site; A's password and sessions stay.
-	if _, err := h.svc.Set(ctx, b, "harbour", passwordRule("/", secondPassword)); !errors.Is(err, access.ErrNotFound) {
+	if _, err := h.svc.Set(ctx, store.ActorFor(b), "harbour", passwordRule("/", secondPassword)); !errors.Is(err, access.ErrNotFound) {
 		t.Fatalf("B sets A's password: %v", err)
 	}
-	if _, err := h.svc.Set(ctx, b, "beta", passwordRule("/", secondPassword)); err != nil {
+	if _, err := h.svc.Set(ctx, store.ActorFor(b), "beta", passwordRule("/", secondPassword)); err != nil {
 		t.Fatal(err)
 	}
 	h.allowed("after B's attempt", s.ID, pw, true)
@@ -342,7 +342,7 @@ func TestSetPassword(t *testing.T) {
 		t.Fatalf("password after removal: %v", err)
 	}
 	// Turning it back on needs a new password.
-	if _, err := h.svc.Set(ctx, a, "harbour", passwordRule("/", "")); !errors.Is(err, access.ErrInvalidPolicy) {
+	if _, err := h.svc.Set(ctx, store.ActorFor(a), "harbour", passwordRule("/", "")); !errors.Is(err, access.ErrInvalidPolicy) {
 		t.Fatalf("re-enable without a password: %v", err)
 	}
 }
@@ -441,7 +441,7 @@ func TestLogsNeverContainPasswords(t *testing.T) {
 	s := h.site(o, "harbour")
 	p := h.set(o, "harbour", passwordRule("/", firstPassword))
 	h.set(o, "harbour", passwordRule("/", secondPassword))
-	_, _ = h.svc.Set(t.Context(), o, "harbour", passwordRule("/", "short"))
+	_, _ = h.svc.Set(t.Context(), store.ActorFor(o), "harbour", passwordRule("/", "short"))
 	c, err := h.login(s.ID, "/", "192.0.2.1", secondPassword)
 	if err != nil {
 		t.Fatal(err)

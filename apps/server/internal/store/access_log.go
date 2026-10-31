@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"math"
 	"time"
 
@@ -74,11 +75,11 @@ type AccessLog interface {
 	// preview entries, are logged but not counted.
 	Append(ctx context.Context, entries []AccessEntry) error
 	// ListBySite returns up to limit (1 to MaxAccessListLimit) of
-	// ownerID's site's entries, newest first, before the cursor. A missing
+	// the site's entries, newest first, before the cursor. A missing
 	// or foreign site lists nothing.
-	ListBySite(ctx context.Context, ownerID, siteID string, before AccessCursor, limit int) ([]AccessEntry, error)
+	ListBySite(ctx context.Context, actor Actor, siteID string, before AccessCursor, limit int) ([]AccessEntry, error)
 	// ListByLink is ListBySite narrowed to one share link's public ID.
-	ListByLink(ctx context.Context, ownerID, siteID, linkPublicID string, before AccessCursor, limit int) ([]AccessEntry, error)
+	ListByLink(ctx context.Context, actor Actor, siteID, linkPublicID string, before AccessCursor, limit int) ([]AccessEntry, error)
 	// Prune deletes up to limit (1 to MaxAccessPruneLimit) entries, on any
 	// site, that occurred before cutoff and returns how many it deleted;
 	// fewer than limit means none are left. It is the retention job, not an
@@ -116,7 +117,14 @@ func (r accessLogRepo) Append(ctx context.Context, entries []AccessEntry) error 
 	})
 }
 
-func (r accessLogRepo) ListBySite(ctx context.Context, ownerID, siteID string, before AccessCursor, limit int) ([]AccessEntry, error) {
+func (r accessLogRepo) ListBySite(ctx context.Context, actor Actor, siteID string, before AccessCursor, limit int) ([]AccessEntry, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if errors.Is(err, ErrNotFound) {
+		return []AccessEntry{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	beforeAt, beforeID := before.bounds()
 	rows, err := r.db.q.ListAccessLogBySite(ctx, sqlcgen.ListAccessLogBySiteParams{
 		SiteID:           siteID,
@@ -131,7 +139,14 @@ func (r accessLogRepo) ListBySite(ctx context.Context, ownerID, siteID string, b
 	return accessEntriesFrom(rows), nil
 }
 
-func (r accessLogRepo) ListByLink(ctx context.Context, ownerID, siteID, linkPublicID string, before AccessCursor, limit int) ([]AccessEntry, error) {
+func (r accessLogRepo) ListByLink(ctx context.Context, actor Actor, siteID, linkPublicID string, before AccessCursor, limit int) ([]AccessEntry, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if errors.Is(err, ErrNotFound) {
+		return []AccessEntry{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	beforeAt, beforeID := before.bounds()
 	rows, err := r.db.q.ListAccessLogByLink(ctx, sqlcgen.ListAccessLogByLinkParams{
 		LinkPublicID:     sql.NullString{String: linkPublicID, Valid: true},

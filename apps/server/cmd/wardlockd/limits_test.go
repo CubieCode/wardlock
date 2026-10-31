@@ -121,7 +121,7 @@ func TestSignInRateLimitsThroughTheEdge(t *testing.T) {
 			allow := store.Allowlist{Emails: []string{visitorAddr}}
 			for _, site := range []string{"docs", "other"} {
 				p.publish(site)
-				if _, err := p.acc.Set(t.Context(), p.owner.ID, site, access.Rule{
+				if _, err := p.acc.Set(t.Context(), store.ActorFor(p.owner.ID), site, access.Rule{
 					PathPrefix: "/", Visibility: store.Protected, Links: true, Password: true, NewPassword: sitePassword,
 					Email: true, Allowlist: &allow,
 				}); err != nil {
@@ -175,7 +175,7 @@ func TestNetworkShareThroughTheEdge(t *testing.T) {
 		c.Limits.PasswordPerSite.N = siteN
 	})
 	p.publish("docs")
-	if _, err := p.acc.Set(t.Context(), p.owner.ID, "docs", access.Rule{
+	if _, err := p.acc.Set(t.Context(), store.ActorFor(p.owner.ID), "docs", access.Rule{
 		PathPrefix: "/", Visibility: store.Protected, Password: true, NewPassword: sitePassword,
 	}); err != nil {
 		t.Fatal(err)

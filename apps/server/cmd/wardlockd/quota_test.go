@@ -63,12 +63,12 @@ func TestAdminQuota(t *testing.T) {
 	}
 	instance := store.Quotas{StorageBytes: 1 << 30, Sites: 5}
 	site := store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "docs", CreatedAt: time.Now()}
-	if err := db.Sites().Create(t.Context(), site, instance); err != nil {
+	if err := db.Sites().Create(t.Context(), store.ActorFor(site.OwnerID), site, instance); err != nil {
 		t.Fatal(err)
 	}
 	d := store.Deploy{ID: store.NewID(), SiteID: site.ID, FileCount: 1, TotalSize: 1536, CreatedAt: time.Now()}
 	files := []store.DeployFile{{Path: "index.html", SHA256: strings.Repeat("a", 64), Size: 1536}}
-	if err := db.Deploys().Create(t.Context(), o.ID, d, files, instance); err != nil {
+	if err := db.Deploys().Create(t.Context(), store.ActorFor(o.ID), d, files, instance); err != nil {
 		t.Fatal(err)
 	}
 
@@ -100,7 +100,7 @@ func TestAdminQuota(t *testing.T) {
 		}
 	}
 	// The store enforces the override; the other owner keeps the instance's.
-	err = db.Sites().Create(t.Context(), store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "blog", CreatedAt: time.Now()}, instance)
+	err = db.Sites().Create(t.Context(), store.ActorFor(store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "blog", CreatedAt: time.Now()}.OwnerID), store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "blog", CreatedAt: time.Now()}, instance)
 	if !errors.Is(err, store.ErrQuotaExceeded) {
 		t.Fatalf("second site under a 1-site override: %v", err)
 	}

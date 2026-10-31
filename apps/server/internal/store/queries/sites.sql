@@ -2,57 +2,62 @@
 INSERT INTO sites (id, owner_id, name, created_at)
 VALUES (sqlc.arg(id), sqlc.arg(owner_id), sqlc.arg(name), sqlc.arg(created_at));
 
--- name: GetSite :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
-  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
-FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
-LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
-WHERE sites.id = sqlc.arg(id) AND sites.owner_id = sqlc.arg(owner_id);
-
--- name: GetSiteByOwnerName :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
-  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
-FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
-LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
-WHERE sites.name = sqlc.arg(name) AND sites.owner_id = sqlc.arg(owner_id);
-
--- Instance-wide: edge routing only, never owner API handlers.
+-- Instance-wide: the edge's routing, and owner reads through Actor.Require.
 -- name: GetSiteByName :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
-  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
-FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name
+FROM sites JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
+LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE sites.name = sqlc.arg(name);
 
--- Instance-wide: edge routing only, never owner API handlers.
+-- Instance-wide, as GetSiteByName.
 -- name: GetSiteByID :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
-  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
-FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name
+FROM sites JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
+LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE sites.id = sqlc.arg(id);
 
--- Any status: the owner API resolves pending and lapsed hostnames too.
--- name: GetSiteByOwnerDomain :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
-  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
+-- Instance-wide, as GetSiteByName. Any status: the owner API resolves
+-- pending and lapsed hostnames too.
+-- name: GetSiteByDomain :one
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name
 FROM sites
 JOIN domains ON domains.site_id = sites.id
+JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
-WHERE domains.hostname = sqlc.arg(hostname) AND sites.owner_id = sqlc.arg(owner_id);
+WHERE domains.hostname = sqlc.arg(hostname);
 
 -- name: ListSites :many
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
-  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
-FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name
+FROM sites JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
+LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
-WHERE sites.owner_id = sqlc.arg(owner_id) AND sites.name > sqlc.arg(after_name)
+WHERE (sites.owner_id = sqlc.arg(account_id)
+    OR sites.owner_id IN (SELECT team_members.team_id FROM team_members WHERE team_members.owner_id = sqlc.arg(member_id)))
+  AND sites.name > sqlc.arg(after_name)
 ORDER BY sites.name
 LIMIT sqlc.arg(row_limit);
 
 -- name: SiteOwnedBy :one
 SELECT id FROM sites WHERE id = sqlc.arg(id) AND owner_id = sqlc.arg(owner_id);
+
+-- The account a site belongs to, for Actor.Require.
+-- name: SiteAccount :one
+SELECT owner_id FROM sites WHERE id = sqlc.arg(id);
 
 -- A taken-down site keeps the deploy it had (A2.13).
 -- name: SetActiveDeploy :execrows
@@ -95,11 +100,13 @@ UPDATE sites SET taken_down_at = NULL WHERE id = sqlc.arg(id);
 DELETE FROM sites WHERE id = sqlc.arg(id) AND taken_down_at IS NOT NULL;
 
 -- name: ListAllSites :many
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
   sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
-  owners.email AS owner_email, owners.suspended_at AS owner_suspended_at
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name,
+  owners.suspended_at AS owner_suspended_at
 FROM sites
 JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE sites.name > sqlc.arg(after_name)

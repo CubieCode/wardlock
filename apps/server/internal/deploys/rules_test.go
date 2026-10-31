@@ -40,7 +40,7 @@ func TestRulesAccepted(t *testing.T) {
 		store.HeaderRule{Path: "/*", Set: map[string]string{"x-frame-options": "DENY", "CONTENT-SECURITY-POLICY": "default-src 'self'"}},
 		store.HeaderRule{Path: "/api/data.json", Set: map[string]string{"access-control-allow-origin": "*", "X-Content-Type-Options": "NoSniff"}},
 	)
-	d, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", m)
+	d, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestRulesAccepted(t *testing.T) {
 		{Path: "/*", Set: map[string]string{"X-Frame-Options": "DENY", "Content-Security-Policy": "default-src 'self'"}},
 		{Path: "/api/data.json", Set: map[string]string{"Access-Control-Allow-Origin": "*", "X-Content-Type-Options": "NoSniff"}},
 	}
-	got, err := w.db.Deploys().Get(t.Context(), w.owner.ID, d.SiteID, d.ID)
+	got, err := w.db.Deploys().Get(t.Context(), store.ActorFor(w.owner.ID), d.SiteID, d.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestRulesRefused(t *testing.T) {
 	for _, tc := range tests {
 		m := w.manifest(map[string]string{"index.html": "<h1>Home</h1>"})
 		m.Redirects, m.Headers = tc.m.Redirects, tc.m.Headers
-		_, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", m)
+		_, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", m)
 		var te *deploys.TargetError
 		if !errors.Is(err, tc.err) || !errors.As(err, &te) || te.Target != tc.target || te.Message == "" {
 			t.Errorf("%s: error %#v, want %v with target %s", tc.name, err, tc.err, tc.target)
@@ -198,7 +198,7 @@ func TestRulesRefused(t *testing.T) {
 	} {
 		base := w.manifest(map[string]string{"index.html": "<h1>Home</h1>"})
 		base.Redirects, base.Headers = m.Redirects, m.Headers
-		if _, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", base); err != nil {
+		if _, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", base); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
@@ -215,7 +215,7 @@ func TestPathDeployRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := w.svc.Activate(t.Context(), w.owner.ID, "docs", d.ID); err != nil {
+	if _, _, err := w.svc.Activate(t.Context(), store.ActorFor(w.owner.ID), "docs", d.ID); err != nil {
 		t.Fatal(err)
 	}
 	own := []store.Redirect{{From: "/mockup-x/old", To: "/mockup-x/", Status: 302}}

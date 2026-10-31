@@ -21,17 +21,17 @@ type Rendition struct {
 }
 
 // Renditions stores the renditions of deploys' HTML files. Methods that
-// take ownerID and siteID match only that owner's deploys on that site;
+// take an Actor and siteID match only deploys on a site the actor can see;
 // anything else is ErrNotFound.
 type Renditions interface {
 	// Sources returns the HTML files (.html or .htm in any letter case) in
 	// the deploy's manifest, ordered by path.
-	Sources(ctx context.Context, ownerID, siteID, deployID string) ([]DeployFile, error)
+	Sources(ctx context.Context, actor Actor, siteID, deployID string) ([]DeployFile, error)
 	// Put records rs for the deploy in one transaction, replacing any
 	// rendition already recorded for the same path and format, together
 	// with a blob record (created at) for each hash not yet recorded. A
 	// path not in the manifest is ErrConstraint.
-	Put(ctx context.Context, ownerID, siteID, deployID string, rs []Rendition, at time.Time) error
+	Put(ctx context.Context, actor Actor, siteID, deployID string, rs []Rendition, at time.Time) error
 	// List returns the deploy's renditions ordered by path and format. It is
 	// an instance-wide read for the edge and must never back an owner API
 	// handler.
@@ -43,7 +43,11 @@ func (db *DB) Renditions() Renditions { return renditionsRepo{db} }
 
 type renditionsRepo struct{ db *DB }
 
-func (r renditionsRepo) Sources(ctx context.Context, ownerID, siteID, deployID string) ([]DeployFile, error) {
+func (r renditionsRepo) Sources(ctx context.Context, actor Actor, siteID, deployID string) ([]DeployFile, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := getDeploy(ctx, r.db.q, ownerID, siteID, deployID); err != nil {
 		return nil, err
 	}
@@ -60,7 +64,11 @@ func (r renditionsRepo) Sources(ctx context.Context, ownerID, siteID, deployID s
 	return out, nil
 }
 
-func (r renditionsRepo) Put(ctx context.Context, ownerID, siteID, deployID string, rs []Rendition, at time.Time) error {
+func (r renditionsRepo) Put(ctx context.Context, actor Actor, siteID, deployID string, rs []Rendition, at time.Time) error {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleEditor)
+	if err != nil {
+		return err
+	}
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		if _, err := getDeploy(ctx, q, ownerID, siteID, deployID); err != nil {
 			return err

@@ -146,7 +146,7 @@ func TestBackfillIsIdempotent(t *testing.T) {
 	if err := db.Owners().Create(ctx, owner); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
+	if err := db.Sites().Create(ctx, store.ActorFor(site.OwnerID), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -174,7 +174,7 @@ func TestBackfillIsIdempotent(t *testing.T) {
 		t.Fatalf("logs = %q, want one backfill of 2 entries", logs.String())
 	}
 	record("Mozilla/5.0 Firefox/131.0")
-	r, err := db.Traffic().Report(ctx, owner.ID, store.TrafficScope{}, now.Add(-time.Hour), now.Add(time.Hour))
+	r, err := db.Traffic().Report(ctx, store.ActorFor(owner.ID), owner.ID, store.TrafficScope{}, now.Add(-time.Hour), now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestRollupHoldsNoSecrets(t *testing.T) {
 	if err := db.Owners().Create(ctx, owner); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
+	if err := db.Sites().Create(ctx, store.ActorFor(site.OwnerID), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := accesslog.Backfill(ctx, db.Traffic(), time.Now, slog.New(slog.DiscardHandler)); err != nil {
@@ -211,7 +211,7 @@ func TestRollupHoldsNoSecrets(t *testing.T) {
 	e.SiteID, e.Time, e.Via, e.LinkPublicID, e.UserAgent = site.ID, now, store.ViaLink, "abcdefgh23", "curl/8 "+token
 	w.Record(e)
 	closeWriter(t, w)
-	r, err := db.Traffic().Report(ctx, owner.ID, store.TrafficScope{}, now.Add(-time.Hour), now.Add(time.Hour))
+	r, err := db.Traffic().Report(ctx, store.ActorFor(owner.ID), owner.ID, store.TrafficScope{}, now.Add(-time.Hour), now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}

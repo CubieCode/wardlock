@@ -39,7 +39,7 @@ Go: follow [wardlock-go-service](.agents/skills/wardlock-go-service/SKILL.md): c
 
 Anything touching `internal/edge`, `internal/access`, tokens, cookies or sessions follows [wardlock-access](.agents/skills/wardlock-access/SKILL.md) and its test matrix. UI follows [wardlock-web](.agents/skills/wardlock-web/SKILL.md), `@wardlock/ui` and docs/DESIGN-SYSTEM.md; new or changed screens start with Mobbin design research (the skill says how) and cite the references in the PR. Unbuilt features stay invisible in the dashboard and CLI: no placeholder commands, menu items or "coming soon" states.
 
-Every owner-scoped query takes the owner from the verified session or API token, never from the request; missing and foreign resources return the same 404. Never log raw tokens, cookies, passwords, email codes or Authorization headers. `.env`, `.local/` and data directories are gitignored; never copy them, real tokens, real email addresses or customer content into fixtures, tests, logs, screenshots, PRs or public artefacts. Fixture sites are synthetic.
+Every owner-scoped repository method takes an `Actor` (the verified owner and their memberships, from the session or token, never the request) and allows a resource that is the owner's or belongs to a team whose role permits the operation; missing and foreign resources return the same 404, and `403 forbidden_role` is answered only where the actor can already see the resource. Never log raw tokens, cookies, passwords, email codes or Authorization headers. `.env`, `.local/` and data directories are gitignored; never copy them, real tokens, real email addresses or customer content into fixtures, tests, logs, screenshots, PRs or public artefacts. Fixture sites are synthetic.
 
 ## Docs style
 

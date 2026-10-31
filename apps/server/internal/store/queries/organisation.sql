@@ -7,6 +7,10 @@ ORDER BY name_key, id;
 SELECT id, owner_id, name, name_key, note, created_at FROM site_groups
 WHERE id = sqlc.arg(id) AND owner_id = sqlc.arg(owner_id);
 
+-- By ID alone: the repository checks the group's account against the actor.
+-- name: GetGroupByID :one
+SELECT id, owner_id, name, name_key, note, created_at FROM site_groups WHERE id = sqlc.arg(id);
+
 -- name: CountGroups :one
 SELECT COUNT(*) FROM site_groups WHERE owner_id = sqlc.arg(owner_id);
 
@@ -30,6 +34,10 @@ ORDER BY name;
 -- name: GetTag :one
 SELECT id, owner_id, name, colour, created_at FROM tags
 WHERE id = sqlc.arg(id) AND owner_id = sqlc.arg(owner_id);
+
+-- By ID alone: the repository checks the tag's account against the actor.
+-- name: GetTagByID :one
+SELECT id, owner_id, name, colour, created_at FROM tags WHERE id = sqlc.arg(id);
 
 -- name: CountTags :one
 SELECT COUNT(*) FROM tags WHERE owner_id = sqlc.arg(owner_id);
@@ -59,7 +67,7 @@ WHERE site_tags.site_id = sqlc.arg(site_id) AND sites.owner_id = sqlc.arg(owner_
 ORDER BY tags.name;
 
 -- name: GetSiteOrganisation :one
-SELECT id, group_id, pinned_at FROM sites
+SELECT id, group_id FROM sites
 WHERE name = sqlc.arg(name) AND owner_id = sqlc.arg(owner_id);
 
 -- Only to a group of the site's own owner, or to none.
@@ -70,13 +78,21 @@ WHERE sites.id = sqlc.arg(site_id) AND sites.owner_id = sqlc.arg(owner_id)
     SELECT 1 FROM site_groups WHERE site_groups.id = sqlc.narg(group_id) AND site_groups.owner_id = sites.owner_id
   ));
 
+-- Pins are personal (T7.1): owner_id is who pinned, not the site's account.
 -- Pinning a pinned site keeps the first time.
--- name: PinSite :execrows
-UPDATE sites SET pinned_at = COALESCE(pinned_at, sqlc.arg(pinned_at))
-WHERE id = sqlc.arg(site_id) AND owner_id = sqlc.arg(owner_id);
+-- name: PinSite :exec
+INSERT INTO site_pins (owner_id, site_id, pinned_at)
+VALUES (sqlc.arg(owner_id), sqlc.arg(site_id), sqlc.arg(pinned_at))
+ON CONFLICT (owner_id, site_id) DO NOTHING;
 
--- name: UnpinSite :execrows
-UPDATE sites SET pinned_at = NULL WHERE id = sqlc.arg(site_id) AND owner_id = sqlc.arg(owner_id);
+-- name: UnpinSite :exec
+DELETE FROM site_pins WHERE owner_id = sqlc.arg(owner_id) AND site_id = sqlc.arg(site_id);
+
+-- name: GetSitePin :one
+SELECT pinned_at FROM site_pins WHERE owner_id = sqlc.arg(owner_id) AND site_id = sqlc.arg(site_id);
+
+-- name: ListOwnerPins :many
+SELECT site_id, pinned_at FROM site_pins WHERE owner_id = sqlc.arg(owner_id);
 
 -- Only when the site and the tag have the same owner; adding a tag the site
 -- has changes nothing.

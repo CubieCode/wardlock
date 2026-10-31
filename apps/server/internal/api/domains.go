@@ -35,7 +35,7 @@ func domainFailed(err error) (*failure, error) {
 	return nil, err
 }
 
-func (s *Server) domainBody(siteName string, d store.Domain) Domain {
+func (s *Server) domainBody(ctx context.Context, siteName string, d store.Domain) Domain {
 	out := Domain{
 		Id:       d.ID,
 		Hostname: d.Hostname,
@@ -50,6 +50,7 @@ func (s *Server) domainBody(siteName string, d store.Domain) Domain {
 		VerifiedAt:    optionalMillis(d.VerifiedAt),
 		LastCheckedAt: optionalMillis(d.LastCheckedAt),
 		FailingSince:  optionalMillis(d.FailingSince),
+		CreatedBy:     s.creator(ctx, d.CreatedBy, d.CreatedByToken),
 	}
 	if at, ok := sites.NextCheck(d); ok {
 		out.NextCheckAt = millis(at)
@@ -69,7 +70,7 @@ func (s *Server) domainBody(siteName string, d store.Domain) Domain {
 
 // ListDomains lists a site's custom domains by hostname.
 func (s *Server) ListDomains(ctx context.Context, req ListDomainsRequestObject) (ListDomainsResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListDomainsdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -81,7 +82,7 @@ func (s *Server) ListDomains(ctx context.Context, req ListDomainsRequestObject) 
 	if h, err := sites.NormaliseHostname(after); !ok || (after != "" && (err != nil || h != after)) {
 		return ListDomainsdefaultJSONResponse(*badCursor), nil
 	}
-	list, err := s.Sites.ListDomains(ctx, owner, req.Site, after, limit+1)
+	list, err := s.Sites.ListDomains(ctx, actor, req.Site, after, limit+1)
 	if err != nil {
 		f, err := domainFailed(err)
 		if f == nil {
@@ -95,21 +96,21 @@ func (s *Server) ListDomains(ctx context.Context, req ListDomainsRequestObject) 
 		page.NextCursor = encodeCursor(list[limit-1].Hostname)
 	}
 	for _, d := range list {
-		page.Items = append(page.Items, s.domainBody(req.Site, d))
+		page.Items = append(page.Items, s.domainBody(ctx, req.Site, d))
 	}
 	return page, nil
 }
 
 // AddDomain attaches a custom domain and checks it straight away.
 func (s *Server) AddDomain(ctx context.Context, req AddDomainRequestObject) (AddDomainResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return AddDomaindefaultJSONResponse(*unauthenticated), nil
 	}
 	if req.Body == nil {
 		return AddDomaindefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_request", "hostname is required.", "hostname")), nil
 	}
-	d, err := s.Sites.AddDomain(ctx, owner, req.Site, req.Body.Hostname)
+	d, err := s.Sites.AddDomain(ctx, actor, req.Site, req.Body.Hostname)
 	if err != nil {
 		f, err := domainFailed(err)
 		if f == nil {
@@ -117,16 +118,16 @@ func (s *Server) AddDomain(ctx context.Context, req AddDomainRequestObject) (Add
 		}
 		return AddDomaindefaultJSONResponse(*f), nil
 	}
-	return AddDomain201JSONResponse(s.domainBody(req.Site, d)), nil
+	return AddDomain201JSONResponse(s.domainBody(ctx, req.Site, d)), nil
 }
 
 // GetDomain returns one of a site's custom domains.
 func (s *Server) GetDomain(ctx context.Context, req GetDomainRequestObject) (GetDomainResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return GetDomaindefaultJSONResponse(*unauthenticated), nil
 	}
-	d, err := s.Sites.GetDomain(ctx, owner, req.Site, req.Hostname)
+	d, err := s.Sites.GetDomain(ctx, actor, req.Site, req.Hostname)
 	if err != nil {
 		f, err := domainFailed(err)
 		if f == nil {
@@ -134,16 +135,16 @@ func (s *Server) GetDomain(ctx context.Context, req GetDomainRequestObject) (Get
 		}
 		return GetDomaindefaultJSONResponse(*f), nil
 	}
-	return GetDomain200JSONResponse(s.domainBody(req.Site, d)), nil
+	return GetDomain200JSONResponse(s.domainBody(ctx, req.Site, d)), nil
 }
 
 // VerifyDomain checks a custom domain's DNS now.
 func (s *Server) VerifyDomain(ctx context.Context, req VerifyDomainRequestObject) (VerifyDomainResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return VerifyDomaindefaultJSONResponse(*unauthenticated), nil
 	}
-	d, err := s.Sites.VerifyDomain(ctx, owner, req.Site, req.Hostname)
+	d, err := s.Sites.VerifyDomain(ctx, actor, req.Site, req.Hostname)
 	if soon, ok := errors.AsType[*sites.CheckTooSoonError](err); ok {
 		return VerifyDomain429JSONResponse{CheckedRecentlyJSONResponse{
 			Body:    Error{Code: "checked_recently", Message: "This domain was checked moments ago. Try again shortly."},
@@ -157,16 +158,16 @@ func (s *Server) VerifyDomain(ctx context.Context, req VerifyDomainRequestObject
 		}
 		return VerifyDomaindefaultJSONResponse(*f), nil
 	}
-	return VerifyDomain200JSONResponse(s.domainBody(req.Site, d)), nil
+	return VerifyDomain200JSONResponse(s.domainBody(ctx, req.Site, d)), nil
 }
 
 // RemoveDomain detaches a custom domain.
 func (s *Server) RemoveDomain(ctx context.Context, req RemoveDomainRequestObject) (RemoveDomainResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return RemoveDomaindefaultJSONResponse(*unauthenticated), nil
 	}
-	if err := s.Sites.RemoveDomain(ctx, owner, req.Site, req.Hostname); err != nil {
+	if err := s.Sites.RemoveDomain(ctx, actor, req.Site, req.Hostname); err != nil {
 		f, err := domainFailed(err)
 		if f == nil {
 			return nil, err

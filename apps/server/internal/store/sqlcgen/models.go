@@ -38,6 +38,7 @@ type ApiToken struct {
 	ExpiresAt   sql.NullInt64
 	LastUsedAt  sql.NullInt64
 	RevokedAt   sql.NullInt64
+	CreatedBy   sql.NullString
 }
 
 type Blob struct {
@@ -78,6 +79,8 @@ type Deploy struct {
 	Preview             sql.NullString
 	PreviewLifetimeDays sql.NullInt64
 	PreviewActivatedAt  sql.NullInt64
+	CreatedBy           sql.NullString
+	CreatedByToken      sql.NullString
 }
 
 type DeployFile struct {
@@ -107,6 +110,8 @@ type Domain struct {
 	LastFailureReason sql.NullString
 	VerifiedAt        sql.NullInt64
 	FailureDetail     sql.NullString
+	CreatedBy         sql.NullString
+	CreatedByToken    sql.NullString
 }
 
 type ModerationResult struct {
@@ -156,6 +161,8 @@ type Owner struct {
 	MaxDeploysPerDay sql.NullInt64
 	StoredBytes      int64
 	ModerationExempt int64
+	Kind             string
+	MaxTeams         sql.NullInt64
 }
 
 type OwnerBlob struct {
@@ -223,6 +230,8 @@ type Policy struct {
 	Version         int64
 	CreatedAt       int64
 	UpdatedAt       int64
+	CreatedBy       sql.NullString
+	CreatedByToken  sql.NullString
 }
 
 type PolicyAllowlist struct {
@@ -263,6 +272,8 @@ type ShareLink struct {
 	RotatedAt      sql.NullInt64
 	RevokedAt      sql.NullInt64
 	UsedUpAt       sql.NullInt64
+	CreatedBy      sql.NullString
+	CreatedByToken sql.NullString
 }
 
 type Site struct {
@@ -273,7 +284,6 @@ type Site struct {
 	ActiveDeployID  sql.NullString
 	TakenDownAt     sql.NullInt64
 	GroupID         sql.NullString
-	PinnedAt        sql.NullInt64
 	PrimaryBase     int64
 	PrimaryDomainID sql.NullString
 }
@@ -285,6 +295,12 @@ type SiteGroup struct {
 	NameKey   string
 	Note      sql.NullString
 	CreatedAt int64
+}
+
+type SitePin struct {
+	OwnerID  string
+	SiteID   string
+	PinnedAt int64
 }
 
 type SiteSession struct {
@@ -311,6 +327,31 @@ type Tag struct {
 	OwnerID   string
 	Name      string
 	Colour    int64
+	CreatedAt int64
+}
+
+type Team struct {
+	ID        string
+	Name      string
+	CreatedBy sql.NullString
+	CreatedAt int64
+}
+
+type TeamInvitation struct {
+	ID         string
+	TeamID     string
+	Email      string
+	Role       string
+	InvitedBy  sql.NullString
+	CreatedAt  int64
+	ExpiresAt  int64
+	AcceptedAt sql.NullInt64
+}
+
+type TeamMember struct {
+	TeamID    string
+	OwnerID   string
+	Role      string
 	CreatedAt int64
 }
 

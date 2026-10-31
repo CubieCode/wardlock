@@ -111,6 +111,13 @@ var tokenScopes = map[string][]string{
 	"TestWebhook":              {"manage"},
 	"ListWebhookDeliveries":    {"manage"},
 	"RedeliverWebhookDelivery": {"manage"},
+
+	// Teams (T7.1). Reads, and moving a site: an owner may move their own
+	// with a token, within both its scope and their role.
+	"ListTeams":       {"deploy", "manage"},
+	"GetTeam":         {"deploy", "manage"},
+	"ListTeamMembers": {"deploy", "manage"},
+	"TransferSite":    {"manage"},
 }
 
 var sessionOnly = map[string]bool{
@@ -130,6 +137,36 @@ var sessionOnly = map[string]bool{
 
 	"GetNotificationSettings": true,
 	"SetNotificationSettings": true,
+
+	// Members, invitations and team tokens stay in the dashboard, as owner
+	// invitations and API tokens do (T7.1).
+	"CreateTeam":            true,
+	"UpdateTeam":            true,
+	"DeleteTeam":            true,
+	"SetTeamMemberRole":     true,
+	"RemoveTeamMember":      true,
+	"ListTeamInvitations":   true,
+	"InviteTeamMember":      true,
+	"DeleteTeamInvitation":  true,
+	"ListTeamTokens":        true,
+	"CreateTeamToken":       true,
+	"RevokeTeamToken":       true,
+	"ListMyTeamInvitations": true,
+	"AcceptTeamInvitation":  true,
+	"DeclineTeamInvitation": true,
+}
+
+// personalOnly lists operations a token may use only as a person: webhooks
+// belong to an owner, so a team token never reaches them.
+var personalOnly = map[string]bool{
+	"ListWebhooks":             true,
+	"CreateWebhook":            true,
+	"GetWebhook":               true,
+	"UpdateWebhook":            true,
+	"DeleteWebhook":            true,
+	"TestWebhook":              true,
+	"ListWebhookDeliveries":    true,
+	"RedeliverWebhookDelivery": true,
 }
 
 // errTokenScope means the request's API token may not use the operation.
@@ -143,6 +180,9 @@ func requireTokenScopes(next StrictHandlerFunc, operationID string) StrictHandle
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		ri := info(ctx)
 		if ri.tokenID != "" && !tokenAllowed(operationID, ri.scopes) {
+			return nil, errTokenScope
+		}
+		if actor, ok := ActorOf(ctx); ok && actor.IsTeamToken() && personalOnly[operationID] {
 			return nil, errTokenScope
 		}
 		return next(ctx, w, r, request)

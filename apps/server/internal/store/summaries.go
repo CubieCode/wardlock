@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"wardlock.nz/server/internal/store/sqlcgen"
@@ -53,9 +54,12 @@ type SiteSummary struct {
 	Active bool
 }
 
-// Summaries returns every one of ownerID's sites, by name, with what w
+// Summaries returns every a site the actor can edit, by name, with what w
 // counts. It costs the same four queries whatever the number of sites.
-func (r sitesRepo) Summaries(ctx context.Context, ownerID string, w SummaryWindow) ([]SiteSummary, error) {
+func (r sitesRepo) Summaries(ctx context.Context, actor Actor, ownerID string, w SummaryWindow) ([]SiteSummary, error) {
+	if err := actor.Require(ownerID, RoleViewer); err != nil {
+		return nil, fmt.Errorf("list site summaries: %w", err)
+	}
 	rows, err := r.db.q.ListSiteSummaries(ctx, sqlcgen.ListSiteSummariesParams{
 		Now: ms(w.Now), ExpiringBy: ms(w.ExpiringBy), MinLifetime: w.MinLifetime.Milliseconds(),
 		ActiveFrom: ms(w.ActiveFrom), OwnerID: ownerID,
@@ -63,14 +67,19 @@ func (r sitesRepo) Summaries(ctx context.Context, ownerID string, w SummaryWindo
 	if err != nil {
 		return nil, mapErr("list site summaries", err)
 	}
+	pins, err := r.db.pins(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]SiteSummary, len(rows))
 	byID := make(map[string]*SiteSummary, len(rows))
 	for i, row := range rows {
-		s, _ := siteFrom("", sqlcgen.GetSiteRow{
+		s, _ := siteFrom("", siteColumns{
 			ID: row.ID, OwnerID: row.OwnerID, Name: row.Name, ActiveDeployID: row.ActiveDeployID,
 			CreatedAt: row.CreatedAt, ActivatedAt: row.ActivatedAt, TakenDownAt: row.TakenDownAt,
-			GroupID: row.GroupID, PinnedAt: row.PinnedAt,
+			GroupID: row.GroupID, OwnerKind: row.OwnerKind, OwnerEmail: row.OwnerEmail, TeamName: row.TeamName,
 		}, nil)
+		s.PinnedAt = pins[s.ID]
 		out[i] = SiteSummary{
 			Site:          s,
 			DeployMessage: row.DeployMessage.String,
@@ -139,9 +148,12 @@ type ExpiringLink struct {
 	UseCount int
 }
 
-// ExpiringLinks returns up to limit of ownerID's expiring links, soonest
+// ExpiringLinks returns up to limit of the account's expiring links, soonest
 // first, by the same rule Summaries counts them with.
-func (r sitesRepo) ExpiringLinks(ctx context.Context, ownerID string, w SummaryWindow, limit int) ([]ExpiringLink, error) {
+func (r sitesRepo) ExpiringLinks(ctx context.Context, actor Actor, ownerID string, w SummaryWindow, limit int) ([]ExpiringLink, error) {
+	if err := actor.Require(ownerID, RoleViewer); err != nil {
+		return nil, fmt.Errorf("list expiring links: %w", err)
+	}
 	rows, err := r.db.q.ListExpiringLinks(ctx, sqlcgen.ListExpiringLinksParams{
 		OwnerID: ownerID, Now: ms(w.Now), ExpiringBy: ms(w.ExpiringBy),
 		MinLifetime: w.MinLifetime.Milliseconds(), RowLimit: int64(limit),

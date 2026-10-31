@@ -180,7 +180,7 @@ func (p *policyEdge) publish(name string) store.Site {
 	t, ctx := p.t, p.t.Context()
 	t.Helper()
 	site := store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: name, CreatedAt: p.now()}
-	if err := p.db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
+	if err := p.db.Sites().Create(ctx, store.ActorFor(site.OwnerID), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	p.deployFiles(name, deploys.Manifest{}, policyFiles)
@@ -196,16 +196,16 @@ func (p *policyEdge) deployFiles(name string, m deploys.Manifest, files map[stri
 		sum := sha256.Sum256([]byte(body))
 		m.Files = append(m.Files, store.DeployFile{Path: path, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(body))})
 	}
-	d, _, err := p.deploys.Create(ctx, p.owner.ID, name, m)
+	d, _, err := p.deploys.Create(ctx, store.ActorFor(p.owner.ID), name, m)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range m.Files {
-		if err := p.deploys.Upload(ctx, p.owner.ID, name, d.ID, f.SHA256, strings.NewReader(files[f.Path])); err != nil {
+		if err := p.deploys.Upload(ctx, store.ActorFor(p.owner.ID), name, d.ID, f.SHA256, strings.NewReader(files[f.Path])); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, d, err = p.deploys.Activate(ctx, p.owner.ID, name, d.ID); err != nil {
+	if _, d, err = p.deploys.Activate(ctx, store.ActorFor(p.owner.ID), name, d.ID); err != nil {
 		t.Fatal(err)
 	}
 	return d
@@ -213,7 +213,7 @@ func (p *policyEdge) deployFiles(name string, m deploys.Manifest, files map[stri
 
 func (p *policyEdge) set(site, prefix string, vis store.Visibility, links bool) store.Policy {
 	p.t.Helper()
-	pol, err := p.acc.Set(p.t.Context(), p.owner.ID, site, access.Rule{PathPrefix: prefix, Visibility: vis, Links: links})
+	pol, err := p.acc.Set(p.t.Context(), store.ActorFor(p.owner.ID), site, access.Rule{PathPrefix: prefix, Visibility: vis, Links: links})
 	if err != nil {
 		p.t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func (p *policyEdge) issue(site store.Site, pol store.Policy) string {
 		ID: store.NewID(), SiteID: site.ID, PublicID: "link" + strings.Repeat("0", 5) + string(rune('a'+p.links)),
 		TokenHash: store.NewID(), PathPrefix: "/", CreatedAt: p.now(),
 	}
-	if err := p.db.Links().Create(ctx, p.owner.ID, l); err != nil {
+	if err := p.db.Links().Create(ctx, store.ActorFor(p.owner.ID), l); err != nil {
 		t.Fatal(err)
 	}
 	c, err := p.acc.IssueSession(ctx, access.NewSession{SiteID: site.ID, Policy: pol, Method: store.SessionLink, ShareLinkID: l.ID, LinkTokenHash: l.TokenHash})
@@ -419,13 +419,13 @@ func TestSessionMatrixThroughTheEdge(t *testing.T) {
 			return c
 		}},
 		{"policy deleted", func(p *policyEdge, _ store.Site, c string) string {
-			ps, err := p.acc.List(p.t.Context(), p.owner.ID, "docs", "", 10)
+			ps, err := p.acc.List(p.t.Context(), store.ActorFor(p.owner.ID), "docs", "", 10)
 			if err != nil {
 				p.t.Fatal(err)
 			}
 			for _, pol := range ps {
 				if pol.PathPrefix == "/internal/" {
-					if err := p.acc.Delete(p.t.Context(), p.owner.ID, "docs", pol.ID); err != nil {
+					if err := p.acc.Delete(p.t.Context(), store.ActorFor(p.owner.ID), "docs", pol.ID); err != nil {
 						p.t.Fatal(err)
 					}
 				}

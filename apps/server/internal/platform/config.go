@@ -74,6 +74,12 @@ type Config struct {
 	MaxOwnerStorage       int64
 	MaxOwnerSites         int64
 	MaxOwnerDeploysPerDay int64
+	// MaxOwnerTeams is WARDLOCK_QUOTA_TEAMS: how many teams one owner may
+	// start (T7.1), which
+	// `wardlockd admin quota --teams` can override. 0, the default, is
+	// unlimited. Each team has quotas of its own, so an instance that sets
+	// the ones above should set this too.
+	MaxOwnerTeams int64
 	// MaxOwnerNotificationsPerHour caps an owner's notification emails
 	// (I6.2), 20 by default; 0 means no cap.
 	MaxOwnerNotificationsPerHour int64
@@ -288,6 +294,7 @@ func (c *Config) loadQuotas(get func(key, fallback string) string) error {
 		{"WARDLOCK_MAX_OWNER_STORAGE", 0, &c.MaxOwnerStorage},
 		{"WARDLOCK_MAX_OWNER_SITES", 0, &c.MaxOwnerSites},
 		{"WARDLOCK_MAX_OWNER_DEPLOYS_PER_DAY", 0, &c.MaxOwnerDeploysPerDay},
+		{"WARDLOCK_QUOTA_TEAMS", 0, &c.MaxOwnerTeams},
 		{"WARDLOCK_MAX_OWNER_NOTIFICATIONS_PER_HOUR", 20, &c.MaxOwnerNotificationsPerHour},
 	} {
 		raw := get(l.key, "")

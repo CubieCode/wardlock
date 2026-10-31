@@ -1,20 +1,20 @@
 -- name: CreateDeploy :exec
-INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, immutable_assets, created_at, activated_at, path_prefix, base_deploy_id, redirects, headers, preview, preview_lifetime_days)
-VALUES (sqlc.arg(id), sqlc.arg(site_id), sqlc.narg(message), sqlc.arg(file_count), sqlc.arg(total_size), sqlc.arg(spa), sqlc.arg(immutable_assets), sqlc.arg(created_at), sqlc.narg(activated_at), sqlc.narg(path_prefix), sqlc.narg(base_deploy_id), sqlc.narg(redirects), sqlc.narg(headers), sqlc.narg(preview), sqlc.narg(preview_lifetime_days));
+INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, immutable_assets, created_at, activated_at, path_prefix, base_deploy_id, redirects, headers, preview, preview_lifetime_days, created_by, created_by_token)
+VALUES (sqlc.arg(id), sqlc.arg(site_id), sqlc.narg(message), sqlc.arg(file_count), sqlc.arg(total_size), sqlc.arg(spa), sqlc.arg(immutable_assets), sqlc.arg(created_at), sqlc.narg(activated_at), sqlc.narg(path_prefix), sqlc.narg(base_deploy_id), sqlc.narg(redirects), sqlc.narg(headers), sqlc.narg(preview), sqlc.narg(preview_lifetime_days), sqlc.narg(created_by), sqlc.narg(created_by_token));
 
 -- name: CreateDeployFile :exec
 INSERT INTO deploy_files (deploy_id, path, sha256, size)
 VALUES (sqlc.arg(deploy_id), sqlc.arg(path), sqlc.arg(sha256), sqlc.arg(size));
 
 -- name: GetDeploy :one
-SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers, deploys.preview, deploys.preview_lifetime_days, deploys.preview_activated_at
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers, deploys.preview, deploys.preview_lifetime_days, deploys.preview_activated_at, deploys.created_by, deploys.created_by_token
 FROM deploys JOIN sites ON sites.id = deploys.site_id
 WHERE deploys.id = sqlc.arg(id) AND deploys.site_id = sqlc.arg(site_id) AND sites.owner_id = sqlc.arg(owner_id);
 
 -- Newest first, strictly before the cursor (created_at, id); the first page
 -- passes the largest created_at.
 -- name: ListDeploys :many
-SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers, deploys.preview, deploys.preview_lifetime_days, deploys.preview_activated_at
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers, deploys.preview, deploys.preview_lifetime_days, deploys.preview_activated_at, deploys.created_by, deploys.created_by_token
 FROM deploys JOIN sites ON sites.id = deploys.site_id
 WHERE deploys.site_id = sqlc.arg(site_id) AND sites.owner_id = sqlc.arg(owner_id)
   AND (deploys.created_at < sqlc.arg(before_created_at)

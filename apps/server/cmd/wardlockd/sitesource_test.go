@@ -62,7 +62,7 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 	if err := db.Owners().Create(ctx, owner); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
+	if err := db.Sites().Create(ctx, store.ActorFor(site.OwnerID), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -75,14 +75,14 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 			sum := sha256.Sum256([]byte(body))
 			m.Files = append(m.Files, store.DeployFile{Path: p, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(body))})
 		}
-		d, missing, err := svc.Create(ctx, owner.ID, site.Name, m)
+		d, missing, err := svc.Create(ctx, store.ActorFor(owner.ID), site.Name, m)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, f := range m.Files {
 			for _, h := range missing {
 				if h == f.SHA256 {
-					if err := svc.Upload(ctx, owner.ID, site.Name, d.ID, h, strings.NewReader(files[f.Path])); err != nil {
+					if err := svc.Upload(ctx, store.ActorFor(owner.ID), site.Name, d.ID, h, strings.NewReader(files[f.Path])); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -92,7 +92,7 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 	}
 	activate := func(id string) {
 		t.Helper()
-		if _, _, err := svc.Activate(ctx, owner.ID, site.Name, id); err != nil {
+		if _, _, err := svc.Activate(ctx, store.ActorFor(owner.ID), site.Name, id); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -142,7 +142,7 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 	pending := store.Domain{ID: store.NewID(), SiteID: site.ID, Hostname: "pending.example.test", Status: store.DomainPending, VerificationToken: "verify-pending-000001", CreatedAt: clock}
 	active := store.Domain{ID: store.NewID(), SiteID: site.ID, Hostname: "reports.example.test", Status: store.DomainActive, VerificationToken: "verify-active-0000001", CreatedAt: clock}
 	for _, d := range []store.Domain{pending, active} {
-		if err := db.Domains().Create(ctx, owner.ID, d); err != nil {
+		if err := db.Domains().Create(ctx, store.ActorFor(owner.ID), d); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -165,7 +165,7 @@ func TestEdgeServesStoreDeploys(t *testing.T) {
 
 	// Rollback restores the earlier deploy, its SPA setting and its cache
 	// headers.
-	if _, _, err := svc.Rollback(ctx, owner.ID, site.Name, v1); err != nil {
+	if _, _, err := svc.Rollback(ctx, store.ActorFor(owner.ID), site.Name, v1); err != nil {
 		t.Fatal(err)
 	}
 	expect(host, "/", 200, "First deploy")

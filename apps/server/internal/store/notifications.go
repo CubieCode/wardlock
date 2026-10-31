@@ -92,7 +92,9 @@ type Notifications interface {
 	Recipient(ctx context.Context, ownerID string) (NotificationRecipient, error)
 	// Enqueue adds entries in one transaction, due at their CreatedAt,
 	// skipping any whose Channel and EventKey already have a row, and
-	// returns how many it added.
+	// returns how many it added. An email about a team's account goes to
+	// each of its admins, as a row of their own (T7.1): a team has no
+	// mailbox.
 	Enqueue(ctx context.Context, entries ...OutboxEntry) (int, error)
 	// Due returns up to limit pending rows of channel due at now, oldest
 	// due first.
@@ -201,11 +203,17 @@ func (r notificationsRepo) Enqueue(ctx context.Context, entries ...OutboxEntry) 
 	added := 0
 	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		for _, e := range entries {
-			n, err := q.EnqueueNotification(ctx, enqueueParams(e))
+			rows, err := teamRecipients(ctx, q, e)
 			if err != nil {
-				return mapErr("enqueue notification", err)
+				return err
 			}
-			added += int(n)
+			for _, row := range rows {
+				n, err := q.EnqueueNotification(ctx, enqueueParams(row))
+				if err != nil {
+					return mapErr("enqueue notification", err)
+				}
+				added += int(n)
+			}
 		}
 		return nil
 	})
@@ -213,6 +221,32 @@ func (r notificationsRepo) Enqueue(ctx context.Context, entries ...OutboxEntry) 
 		return 0, err
 	}
 	return added, nil
+}
+
+// teamRecipients returns e as it is, unless it is an email to a team, when it
+// returns one copy for each admin able to read it, each with its own event
+// key so a person keeps their own opt-outs, cap and retries.
+func teamRecipients(ctx context.Context, q *sqlcgen.Queries, e OutboxEntry) ([]OutboxEntry, error) {
+	if e.Channel != NotificationEmail {
+		return []OutboxEntry{e}, nil
+	}
+	kind, err := q.GetAccountKind(ctx, e.OwnerID)
+	if err != nil {
+		return nil, mapErr("get account kind", err)
+	}
+	if AccountKind(kind) != AccountTeam {
+		return []OutboxEntry{e}, nil
+	}
+	admins, err := q.ListTeamAdminIDs(ctx, e.OwnerID)
+	if err != nil {
+		return nil, mapErr("list team admins", err)
+	}
+	out := make([]OutboxEntry, len(admins))
+	for i, admin := range admins {
+		out[i] = e
+		out[i].ID, out[i].OwnerID, out[i].EventKey = NewID(), admin, e.EventKey+":"+admin
+	}
+	return out, nil
 }
 
 func outboxFrom(row sqlcgen.NotificationOutbox) OutboxEntry {

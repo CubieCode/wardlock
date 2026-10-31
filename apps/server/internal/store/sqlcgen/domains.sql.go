@@ -14,8 +14,8 @@ import (
 )
 
 const createDomain = `-- name: CreateDomain :exec
-INSERT INTO domains (id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+INSERT INTO domains (id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail, created_by, created_by_token)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
 `
 
 type CreateDomainParams struct {
@@ -30,6 +30,8 @@ type CreateDomainParams struct {
 	FailingSince      sql.NullInt64
 	LastFailureReason sql.NullString
 	FailureDetail     sql.NullString
+	CreatedBy         sql.NullString
+	CreatedByToken    sql.NullString
 }
 
 func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) error {
@@ -45,6 +47,8 @@ func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) erro
 		arg.FailingSince,
 		arg.LastFailureReason,
 		arg.FailureDetail,
+		arg.CreatedBy,
+		arg.CreatedByToken,
 	)
 	return err
 }
@@ -91,7 +95,7 @@ func (q *Queries) DeleteExpiredPendingDomain(ctx context.Context, arg DeleteExpi
 }
 
 const getActiveDomainByHostname = `-- name: GetActiveDomainByHostname :one
-SELECT id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail
+SELECT id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail, created_by, created_by_token
 FROM domains
 WHERE hostname = ?1 AND status = 'active'
 `
@@ -108,6 +112,8 @@ type GetActiveDomainByHostnameRow struct {
 	FailingSince      sql.NullInt64
 	LastFailureReason sql.NullString
 	FailureDetail     sql.NullString
+	CreatedBy         sql.NullString
+	CreatedByToken    sql.NullString
 }
 
 // Instance-wide: edge routing only. Pending and lapsed hostnames are not served.
@@ -126,12 +132,14 @@ func (q *Queries) GetActiveDomainByHostname(ctx context.Context, hostname string
 		&i.FailingSince,
 		&i.LastFailureReason,
 		&i.FailureDetail,
+		&i.CreatedBy,
+		&i.CreatedByToken,
 	)
 	return i, err
 }
 
 const getDomain = `-- name: GetDomain :one
-SELECT domains.id, domains.site_id, domains.hostname, domains.status, domains.verification_token, domains.created_at, domains.last_checked_at, domains.failing_since, domains.last_failure_reason, domains.verified_at, domains.failure_detail, CAST(CASE WHEN sites.primary_domain_id = domains.id THEN 1 ELSE 0 END AS BIGINT) AS is_primary
+SELECT domains.id, domains.site_id, domains.hostname, domains.status, domains.verification_token, domains.created_at, domains.last_checked_at, domains.failing_since, domains.last_failure_reason, domains.verified_at, domains.failure_detail, domains.created_by, domains.created_by_token, CAST(CASE WHEN sites.primary_domain_id = domains.id THEN 1 ELSE 0 END AS BIGINT) AS is_primary
 FROM domains JOIN sites ON sites.id = domains.site_id
 WHERE domains.site_id = ?1 AND domains.hostname = ?2 AND sites.owner_id = ?3
 `
@@ -164,13 +172,15 @@ func (q *Queries) GetDomain(ctx context.Context, arg GetDomainParams) (GetDomain
 		&i.Domain.LastFailureReason,
 		&i.Domain.VerifiedAt,
 		&i.Domain.FailureDetail,
+		&i.Domain.CreatedBy,
+		&i.Domain.CreatedByToken,
 		&i.IsPrimary,
 	)
 	return i, err
 }
 
 const listDomains = `-- name: ListDomains :many
-SELECT domains.id, domains.site_id, domains.hostname, domains.status, domains.verification_token, domains.created_at, domains.last_checked_at, domains.failing_since, domains.last_failure_reason, domains.verified_at, domains.failure_detail, CAST(CASE WHEN sites.primary_domain_id = domains.id THEN 1 ELSE 0 END AS BIGINT) AS is_primary
+SELECT domains.id, domains.site_id, domains.hostname, domains.status, domains.verification_token, domains.created_at, domains.last_checked_at, domains.failing_since, domains.last_failure_reason, domains.verified_at, domains.failure_detail, domains.created_by, domains.created_by_token, CAST(CASE WHEN sites.primary_domain_id = domains.id THEN 1 ELSE 0 END AS BIGINT) AS is_primary
 FROM domains JOIN sites ON sites.id = domains.site_id
 WHERE domains.site_id = ?1 AND sites.owner_id = ?2
   AND domains.hostname > ?3
@@ -218,6 +228,8 @@ func (q *Queries) ListDomains(ctx context.Context, arg ListDomainsParams) ([]Lis
 			&i.Domain.LastFailureReason,
 			&i.Domain.VerifiedAt,
 			&i.Domain.FailureDetail,
+			&i.Domain.CreatedBy,
+			&i.Domain.CreatedByToken,
 			&i.IsPrimary,
 		); err != nil {
 			return nil, err
@@ -234,7 +246,7 @@ func (q *Queries) ListDomains(ctx context.Context, arg ListDomainsParams) ([]Lis
 }
 
 const listDomainsToCheck = `-- name: ListDomainsToCheck :many
-SELECT id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail
+SELECT id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail, created_by, created_by_token
 FROM domains
 WHERE id > ?1
   AND (
@@ -264,6 +276,8 @@ type ListDomainsToCheckRow struct {
 	FailingSince      sql.NullInt64
 	LastFailureReason sql.NullString
 	FailureDetail     sql.NullString
+	CreatedBy         sql.NullString
+	CreatedByToken    sql.NullString
 }
 
 // Instance-wide: the verification worker's candidates, by ID after
@@ -297,6 +311,8 @@ func (q *Queries) ListDomainsToCheck(ctx context.Context, arg ListDomainsToCheck
 			&i.FailingSince,
 			&i.LastFailureReason,
 			&i.FailureDetail,
+			&i.CreatedBy,
+			&i.CreatedByToken,
 		); err != nil {
 			return nil, err
 		}
@@ -312,7 +328,7 @@ func (q *Queries) ListDomainsToCheck(ctx context.Context, arg ListDomainsToCheck
 }
 
 const listExpiredPendingDomains = `-- name: ListExpiredPendingDomains :many
-SELECT id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail
+SELECT id, site_id, hostname, status, verification_token, created_at, last_checked_at, verified_at, failing_since, last_failure_reason, failure_detail, created_by, created_by_token
 FROM domains
 WHERE id > ?1 AND status = 'pending' AND created_at <= ?2
 ORDER BY id
@@ -337,6 +353,8 @@ type ListExpiredPendingDomainsRow struct {
 	FailingSince      sql.NullInt64
 	LastFailureReason sql.NullString
 	FailureDetail     sql.NullString
+	CreatedBy         sql.NullString
+	CreatedByToken    sql.NullString
 }
 
 // Instance-wide: pending claims created at or before created_before, by ID
@@ -362,6 +380,8 @@ func (q *Queries) ListExpiredPendingDomains(ctx context.Context, arg ListExpired
 			&i.FailingSince,
 			&i.LastFailureReason,
 			&i.FailureDetail,
+			&i.CreatedBy,
+			&i.CreatedByToken,
 		); err != nil {
 			return nil, err
 		}

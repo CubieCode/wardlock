@@ -49,6 +49,17 @@ type OwnerLoginCode struct {
 	UsedAt    time.Time
 }
 
+// AccountKind says who an account in the owners table is: a person, or a
+// team (T7.1). A team's row is never a principal: everything here that
+// means a person leaves it out, so it cannot sign in, hold a session, a
+// passkey or a sign-in code, approve a CLI login or be suspended.
+type AccountKind string
+
+const (
+	AccountOwner AccountKind = "owner"
+	AccountTeam  AccountKind = "team"
+)
+
 // Owners stores owner accounts and their one-time sign-in credentials.
 type Owners interface {
 	Create(ctx context.Context, o Owner) error
@@ -143,7 +154,19 @@ func ownerFromRow(row sqlcgen.GetOwnerRow) Owner {
 }
 
 func (r ownersRepo) CreateLoginCode(ctx context.Context, c OwnerLoginCode) error {
-	return mapErr("create owner login code", r.db.q.CreateOwnerLoginCode(ctx, loginCodeParams(c)))
+	return createLoginCode(ctx, r.db.q, c)
+}
+
+// createLoginCode adds c. A team is never given one (ErrConstraint).
+func createLoginCode(ctx context.Context, q *sqlcgen.Queries, c OwnerLoginCode) error {
+	n, err := q.CreateOwnerLoginCode(ctx, loginCodeParams(c))
+	if err != nil {
+		return mapErr("create owner login code", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("create owner login code: %w", ErrConstraint)
+	}
+	return nil
 }
 
 func loginCodeParams(c OwnerLoginCode) sqlcgen.CreateOwnerLoginCodeParams {
@@ -210,7 +233,7 @@ func (r ownersRepo) CreateWithLoginCode(ctx context.Context, o Owner, c OwnerLog
 		if err := q.CreateOwner(ctx, ownerParams(o)); err != nil {
 			return mapErr("create owner", err)
 		}
-		return mapErr("create owner login code", q.CreateOwnerLoginCode(ctx, loginCodeParams(c)))
+		return createLoginCode(ctx, q, c)
 	})
 }
 
@@ -268,7 +291,7 @@ func (r ownersRepo) ReplaceLoginCode(ctx context.Context, c OwnerLoginCode) erro
 		if err != nil {
 			return mapErr("retire owner login codes", err)
 		}
-		return mapErr("create owner login code", q.CreateOwnerLoginCode(ctx, loginCodeParams(c)))
+		return createLoginCode(ctx, q, c)
 	})
 }
 

@@ -111,11 +111,11 @@ type rendered struct {
 // the size limit, stores them as blobs and records them, so the edge can
 // serve them once the deploy is active. It is idempotent: retrying after a
 // failure renders the same bytes again. It stops when ctx ends.
-func (s *Service) render(ctx context.Context, ownerID string, site store.Site, deployID string) error {
+func (s *Service) render(ctx context.Context, actor store.Actor, site store.Site, deployID string) error {
 	if s.c.Renditions == nil {
 		return nil
 	}
-	sources, err := s.c.Renditions.Sources(ctx, ownerID, site.ID, deployID)
+	sources, err := s.c.Renditions.Sources(ctx, actor, site.ID, deployID)
 	if err != nil {
 		return storeErr("list rendition sources", err)
 	}
@@ -140,7 +140,7 @@ func (s *Service) render(ctx context.Context, ownerID string, site store.Site, d
 		done = append(done, rendered{f, out})
 		rs = append(rs, out...)
 	}
-	if err := s.c.Renditions.Put(ctx, ownerID, site.ID, deployID, rs, s.now()); err != nil {
+	if err := s.c.Renditions.Put(ctx, actor, site.ID, deployID, rs, s.now()); err != nil {
 		return storeErr("record renditions", err)
 	}
 	// Garbage collection may have removed a blob that already existed, with

@@ -45,6 +45,10 @@ type Policy struct {
 	// addresses and domains (A2.5).
 	KeepGitHubOrgs bool
 	Version        int
+	// CreatedBy is who last changed it, as Deploy.CreatedBy (T7.1). Read
+	// only: the repository records its actor.
+	CreatedBy      string
+	CreatedByToken string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
@@ -144,8 +148,8 @@ var ErrOAuthNeedsAllowlist = errors.New("the oauth method needs an allowlist")
 
 // Policies stores site and path policies, one per site and prefix.
 type Policies interface {
-	// Create adds p to one of ownerID's sites.
-	Create(ctx context.Context, ownerID string, p Policy) error
+	// Create adds p to a site the actor can edit.
+	Create(ctx context.Context, actor Actor, p Policy) error
 	// ForSite returns every policy of siteID ordered by path prefix. It is
 	// an instance-wide read for the edge and must never back an owner API
 	// handler.
@@ -154,11 +158,11 @@ type Policies interface {
 	// Version 1, UpdatedAt = CreatedAt) unless the site has one already, in
 	// which case it changes nothing. Instance-wide, like ForSite.
 	EnsureDefault(ctx context.Context, p Policy) error
-	// List returns up to limit of the policies of ownerID's site siteID
+	// List returns up to limit of the policies of site siteID
 	// ordered by path prefix, after afterPrefix ("" for the first page).
-	List(ctx context.Context, ownerID, siteID, afterPrefix string, limit int) ([]Policy, error)
+	List(ctx context.Context, actor Actor, siteID, afterPrefix string, limit int) ([]Policy, error)
 	// Set stores p's settings as the policy for (p.SiteID, p.PathPrefix) on
-	// one of ownerID's sites, in one transaction. Without a policy for the
+	// a site the actor can edit, in one transaction. Without a policy for the
 	// prefix it inserts p with Version 1. With one whose settings differ it
 	// keeps that policy's ID and CreatedAt, takes p's settings and
 	// UpdatedAt, and increments its Version, which ends every session bound
@@ -168,10 +172,10 @@ type Policies interface {
 	// there), and so does KeepAllowlist for the allowlist; a changed
 	// allowlist also revokes the policy's email and OAuth sessions. It
 	// returns the stored policy.
-	Set(ctx context.Context, ownerID string, p Policy) (Policy, error)
-	// Delete removes policy id of ownerID's site siteID together with the
+	Set(ctx context.Context, actor Actor, p Policy) (Policy, error)
+	// Delete removes policy id of site siteID together with the
 	// site sessions bound to it.
-	Delete(ctx context.Context, ownerID, siteID, id string) error
+	Delete(ctx context.Context, actor Actor, siteID, id string) error
 }
 
 // Policies returns the SQLite Policies repository.
@@ -179,7 +183,12 @@ func (db *DB) Policies() Policies { return policiesRepo{db} }
 
 type policiesRepo struct{ db *DB }
 
-func (r policiesRepo) Create(ctx context.Context, ownerID string, p Policy) error {
+func (r policiesRepo) Create(ctx context.Context, actor Actor, p Policy) error {
+	ownerID, err := r.db.authorizeSite(ctx, actor, p.SiteID, RoleEditor)
+	if err != nil {
+		return err
+	}
+	by, token := actor.MadeBy()
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		if err := requireSite(ctx, q, ownerID, p.SiteID); err != nil {
 			return err
@@ -197,6 +206,8 @@ func (r policiesRepo) Create(ctx context.Context, ownerID string, p Policy) erro
 			Version:         int64(p.Version),
 			CreatedAt:       ms(p.CreatedAt),
 			UpdatedAt:       ms(p.UpdatedAt),
+			CreatedBy:       nullString(by),
+			CreatedByToken:  nullString(token),
 		})); err != nil {
 			return err
 		}
@@ -239,6 +250,8 @@ func policyFromRow(row sqlcgen.Policy) Policy {
 		Version:         int(row.Version),
 		CreatedAt:       fromMs(row.CreatedAt),
 		UpdatedAt:       fromMs(row.UpdatedAt),
+		CreatedBy:       row.CreatedBy.String,
+		CreatedByToken:  row.CreatedByToken.String,
 	}
 }
 
@@ -278,7 +291,14 @@ func (r policiesRepo) EnsureDefault(ctx context.Context, p Policy) error {
 	}))
 }
 
-func (r policiesRepo) List(ctx context.Context, ownerID, siteID, afterPrefix string, limit int) ([]Policy, error) {
+func (r policiesRepo) List(ctx context.Context, actor Actor, siteID, afterPrefix string, limit int) ([]Policy, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if errors.Is(err, ErrNotFound) {
+		return []Policy{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	rows, err := r.db.q.ListOwnerPolicies(ctx, sqlcgen.ListOwnerPoliciesParams{
 		OwnerID:     ownerID,
 		SiteID:      siteID,
@@ -295,9 +315,15 @@ func (r policiesRepo) List(ctx context.Context, ownerID, siteID, afterPrefix str
 	return withAllowlists(policiesFromRows(rows), entries), nil
 }
 
-func (r policiesRepo) Set(ctx context.Context, ownerID string, p Policy) (Policy, error) {
+func (r policiesRepo) Set(ctx context.Context, actor Actor, p Policy) (Policy, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, p.SiteID, RoleEditor)
+	if err != nil {
+		return Policy{}, err
+	}
 	var out Policy
-	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
+	by, token := actor.MadeBy()
+	p.CreatedBy, p.CreatedByToken = by, token
+	err = r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		if err := requireSite(ctx, q, ownerID, p.SiteID); err != nil {
 			return err
 		}
@@ -334,6 +360,8 @@ func (r policiesRepo) Set(ctx context.Context, ownerID string, p Policy) (Policy
 				Version:         1,
 				CreatedAt:       ms(out.CreatedAt),
 				UpdatedAt:       ms(out.UpdatedAt),
+				CreatedBy:       nullString(by),
+				CreatedByToken:  nullString(token),
 			})); err != nil {
 				return err
 			}
@@ -407,6 +435,8 @@ func (r policiesRepo) Set(ctx context.Context, ownerID string, p Policy) (Policy
 			PasswordHash:    nullString(out.PasswordHash),
 			Version:         int64(out.Version),
 			UpdatedAt:       ms(out.UpdatedAt),
+			CreatedBy:       nullString(by),
+			CreatedByToken:  nullString(token),
 		}))
 	})
 	if err != nil {
@@ -415,7 +445,11 @@ func (r policiesRepo) Set(ctx context.Context, ownerID string, p Policy) (Policy
 	return out, nil
 }
 
-func (r policiesRepo) Delete(ctx context.Context, ownerID, siteID, id string) error {
+func (r policiesRepo) Delete(ctx context.Context, actor Actor, siteID, id string) error {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleEditor)
+	if err != nil {
+		return err
+	}
 	n, err := r.db.q.DeletePolicy(ctx, sqlcgen.DeletePolicyParams{ID: id, SiteID: siteID, OwnerID: ownerID})
 	return rowsAffected("delete policy", n, err)
 }

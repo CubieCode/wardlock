@@ -361,6 +361,14 @@ erDiagram
   owners ||--o{ notification_opt_outs : "owner_id"
   owners ||--o{ notification_outbox : "owner_id"
   owners ||--o{ webhooks : "owner_id"
+  owners ||--|| teams : "id"
+  owners |o--o{ teams : "created_by"
+  owners ||--o{ team_members : "owner_id"
+  teams ||--o{ team_members : "team_id"
+  teams ||--o{ team_invitations : "team_id"
+  owners |o--o{ team_invitations : "invited_by"
+  owners ||--o{ site_pins : "owner_id"
+  sites ||--o{ site_pins : "site_id"
   webhooks ||--o{ webhook_events : "webhook_id"
   webhooks ||--o{ webhook_sites : "webhook_id"
   webhooks ||--o{ webhook_deliveries : "webhook_id"
@@ -409,6 +417,35 @@ erDiagram
     INTEGER max_deploys_per_day "quota override"
     INTEGER stored_bytes "running total"
     INTEGER moderation_exempt "screening exemption"
+    TEXT kind "owner, team"
+    INTEGER max_teams "quota override"
+  }
+  teams {
+    TEXT id PK, FK "its row in owners"
+    TEXT name
+    TEXT created_by FK
+    INTEGER created_at
+  }
+  team_members {
+    TEXT team_id PK, FK
+    TEXT owner_id PK, FK
+    TEXT role "admin, editor, viewer"
+    INTEGER created_at
+  }
+  team_invitations {
+    TEXT id PK
+    TEXT team_id FK "unique with email"
+    TEXT email
+    TEXT role "admin, editor, viewer"
+    TEXT invited_by FK
+    INTEGER created_at
+    INTEGER expires_at
+    INTEGER accepted_at
+  }
+  site_pins {
+    TEXT owner_id PK, FK "who pinned"
+    TEXT site_id PK, FK
+    INTEGER pinned_at
   }
   owner_login_codes {
     TEXT id PK
@@ -452,6 +489,7 @@ erDiagram
     INTEGER expires_at
     INTEGER last_used_at
     INTEGER revoked_at
+    TEXT created_by "admin, for a team token"
   }
   cli_login_requests {
     TEXT id PK
@@ -475,7 +513,6 @@ erDiagram
     TEXT active_deploy_id FK
     INTEGER taken_down_at "operator takedown"
     TEXT group_id FK "null: ungrouped"
-    INTEGER pinned_at "null: not pinned"
     INTEGER primary_base "1: base-domain host is primary"
     TEXT primary_domain_id FK "null: no custom primary"
   }
@@ -510,6 +547,8 @@ erDiagram
     TEXT last_failure_reason
     INTEGER verified_at
     TEXT failure_detail
+    TEXT created_by "owner, or team for a token"
+    TEXT created_by_token "team token"
   }
   deploys {
     TEXT id PK
@@ -528,6 +567,8 @@ erDiagram
     TEXT preview "preview deploys"
     INTEGER preview_lifetime_days
     INTEGER preview_activated_at
+    TEXT created_by "owner, or team for a token"
+    TEXT created_by_token "team token"
   }
   previews {
     TEXT site_id PK, FK
@@ -600,6 +641,8 @@ erDiagram
     INTEGER version
     INTEGER created_at
     INTEGER updated_at
+    TEXT created_by "owner, or team for a token"
+    TEXT created_by_token "team token"
   }
   policy_allowlist {
     TEXT policy_id PK, FK
@@ -633,6 +676,8 @@ erDiagram
     INTEGER rotated_at
     INTEGER revoked_at
     INTEGER used_up_at
+    TEXT created_by "owner, or team for a token"
+    TEXT created_by_token "team token"
   }
   notification_opt_outs {
     TEXT owner_id PK, FK
@@ -829,6 +874,24 @@ flowchart LR
 - **Quarantine.** `serve` calls `Quarantine.Load` before listening and fails to start without it; `Quarantine.Watch` reloads the full list every 5 seconds, which is how `wardlockd admin moderation` decisions from another process reach a running server. Each load takes a generation first, and hashes the worker adds after a load began survive that load's replace, so a reload never drops a fresh quarantine.
 - **Edge.** `siteSource` marks a site `Screened` when screening is on and its owner is not exempt, and fills each `ServedFile`'s `Pending` (no verdict yet) and `Decoded` from `DeployScreening`. On a screened site the edge sends pending files `no-cache` instead of immutable, negotiates a `.gz` sibling only when its `Decoded` equals its base's hash, and never a `.br` sibling.
 - **Wiring.** `cmd/wardlockd/moderation.go` builds the service (with the OpenAI `Moderator` only when `WARDLOCK_MODERATION=openai`), always runs the quarantine watch so a file once withheld stays withheld with screening off, passes the `Quarantine` to the edge as `Config.Withheld`, subscribes `Service.Changed` to the deploys `Notifier`, gives the edge a second notifier for screening invalidations (`invalidators`), and adds `wardlock_moderation_backlog`, `wardlock_moderation_quarantined`, `wardlock_moderation_paused` and `wardlock_moderation_provider_errors_total` to `/metrics`. Garbage collection skips blobs whose row is `quarantined` without `discarded_at`.
+
+</details>
+
+## Teams (T7.1)
+
+A team is an account: a row in `owners` with `kind = 'team'` beside a row in `teams` with the same ID. `sites.owner_id`, groups, tags, tokens, blob holdings, quotas and stored bytes all name an account, so a team's site needs no second owner column, and exactly one owner or team holds by construction. Isolation moved from "the owner ID in every `WHERE`" to an `Actor`.
+
+<details>
+<summary>How an actor reaches a row</summary>
+
+- **`store.Actor`** is `{OwnerID, Memberships, TeamTokenID}`. The API's `authenticate` middleware builds it from the verified session or token: `Owners.Memberships` reads the owner's teams on each request, and a team token gets `OwnerID` set to its team and no memberships. `ActorOf(ctx)` hands it to handlers.
+- **Every owner-scoped repository method takes it.** `authorizeSite` reads the site's account and calls `Actor.Require(account, role)`; methods then use that account in their existing owner-keyed SQL, so the query still proves the row belongs to it. Methods naming an account (`Summaries`, `ListGroups`, `Traffic.Report`, `Sites.Create`) check it directly, and methods by ID alone (`GetGroup`, `Deploys.Delete`) read the row's account first.
+- **Domain services check first too**, in `sites.editable`, `deploys.writable` and `access.editableSite`, because some work precedes the repository call: a blob reaches `BlobStore` before `RecordUpload`, and a domain check runs DNS.
+- **Instance-wide reads** (`GetByName`, `GetByID`) stay for the edge, and owner reads reuse them through `Actor.Require`. The server acting for an account a site already names uses `store.ActorFor(site.OwnerID)`: the edge's site source and the domain workers.
+- **People, not accounts.** Queries meaning a person filter `kind = 'owner'`. Pins moved from `sites.pinned_at` to `site_pins`, keyed by person. A team token's "person" is its team, so its pins are the team's own and nobody else sees them.
+- **Errors.** `store.ErrForbiddenRole` passes through domain code; `responseError` answers it `403 forbidden_role`, and `store.ErrNotFound` the usual `404`, so an unmapped team filter cannot become a `500`.
+- **Notifications.** `Notifications.Enqueue` turns an email to a team into one row per admin who can read it, keyed `<event>:<admin>`. Webhook rows are never expanded, and scans read a team's sites like anyone's.
+- **Transfer.** `sitesRepo.Transfer` locks both accounts in ID order, checks the target's quotas, moves storage deploy by deploy, copies holdings the source had, clears tags and group, and updates `sites.owner_id` matching the source. The sites service then notifies the edge.
 
 </details>
 

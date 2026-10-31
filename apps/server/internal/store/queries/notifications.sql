@@ -11,7 +11,7 @@ ON CONFLICT (owner_id, event) DO NOTHING;
 -- Whether a notification may reach the owner: their address and whether
 -- they are suspended. Instance-wide: the worker names the owner of a row.
 -- name: GetNotificationRecipient :one
-SELECT email, suspended_at FROM owners WHERE id = sqlc.arg(id);
+SELECT email, suspended_at FROM owners WHERE id = sqlc.arg(id) AND kind = 'owner';
 
 -- Adds a row unless its (channel, event_key) has one already.
 -- name: EnqueueNotification :execrows

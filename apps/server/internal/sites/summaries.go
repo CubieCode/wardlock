@@ -135,18 +135,19 @@ func (s *Service) summaryWindow() store.SummaryWindow {
 	}
 }
 
-// summaries reads the owner's sites, groups and tags: three repository
+// summaries reads the account's sites, groups and tags: three repository
 // calls, whatever the number of sites.
-func (s *Service) summaries(ctx context.Context, ownerID string) (summarySet, error) {
-	list, err := s.c.Sites.Summaries(ctx, ownerID, s.summaryWindow())
+func (s *Service) summaries(ctx context.Context, actor store.Actor, account string) (summarySet, error) {
+	account = actor.Account(account)
+	list, err := s.c.Sites.Summaries(ctx, actor, account, s.summaryWindow())
 	if err != nil {
 		return summarySet{}, fmt.Errorf("list site summaries: %w", err)
 	}
-	groups, err := s.c.Organisation.ListGroups(ctx, ownerID)
+	groups, err := s.c.Organisation.ListGroups(ctx, actor, account)
 	if err != nil {
 		return summarySet{}, fmt.Errorf("list groups: %w", err)
 	}
-	tags, err := s.c.Organisation.ListTags(ctx, ownerID)
+	tags, err := s.c.Organisation.ListTags(ctx, actor, account)
 	if err != nil {
 		return summarySet{}, fmt.Errorf("list tags: %w", err)
 	}
@@ -160,14 +161,14 @@ func (s *Service) summaries(ctx context.Context, ownerID string) (summarySet, er
 	return set, nil
 }
 
-// SiteSummaries returns a page of the owner's sites matching f, in sort
-// order, after the cursor (nil for the first page). A group or tag in f
-// that is missing or another owner's is ErrNotFound.
-func (s *Service) SiteSummaries(ctx context.Context, ownerID string, f SummaryFilter, sort SummarySort, after *SummaryCursor, limit int) (SummaryPage, error) {
+// SiteSummaries returns a page of the account's sites ("" for the actor's
+// own) matching f, in sort order, after the cursor (nil for the first page).
+// A group or tag in f that is missing or another account's is ErrNotFound.
+func (s *Service) SiteSummaries(ctx context.Context, actor store.Actor, account string, f SummaryFilter, sort SummarySort, after *SummaryCursor, limit int) (SummaryPage, error) {
 	if utf8.RuneCountInString(f.Query) > MaxSummaryQuery {
 		return SummaryPage{}, invalid("q", fmt.Sprintf("A search must be at most %d characters.", MaxSummaryQuery))
 	}
-	set, err := s.summaries(ctx, ownerID)
+	set, err := s.summaries(ctx, actor, account)
 	if err != nil {
 		return SummaryPage{}, err
 	}
@@ -202,20 +203,21 @@ func (s *Service) SiteSummaries(ctx context.Context, ownerID string, f SummaryFi
 	return page, nil
 }
 
-// ExpiringLinks returns up to limit of the owner's expiring links, soonest
-// first: exactly the links each summary's ExpiringLinks counts.
-func (s *Service) ExpiringLinks(ctx context.Context, ownerID string, limit int) ([]store.ExpiringLink, error) {
-	links, err := s.c.Sites.ExpiringLinks(ctx, ownerID, s.summaryWindow(), limit)
+// ExpiringLinks returns up to limit of the account's expiring links ("" for
+// the actor's own), soonest first: exactly the links each summary's
+// ExpiringLinks counts.
+func (s *Service) ExpiringLinks(ctx context.Context, actor store.Actor, account string, limit int) ([]store.ExpiringLink, error) {
+	links, err := s.c.Sites.ExpiringLinks(ctx, actor, actor.Account(account), s.summaryWindow(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("list expiring links: %w", err)
 	}
 	return links, nil
 }
 
-// SiteCounts counts the owner's sites in each saved view, group and tag,
-// as SiteSummaries would list them.
-func (s *Service) SiteCounts(ctx context.Context, ownerID string) (SiteCounts, error) {
-	set, err := s.summaries(ctx, ownerID)
+// SiteCounts counts the account's sites ("" for the actor's own) in each
+// saved view, group and tag, as SiteSummaries would list them.
+func (s *Service) SiteCounts(ctx context.Context, actor store.Actor, account string) (SiteCounts, error) {
+	set, err := s.summaries(ctx, actor, account)
 	if err != nil {
 		return SiteCounts{}, err
 	}

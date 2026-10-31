@@ -10,7 +10,8 @@
 -- longer than min_lifetime (milliseconds from creation to expiry). active
 -- is 1 when the rollup has any request from active_from on.
 -- name: ListSiteSummaries :many
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name,
   deploys.message AS deploy_message,
   policies.visibility, policies.links_enabled, policies.password_enabled, policies.email_enabled, policies.oauth_enabled,
   CAST((
@@ -30,6 +31,8 @@ SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.creat
     SELECT 1 FROM traffic_hours WHERE traffic_hours.site_id = sites.id AND traffic_hours.hour >= sqlc.arg(active_from)
   ) THEN 1 ELSE 0 END AS BIGINT) AS active
 FROM sites
+JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 LEFT JOIN policies ON policies.site_id = sites.id AND policies.path_prefix = '/'
 WHERE sites.owner_id = sqlc.arg(owner_id)

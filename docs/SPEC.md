@@ -29,6 +29,7 @@ Share links and API tokens use one format: `wl_<public id>_<secret>`. The public
 - **Bootstrap.** The first owner comes from a one-time setup URL printed in the log, or from `wardlockd admin create`; later owners are invited by email (or, with `WARDLOCK_INVITES=operator`, only created by the operator; see [Operator controls](#operator-controls-and-abuse-reports-a213)).
 - **Dashboard sign-in** is by one-time email code or passkey (C1.6). There are no owner passwords.
 - **Owner sessions** are `__Host-` cookies on the dashboard host, `HttpOnly`, `Secure`, `SameSite=Lax`, idle timeout 14 days, absolute 90 days, revocable from the dashboard.
+- **Teams** (T7.1) share sites between owners: see [Teams](#teams-t71).
 - **API tokens** (C1.7) are scoped (`deploy`, `manage`), named, revocable, optionally expiring, and shown once. They use the same format and hashing as share-link tokens (see Tokens). Owners create, list and revoke them on the dashboard's API tokens page (I6.6); `wardlock token create` prints a new one for a CI secret or another tool.
 - **CLI login** (C1.7): `wardlock login` shows a short code, the signed-in owner approves it in the browser, and the CLI keeps the token in the OS keychain or a private file.
 
@@ -393,6 +394,82 @@ Each refusal's message says which quota and its limit; nothing is written and a 
 - **Limits and overrides.** The instance's values come from `WARDLOCK_MAX_OWNER_STORAGE`, `WARDLOCK_MAX_OWNER_SITES` and `WARDLOCK_MAX_OWNER_DEPLOYS_PER_DAY`; `0`, the default, is unlimited. The operator can override any of them for one owner (again `0` is unlimited) or clear an override so the owner follows the instance again. Lowering a limit below what an owner already uses deletes nothing: it refuses their next deploy that adds files, or their next site, until usage is back under it. A deploy of only files the owner already stores is never refused for storage.
 - **Concurrency.** Each check runs in the same transaction as the write it guards, with the owner's row locked, so concurrent deploys or site creations by one owner cannot together pass a limit.
 - **Cost.** The server keeps each owner's stored bytes as a running total, with a count per owner and file of the deploys listing it, updated in the transactions that create and delete deploys. Checking storage costs one lookup per distinct file in the new manifest, never a sum over the owner's files.
+
+</details>
+
+## Teams (T7.1)
+
+A team is a shared account: it has a name, members and sites, and every site belongs to exactly one owner or one team. Personal sites stay exactly as they are, and an owner in no team sees nothing change. Members are existing owners, invited by address, and each has one role:
+
+| Role     | Can do                                                                                                                     |
+| -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `admin`  | Members, roles, team settings, team tokens, moving sites and deleting the team, plus everything an editor can do           |
+| `editor` | Everything an owner can do to a site: deploys, policies, share links, custom domains, groups and tags, and tearing it down |
+| `viewer` | Reads only, including analytics and the access log, and pinning a site for themselves                                      |
+
+- **Isolation.** A site is reachable by its owner and by members of its team, as far as their role allows. Anyone else gets the same `404` as for a site that does not exist; `403 forbidden_role` is answered only where the caller can already see the site.
+- **Members.** A team always keeps at least one admin who is not suspended (`409 team_needs_admin`). Leaving or being removed ends access on the next request, and what the member made stays with the team. Inviting and removing members stays dashboard-only, as owner invitations are.
+- **Tokens.** A personal token acts as its owner, limited by both their role and the token's scope. A team token is owned by the team, survives members leaving, is listed and revoked by the team's admins, and acts as an editor limited by its scope. Team tokens cannot use webhooks.
+- **Groups, tags and pins.** A team has its own groups and tags. Pins stay personal.
+- **Quotas.** A team has its own quotas and overrides (A2.14), and its deploys count to the team, not to the member who deployed. `WARDLOCK_QUOTA_TEAMS` limits how many teams one owner may start, so per-team quotas cannot be multiplied.
+- **Moving a site.** `transferSite` moves a site between an owner and a team, or between two teams. It needs ownership or admin of the source and admin of the target, keeps deploys, links, domains and analytics, and is refused while the site is taken down.
+- **Who did what.** Deploys, policies, share links and domains record who made them (`createdBy`), by owner or by team token, and keep it after a member leaves.
+
+The maintainer confirmed the role table, team tokens and team quotas on 2026-11-01.
+
+<details>
+<summary>Decisions made while building it</summary>
+
+1. **Storage.** A team is an account: a row in `owners` with `kind = 'team'` and a reserved `.invalid` address, beside a row in `teams`. `sites.owner_id` names the account, and no team row is ever a principal ([SECURITY-MODEL](SECURITY-MODEL.md#teams-and-shared-ownership)).
+2. **Deleting a team** that still has sites is refused with `409 team_has_sites`.
+3. **Transfers** go owner to team, team to the acting admin's own account (never to another person), and team to team for an admin of both. The group and tags are cleared, pins stay with each person, and the target's quotas are checked. Confirmed by the maintainer on 2026-11-01.
+4. **Notifications** for a team's site email its admins; webhooks stay personal, and there are no team webhooks in T7.1. Confirmed by the maintainer on 2026-11-01.
+5. **`WARDLOCK_QUOTA_TEAMS`** limits the teams one owner may start, unlimited by default, with a `wardlockd admin quota --teams` override. Confirmed by the maintainer on 2026-11-01.
+6. **Team tokens** act as an editor limited by their scopes and never administer; `createdBy` is `{kind: owner | token, id, name}`.
+7. **Invitations** are bound to the address with no secret token. Acceptance re-checks the signed-in owner's verified address on the server and is idempotent. They expire after 7 days.
+8. **Listing.** `listSites` answers everything the caller can see, narrowed by `?team=<id>`; summaries, counts, analytics, groups and tags use the caller's own account unless given `?team=<id>`.
+
+</details>
+
+<details>
+<summary>Invitations in detail</summary>
+
+- An admin invites an address with a role (`inviteTeamMember`), rate-limited with owner invitations. Inviting the address again replaces its invitation, and a current member cannot be invited (`409 already_member`): their role changes instead. An invitation lasts 7 days. Removing a member deletes the invitations to them and the open ones they sent, and an admin who is demoted loses the open ones they sent, so nothing they set up outlives their authority.
+- An invitation is bound to the address, not to a secret: there is no token in the email, whose link only opens the dashboard. Only an owner signed in with that verified address sees it (`listMyTeamInvitations`) or can accept or decline it; the address is read from their account, never from the request, so an invitation ID is worth nothing to anyone else and answers the same `404`.
+- Accepting twice changes nothing while the owner is still a member, and keeps any role changed since. Once they have left or been removed, a spent invitation grants nothing.
+- An address with no owner account gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and they see the team's invitation once signed in. With `WARDLOCK_INVITES=operator` the invitation is refused with `403 invites_restricted`, which tells the admin that the address has no account here.
+
+</details>
+
+<details>
+<summary>The API in detail</summary>
+
+- **The Site object** gains `owner: {kind: owner | team, id, name}`, where `name` is the owner's address or the team's name. Team names are not unique: uniqueness would reveal which names other teams use.
+- **`team`.** `listSites` answers everything the caller can see, and `?team=<id>` narrows it to one team. `listSiteSummaries`, `getSiteCounts`, `listExpiringLinks`, `getAnalytics`, `listGroups`, `listTags`, `createGroup`, `createTag` and `organiseSites` use the caller's own account unless given `?team=<id>`, and `createSite` takes `team` in its body. A team the caller is not in answers the same `404` as a missing one.
+- **`getMe`** with a team token answers `team: {id, name}` as well as `owner`, which then names the team's own account, not a person.
+- **Scopes.** `listTeams`, `getTeam` and `listTeamMembers` are reads and accept either scope. `transferSite` needs `manage`. Everything else about teams takes a dashboard session only: tokens never manage members or tokens. Webhook operations refuse team tokens.
+- **`createdBy`** is `{kind: owner | token, id, name}`, on `Deploy`, `ShareLink`, `Domain` and `Policy`, where for a policy it names whoever last changed it. Rows made before teams existed name the site's owner.
+
+</details>
+
+<details>
+<summary>Moving a site in detail</summary>
+
+- **Where to.** `to: {kind: team, id}`, a team the caller administers, or `to: {kind: owner}`, the caller's own account. A site never lands in another person's account. A target the caller cannot see answers the same `404`.
+- **What moves.** Deploys, share links, policies, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; each person's pin stays theirs.
+- **Storage and quotas.** The target's site and storage quotas apply, `413 limit_exceeded` otherwise, and the move is all or nothing. Bytes only this site held leave the source and count to the target. The daily deploy count stays with whoever made the deploys.
+- **Files.** The target can download and activate whatever the source had uploaded of the site's files, and nothing more: a hash a deploy merely lists stays not held.
+- **Taken down.** A taken-down site answers `409 site_unavailable`: it is evidence where it is.
+
+</details>
+
+<details>
+<summary>Deleting, notifications, webhooks and operators in detail</summary>
+
+- **Deleting a team.** Refused while it has sites (`409 team_has_sites`): move or delete them first. Its members, invitations, tokens, groups and tags go with it.
+- **Notifications.** A team's emails (expiring links, withheld files and the rest) go to its admins, each under their own opt-outs and hourly cap. A suspended admin gets none. The maintainer confirmed this on 2026-11-01.
+- **Webhooks** stay personal: an owner's webhook hears only their personal sites and cannot list a team's, and team tokens cannot use them. There are no team webhooks in T7.1.
+- **Operator controls.** Suspending an owner ends their team access, while the team's sites keep serving: a team has no suspension of its own. Taking down a team's site works as for any site. `wardlockd admin list-teams` lists teams and their members, `list-sites` shows `team NAME` as the owner, and `team-quota TEAM` shows and overrides a team's quotas. `quota ADDRESS --teams N` overrides how many teams one owner may start. `revoke-team-tokens TEAM` revokes every token of a team, since suspending a member leaves team tokens working, and `set-team-role TEAM ADDRESS ROLE` repairs a team with no working admin.
 
 </details>
 
@@ -1148,4 +1225,4 @@ All fields are optional; flags and arguments override them (`--spa=false` overri
 
 ## Not in v1
 
-Teams and shared ownership, an MCP server, hosted service features (billing, and abuse handling beyond the operator controls of A2.13), Postgres or other database backends, multiple server instances. See ROADMAP "Not planned yet". File bodies can be stored in an S3-compatible bucket (C1.11; DEPLOYMENT "S3-compatible blob storage").
+An MCP server, hosted service features (billing, and abuse handling beyond the operator controls of A2.13), Postgres or other database backends, multiple server instances. See ROADMAP "Not planned yet". File bodies can be stored in an S3-compatible bucket (C1.11; DEPLOYMENT "S3-compatible blob storage").

@@ -49,6 +49,18 @@ func (e *LimitError) Message() string {
 	return fmt.Sprintf("You already have %d %s, the most this server allows you. Delete a site you no longer need or ask the operator for a higher limit.", e.Limit, sites)
 }
 
+// TransferLimitError refuses a transfer that would take the target account
+// past its storage quota.
+type TransferLimitError struct{ Limit, Used, Adding int64 }
+
+func (e *TransferLimitError) Error() string { return e.Message() }
+func (e *TransferLimitError) Unwrap() error { return ErrLimitExceeded }
+
+// Message explains the refusal to the owner.
+func (e *TransferLimitError) Message() string {
+	return fmt.Sprintf("Moving this site would add %d bytes to an account using %d of its %d. Free some space or ask the operator for a higher limit.", e.Adding, e.Used, e.Limit)
+}
+
 // reserved are the names SPEC "Sites" keeps for Wardlock itself.
 var reserved = map[string]bool{
 	"auth": true, "www": true, "api": true, "admin": true, "app": true,
@@ -148,19 +160,20 @@ func (s *Service) dashboardLabel() string {
 // Hostname returns the site's host on the base domain.
 func (s *Service) Hostname(name string) string { return name + "." + s.c.BaseDomain }
 
-// Create creates an empty site for ownerID, or returns a *LimitError when
-// they already have as many sites as their quota allows.
-func (s *Service) Create(ctx context.Context, ownerID, name string) (store.Site, error) {
+// Create creates an empty site in the account ("" for the actor's own), or
+// returns a *LimitError when that account already has as many sites as its
+// quota allows.
+func (s *Service) Create(ctx context.Context, actor store.Actor, account, name string) (store.Site, error) {
 	if err := s.CheckName(name); err != nil {
 		return store.Site{}, err
 	}
 	site := store.Site{
 		ID:        store.NewID(),
-		OwnerID:   ownerID,
+		OwnerID:   actor.Account(account),
 		Name:      name,
 		CreatedAt: s.now(),
 	}
-	err := s.c.Sites.Create(ctx, site, s.c.Quotas)
+	err := s.c.Sites.Create(ctx, actor, site, s.c.Quotas)
 	if errors.Is(err, store.ErrConflict) {
 		return store.Site{}, ErrNameTaken
 	}
@@ -170,47 +183,94 @@ func (s *Service) Create(ctx context.Context, ownerID, name string) (store.Site,
 	if err != nil {
 		return store.Site{}, fmt.Errorf("create site: %w", err)
 	}
+	if site, err = s.c.Sites.Get(ctx, actor, site.ID); err != nil {
+		return store.Site{}, fmt.Errorf("read new site: %w", err)
+	}
 	if s.c.Events != nil {
 		s.c.Events.SiteCreated(ctx, site)
 	}
 	return site, nil
 }
 
-// Get returns ownerID's site called name.
-func (s *Service) Get(ctx context.Context, ownerID, name string) (store.Site, error) {
-	site, err := s.c.Sites.GetByOwnerName(ctx, ownerID, name)
+// Get returns the actor's site called name.
+func (s *Service) Get(ctx context.Context, actor store.Actor, name string) (store.Site, error) {
+	site, err := s.c.Sites.GetByOwnerName(ctx, actor, name)
 	return site, storeErr("get site", err)
 }
 
-// List returns up to limit of ownerID's sites ordered by name, after
-// afterName ("" for the first page).
-func (s *Service) List(ctx context.Context, ownerID, afterName string, limit int) ([]store.Site, error) {
-	sites, err := s.c.Sites.List(ctx, ownerID, afterName, limit)
+// editable returns the actor's site called name when their role lets them
+// change it. Writes start here, so a viewer is refused before anything with
+// a side effect runs; the repositories check again.
+func (s *Service) editable(ctx context.Context, actor store.Actor, name string) (store.Site, error) {
+	site, err := s.Get(ctx, actor, name)
 	if err != nil {
-		return nil, fmt.Errorf("list sites: %w", err)
+		return store.Site{}, err
+	}
+	if err := actor.Require(site.OwnerID, store.RoleEditor); err != nil {
+		return store.Site{}, fmt.Errorf("site: %w", err)
+	}
+	return site, nil
+}
+
+// Transfer moves the actor's site called name to the account toAccount
+// (empty for the actor's own), as store.Sites.Transfer says: a site past the
+// target's quotas is a *LimitError or ErrLimitExceeded, a taken-down site
+// ErrUnavailable. Serving stops trusting anything it cached about the old
+// owner at once.
+func (s *Service) Transfer(ctx context.Context, actor store.Actor, name, toAccount string) (store.Site, error) {
+	site, err := s.Get(ctx, actor, name)
+	if err != nil {
+		return store.Site{}, err
+	}
+	err = s.c.Sites.Transfer(ctx, actor, site.ID, actor.Account(toAccount), s.c.Quotas, s.now())
+	if errors.Is(err, store.ErrSiteTakenDown) {
+		return store.Site{}, ErrUnavailable
+	}
+	if qe := (*store.QuotaError)(nil); errors.As(err, &qe) {
+		if qe.Quota == store.QuotaSites {
+			return store.Site{}, &LimitError{Limit: qe.Limit}
+		}
+		return store.Site{}, &TransferLimitError{Limit: qe.Limit, Used: qe.Used, Adding: qe.Adding}
+	}
+	if err != nil {
+		return store.Site{}, storeErr("transfer site", err)
+	}
+	s.c.Notifier.Notify(ctx, site.ID)
+	s.log().LogAttrs(ctx, slog.LevelInfo, "site transferred",
+		slog.String("site_id", site.ID), slog.String("from", site.OwnerID), slog.String("to", actor.Account(toAccount)))
+	return s.Get(ctx, actor, name)
+}
+
+// List returns up to limit of the sites the actor can see ordered by name,
+// after afterName ("" for the first page), narrowed to the account when one
+// is named.
+func (s *Service) List(ctx context.Context, actor store.Actor, account, afterName string, limit int) ([]store.Site, error) {
+	sites, err := s.c.Sites.List(ctx, actor, account, afterName, limit)
+	if err != nil {
+		return nil, storeErr("list sites", err)
 	}
 	return sites, nil
 }
 
-// ForHostname returns ownerID's site served at hostname: <name>.<base
+// ForHostname returns the actor's site served at hostname: <name>.<base
 // domain>, or one of the site's custom domains whatever its status.
-func (s *Service) ForHostname(ctx context.Context, ownerID, hostname string) (store.Site, error) {
+func (s *Service) ForHostname(ctx context.Context, actor store.Actor, hostname string) (store.Site, error) {
 	host := strings.TrimSuffix(strings.ToLower(hostname), ".")
 	if name, ok := strings.CutSuffix(host, "."+s.c.BaseDomain); ok && ValidName(name) {
-		return s.Get(ctx, ownerID, name)
+		return s.Get(ctx, actor, name)
 	}
 	if h, err := NormaliseHostname(host); err == nil {
 		host = h // a custom domain typed in Unicode
 	}
-	site, err := s.c.Sites.GetByOwnerDomain(ctx, ownerID, host)
+	site, err := s.c.Sites.GetByOwnerDomain(ctx, actor, host)
 	return site, storeErr("get site by domain", err)
 }
 
-// Delete tears down ownerID's site called name, with its deploys, links,
+// Delete tears down the actor's site called name, with its deploys, links,
 // policies and custom domains, frees the name and notifies subscribers so
 // serving stops at once. Unreferenced blobs wait for garbage collection.
-func (s *Service) Delete(ctx context.Context, ownerID, name string) error {
-	site, err := s.Get(ctx, ownerID, name)
+func (s *Service) Delete(ctx context.Context, actor store.Actor, name string) error {
+	site, err := s.editable(ctx, actor, name)
 	if err != nil {
 		return err
 	}
@@ -222,7 +282,7 @@ func (s *Service) Delete(ctx context.Context, ownerID, name string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.c.Sites.Delete(ctx, ownerID, site.ID); err != nil {
+	if err := s.c.Sites.Delete(ctx, actor, site.ID); err != nil {
 		return storeErr("delete site", err)
 	}
 	s.c.Notifier.Notify(ctx, site.ID)

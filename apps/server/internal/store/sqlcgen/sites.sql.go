@@ -71,20 +71,20 @@ func (q *Queries) DeleteSite(ctx context.Context, arg DeleteSiteParams) (int64, 
 	return result.RowsAffected()
 }
 
-const getSite = `-- name: GetSite :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
-  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
-FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+const getSiteByDomain = `-- name: GetSiteByDomain :one
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name
+FROM sites
+JOIN domains ON domains.site_id = sites.id
+JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
+LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
-WHERE sites.id = ?1 AND sites.owner_id = ?2
+WHERE domains.hostname = ?1
 `
 
-type GetSiteParams struct {
-	ID      string
-	OwnerID string
-}
-
-type GetSiteRow struct {
+type GetSiteByDomainRow struct {
 	ID                  string
 	OwnerID             string
 	Name                string
@@ -93,15 +93,19 @@ type GetSiteRow struct {
 	ActivatedAt         sql.NullInt64
 	TakenDownAt         sql.NullInt64
 	GroupID             sql.NullString
-	PinnedAt            sql.NullInt64
 	PrimaryBase         int64
 	PrimaryDomain       sql.NullString
 	PrimaryDomainStatus sql.NullString
+	OwnerKind           string
+	OwnerEmail          string
+	TeamName            sql.NullString
 }
 
-func (q *Queries) GetSite(ctx context.Context, arg GetSiteParams) (GetSiteRow, error) {
-	row := q.db.QueryRowContext(ctx, getSite, arg.ID, arg.OwnerID)
-	var i GetSiteRow
+// Instance-wide, as GetSiteByName. Any status: the owner API resolves
+// pending and lapsed hostnames too.
+func (q *Queries) GetSiteByDomain(ctx context.Context, hostname string) (GetSiteByDomainRow, error) {
+	row := q.db.QueryRowContext(ctx, getSiteByDomain, hostname)
+	var i GetSiteByDomainRow
 	err := row.Scan(
 		&i.ID,
 		&i.OwnerID,
@@ -111,18 +115,23 @@ func (q *Queries) GetSite(ctx context.Context, arg GetSiteParams) (GetSiteRow, e
 		&i.ActivatedAt,
 		&i.TakenDownAt,
 		&i.GroupID,
-		&i.PinnedAt,
 		&i.PrimaryBase,
 		&i.PrimaryDomain,
 		&i.PrimaryDomainStatus,
+		&i.OwnerKind,
+		&i.OwnerEmail,
+		&i.TeamName,
 	)
 	return i, err
 }
 
 const getSiteByID = `-- name: GetSiteByID :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
-  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
-FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name
+FROM sites JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
+LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE sites.id = ?1
 `
@@ -136,13 +145,15 @@ type GetSiteByIDRow struct {
 	ActivatedAt         sql.NullInt64
 	TakenDownAt         sql.NullInt64
 	GroupID             sql.NullString
-	PinnedAt            sql.NullInt64
 	PrimaryBase         int64
 	PrimaryDomain       sql.NullString
 	PrimaryDomainStatus sql.NullString
+	OwnerKind           string
+	OwnerEmail          string
+	TeamName            sql.NullString
 }
 
-// Instance-wide: edge routing only, never owner API handlers.
+// Instance-wide, as GetSiteByName.
 func (q *Queries) GetSiteByID(ctx context.Context, id string) (GetSiteByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getSiteByID, id)
 	var i GetSiteByIDRow
@@ -155,18 +166,23 @@ func (q *Queries) GetSiteByID(ctx context.Context, id string) (GetSiteByIDRow, e
 		&i.ActivatedAt,
 		&i.TakenDownAt,
 		&i.GroupID,
-		&i.PinnedAt,
 		&i.PrimaryBase,
 		&i.PrimaryDomain,
 		&i.PrimaryDomainStatus,
+		&i.OwnerKind,
+		&i.OwnerEmail,
+		&i.TeamName,
 	)
 	return i, err
 }
 
 const getSiteByName = `-- name: GetSiteByName :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
-  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
-FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name
+FROM sites JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
+LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE sites.name = ?1
 `
@@ -180,13 +196,15 @@ type GetSiteByNameRow struct {
 	ActivatedAt         sql.NullInt64
 	TakenDownAt         sql.NullInt64
 	GroupID             sql.NullString
-	PinnedAt            sql.NullInt64
 	PrimaryBase         int64
 	PrimaryDomain       sql.NullString
 	PrimaryDomainStatus sql.NullString
+	OwnerKind           string
+	OwnerEmail          string
+	TeamName            sql.NullString
 }
 
-// Instance-wide: edge routing only, never owner API handlers.
+// Instance-wide: the edge's routing, and owner reads through Actor.Require.
 func (q *Queries) GetSiteByName(ctx context.Context, name string) (GetSiteByNameRow, error) {
 	row := q.db.QueryRowContext(ctx, getSiteByName, name)
 	var i GetSiteByNameRow
@@ -199,119 +217,24 @@ func (q *Queries) GetSiteByName(ctx context.Context, name string) (GetSiteByName
 		&i.ActivatedAt,
 		&i.TakenDownAt,
 		&i.GroupID,
-		&i.PinnedAt,
 		&i.PrimaryBase,
 		&i.PrimaryDomain,
 		&i.PrimaryDomainStatus,
-	)
-	return i, err
-}
-
-const getSiteByOwnerDomain = `-- name: GetSiteByOwnerDomain :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
-  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
-FROM sites
-JOIN domains ON domains.site_id = sites.id
-LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
-LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
-WHERE domains.hostname = ?1 AND sites.owner_id = ?2
-`
-
-type GetSiteByOwnerDomainParams struct {
-	Hostname string
-	OwnerID  string
-}
-
-type GetSiteByOwnerDomainRow struct {
-	ID                  string
-	OwnerID             string
-	Name                string
-	ActiveDeployID      sql.NullString
-	CreatedAt           int64
-	ActivatedAt         sql.NullInt64
-	TakenDownAt         sql.NullInt64
-	GroupID             sql.NullString
-	PinnedAt            sql.NullInt64
-	PrimaryBase         int64
-	PrimaryDomain       sql.NullString
-	PrimaryDomainStatus sql.NullString
-}
-
-// Any status: the owner API resolves pending and lapsed hostnames too.
-func (q *Queries) GetSiteByOwnerDomain(ctx context.Context, arg GetSiteByOwnerDomainParams) (GetSiteByOwnerDomainRow, error) {
-	row := q.db.QueryRowContext(ctx, getSiteByOwnerDomain, arg.Hostname, arg.OwnerID)
-	var i GetSiteByOwnerDomainRow
-	err := row.Scan(
-		&i.ID,
-		&i.OwnerID,
-		&i.Name,
-		&i.ActiveDeployID,
-		&i.CreatedAt,
-		&i.ActivatedAt,
-		&i.TakenDownAt,
-		&i.GroupID,
-		&i.PinnedAt,
-		&i.PrimaryBase,
-		&i.PrimaryDomain,
-		&i.PrimaryDomainStatus,
-	)
-	return i, err
-}
-
-const getSiteByOwnerName = `-- name: GetSiteByOwnerName :one
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
-  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
-FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
-LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
-WHERE sites.name = ?1 AND sites.owner_id = ?2
-`
-
-type GetSiteByOwnerNameParams struct {
-	Name    string
-	OwnerID string
-}
-
-type GetSiteByOwnerNameRow struct {
-	ID                  string
-	OwnerID             string
-	Name                string
-	ActiveDeployID      sql.NullString
-	CreatedAt           int64
-	ActivatedAt         sql.NullInt64
-	TakenDownAt         sql.NullInt64
-	GroupID             sql.NullString
-	PinnedAt            sql.NullInt64
-	PrimaryBase         int64
-	PrimaryDomain       sql.NullString
-	PrimaryDomainStatus sql.NullString
-}
-
-func (q *Queries) GetSiteByOwnerName(ctx context.Context, arg GetSiteByOwnerNameParams) (GetSiteByOwnerNameRow, error) {
-	row := q.db.QueryRowContext(ctx, getSiteByOwnerName, arg.Name, arg.OwnerID)
-	var i GetSiteByOwnerNameRow
-	err := row.Scan(
-		&i.ID,
-		&i.OwnerID,
-		&i.Name,
-		&i.ActiveDeployID,
-		&i.CreatedAt,
-		&i.ActivatedAt,
-		&i.TakenDownAt,
-		&i.GroupID,
-		&i.PinnedAt,
-		&i.PrimaryBase,
-		&i.PrimaryDomain,
-		&i.PrimaryDomainStatus,
+		&i.OwnerKind,
+		&i.OwnerEmail,
+		&i.TeamName,
 	)
 	return i, err
 }
 
 const listAllSites = `-- name: ListAllSites :many
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
   sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
-  owners.email AS owner_email, owners.suspended_at AS owner_suspended_at
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name,
+  owners.suspended_at AS owner_suspended_at
 FROM sites
 JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
 WHERE sites.name > ?1
@@ -333,11 +256,12 @@ type ListAllSitesRow struct {
 	ActivatedAt         sql.NullInt64
 	TakenDownAt         sql.NullInt64
 	GroupID             sql.NullString
-	PinnedAt            sql.NullInt64
 	PrimaryBase         int64
 	PrimaryDomain       sql.NullString
 	PrimaryDomainStatus sql.NullString
+	OwnerKind           string
 	OwnerEmail          string
+	TeamName            sql.NullString
 	OwnerSuspendedAt    sql.NullInt64
 }
 
@@ -359,11 +283,12 @@ func (q *Queries) ListAllSites(ctx context.Context, arg ListAllSitesParams) ([]L
 			&i.ActivatedAt,
 			&i.TakenDownAt,
 			&i.GroupID,
-			&i.PinnedAt,
 			&i.PrimaryBase,
 			&i.PrimaryDomain,
 			&i.PrimaryDomainStatus,
+			&i.OwnerKind,
 			&i.OwnerEmail,
+			&i.TeamName,
 			&i.OwnerSuspendedAt,
 		); err != nil {
 			return nil, err
@@ -380,17 +305,23 @@ func (q *Queries) ListAllSites(ctx context.Context, arg ListAllSitesParams) ([]L
 }
 
 const listSites = `-- name: ListSites :many
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
-  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status
-FROM sites LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
+  sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name
+FROM sites JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
+LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 LEFT JOIN domains AS primary_domains ON primary_domains.id = sites.primary_domain_id
-WHERE sites.owner_id = ?1 AND sites.name > ?2
+WHERE (sites.owner_id = ?1
+    OR sites.owner_id IN (SELECT team_members.team_id FROM team_members WHERE team_members.owner_id = ?2))
+  AND sites.name > ?3
 ORDER BY sites.name
-LIMIT ?3
+LIMIT ?4
 `
 
 type ListSitesParams struct {
-	OwnerID   string
+	AccountID string
+	MemberID  string
 	AfterName string
 	RowLimit  int64
 }
@@ -404,14 +335,21 @@ type ListSitesRow struct {
 	ActivatedAt         sql.NullInt64
 	TakenDownAt         sql.NullInt64
 	GroupID             sql.NullString
-	PinnedAt            sql.NullInt64
 	PrimaryBase         int64
 	PrimaryDomain       sql.NullString
 	PrimaryDomainStatus sql.NullString
+	OwnerKind           string
+	OwnerEmail          string
+	TeamName            sql.NullString
 }
 
 func (q *Queries) ListSites(ctx context.Context, arg ListSitesParams) ([]ListSitesRow, error) {
-	rows, err := q.db.QueryContext(ctx, listSites, arg.OwnerID, arg.AfterName, arg.RowLimit)
+	rows, err := q.db.QueryContext(ctx, listSites,
+		arg.AccountID,
+		arg.MemberID,
+		arg.AfterName,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -428,10 +366,12 @@ func (q *Queries) ListSites(ctx context.Context, arg ListSitesParams) ([]ListSit
 			&i.ActivatedAt,
 			&i.TakenDownAt,
 			&i.GroupID,
-			&i.PinnedAt,
 			&i.PrimaryBase,
 			&i.PrimaryDomain,
 			&i.PrimaryDomainStatus,
+			&i.OwnerKind,
+			&i.OwnerEmail,
+			&i.TeamName,
 		); err != nil {
 			return nil, err
 		}
@@ -551,6 +491,18 @@ func (q *Queries) SetPrimaryDomain(ctx context.Context, arg SetPrimaryDomainPara
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const siteAccount = `-- name: SiteAccount :one
+SELECT owner_id FROM sites WHERE id = ?1
+`
+
+// The account a site belongs to, for Actor.Require.
+func (q *Queries) SiteAccount(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRowContext(ctx, siteAccount, id)
+	var owner_id string
+	err := row.Scan(&owner_id)
+	return owner_id, err
 }
 
 const siteOwnedBy = `-- name: SiteOwnedBy :one

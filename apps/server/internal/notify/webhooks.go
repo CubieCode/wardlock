@@ -154,15 +154,16 @@ func checkEvents(events []string) error {
 	return nil
 }
 
-// resolveSites finds ownerID's sites called names. Another owner's site is
-// the same ErrNotFound as a missing one.
+// resolveSites finds ownerID's sites called names. Webhooks are personal
+// (T7.1), so a team's site, like another owner's, is the same ErrNotFound as
+// a missing one.
 func (s *Service) resolveSites(ctx context.Context, ownerID string, names []string) ([]store.WebhookSite, error) {
 	if len(names) > MaxWebhookSites {
 		return nil, &WebhookError{"sites", fmt.Sprintf("A webhook can list at most %d sites.", MaxWebhookSites)}
 	}
 	out := make([]store.WebhookSite, 0, len(names))
 	for _, name := range names {
-		site, err := s.c.Sites.GetByOwnerName(ctx, ownerID, name)
+		site, err := s.c.Sites.GetByOwnerName(ctx, store.ActorFor(ownerID), name)
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, fmt.Errorf("find webhook site: %w", ErrNotFound)
 		}

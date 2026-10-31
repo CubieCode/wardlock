@@ -48,7 +48,7 @@ func TestMigration0012(t *testing.T) {
 	if _, err := db.Migrate(ctx, time.Now); err != nil {
 		t.Fatal(err)
 	}
-	count(`SELECT COUNT(*) FROM sites WHERE id = 's1' AND group_id IS NULL AND pinned_at IS NULL`, 1)
+	count(`SELECT COUNT(*) FROM sites WHERE id = 's1' AND group_id IS NULL`, 1)
 
 	exec(
 		`INSERT INTO sites (id, owner_id, name, created_at) VALUES ('s2', 'o1', 'blog', 1)`,
@@ -58,7 +58,8 @@ func TestMigration0012(t *testing.T) {
 		`INSERT INTO tags (id, owner_id, name, colour, created_at) VALUES ('t1', 'o1', 'preview', 1, 1)`,
 		`INSERT INTO tags (id, owner_id, name, colour, created_at) VALUES ('t2', 'o1', 'internal', 0, 1)`,
 		`INSERT INTO tags (id, owner_id, name, colour, created_at) VALUES ('t3', 'o2', 'preview', 8, 1)`,
-		`UPDATE sites SET group_id = 'g1', pinned_at = 5 WHERE id IN ('s1', 's2')`,
+		`UPDATE sites SET group_id = 'g1' WHERE id IN ('s1', 's2')`,
+		`INSERT INTO site_pins (owner_id, site_id, pinned_at) VALUES ('o1', 's1', 5), ('o1', 's2', 5)`,
 		`INSERT INTO site_tags (site_id, tag_id) VALUES ('s1', 't1'), ('s1', 't2'), ('s2', 't1')`,
 	)
 	for _, bad := range []string{
@@ -86,7 +87,7 @@ func TestMigration0012(t *testing.T) {
 	}
 
 	exec(`DELETE FROM site_groups WHERE id = 'g1'`)
-	count(`SELECT COUNT(*) FROM sites WHERE group_id IS NULL AND pinned_at = 5`, 2)
+	count(`SELECT COUNT(*) FROM sites JOIN site_pins ON site_pins.site_id = sites.id WHERE sites.group_id IS NULL AND site_pins.pinned_at = 5`, 2)
 	exec(`DELETE FROM tags WHERE id = 't1'`)
 	count(`SELECT COUNT(*) FROM site_tags`, 1)
 	exec(`DELETE FROM sites WHERE id = 's1'`)

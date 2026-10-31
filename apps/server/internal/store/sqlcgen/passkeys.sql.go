@@ -17,6 +17,7 @@ const createPasskey = `-- name: CreatePasskey :execrows
 INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, sign_count, name, created_at, last_used_at)
 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
 WHERE (SELECT count(*) FROM owner_passkeys AS existing WHERE existing.owner_id = ?2) < CAST(?9 AS INTEGER)
+  AND NOT EXISTS (SELECT 1 FROM owners WHERE owners.id = ?2 AND owners.kind = 'team')
 `
 
 type CreatePasskeyParams struct {

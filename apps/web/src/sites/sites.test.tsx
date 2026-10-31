@@ -33,6 +33,11 @@ function site(name: string, extra: Partial<Site> = {}): Site {
   return {
     id: `01928c5e-7a1b-7c3d-9e4f-${name.padEnd(12, '0').slice(0, 12)}`,
     name,
+    owner: {
+      kind: 'owner',
+      id: `01928c5e-7a1b-7c3d-9e4f-000000000000`,
+      name: 'owner@example.test',
+    },
     hostname: `${name}.sites.example.test`,
     url: `https://${name}.sites.example.test/`,
     createdAt: now - 48 * hour,

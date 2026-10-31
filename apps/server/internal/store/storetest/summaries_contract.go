@@ -29,28 +29,28 @@ func siteSummariesContract(t *testing.T, open Opener) {
 
 		alpha := f.validSite(o.ID)
 		alpha.Name = "alpha"
-		f.must(f.r.Sites.Create(t.Context(), alpha, store.Quotas{}))
+		f.must(f.r.Sites.Create(t.Context(), store.ActorFor(alpha.OwnerID), alpha, store.Quotas{}))
 		d := f.validDeploy(alpha.ID)
 		d.Message = "First cut"
-		f.must(f.r.Deploys.Create(t.Context(), o.ID, d, []store.DeployFile{{Path: "index.html", SHA256: sha('a'), Size: 5}}, store.Quotas{}))
+		f.must(f.r.Deploys.Create(t.Context(), store.ActorFor(o.ID), d, []store.DeployFile{{Path: "index.html", SHA256: sha('a'), Size: 5}}, store.Quotas{}))
 		f.uploadAll(o.ID, alpha.ID, d.ID)
-		_, err := f.r.Deploys.Activate(t.Context(), o.ID, alpha.ID, d.ID, now.Add(-time.Hour))
+		_, err := f.r.Deploys.Activate(t.Context(), store.ActorFor(o.ID), alpha.ID, d.ID, now.Add(-time.Hour))
 		f.must(err)
 
 		bravo := f.validSite(o.ID)
 		bravo.Name = "bravo"
-		f.must(f.r.Sites.Create(t.Context(), bravo, store.Quotas{}))
+		f.must(f.r.Sites.Create(t.Context(), store.ActorFor(bravo.OwnerID), bravo, store.Quotas{}))
 		pol := f.validPolicy(bravo.ID)
 		pol.EmailEnabled, pol.Allowlist = true, store.Allowlist{Domains: []string{"example.test"}}
-		f.must(f.r.Policies.Create(t.Context(), o.ID, pol))
+		f.must(f.r.Policies.Create(t.Context(), store.ActorFor(o.ID), pol))
 		group := f.group(o.ID, "Clients")
 		zulu, mike := f.tag(o.ID, "zulu"), f.tag(o.ID, "mike")
-		_, err = f.r.Organisation.Organise(t.Context(), o.ID, []string{"bravo"}, store.OrganiseChange{
+		_, err = f.r.Organisation.Organise(t.Context(), store.ActorFor(o.ID), o.ID, []string{"bravo"}, store.OrganiseChange{
 			SetGroup: true, GroupID: group.ID, SetTags: true, TagIDs: []string{zulu.ID, mike.ID}, SetPinned: true, PinnedAt: now,
 		})
 		f.must(err)
 		dom := f.validDomain(bravo.ID)
-		f.must(f.r.Domains.Create(t.Context(), o.ID, dom))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), dom))
 		link := func(siteID string, created, expires time.Duration, change func(*store.ShareLink)) {
 			l := f.validLink(siteID)
 			l.CreatedAt = now.Add(created)
@@ -60,7 +60,7 @@ func siteSummariesContract(t *testing.T, open Opener) {
 			if change != nil {
 				change(&l)
 			}
-			f.must(f.r.Links.Create(t.Context(), o.ID, l))
+			f.must(f.r.Links.Create(t.Context(), store.ActorFor(o.ID), l))
 		}
 		link(bravo.ID, -time.Hour, 0, nil)                                // works, never expires
 		link(bravo.ID, -time.Hour, time.Hour, nil)                        // expiring
@@ -77,14 +77,14 @@ func siteSummariesContract(t *testing.T, open Opener) {
 		// at its start.
 		charlie, delta := f.validSite(o.ID), f.validSite(o.ID)
 		charlie.Name, delta.Name = "charlie", "delta"
-		f.must(f.r.Sites.Create(t.Context(), charlie, store.Quotas{}))
-		f.must(f.r.Sites.Create(t.Context(), delta, store.Quotas{}))
+		f.must(f.r.Sites.Create(t.Context(), store.ActorFor(charlie.OwnerID), charlie, store.Quotas{}))
+		f.must(f.r.Sites.Create(t.Context(), store.ActorFor(delta.OwnerID), delta, store.Quotas{}))
 
 		theirs := f.site(other.ID)
 		f.link(other.ID, theirs.ID)
 		theirsExpiring := f.validLink(theirs.ID)
 		theirsExpiring.CreatedAt, theirsExpiring.ExpiresAt = now.Add(-24*time.Hour), now.Add(time.Hour)
-		f.must(f.r.Links.Create(t.Context(), other.ID, theirsExpiring))
+		f.must(f.r.Links.Create(t.Context(), store.ActorFor(other.ID), theirsExpiring))
 
 		f.backfill()
 		hit := func(siteID string, at time.Time, status int) store.AccessEntry {
@@ -101,7 +101,7 @@ func siteSummariesContract(t *testing.T, open Opener) {
 			hit(theirs.ID, now, 200),
 		}))
 
-		got, err := f.r.Sites.Summaries(t.Context(), o.ID, w)
+		got, err := f.r.Sites.Summaries(t.Context(), store.ActorFor(o.ID), o.ID, w)
 		f.must(err)
 		names := make([]string, len(got))
 		for i, s := range got {
@@ -131,13 +131,14 @@ func siteSummariesContract(t *testing.T, open Opener) {
 			t.Errorf("charlie active %v, delta active %v with %v; want false, true with none in the seven days", c.Active, dl.Active, dl.Requests)
 		}
 
-		if got, err := f.r.Sites.Summaries(t.Context(), f.owner().ID, w); err != nil || len(got) != 0 {
+		empty := f.owner().ID
+		if got, err := f.r.Sites.Summaries(t.Context(), store.ActorFor(empty), empty, w); err != nil || len(got) != 0 {
 			t.Fatalf("Summaries(owner with no sites) = %v, %v; want none", got, err)
 		}
 
 		// ExpiringLinks lists exactly the links ExpiringLinks counts,
 		// soonest first, and never another owner's.
-		expiring, err := f.r.Sites.ExpiringLinks(t.Context(), o.ID, w, 100)
+		expiring, err := f.r.Sites.ExpiringLinks(t.Context(), store.ActorFor(o.ID), o.ID, w, 100)
 		f.must(err)
 		var counted int
 		for _, s := range got {
@@ -155,10 +156,10 @@ func siteSummariesContract(t *testing.T, open Opener) {
 		if l := expiring[1]; l.MaxUses != 2 || l.UseCount != 1 || expiring[0].MaxUses != 0 {
 			t.Errorf("uses = %+v and %+v; want 1 of 2 spent, then no limit", l, expiring[0])
 		}
-		if first, err := f.r.Sites.ExpiringLinks(t.Context(), o.ID, w, 1); err != nil || len(first) != 1 || first[0].ID != expiring[0].ID {
+		if first, err := f.r.Sites.ExpiringLinks(t.Context(), store.ActorFor(o.ID), o.ID, w, 1); err != nil || len(first) != 1 || first[0].ID != expiring[0].ID {
 			t.Errorf("ExpiringLinks(limit 1) = %v, %v; want the soonest", first, err)
 		}
-		if theirs, err := f.r.Sites.ExpiringLinks(t.Context(), other.ID, w, 100); err != nil || len(theirs) != 1 || theirs[0].ID != theirsExpiring.ID {
+		if theirs, err := f.r.Sites.ExpiringLinks(t.Context(), store.ActorFor(other.ID), other.ID, w, 100); err != nil || len(theirs) != 1 || theirs[0].ID != theirsExpiring.ID {
 			t.Errorf("ExpiringLinks(other owner) = %v, %v; want only their own link", theirs, err)
 		}
 	})
