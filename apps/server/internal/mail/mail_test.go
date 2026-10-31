@@ -215,6 +215,26 @@ func readMessage(t *testing.T, raw []byte) (text, html string) {
 // operator's names the file, categories and sites and, for sexual content
 // involving minors, says to preserve and report instead of review; the
 // owner's names the site and paths and never why.
+func TestNoticeMessage(t *testing.T) {
+	msg, err := mail.NoticeMessage(netmail.Address{Address: "owner@example.test"}, mail.Notice{
+		Subject: "A share link expires soon", Lead: "These links <expire>:", Items: []string{"docs: \"Launch\""}, Note: "Soon.",
+		Action: "View your links", URL: "https://app.example.test/sites/docs/links", SettingsURL: "https://app.example.test/notifications",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"These links <expire>:", "    docs: \"Launch\"", "Soon.", "View your links: https://app.example.test/sites/docs/links", "https://app.example.test/notifications"} {
+		if !strings.Contains(msg.Text, want) {
+			t.Errorf("text has no %q:\n%s", want, msg.Text)
+		}
+	}
+	for _, want := range []string{"These links &lt;expire&gt;:", `href="https://app.example.test/sites/docs/links"`, `href="https://app.example.test/notifications"`, "<li>"} {
+		if !strings.Contains(msg.HTML, want) {
+			t.Errorf("html has no %q:\n%s", want, msg.HTML)
+		}
+	}
+}
+
 func TestScreeningMessages(t *testing.T) {
 	sha := strings.Repeat("ab", 32)
 	abuse := netmail.Address{Address: "abuse@example.test"}

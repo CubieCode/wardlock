@@ -125,6 +125,25 @@ type ModerationResult struct {
 	ReleasedAt    sql.NullInt64
 }
 
+type NotificationOptOut struct {
+	OwnerID string
+	Event   string
+}
+
+type NotificationOutbox struct {
+	ID            string
+	Channel       string
+	EventKey      string
+	OwnerID       string
+	Event         string
+	Payload       string
+	Status        string
+	Attempts      int64
+	CreatedAt     int64
+	NextAttemptAt sql.NullInt64
+	FinishedAt    sql.NullInt64
+}
+
 type Owner struct {
 	ID               string
 	Email            string
@@ -243,6 +262,7 @@ type ShareLink struct {
 	LastAccessedAt sql.NullInt64
 	RotatedAt      sql.NullInt64
 	RevokedAt      sql.NullInt64
+	UsedUpAt       sql.NullInt64
 }
 
 type Site struct {

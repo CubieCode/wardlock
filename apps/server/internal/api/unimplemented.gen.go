@@ -109,6 +109,16 @@ func (Unimplemented) GetMe(context.Context, GetMeRequestObject) (GetMeResponseOb
 	return nil, ErrNotImplemented
 }
 
+// GetNotificationSettings is not implemented yet.
+func (Unimplemented) GetNotificationSettings(context.Context, GetNotificationSettingsRequestObject) (GetNotificationSettingsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// SetNotificationSettings is not implemented yet.
+func (Unimplemented) SetNotificationSettings(context.Context, SetNotificationSettingsRequestObject) (SetNotificationSettingsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // OrganiseSites is not implemented yet.
 func (Unimplemented) OrganiseSites(context.Context, OrganiseSitesRequestObject) (OrganiseSitesResponseObject, error) {
 	return nil, ErrNotImplemented

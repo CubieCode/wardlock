@@ -49,6 +49,11 @@ type BlobOpener interface {
 	Open(ctx context.Context, sha256 string, size int64) (io.ReadSeekCloser, error)
 }
 
+// OwnerNotices queues a notice to an owner, once per key.
+type OwnerNotices interface {
+	Withheld(ctx context.Context, key, ownerID string, d mail.Withheld) error
+}
+
 // Config wires a Service.
 type Config struct {
 	Store store.Moderation
@@ -64,6 +69,8 @@ type Config struct {
 	// (screened or not, a gzip sibling checked); nil skips.
 	Invalidate func(siteID string)
 	Mailer     mail.Mailer
+	// Notices sends owners' withheld-file notices; nil sends none.
+	Notices OwnerNotices
 	// AbuseEmail receives the operator's notices; "" logs them instead.
 	AbuseEmail string
 	// DashboardHost names the server in owners' notices.
@@ -592,7 +599,7 @@ func (s *Service) record(ctx context.Context, r store.ModerationResult, v store.
 			s.c.Quarantine.add(r.SHA256)
 		}
 		s.notifyOperator(ctx, d)
-		s.notifyOwners(ctx, uses)
+		s.notifyOwners(ctx, r.SHA256, at, uses)
 	case store.ModerationFlagged:
 		s.mu.Lock()
 		s.flagged = append(s.flagged, d)
@@ -640,27 +647,32 @@ func (s *Service) logNotice(ctx context.Context, d mail.Screening) {
 
 // notifyOwners tells every owner whose site serves a newly quarantined
 // hash which file and site, never the categories: one message per owner
-// and site. Owners of taken-down sites and suspended owners are not told.
-func (s *Service) notifyOwners(ctx context.Context, uses []store.ModerationUse) {
-	type key struct{ owner, site string }
+// and site, through the outbox, keyed by the verdict so each is sent once.
+// Owners of taken-down sites and suspended owners are not told.
+func (s *Service) notifyOwners(ctx context.Context, sha256 string, at time.Time, uses []store.ModerationUse) {
+	if s.c.Notices == nil {
+		return
+	}
+	type key struct{ owner, siteID, site string }
 	paths := map[key][]string{}
 	var order []key
 	for _, u := range uses {
 		if u.Unavailable {
 			continue
 		}
-		k := key{u.OwnerEmail, u.SiteName}
+		k := key{u.OwnerID, u.SiteID, u.SiteName}
 		if _, ok := paths[k]; !ok {
 			order = append(order, k)
 		}
 		paths[k] = append(paths[k], u.Path)
 	}
 	for _, k := range order {
-		s.send(ctx, "owner", func() (mail.Message, error) {
-			return mail.WithheldMessage(netmail.Address{Address: k.owner}, mail.Withheld{
-				Site: k.site, Host: s.c.DashboardHost, Paths: paths[k], Contact: s.c.AbuseEmail,
-			})
+		err := s.c.Notices.Withheld(ctx, fmt.Sprintf("file_withheld:%s:%d:%s", sha256, at.UnixMilli(), k.siteID), k.owner, mail.Withheld{
+			Site: k.site, Host: s.c.DashboardHost, Paths: paths[k], Contact: s.c.AbuseEmail,
 		})
+		if err != nil {
+			s.c.Log.LogAttrs(ctx, slog.LevelError, "screening notice failed", slog.String("to", "owner"), slog.String("error", err.Error()))
+		}
 	}
 }
 

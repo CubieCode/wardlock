@@ -116,6 +116,9 @@ var sessionOnly = map[string]bool{
 	"StartPasskeyRegistration": true,
 	"CreatePasskey":            true,
 	"DeletePasskey":            true,
+
+	"GetNotificationSettings": true,
+	"SetNotificationSettings": true,
 }
 
 // errTokenScope means the request's API token may not use the operation.

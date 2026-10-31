@@ -96,6 +96,22 @@ type Withheld struct {
 	Contact string
 }
 
+// Notice is an owner notification (I6.2): what happened on which site, a
+// link to the dashboard page about it and one to the notification
+// settings. Nothing in it may hold a token or a share-link URL.
+type Notice struct {
+	Subject string
+	// Lead says what happened; Items, when there are any, list what it
+	// applies to; Note is an optional last word.
+	Lead   string
+	Items  []string
+	Note   string
+	Action string
+	// URL is the dashboard page Action names.
+	URL         string
+	SettingsURL string
+}
+
 // layout is the HTML body shared by every code message.
 type layout struct {
 	Title, Lead, Code, Where, Ignore string
@@ -194,6 +210,19 @@ func WithheldMessage(to netmail.Address, d Withheld) (Message, error) {
 		return Message{}, fmt.Errorf("render withheld.txt.tmpl: %w", err)
 	}
 	return Message{To: to, Subject: "A file on " + d.Site + " is withheld", Text: text.String()}, nil
+}
+
+// NoticeMessage builds an owner notification, as plain text with a simple
+// HTML part.
+func NoticeMessage(to netmail.Address, d Notice) (Message, error) {
+	var text, body bytes.Buffer
+	if err := textTemplates.ExecuteTemplate(&text, "notice.txt.tmpl", d); err != nil {
+		return Message{}, fmt.Errorf("render notice.txt.tmpl: %w", err)
+	}
+	if err := htmlTemplates.ExecuteTemplate(&body, "notice", d); err != nil {
+		return Message{}, fmt.Errorf("render html: %w", err)
+	}
+	return Message{To: to, Subject: d.Subject, Text: text.String(), HTML: body.String()}, nil
 }
 
 func render(to netmail.Address, subject, textName string, data any, html layout) (Message, error) {

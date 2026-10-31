@@ -1,0 +1,12 @@
+{{.Lead}}
+{{range .Items}}
+    {{.}}
+{{- end}}
+{{- if .Items}}
+{{end}}
+{{- if .Note}}
+{{.Note}}
+{{end}}
+{{.Action}}: {{.URL}}
+
+You get this email because of your notification settings: {{.SettingsURL}}

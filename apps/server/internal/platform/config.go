@@ -74,6 +74,9 @@ type Config struct {
 	MaxOwnerStorage       int64
 	MaxOwnerSites         int64
 	MaxOwnerDeploysPerDay int64
+	// MaxOwnerNotificationsPerHour caps an owner's notification emails
+	// (I6.2), 20 by default; 0 means no cap.
+	MaxOwnerNotificationsPerHour int64
 	// Access log: client IPs keep only the first AccessLogIPv4Prefix or
 	// AccessLogIPv6Prefix bits (0 stores none), entries older than
 	// AccessLogRetention are pruned (0 keeps them forever) and at most
@@ -282,6 +285,7 @@ func (c *Config) loadQuotas(get func(key, fallback string) string) error {
 		{"WARDLOCK_MAX_OWNER_STORAGE", 0, &c.MaxOwnerStorage},
 		{"WARDLOCK_MAX_OWNER_SITES", 0, &c.MaxOwnerSites},
 		{"WARDLOCK_MAX_OWNER_DEPLOYS_PER_DAY", 0, &c.MaxOwnerDeploysPerDay},
+		{"WARDLOCK_MAX_OWNER_NOTIFICATIONS_PER_HOUR", 20, &c.MaxOwnerNotificationsPerHour},
 	} {
 		raw := get(l.key, "")
 		v, err := strconv.ParseInt(raw, 10, 64)

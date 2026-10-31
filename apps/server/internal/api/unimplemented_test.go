@@ -89,6 +89,8 @@ var implemented = map[string]bool{
 	"StartPasskeySignIn":       true,
 	"VerifyPasskeySignIn":      true,
 	"ListPasskeys":             true,
+	"GetNotificationSettings":  true,
+	"SetNotificationSettings":  true,
 	"StartPasskeyRegistration": true,
 	"CreatePasskey":            true,
 	"DeletePasskey":            true,

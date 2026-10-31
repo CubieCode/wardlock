@@ -64,6 +64,13 @@ export const tokensIcon = (
   </Icon>
 );
 
+export const notificationsIcon = (
+  <Icon>
+    <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z" />
+    <path d="M10 21a2.2 2.2 0 0 0 4 0" />
+  </Icon>
+);
+
 export const accountIcon = (
   <Icon>
     <circle cx="12" cy="8" r="4" />

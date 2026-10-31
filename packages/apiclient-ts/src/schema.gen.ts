@@ -250,6 +250,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/notification-settings': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read which emails the signed-in owner gets.
+     * @description Every event is on until the owner turns it off. Content screening's notice that a file is withheld always goes out and has no setting. Dashboard sessions only: an API token gets `403 forbidden`.
+     */
+    get: operations['getNotificationSettings'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Choose which emails the signed-in owner gets.
+     * @description Changes the settings the body names, leaves the rest as they are and answers with all of them. An email already queued for an event turned off is not sent. Dashboard sessions only: an API token gets `403 forbidden`.
+     */
+    patch: operations['setNotificationSettings'];
+    trace?: never;
+  };
   '/api/v0/passkeys': {
     parameters: {
       query?: never;
@@ -1532,6 +1556,30 @@ export interface components {
       createdAt: components['schemas']['Timestamp'];
       /** @description The last sign-in with this passkey; absent if never used. */
       lastUsedAt?: components['schemas']['Timestamp'];
+    };
+    /** @description Which emails an owner gets, each `true` for on. */
+    NotificationSettings: {
+      /** @description A custom domain passed verification. */
+      domainVerified: boolean;
+      /** @description An active custom domain has failed its checks for 24 hours, and again if it lapses. */
+      domainFailing: boolean;
+      /** @description A use-limited share link has no uses left. */
+      linkUsedUp: boolean;
+      /** @description Share links expire within 48 hours, at most one email a day. */
+      linksExpiring: boolean;
+      /** @description An API token expires within 7 days. */
+      tokenExpiring: boolean;
+      /** @description A preview expires within 2 days. */
+      previewExpiring: boolean;
+    };
+    /** @description The settings to change, as in `NotificationSettings`; one left out keeps its value. */
+    NotificationSettingsUpdate: {
+      domainVerified?: boolean;
+      domainFailing?: boolean;
+      linkUsedUp?: boolean;
+      linksExpiring?: boolean;
+      tokenExpiring?: boolean;
+      previewExpiring?: boolean;
     };
     PasskeyList: {
       items: components['schemas']['Passkey'][];
@@ -3073,6 +3121,82 @@ export interface operations {
       401: components['responses']['Unauthenticated'];
       403: components['responses']['Forbidden'];
       404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  getNotificationSettings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The owner's settings. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "domainVerified": true,
+           *       "domainFailing": true,
+           *       "linkUsedUp": true,
+           *       "linksExpiring": false,
+           *       "tokenExpiring": true,
+           *       "previewExpiring": true
+           *     }
+           */
+          'application/json': components['schemas']['NotificationSettings'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      default: components['responses']['Error'];
+    };
+  };
+  setNotificationSettings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "linksExpiring": false
+         *     }
+         */
+        'application/json': components['schemas']['NotificationSettingsUpdate'];
+      };
+    };
+    responses: {
+      /** @description The stored settings. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "domainVerified": true,
+           *       "domainFailing": true,
+           *       "linkUsedUp": true,
+           *       "linksExpiring": false,
+           *       "tokenExpiring": true,
+           *       "previewExpiring": true
+           *     }
+           */
+          'application/json': components['schemas']['NotificationSettings'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
       default: components['responses']['Error'];
     };
   };

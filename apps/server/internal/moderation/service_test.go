@@ -18,6 +18,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"log/slog"
+	netmail "net/mail"
 	"strings"
 	"sync"
 	"testing"
@@ -103,6 +104,24 @@ func (w *world) publish(ownerID string, files map[string]string) {
 	if _, _, err := svc.Activate(ctx, ownerID, name, d.ID); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// notices delivers owners' notices straight to the mailbox.
+type notices struct {
+	w   *world
+	box *mailbox
+}
+
+func (n notices) Withheld(ctx context.Context, _, ownerID string, d mail.Withheld) error {
+	r, err := n.w.db.Notifications().Recipient(ctx, ownerID)
+	if err != nil {
+		return err
+	}
+	msg, err := mail.WithheldMessage(netmail.Address{Address: r.Email}, d)
+	if err != nil {
+		return err
+	}
+	return n.box.Send(ctx, msg)
 }
 
 // mailbox records the notices a Service sends.
@@ -545,7 +564,7 @@ func TestImages(t *testing.T) {
 	})
 	box := &mailbox{}
 	c := w.config(moderation.NewQuarantine())
-	c.Mailer, c.AbuseEmail = box, abuse
+	c.Mailer, c.AbuseEmail, c.Notices = box, abuse, notices{w, box}
 	w.fake.Flag("in-icon", "violence")
 	moderation.New(c).Pass(ctx)
 
@@ -758,7 +777,7 @@ func TestRescans(t *testing.T) {
 	w.publish(w.owner.ID, map[string]string{"a.png": img})
 	box := &mailbox{}
 	c := w.config(moderation.NewQuarantine())
-	c.Mailer, c.AbuseEmail = box, abuse
+	c.Mailer, c.AbuseEmail, c.Notices = box, abuse, notices{w, box}
 	svc := moderation.New(c)
 	svc.Pass(ctx)
 	if n := len(box.to(w.owner.Email)); n != 1 {
@@ -867,7 +886,7 @@ func TestOwnerNotices(t *testing.T) {
 	}
 	box := &mailbox{}
 	c := w.config(moderation.NewQuarantine())
-	c.Mailer, c.AbuseEmail = box, abuse
+	c.Mailer, c.AbuseEmail, c.Notices = box, abuse, notices{w, box}
 	svc := moderation.New(c)
 	svc.Pass(ctx)
 	if err := w.db.Owners().Suspend(ctx, suspended.ID, w.now()); err != nil {

@@ -66,6 +66,7 @@ Signed-in owners manage everything from the dashboard on the dashboard host. Onl
 | `/sites/<name>/links/<id>` | One share link and its access log (D3.3), on the Links tab                                                    |
 | `/organise`                | Create, rename and delete groups and tags, and choose each tag's colour (V5.7)                                |
 | `/passkeys`                | Add and remove passkeys (C1.6)                                                                                |
+| `/notifications`           | Choose which emails Wardlock sends the owner ([Notifications](#notifications-i62))                            |
 | `/cli-login`               | Approve or deny a `wardlock login` (C1.7)                                                                     |
 | `/acceptable-use`          | The [acceptable use policy](ACCEPTABLE-USE.md), readable signed in or out (O4.13)                             |
 
@@ -780,8 +781,41 @@ A withheld file answers `451 Unavailable For Legal Reasons` wherever it would be
 - **Serving while screening applies** (screening on and the site's owner not exempt). A file not screened yet is sent with `Cache-Control: public, no-cache` (`private, no-cache` on a protected site) instead of the [long-term caching](#serving-c13) a hashed asset may opt into, so no cache serves it without asking again once it is withheld. A `.gz` sibling is offered only after screening found it decompresses to exactly its file's bytes (the edge reloads the site when that is recorded, by a later rescan too); a `.br` sibling is never offered, since the server has no brotli decoder to check it, so the file itself or a checked `.gz` is sent instead. Requested by their own paths, siblings are served as ordinary (compressed) files.
 - **Shared bytes.** Blobs are shared across owners, so the verdict applies to the bytes wherever they appear; each owner whose site serves them is told.
 - **Operator decisions.** `release` makes a flagged or quarantined file `allowed` (served again everywhere); `confirm` keeps a quarantined file withheld and its stored copy indefinitely; `discard` keeps it withheld and lets garbage collection remove the stored copy once no deploy lists it; `rescan` queues it again. A rescan (or a text check queued later) that the endpoint cannot judge (nothing to send, rejected, unscreenable) keeps the verdict and decisions, and a rescan never lowers a quarantine while any input of the file could not be judged; otherwise a new verdict replaces the old one and keeps the operator's decision only while the status stays the same. Until `discard` or `release`, garbage collection keeps every quarantined file's stored copy even when no deploy lists it, as evidence. `list` shows flagged (including unscreenable) and quarantined files with every site and path serving them.
-- **Notices.** Notices go out once per change of status, never for a rescan that keeps it. For a newly quarantined file the operator gets a plain-text email at `WARDLOCK_ABUSE_EMAIL` (logged instead when unset) at once, with the hash, categories and sites; for `sexual/minors` it says to preserve and report the file and offers no release. Flagged files, unscreenable ones included, go in one digest per screening pass. For a newly quarantined file, each owner whose site serves it gets one email per site listing the withheld paths and the operator's contact address, never the categories; owners are not emailed for taken-down sites or while suspended.
+- **Notices.** Notices go out once per change of status, never for a rescan that keeps it. For a newly quarantined file the operator gets a plain-text email at `WARDLOCK_ABUSE_EMAIL` (logged instead when unset) at once, with the hash, categories and sites; for `sexual/minors` it says to preserve and report the file and offers no release. Flagged files, unscreenable ones included, go in one digest per screening pass. For a newly quarantined file, each owner whose site serves it gets one email per site listing the withheld paths and the operator's contact address, never the categories; owners are not emailed for taken-down sites or while suspended. Owners' emails go through the [notification outbox](#notifications-i62), so a mail failure is retried, and they cannot be turned off.
 - **Storage.** Migration `0010_content_screening` adds `owners.moderation_exempt` (0 for every owner, so new and existing owners follow the instance default) and `moderation_results`.
+
+</details>
+
+## Notifications (I6.2)
+
+Wardlock emails an owner when something needs them, instead of waiting for them to open the dashboard. Each email is on until the owner turns it off on the dashboard's Notifications page (`/notifications`) or with `setNotificationSettings`. Email needs [SMTP](DEPLOYMENT.md#smtp): with `dev://` messages are written to files and nobody is told.
+
+| Setting           | The owner hears when                                                                      |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| `domainVerified`  | a custom domain passes verification (first time, or again after lapsing)                  |
+| `domainFailing`   | an active custom domain has failed its checks for 24 hours, and again if it lapses        |
+| `linkUsedUp`      | a use-limited share link has no uses left                                                 |
+| `linksExpiring`   | share links expire within 48 hours: the links the Overview lists, one email a day at most |
+| `tokenExpiring`   | an API token expires within 7 days                                                        |
+| `previewExpiring` | a preview expires within 2 days                                                           |
+| none              | content screening withholds a file ([Notices](#content-screening-a215)): always sent      |
+
+- **Content.** Plain text with a simple HTML part, naming the site and what happened, linking to the relevant dashboard page and to the settings. An email never contains a token or a share-link URL: a link is named by its label, or its public ID without one.
+- **Once each.** Every event is delivered at most once, across restarts, and a mail failure is retried with backoff.
+- **Limits.** An owner gets at most `WARDLOCK_MAX_OWNER_NOTIFICATIONS_PER_HOUR` emails an hour (default 20); the rest are summarised in one later email. Suspended owners get nothing, and sites taken down are left out.
+- **API.** `getNotificationSettings` and `setNotificationSettings` take a dashboard session only; an API token gets `403 forbidden`.
+
+<details>
+<summary>Timing, retries, the cap and what is left out</summary>
+
+- **Timing.** The server looks for new events every 5 minutes and sends what is due every minute. A withheld-file notice goes out at once.
+- **What counts.** "Failing for 24 hours" is measured to the last failed check, not the clock, so a domain whose next check may yet pass is not reported. A link, token or preview made to last no longer than its warning (at most 1 hour for a link, 7 days for a token, 2 days for a preview) gets no warning. A preview deployed again and later near its new expiry gets a new one. Links used up before this feature existed are not reported.
+- **The expiring-links email** lists every expiring link on the first look of the UTC day, so a link is usually listed on two days; a link that starts expiring later that day waits for the next email.
+- **Settings.** `setNotificationSettings` changes only the settings the body names. An email already queued for an event turned off is not sent, and nothing is queued while it is off, so turning it back on reports only what is still current, such as an expiry still ahead.
+- **Retries.** A failed send is retried after 1 minute, doubling to 1 hour, for 72 hours, then given up and logged. One failure ends that minute's sending, so an outage does not spend the mail timeout on every message. A message the mail server could not be given at all (it fails to encode) is not retried.
+- **At most once.** A message is marked as sending before it goes. If the server dies during a send, whether it went out cannot be known, so it is not sent again and a warning is logged. A shutdown that cuts a send short retries it.
+- **The cap.** Emails sent in the last hour are counted per owner. Past the cap a notification is held; as soon as the count is under the cap again the owner gets one email listing the subjects of what was held (the first 50, then how many more). Withheld-file notices and summaries are never held, and they count. `0` turns the cap off.
+- **Addresses.** An email goes to the owner's address at the time of sending; the queue stores no address.
 
 </details>
 

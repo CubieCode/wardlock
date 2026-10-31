@@ -39,6 +39,8 @@ var operations = []operation{
 	{id: "UpdateGroup", method: "PATCH", path: "/api/v0/groups/{groupId}", jsonBody: true, security: []string{"sessionCookie", "apiToken:manage"}},
 	{id: "GetHealth", method: "GET", path: "/api/v0/health", jsonBody: false, security: []string{}},
 	{id: "GetMe", method: "GET", path: "/api/v0/me", jsonBody: false, security: []string{"sessionCookie", "apiToken"}},
+	{id: "GetNotificationSettings", method: "GET", path: "/api/v0/notification-settings", jsonBody: false, security: []string{"sessionCookie"}},
+	{id: "SetNotificationSettings", method: "PATCH", path: "/api/v0/notification-settings", jsonBody: true, security: []string{"sessionCookie"}},
 	{id: "OrganiseSites", method: "POST", path: "/api/v0/organise", jsonBody: true, security: []string{"sessionCookie", "apiToken:manage"}},
 	{id: "InviteOwner", method: "POST", path: "/api/v0/owners", jsonBody: true, security: []string{"sessionCookie"}},
 	{id: "ListPasskeys", method: "GET", path: "/api/v0/passkeys", jsonBody: false, security: []string{"sessionCookie"}},

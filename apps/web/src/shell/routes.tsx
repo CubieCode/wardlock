@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { AnalyticsPage } from '../analytics/analytics-page.js';
 import { analyticsIcon } from '../analytics/icon.js';
 import { PasskeysPage } from '../auth/passkeys.js';
+import { NotificationsPage } from '../notifications/notifications-page.js';
 import { OrganisePage } from '../organise/organise-page.js';
 import { OverviewPage } from '../overview/overview.js';
 import { SitePage } from '../sites/site-page.js';
@@ -13,6 +14,7 @@ import { siteTabs } from '../sites/site-page-tabs.js';
 import { SitesPage } from '../sites/sites-page.js';
 import { ApiTokensPage } from '../tokens/tokens-page.js';
 import {
+  notificationsIcon,
   organiseIcon,
   overviewIcon,
   passkeysIcon,
@@ -105,5 +107,10 @@ export const shellRoutes: ShellRoute[] = [
     path: '/tokens',
     rail: { label: 'API tokens', icon: tokensIcon },
     render: ({ api }) => <ApiTokensPage api={api} />,
+  },
+  {
+    path: '/notifications',
+    rail: { label: 'Notifications', icon: notificationsIcon },
+    render: ({ api }) => <NotificationsPage api={api} />,
   },
 ];
