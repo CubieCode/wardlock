@@ -28,8 +28,16 @@ func TestLoadConfig(t *testing.T) {
 		check   func(platform.Config) bool
 	}{
 		{"defaults", nil, false, func(c platform.Config) bool {
-			return c.BaseDomain == "wardlock.localhost" && c.DashboardHost == "wardlock.localhost" && c.DevDashboardURL == nil
+			return c.BaseDomain == "wardlock.localhost" && c.DashboardHost == "wardlock.localhost" && c.DevDashboardURL == nil && len(c.WebhookAllowPrivate) == 0
 		}},
+		{"webhook private ranges", map[string]string{"WARDLOCK_WEBHOOK_ALLOW_PRIVATE": " 10.1.2.3/16, 192.168.0.0/24 ,fd00::/8,100.64.0.0/10"}, false, func(c platform.Config) bool {
+			return len(c.WebhookAllowPrivate) == 4 && c.WebhookAllowPrivate[0].String() == "10.1.0.0/16"
+		}},
+		{"webhook range not CIDR", map[string]string{"WARDLOCK_WEBHOOK_ALLOW_PRIVATE": "true"}, true, nil},
+		{"webhook range wider than private", map[string]string{"WARDLOCK_WEBHOOK_ALLOW_PRIVATE": "10.0.0.0/7"}, true, nil},
+		{"webhook range public", map[string]string{"WARDLOCK_WEBHOOK_ALLOW_PRIVATE": "8.8.8.0/24"}, true, nil},
+		{"webhook loopback cannot be opened", map[string]string{"WARDLOCK_WEBHOOK_ALLOW_PRIVATE": "127.0.0.0/8"}, true, nil},
+		{"webhook link-local cannot be opened", map[string]string{"WARDLOCK_WEBHOOK_ALLOW_PRIVATE": "169.254.0.0/16"}, true, nil},
 		{"hosts are normalised", map[string]string{"WARDLOCK_BASE_DOMAIN": "Sites.Example.", "WARDLOCK_DASHBOARD_HOST": "Admin.Example"}, false,
 			func(c platform.Config) bool {
 				return c.BaseDomain == "sites.example" && c.DashboardHost == "admin.example"

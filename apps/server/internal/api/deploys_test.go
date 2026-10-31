@@ -24,6 +24,7 @@ import (
 	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/api"
 	"wardlock.nz/server/internal/deploys"
+	"wardlock.nz/server/internal/notify"
 	"wardlock.nz/server/internal/oauth"
 	"wardlock.nz/server/internal/sites"
 	"wardlock.nz/server/internal/sites/sitestest"
@@ -97,8 +98,13 @@ func newHarnessWith(t *testing.T, limits deploys.Limits, quotas store.Quotas, co
 		defer hs.mu.Unlock()
 		hs.notified = append(hs.notified, siteID)
 	})
+	// Webhooks (I6.3), told of events by the services below as in serve.
+	events := notify.New(notify.Config{
+		Store: db.Notifications(), Webhooks: db.Webhooks(), Sites: db.Sites(),
+		SigningKey: []byte("api-test-server-key-0123456789abcdef-01"),
+	})
 	policies, err := access.New(access.Config{
-		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), AccessLog: db.AccessLog(), Traffic: db.Traffic(), EmailCodes: db.EmailCodes(), Notifier: notifier,
+		Sites: db.Sites(), Policies: db.Policies(), Sessions: db.Sessions(), Links: db.Links(), PasswordSessions: db.PasswordSessions(), AccessLog: db.AccessLog(), Traffic: db.Traffic(), EmailCodes: db.EmailCodes(), Notifier: notifier, Events: events,
 		Secret: []byte("api-test-server-key-0123456789abcdef-01"), Now: time.Now,
 		// A provider, so policies may enable OAuth; the API never signs in.
 		OAuth: access.OAuthConfig{Providers: []access.Provider{oauth.NewGitHub(oauth.GitHubConfig{ClientID: "id", ClientSecret: "unused"})}},
@@ -108,9 +114,10 @@ func newHarnessWith(t *testing.T, limits deploys.Limits, quotas store.Quotas, co
 	}
 	t.Cleanup(policies.Close)
 	srv := &api.Server{
-		Access: policies,
+		Access:        policies,
+		Notifications: events,
 		Sites: sites.NewService(sites.Config{
-			Sites: db.Sites(), Organisation: db.Organisation(), Notifier: notifier, BaseDomain: baseDomain,
+			Sites: db.Sites(), Organisation: db.Organisation(), Notifier: notifier, Events: events, BaseDomain: baseDomain,
 			DashboardHost: "console." + baseDomain, Now: hs.now,
 			Domains: db.Domains(), Resolver: hs.dns, CheckTimeout: 50 * time.Millisecond,
 			Quotas: quotas,
@@ -118,7 +125,7 @@ func newHarnessWith(t *testing.T, limits deploys.Limits, quotas store.Quotas, co
 		SiteURL: func(host string) string { return "http://" + host + ":8080/" },
 	}
 	dc := deploys.Config{
-		Sites: db.Sites(), Deploys: db.Deploys(), Previews: db.Previews(), Blobs: hs.blobs, Notifier: notifier,
+		Sites: db.Sites(), Deploys: db.Deploys(), Previews: db.Previews(), Blobs: hs.blobs, Notifier: notifier, Events: events,
 		Limits: limits, Quotas: quotas, Now: time.Now,
 	}
 	if configure != nil {

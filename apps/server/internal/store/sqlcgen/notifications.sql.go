@@ -547,7 +547,7 @@ func (q *Queries) ListHeldNotifications(ctx context.Context, arg ListHeldNotific
 }
 
 const listLapsedDomainNotices = `-- name: ListLapsedDomainNotices :many
-SELECT sites.owner_id, sites.name AS site_name, domains.id, domains.hostname, domains.failing_since
+SELECT sites.owner_id, sites.id AS site_id, sites.name AS site_name, domains.id, domains.hostname, domains.failing_since
 FROM domains
 JOIN sites ON sites.id = domains.site_id
 JOIN owners ON owners.id = sites.owner_id
@@ -567,6 +567,7 @@ type ListLapsedDomainNoticesParams struct {
 
 type ListLapsedDomainNoticesRow struct {
 	OwnerID      string
+	SiteID       string
 	SiteName     string
 	ID           string
 	Hostname     string
@@ -585,6 +586,7 @@ func (q *Queries) ListLapsedDomainNotices(ctx context.Context, arg ListLapsedDom
 		var i ListLapsedDomainNoticesRow
 		if err := rows.Scan(
 			&i.OwnerID,
+			&i.SiteID,
 			&i.SiteName,
 			&i.ID,
 			&i.Hostname,
@@ -631,7 +633,7 @@ func (q *Queries) ListNotificationOptOuts(ctx context.Context, ownerID string) (
 }
 
 const listUsedUpLinkNotices = `-- name: ListUsedUpLinkNotices :many
-SELECT sites.owner_id, sites.name AS site_name, share_links.id, share_links.public_id, share_links.label, share_links.used_up_at
+SELECT sites.owner_id, sites.id AS site_id, sites.name AS site_name, share_links.id, share_links.public_id, share_links.label, share_links.used_up_at
 FROM share_links
 JOIN sites ON sites.id = share_links.site_id
 JOIN owners ON owners.id = sites.owner_id
@@ -651,6 +653,7 @@ type ListUsedUpLinkNoticesParams struct {
 
 type ListUsedUpLinkNoticesRow struct {
 	OwnerID  string
+	SiteID   string
 	SiteName string
 	ID       string
 	PublicID string
@@ -670,6 +673,7 @@ func (q *Queries) ListUsedUpLinkNotices(ctx context.Context, arg ListUsedUpLinkN
 		var i ListUsedUpLinkNoticesRow
 		if err := rows.Scan(
 			&i.OwnerID,
+			&i.SiteID,
 			&i.SiteName,
 			&i.ID,
 			&i.PublicID,
@@ -691,7 +695,7 @@ func (q *Queries) ListUsedUpLinkNotices(ctx context.Context, arg ListUsedUpLinkN
 
 const listVerifiedDomainNotices = `-- name: ListVerifiedDomainNotices :many
 
-SELECT sites.owner_id, sites.name AS site_name, domains.id, domains.hostname, domains.verified_at
+SELECT sites.owner_id, sites.id AS site_id, sites.name AS site_name, domains.id, domains.hostname, domains.verified_at
 FROM domains
 JOIN sites ON sites.id = domains.site_id
 JOIN owners ON owners.id = sites.owner_id
@@ -711,6 +715,7 @@ type ListVerifiedDomainNoticesParams struct {
 
 type ListVerifiedDomainNoticesRow struct {
 	OwnerID    string
+	SiteID     string
 	SiteName   string
 	ID         string
 	Hostname   string
@@ -732,6 +737,7 @@ func (q *Queries) ListVerifiedDomainNotices(ctx context.Context, arg ListVerifie
 		var i ListVerifiedDomainNoticesRow
 		if err := rows.Scan(
 			&i.OwnerID,
+			&i.SiteID,
 			&i.SiteName,
 			&i.ID,
 			&i.Hostname,
@@ -763,6 +769,26 @@ type MarkNotificationSummarisedParams struct {
 func (q *Queries) MarkNotificationSummarised(ctx context.Context, arg MarkNotificationSummarisedParams) error {
 	_, err := q.db.ExecContext(ctx, markNotificationSummarised, arg.At, arg.ID)
 	return err
+}
+
+const requeueInterruptedNotifications = `-- name: RequeueInterruptedNotifications :execrows
+UPDATE notification_outbox SET status = 'pending', next_attempt_at = ?1
+WHERE channel = ?2 AND status = 'sending'
+`
+
+type RequeueInterruptedNotificationsParams struct {
+	At      sql.NullInt64
+	Channel string
+}
+
+// Makes every row of a channel left 'sending' due again at at, for a channel
+// whose receivers cope with a repeat.
+func (q *Queries) RequeueInterruptedNotifications(ctx context.Context, arg RequeueInterruptedNotificationsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, requeueInterruptedNotifications, arg.At, arg.Channel)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const rescheduleNotification = `-- name: RescheduleNotification :execrows

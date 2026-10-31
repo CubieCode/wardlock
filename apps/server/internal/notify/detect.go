@@ -49,6 +49,9 @@ const (
 // being told means a restart loses nothing, and keying each event means
 // reading it again queues nothing.
 func (s *Service) Detect(ctx context.Context) {
+	if s.c.Webhooks != nil {
+		s.detectWebhooks(ctx)
+	}
 	now := s.now()
 	var entries []store.OutboxEntry
 	add := func(what string, list []store.NoticeSubject, err error, build func(store.NoticeSubject) (string, string, mail.Notice)) {

@@ -9,8 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	netmail "net/mail"
+	"net/netip"
 	"slices"
+	"sync"
 	"time"
 
 	"wardlock.nz/server/internal/mail"
@@ -78,12 +81,27 @@ type Config struct {
 	// Now defaults to time.Now.
 	Now func() time.Time
 	Log *slog.Logger
+
+	// Webhooks turns on webhooks (I6.3); nil leaves them out. Sites finds
+	// the sites they list.
+	Webhooks store.Webhooks
+	Sites    store.Sites
+	// SigningKey is the server key, from which signing secrets are derived.
+	SigningKey []byte
+	// AllowHTTP accepts http:// webhook URLs too (local mode).
+	AllowHTTP bool
+	// AllowPrivate lists the private ranges webhooks may connect to
+	// (WARDLOCK_WEBHOOK_ALLOW_PRIVATE).
+	AllowPrivate []netip.Prefix
 }
 
 // Service keeps owners' settings and runs the outbox.
 type Service struct {
-	c    Config
-	wake chan struct{}
+	c           Config
+	wake        chan struct{}
+	webhookWake chan struct{}
+	permitted   func(netip.Addr) bool
+	client      *http.Client
 }
 
 // New returns a Service.
@@ -94,7 +112,11 @@ func New(c Config) *Service {
 	if c.Log == nil {
 		c.Log = slog.New(slog.DiscardHandler)
 	}
-	return &Service{c: c, wake: make(chan struct{}, 1)}
+	policy := addressPolicy{allow: c.AllowPrivate}
+	return &Service{
+		c: c, wake: make(chan struct{}, 1), webhookWake: make(chan struct{}, 1),
+		permitted: policy.permitted, client: webhookClient(policy.permitted, nil),
+	}
 }
 
 func (s *Service) now() time.Time { return s.c.Now().UTC().Truncate(time.Millisecond) }
@@ -167,6 +189,11 @@ func (s *Service) entry(key, ownerID, event string, p emailPayload) (store.Outbo
 // own schedules. Call it from one process only.
 func (s *Service) Run(ctx context.Context) {
 	s.Recover(ctx)
+	if s.c.Webhooks != nil {
+		var wg sync.WaitGroup
+		wg.Go(func() { s.runWebhooks(ctx) })
+		defer wg.Wait()
+	}
 	var detected, pruned time.Time
 	t := time.NewTicker(DeliverInterval)
 	defer t.Stop()
@@ -190,16 +217,25 @@ func (s *Service) Run(ctx context.Context) {
 	}
 }
 
-// Recover ends every message a previous process left mid-attempt. It may
-// have gone out, and each is sent at most once, so it is not tried again.
+// Recover settles what a previous process left mid-attempt, which may or
+// may not have gone out. An email is sent at most once, so it is not tried
+// again. A webhook delivery is sent at least once, so it goes back in the
+// queue: receivers deduplicate on the event's ID.
 func (s *Service) Recover(ctx context.Context) {
 	n, err := s.c.Store.FailInterrupted(ctx, store.NotificationEmail, s.now())
 	if err != nil {
 		s.logErr(ctx, "end interrupted notifications", err)
+	} else if n > 0 {
+		s.c.Log.LogAttrs(ctx, slog.LevelWarn, "notifications interrupted while sending were not retried", slog.Int64("count", n))
+	}
+	if s.c.Webhooks == nil {
 		return
 	}
-	if n > 0 {
-		s.c.Log.LogAttrs(ctx, slog.LevelWarn, "notifications interrupted while sending were not retried", slog.Int64("count", n))
+	n, err = s.c.Store.RequeueInterrupted(ctx, store.NotificationWebhook, s.now())
+	if err != nil {
+		s.logErr(ctx, "requeue interrupted webhook deliveries", err)
+	} else if n > 0 {
+		s.c.Log.LogAttrs(ctx, slog.LevelWarn, "webhook deliveries interrupted while sending were requeued", slog.Int64("count", n))
 	}
 }
 
@@ -297,7 +333,9 @@ func (s *Service) fail(ctx context.Context, e store.OutboxEntry, err error) {
 		slog.String("id", e.ID), slog.String("event", e.Event), slog.String("error", err.Error()))
 }
 
-func mandatory(event string) bool { return event == fileWithheld || event == summary }
+func mandatory(event string) bool {
+	return event == fileWithheld || event == summary || event == webhookDisabled
+}
 
 // backoff is the wait after the attempts-th failure: 1 minute doubling to
 // an hour.

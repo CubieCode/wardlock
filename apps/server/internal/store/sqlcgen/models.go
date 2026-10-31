@@ -370,3 +370,44 @@ type VisitorEmailCode struct {
 	CreatedAt     int64
 	ExpiresAt     int64
 }
+
+type Webhook struct {
+	ID             string
+	OwnerID        string
+	Url            string
+	Description    string
+	AllEvents      int64
+	AllSites       int64
+	SecretSalt     string
+	CreatedAt      int64
+	FailingSince   sql.NullInt64
+	DisabledAt     sql.NullInt64
+	DisabledReason sql.NullString
+}
+
+type WebhookDelivery struct {
+	ID            string
+	WebhookID     string
+	EventID       string
+	Event         string
+	Body          string
+	Status        string
+	Attempts      int64
+	ResponseCode  sql.NullInt64
+	DurationMs    sql.NullInt64
+	Error         sql.NullString
+	RedeliveryOf  sql.NullString
+	CreatedAt     int64
+	LastAttemptAt sql.NullInt64
+	FinishedAt    sql.NullInt64
+}
+
+type WebhookEvent struct {
+	WebhookID string
+	Event     string
+}
+
+type WebhookSite struct {
+	WebhookID string
+	SiteID    string
+}

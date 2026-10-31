@@ -100,6 +100,17 @@ var tokenScopes = map[string][]string{
 
 	// V5.11 read.
 	"ListExpiringLinks": {"deploy", "manage"},
+
+	// Webhooks (I6.3). Reading needs manage too: a URL can hold the
+	// receiver's secret.
+	"ListWebhooks":             {"manage"},
+	"CreateWebhook":            {"manage"},
+	"GetWebhook":               {"manage"},
+	"UpdateWebhook":            {"manage"},
+	"DeleteWebhook":            {"manage"},
+	"TestWebhook":              {"manage"},
+	"ListWebhookDeliveries":    {"manage"},
+	"RedeliverWebhookDelivery": {"manage"},
 }
 
 var sessionOnly = map[string]bool{

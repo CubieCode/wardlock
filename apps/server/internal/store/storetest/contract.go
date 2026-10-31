@@ -37,6 +37,8 @@ type Repos struct {
 	Organisation store.Organisation
 	// Notifications stores opt-outs and the notification outbox (I6.2).
 	Notifications store.Notifications
+	// Webhooks stores webhooks and their deliveries (I6.3).
+	Webhooks store.Webhooks
 }
 
 // Opener returns repositories over a fresh, empty, migrated database that
@@ -69,6 +71,7 @@ func ReposOf(db *store.DB) Repos {
 		Moderation:       db.Moderation(),
 		Organisation:     db.Organisation(),
 		Notifications:    db.Notifications(),
+		Webhooks:         db.Webhooks(),
 	}
 }
 
@@ -102,6 +105,7 @@ func suites() []suite {
 		{"Moderation", moderationContract},
 		{"Organisation", organisationContract},
 		{"Notifications", notificationsContract},
+		{"Webhooks", webhooksContract},
 	}
 }
 

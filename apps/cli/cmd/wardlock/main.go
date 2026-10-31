@@ -47,6 +47,7 @@ var commands = []command{
 	{"site", "Put sites in a group and add or remove their tags", runSite},
 	{"pin", "Pin sites, to keep them at hand", runPin},
 	{"unpin", "Unpin sites", runUnpin},
+	{"webhook", "Add, list, remove and test webhooks", runWebhook},
 	{"mcp", "Serve the Model Context Protocol to AI tools on stdio", runMCP},
 	{"login", "Log in to a Wardlock server in your browser", runLogin},
 	{"logout", "Revoke and forget the stored token", runLogout},

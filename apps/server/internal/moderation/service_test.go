@@ -863,6 +863,47 @@ func TestRescanKeepsQuarantine(t *testing.T) {
 	}
 }
 
+// withheldEvents records what Events hears.
+type withheldEvents struct {
+	mu   sync.Mutex
+	seen []string
+}
+
+func (e *withheldEvents) FileWithheld(_ context.Context, key, ownerID, siteID, siteName string, paths []string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if key != "" {
+		e.seen = append(e.seen, strings.Join(append([]string{ownerID, siteID, siteName}, paths...), " "))
+	}
+}
+
+// TestWithheldEvent checks a quarantine reports each site by ID and its
+// paths, and that a taken-down site's owner hears as little here as by
+// email.
+func TestWithheldEvent(t *testing.T) {
+	w := newWorld(t)
+	ctx := t.Context()
+	w.fake.Flag("nsfw", "sexual")
+	img := png1("nsfw", 0)
+	w.publish(w.owner.ID, map[string]string{"a.png": img})
+	w.publish(w.owner.ID, map[string]string{"b.png": img})
+	ss, err := w.db.Sites().List(ctx, w.owner.ID, "", 10)
+	if err != nil || len(ss) != 2 {
+		t.Fatalf("sites: %v, %v", ss, err)
+	}
+	if err := w.db.Sites().TakeDown(ctx, ss[1].ID, w.now()); err != nil {
+		t.Fatal(err)
+	}
+	box := &mailbox{}
+	events := &withheldEvents{}
+	c := w.config(moderation.NewQuarantine())
+	c.Mailer, c.AbuseEmail, c.Notices, c.Events = box, abuse, notices{w, box}, events
+	moderation.New(c).Pass(ctx)
+	if len(events.seen) != 1 || !strings.HasPrefix(events.seen[0], w.owner.ID+" "+ss[0].ID+" "+ss[0].Name+" ") {
+		t.Fatalf("events %q, want one for %s", events.seen, ss[0].ID)
+	}
+}
+
 // TestOwnerNotices checks owners of taken-down sites and suspended owners
 // are not told of a quarantine; the operator hears of every site.
 func TestOwnerNotices(t *testing.T) {

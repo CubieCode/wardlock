@@ -60,10 +60,19 @@ type notifier interface {
 	Notify(ctx context.Context, siteID string)
 }
 
+// Events hears of what happens to sites, for webhooks (I6.3). notify's
+// Service satisfies it.
+type Events interface {
+	SiteCreated(ctx context.Context, site store.Site)
+	SiteDeleted(ctx context.Context, site store.Site)
+}
+
 // Config holds a Service's dependencies.
 type Config struct {
 	Sites    store.Sites
 	Notifier notifier
+	// Events is told of sites created and deleted; nil tells nobody.
+	Events Events
 	// Organisation backs groups, tags and pins (V5.3).
 	Organisation store.Organisation
 	// Domains, Resolver and Certs back custom domains (C1.9). Certs may be
@@ -161,6 +170,9 @@ func (s *Service) Create(ctx context.Context, ownerID, name string) (store.Site,
 	if err != nil {
 		return store.Site{}, fmt.Errorf("create site: %w", err)
 	}
+	if s.c.Events != nil {
+		s.c.Events.SiteCreated(ctx, site)
+	}
 	return site, nil
 }
 
@@ -216,6 +228,9 @@ func (s *Service) Delete(ctx context.Context, ownerID, name string) error {
 	s.c.Notifier.Notify(ctx, site.ID)
 	for _, h := range hostnames {
 		s.removeCert(ctx, h)
+	}
+	if s.c.Events != nil {
+		s.c.Events.SiteDeleted(ctx, site)
 	}
 	return nil
 }

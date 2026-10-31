@@ -88,6 +88,9 @@ type fakeAPI struct {
 	tags      []apiclient.Tag
 	organised []apiclient.OrganiseSitesRequest
 	filed     []apiclient.SetSiteOrganisationRequest
+	// webhooks and deliveries back the webhook commands.
+	webhooks   []apiclient.Webhook
+	deliveries []apiclient.WebhookDelivery
 	// dlInFlight and maxDlInFlight track download concurrency.
 	dlInFlight, maxDlInFlight int
 }
@@ -197,6 +200,7 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 	f.handleDomains(handle)
 	f.handleOrganisation(handle)
 	f.handlePreviews(handle)
+	f.handleWebhooks(handle)
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f

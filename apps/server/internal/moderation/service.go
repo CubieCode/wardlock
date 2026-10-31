@@ -54,6 +54,12 @@ type OwnerNotices interface {
 	Withheld(ctx context.Context, key, ownerID string, d mail.Withheld) error
 }
 
+// Events hears of files withheld on a site, for webhooks (I6.3), once per
+// key. notify's Service satisfies it.
+type Events interface {
+	FileWithheld(ctx context.Context, key, ownerID, siteID, siteName string, paths []string)
+}
+
 // Config wires a Service.
 type Config struct {
 	Store store.Moderation
@@ -71,6 +77,8 @@ type Config struct {
 	Mailer     mail.Mailer
 	// Notices sends owners' withheld-file notices; nil sends none.
 	Notices OwnerNotices
+	// Events hears of the same; nil tells nobody.
+	Events Events
 	// AbuseEmail receives the operator's notices; "" logs them instead.
 	AbuseEmail string
 	// DashboardHost names the server in owners' notices.
@@ -667,11 +675,15 @@ func (s *Service) notifyOwners(ctx context.Context, sha256 string, at time.Time,
 		paths[k] = append(paths[k], u.Path)
 	}
 	for _, k := range order {
-		err := s.c.Notices.Withheld(ctx, fmt.Sprintf("file_withheld:%s:%d:%s", sha256, at.UnixMilli(), k.siteID), k.owner, mail.Withheld{
+		eventKey := fmt.Sprintf("file_withheld:%s:%d:%s", sha256, at.UnixMilli(), k.siteID)
+		err := s.c.Notices.Withheld(ctx, eventKey, k.owner, mail.Withheld{
 			Site: k.site, Host: s.c.DashboardHost, Paths: paths[k], Contact: s.c.AbuseEmail,
 		})
 		if err != nil {
 			s.c.Log.LogAttrs(ctx, slog.LevelError, "screening notice failed", slog.String("to", "owner"), slog.String("error", err.Error()))
+		}
+		if s.c.Events != nil {
+			s.c.Events.FileWithheld(ctx, eventKey, k.owner, k.siteID, k.site, paths[k])
 		}
 	}
 }

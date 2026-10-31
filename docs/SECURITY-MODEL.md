@@ -53,7 +53,7 @@ Wardlock's own log lines follow the rules above; libraries that log through it a
 <details>
 <summary>What changing it ends</summary>
 
-There is no key rotation yet: changing it ends every owner (dashboard) session and every site session at once, and, from A2.2 and C1.7, invalidates every share link and API token.
+There is no key rotation yet: changing it ends every owner (dashboard) session and every site session at once, and, from A2.2, C1.7 and I6.3, invalidates every share link, API token and webhook signing secret.
 
 </details>
 
@@ -181,6 +181,35 @@ A preview (C1.19, SPEC "Preview deploys") is another hostname of the same site, 
 - **Names cannot be taken over.** The edge looks a label up as a site's name first, so an exact site name always wins; new site names may not contain `--`, and a preview whose label is an existing site's name is refused, so no owner can claim another site's preview hostname or put a preview on a hostname another site serves. Custom domains never serve previews, and the primary-hostname redirect never applies to a preview hostname, so no token is carried to or from one.
 - **Expiry and deletion.** An expired or deleted preview answers as an unknown host at once, cache or not; nothing about it is served while garbage collection catches up.
 - **Indexing.** Every preview response, Wardlock's own pages and errors included, carries `X-Robots-Tag: noindex`, so a preview of a public site is not indexed either. This is a request to crawlers, not access control: a preview anyone may read is public.
+
+</details>
+
+### Webhooks and SSRF
+
+A webhook makes the server send requests to an address an owner chose, so the server must not become a way in to its own network. Each connection is checked in the dialler, on the address actually being connected to, after DNS: loopback, private, link-local, unique-local, multicast and unspecified addresses are refused. No redirect is followed, an attempt ends after 10 seconds and at most 4 KiB of a response is read.
+
+Each delivery is signed with HMAC-SHA-256 under a secret shown once, so a receiver can tell it came from this server and when. The secret is never stored: it is derived from the server key.
+
+<details>
+<summary>Decision (I6.3): what is refused, and why there</summary>
+
+- **Checked at the connection.** The check runs in the dialler's control hook, after resolution and for each address tried. A check made before connecting would look at one DNS answer and connect on another, which is what DNS rebinding relies on. Checking at the connection leaves no gap: every attempt dials afresh, with no connection reuse, and a name that answers differently between lookups is judged on each. The URL check when a webhook is saved is only an early message; it is not what protects anything.
+- **What is refused.** Loopback, RFC 1918 private ranges, link-local (`169.254.0.0/16`, which holds cloud metadata services, and `fe80::/10`), unique-local (`fc00::/7`), multicast and unspecified addresses, plus `0.0.0.0/8`, broadcast and shared address space (`100.64.0.0/10`). IPv4-mapped IPv6 and NAT64 (`64:ff9b::/96`) addresses are judged by the IPv4 address inside them.
+- **Opening private ranges.** `WARDLOCK_WEBHOOK_ALLOW_PRIVATE` lists CIDR ranges, each inside a private, unique-local or shared range, for a self-hosted chat server. The server refuses to start on anything else, so loopback and link-local cannot be opened, and it is a list rather than an on/off switch so that opening one host does not open the network.
+- **Nothing else connects.** Proxy settings in the environment are ignored, since a proxy would connect on the server's behalf where the dialler cannot see. Redirects are not followed: a `3xx` is a failed delivery, so a public address cannot point the server somewhere else.
+- **What comes back.** Nothing of a response reaches the owner but its status code, how long it took and a failure class (`refused_address`, `timeout`, ...), which limits what an owner can learn by probing.
+- **URLs are secrets too.** Chat services put a secret in the path, so a URL is never logged and an email names only its host. An error's text can carry the URL, so only a class is stored, and reading a URL through the API needs `manage`.
+- **The server itself.** A webhook can name the server's own public hostname. That reaches only what the internet can reach already.
+
+</details>
+
+<details>
+<summary>Decision (I6.3): signing</summary>
+
+- **Signing, not encrypting.** A delivery is `HMAC-SHA-256(secret, "<t>.<body>")` with `t` the time of the attempt, so a retry is signed afresh and a receiver can reject an old request. HTTPS keeps it private.
+- **The secret.** A webhook's secret is derived from `WARDLOCK_SECRET`, its ID and a random salt, and shown once. The database holds only the salt, so a copy of it cannot sign. The server has to be able to produce the secret, so it cannot be hashed like a token; deriving it means no decryptable secret exists at rest. Changing `WARDLOCK_SECRET` changes every signing secret, so receivers then reject deliveries until each webhook is replaced.
+- **Payloads.** Each event's data is a fixed struct of names and IDs, so a token, a link secret or a visitor's address has no field to land in; the stored link's hash never leaves `notify`'s event builder. `file.withheld` names paths, never categories, as the owner's email does.
+- **Owners.** Events are matched to webhooks by the owner of the thing that happened, read by the service that did it, so a webhook listing another owner's site ID hears nothing from it, and such a list cannot be made through the API.
 
 </details>
 

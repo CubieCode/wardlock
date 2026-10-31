@@ -21,11 +21,12 @@ import (
 // verified request context, never from the request.
 
 // secretResponses are the operations whose success carries a secret (a
-// share-link token, an API token or a CLI device code): no cache, shared
-// or private, may keep them.
+// share-link token, an API token, a CLI device code or a webhook's signing
+// secret): no cache, shared or private, may keep them.
 var secretResponses = map[string]bool{
 	"CreateShareLink": true, "RotateShareLink": true,
 	"CreateApiToken": true, "StartCliLogin": true, "PollCliLogin": true,
+	"CreateWebhook": true,
 }
 
 // noStoreSecrets sets Cache-Control: no-store on secretResponses.

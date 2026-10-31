@@ -110,6 +110,23 @@ type Config struct {
 	// Withheld lists the hashes content screening withholds (A2.15), which
 	// Open refuses; nil withholds none.
 	Withheld Withheld
+	// Events is told what goes live, for webhooks (I6.3); nil tells nobody.
+	Events Events
+}
+
+// What made a deploy live.
+const (
+	CauseDeploy   = "deploy"
+	CauseRollback = "rollback"
+	CausePromote  = "promote"
+)
+
+// Events hears of deploys and previews going live or away. notify's Service
+// satisfies it.
+type Events interface {
+	DeployActivated(ctx context.Context, site store.Site, d store.Deploy, cause string)
+	PreviewDeployed(ctx context.Context, site store.Site, d store.Deploy)
+	PreviewDeleted(ctx context.Context, site store.Site, name string, at time.Time)
 }
 
 // Withheld reports whether a content hash is quarantined. The moderation
@@ -470,9 +487,12 @@ func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID stri
 	if d.Preview != "" {
 		// The preview serves it; the live site is as it was.
 		s.c.Notifier.Notify(ctx, site.ID)
+		if s.c.Events != nil {
+			s.c.Events.PreviewDeployed(ctx, site, d)
+		}
 		return site, d, nil
 	}
-	return s.served(ctx, site, d), d, nil
+	return s.served(ctx, site, d, CauseDeploy), d, nil
 }
 
 // Rollback reactivates deployID, or with "" the deploy active before the
@@ -492,13 +512,16 @@ func (s *Service) Rollback(ctx context.Context, ownerID, siteName, deployID stri
 		site.ActivatedAt = d.ActivatedAt
 		return site, d, nil
 	}
-	return s.served(ctx, site, d), d, nil
+	return s.served(ctx, site, d, CauseRollback), d, nil
 }
 
 // served notifies subscribers that site now serves d and returns the site
 // as it is now.
-func (s *Service) served(ctx context.Context, site store.Site, d store.Deploy) store.Site {
+func (s *Service) served(ctx context.Context, site store.Site, d store.Deploy, cause string) store.Site {
 	s.c.Notifier.Notify(ctx, site.ID)
+	if s.c.Events != nil {
+		s.c.Events.DeployActivated(ctx, site, d, cause)
+	}
 	site.ActiveDeployID, site.ActivatedAt = d.ID, d.ActivatedAt
 	return site
 }

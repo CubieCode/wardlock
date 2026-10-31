@@ -104,6 +104,9 @@ func (s *Service) TearDown(ctx context.Context, ref string) (store.Site, error) 
 	for _, h := range hostnames {
 		s.removeCert(ctx, h)
 	}
+	if s.c.Events != nil {
+		s.c.Events.SiteDeleted(ctx, site)
+	}
 	s.log().LogAttrs(ctx, slog.LevelInfo, "operator tore down site", slog.String("site_id", site.ID), slog.String("owner_id", site.OwnerID))
 	return site, nil
 }

@@ -14,8 +14,13 @@ import (
 // NotificationChannel says how an outbox row leaves the server.
 type NotificationChannel string
 
-// NotificationEmail is the owner's email address.
-const NotificationEmail NotificationChannel = "email"
+const (
+	// NotificationEmail is the owner's email address.
+	NotificationEmail NotificationChannel = "email"
+	// NotificationWebhook is one of the owner's webhooks (I6.3). Each row
+	// has a WebhookDelivery with the same ID.
+	NotificationWebhook NotificationChannel = "webhook"
+)
 
 // NotificationStatus is where an outbox row stands. The migration describes
 // each one.
@@ -58,7 +63,8 @@ type NotificationRecipient struct {
 // NoticeSubject is one thing a notification scan found. Which fields are
 // set depends on the scan.
 type NoticeSubject struct {
-	OwnerID  string
+	OwnerID string
+	// SiteID is empty for a failing domain and an expiring link or token.
 	SiteID   string
 	SiteName string // empty for an API token
 	// ID is the domain's, link's or token's ID; empty for a preview.
@@ -104,6 +110,10 @@ type Notifications interface {
 	// returns how many. Only the one process that delivers may call it,
 	// before it starts delivering.
 	FailInterrupted(ctx context.Context, channel NotificationChannel, at time.Time) (int64, error)
+	// RequeueInterrupted returns every row of channel left in an attempt to
+	// pending, due at at, and returns how many. As with FailInterrupted,
+	// only the one process that delivers may call it.
+	RequeueInterrupted(ctx context.Context, channel NotificationChannel, at time.Time) (int64, error)
 	// CountSent counts ownerID's rows on channel sent at or after since.
 	CountSent(ctx context.Context, ownerID string, channel NotificationChannel, since time.Time) (int64, error)
 	// HeldOwners lists the owners with held rows on channel.
@@ -119,7 +129,7 @@ type Notifications interface {
 	Prune(ctx context.Context, before time.Time) (int64, error)
 
 	// The scans skip suspended owners, taken-down sites and owners who
-	// turned event off.
+	// turned event off; no owner can turn off the empty event.
 
 	// VerifiedDomains lists domains that became active at or after since.
 	VerifiedDomains(ctx context.Context, event string, since time.Time) ([]NoticeSubject, error)
@@ -260,6 +270,16 @@ func (r notificationsRepo) FailInterrupted(ctx context.Context, channel Notifica
 	return n, nil
 }
 
+func (r notificationsRepo) RequeueInterrupted(ctx context.Context, channel NotificationChannel, at time.Time) (int64, error) {
+	n, err := r.db.q.RequeueInterruptedNotifications(ctx, sqlcgen.RequeueInterruptedNotificationsParams{
+		Channel: string(channel), At: nullMs(at),
+	})
+	if err != nil {
+		return 0, mapErr("requeue interrupted notifications", err)
+	}
+	return n, nil
+}
+
 func (r notificationsRepo) CountSent(ctx context.Context, ownerID string, channel NotificationChannel, since time.Time) (int64, error) {
 	n, err := r.db.q.CountSentNotifications(ctx, sqlcgen.CountSentNotificationsParams{
 		OwnerID: ownerID, Channel: string(channel), Since: nullMs(since),
@@ -319,7 +339,7 @@ func (r notificationsRepo) VerifiedDomains(ctx context.Context, event string, si
 	}
 	out := make([]NoticeSubject, len(rows))
 	for i, row := range rows {
-		out[i] = NoticeSubject{OwnerID: row.OwnerID, SiteName: row.SiteName, ID: row.ID, Name: row.Hostname, At: fromNullMs(row.VerifiedAt)}
+		out[i] = NoticeSubject{OwnerID: row.OwnerID, SiteID: row.SiteID, SiteName: row.SiteName, ID: row.ID, Name: row.Hostname, At: fromNullMs(row.VerifiedAt)}
 	}
 	return out, nil
 }
@@ -347,7 +367,7 @@ func (r notificationsRepo) LapsedDomains(ctx context.Context, event string, sinc
 	}
 	out := make([]NoticeSubject, len(rows))
 	for i, row := range rows {
-		out[i] = NoticeSubject{OwnerID: row.OwnerID, SiteName: row.SiteName, ID: row.ID, Name: row.Hostname, At: fromNullMs(row.FailingSince)}
+		out[i] = NoticeSubject{OwnerID: row.OwnerID, SiteID: row.SiteID, SiteName: row.SiteName, ID: row.ID, Name: row.Hostname, At: fromNullMs(row.FailingSince)}
 	}
 	return out, nil
 }
@@ -361,7 +381,7 @@ func (r notificationsRepo) UsedUpLinks(ctx context.Context, event string, since 
 	}
 	out := make([]NoticeSubject, len(rows))
 	for i, row := range rows {
-		out[i] = NoticeSubject{OwnerID: row.OwnerID, SiteName: row.SiteName, ID: row.ID, Name: row.Label.String, PublicID: row.PublicID, At: fromNullMs(row.UsedUpAt)}
+		out[i] = NoticeSubject{OwnerID: row.OwnerID, SiteID: row.SiteID, SiteName: row.SiteName, ID: row.ID, Name: row.Label.String, PublicID: row.PublicID, At: fromNullMs(row.UsedUpAt)}
 	}
 	return out, nil
 }
