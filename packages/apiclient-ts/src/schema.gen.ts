@@ -3166,6 +3166,11 @@ export interface operations {
     };
     requestBody: {
       content: {
+        /**
+         * @example {
+         *       "linksExpiring": false
+         *     }
+         */
         'application/json': components['schemas']['NotificationSettingsUpdate'];
       };
     };
@@ -3176,6 +3181,16 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
+          /**
+           * @example {
+           *       "domainVerified": true,
+           *       "domainFailing": true,
+           *       "linkUsedUp": true,
+           *       "linksExpiring": false,
+           *       "tokenExpiring": true,
+           *       "previewExpiring": true
+           *     }
+           */
           'application/json': components['schemas']['NotificationSettings'];
         };
       };
