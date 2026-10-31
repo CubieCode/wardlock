@@ -21,7 +21,7 @@ The shortest path to a running instance. Each step links to the reference sectio
 - Linux (amd64 or arm64) or macOS; Windows is untested.
 - A DNS zone you control, with a wildcard record for sites.
 - Ports 80 and 443 reachable from the internet for automatic TLS, or a reverse proxy in front.
-- An SMTP server for email codes (A2.4) and owner sign-in codes (C1.1).
+- An SMTP server for email codes (A2.4), owner sign-in codes (C1.1) and owner [notifications](SPEC.md#notifications-i62) (I6.2).
 - Persistent storage for `WARDLOCK_DATA_DIR`, on a local filesystem (not NFS, because of SQLite locking). Deploy file bodies live there too unless you put them in an [S3-compatible bucket](#s3-compatible-blob-storage).
 - A server key in `WARDLOCK_SECRET`: at least 32 random bytes, base64url (`openssl rand -base64 32 | tr '+/' '-_'`). `wardlockd serve` and `wardlockd admin` refuse to start without it. See [Backups](#backups).
 
@@ -482,6 +482,8 @@ With Caddy, use on-demand TLS with `ask` set to `http://127.0.0.1:8080/.wardlock
 - `dev://` (the default) delivers nothing and writes each message to `.local/mail/`. Use it for development only.
 
 `WARDLOCK_SMTP_FROM` sets the sender (`Wardlock <no-reply@example.com>`). Configure SPF, DKIM and DMARC for the sending domain or codes will land in spam.
+
+Owner [notifications](SPEC.md#notifications-i62) need working mail too: with `dev://` they are written to files and owners hear nothing. They are queued in the database and retried for 72 hours, so a short mail outage loses none of them. `WARDLOCK_MAX_OWNER_NOTIFICATIONS_PER_HOUR` caps what one owner gets (default 20; `0` is no cap), with the rest summarised in one later email.
 
 <details>
 <summary>STARTTLS, ports, certificates, credentials and the dev mailer</summary>

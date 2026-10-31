@@ -18,6 +18,7 @@ import (
 
 	"wardlock.nz/server/internal/access"
 	"wardlock.nz/server/internal/deploys"
+	"wardlock.nz/server/internal/notify"
 	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/sites"
 )
@@ -50,6 +51,8 @@ type Server struct {
 	// Tokens authenticates API tokens and serves the token and CLI login
 	// operations (C1.7).
 	Tokens *owners.Tokens
+	// Notifications serves the notification settings (I6.2).
+	Notifications *notify.Service
 	// Countries is the operator's country lookup (V5.13); nil while it is
 	// off, when analytics leaves countries out.
 	Countries *CountryLookupConfig

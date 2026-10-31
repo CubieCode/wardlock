@@ -27,6 +27,7 @@ import (
 	"wardlock.nz/server/internal/edge"
 	"wardlock.nz/server/internal/mail"
 	"wardlock.nz/server/internal/moderation"
+	"wardlock.nz/server/internal/notify"
 	"wardlock.nz/server/internal/oauth"
 	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/platform"
@@ -173,7 +174,14 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		return err
 	}
 	screened := deploys.NewLocalNotifier()
-	modSvc := newModeration(cfg, log, db, blobs, mailer, quarantine, screened)
+	notifySvc := notify.New(notify.Config{
+		Store:        db.Notifications(),
+		Mailer:       mailer,
+		DashboardURL: dashURL.String(),
+		Cap:          cfg.MaxOwnerNotificationsPerHour,
+		Log:          log,
+	})
+	modSvc := newModeration(cfg, log, db, blobs, mailer, notifySvc, quarantine, screened)
 	stopModeration := startModeration(ctx, log, db, modSvc, quarantine, notifier)
 	defer stopModeration()
 	metrics := platform.NewMetrics(time.Now())
@@ -199,6 +207,8 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	sitesSvc := sites.NewService(sitesCfg)
 	stopDomainChecks := startDomainChecks(ctx, sitesSvc)
 	defer stopDomainChecks()
+	stopNotifications := startNotifications(ctx, notifySvc)
+	defer stopNotifications()
 
 	tokenSvc, err := owners.NewTokens(owners.TokensConfig{
 		Tokens: db.APITokens(), Logger: log, Secret: cfg.Secret, DashboardURL: dashURL,
@@ -214,8 +224,10 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Access:  accessSvc,
 		// Passkey sign-in and management (C1.6).
 		Passkeys: passkeys,
-		Logger:   log,
-		Sites:    sitesSvc,
+		// Notification settings (I6.2).
+		Notifications: notifySvc,
+		Logger:        log,
+		Sites:         sitesSvc,
 		// The country lookup's credit and server country (V5.13).
 		Countries: countryLookup(cfg),
 		Deploys: deploys.NewService(deploys.Config{
@@ -365,6 +377,18 @@ func startDomainChecks(ctx context.Context, svc *sites.Service) func() {
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	wg.Go(func() { svc.RunChecks(ctx, domainCheckInterval) })
+	return func() {
+		cancel()
+		wg.Wait()
+	}
+}
+
+// startNotifications runs the owner notification worker until the returned
+// stop is called, which waits for it; call it before the database closes.
+func startNotifications(ctx context.Context, svc *notify.Service) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	wg.Go(func() { svc.Run(ctx) })
 	return func() {
 		cancel()
 		wg.Wait()

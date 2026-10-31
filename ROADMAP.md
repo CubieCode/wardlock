@@ -1049,8 +1049,8 @@ Ways for Wardlock to reach the tools owners already use: CI, email and webhooks 
 
 ### I6.2: Owner email notifications
 
-- Status: `todo`
-- Owner:
+- Status: `in-progress`
+- Owner: feat/i6.2-owner-email-notifications
 - PR:
 - Depends on: F0.4, C1.7, C1.9, A2.2, A2.15
 - Scope: Email an owner when something needs them, instead of waiting for them to open the dashboard. Events: a custom domain verified; an active custom domain failing its checks for 24 hours, and then lapsing; a use-limited share link used up; share links expiring within 48 hours (V5.11's window; at most one email a day listing them); an API token expiring within 7 days; a preview expiring within 2 days (once C1.19 is done). Content screening's withheld-file email (A2.15) moves onto this mechanism unchanged and cannot be turned off. Each event has an on/off setting per owner, all on by default, set in a Notifications section of the dashboard's account page and through `getNotificationSettings` and `setNotificationSettings` (dashboard session only, like other owner settings; tokens get `403`). Emails go through the existing mailer as plain text with a simple HTML part; they name the site and what happened, never contain a token or share-link URL, link to the relevant dashboard page and to the settings. A durable outbox with one row per event key sends each email at most once across restarts, retrying with backoff when mail fails; a per-owner cap (default 20 an hour) stops floods, with the rest summarised in one later email; suspended owners get nothing. A portable migration. Docs: SPEC (a "Notifications" section), DEPLOYMENT (mail is needed for notifications) and the API contract. Mobbin research for notification settings, cited in the PR.

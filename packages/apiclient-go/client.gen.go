@@ -1351,6 +1351,37 @@ type Me struct {
 // MeCredential How this request was authenticated.
 type MeCredential string
 
+// NotificationSettings Which emails an owner gets, each `true` for on.
+type NotificationSettings struct {
+	// DomainFailing An active custom domain has failed its checks for 24 hours, and again if it lapses.
+	DomainFailing bool `json:"domainFailing"`
+
+	// DomainVerified A custom domain passed verification.
+	DomainVerified bool `json:"domainVerified"`
+
+	// LinkUsedUp A use-limited share link has no uses left.
+	LinkUsedUp bool `json:"linkUsedUp"`
+
+	// LinksExpiring Share links expire within 48 hours, at most one email a day.
+	LinksExpiring bool `json:"linksExpiring"`
+
+	// PreviewExpiring A preview expires within 2 days.
+	PreviewExpiring bool `json:"previewExpiring"`
+
+	// TokenExpiring An API token expires within 7 days.
+	TokenExpiring bool `json:"tokenExpiring"`
+}
+
+// NotificationSettingsUpdate The settings to change, as in `NotificationSettings`; one left out keeps its value.
+type NotificationSettingsUpdate struct {
+	DomainFailing   *bool `json:"domainFailing,omitempty"`
+	DomainVerified  *bool `json:"domainVerified,omitempty"`
+	LinkUsedUp      *bool `json:"linkUsedUp,omitempty"`
+	LinksExpiring   *bool `json:"linksExpiring,omitempty"`
+	PreviewExpiring *bool `json:"previewExpiring,omitempty"`
+	TokenExpiring   *bool `json:"tokenExpiring,omitempty"`
+}
+
 // OrganiseSitesRequest At least one of `addTagIds`, `removeTagIds`, `groupId`, `ungroup` and `pinned` must change something.
 type OrganiseSitesRequest struct {
 	// AddTagIds Tags to add to every site; tags a site has are kept.
@@ -2380,6 +2411,9 @@ type CreateGroupJSONRequestBody = CreateGroupRequest
 // UpdateGroupJSONRequestBody defines body for UpdateGroup for application/json ContentType.
 type UpdateGroupJSONRequestBody = UpdateGroupRequest
 
+// SetNotificationSettingsJSONRequestBody defines body for SetNotificationSettings for application/json ContentType.
+type SetNotificationSettingsJSONRequestBody = NotificationSettingsUpdate
+
 // OrganiseSitesJSONRequestBody defines body for OrganiseSites for application/json ContentType.
 type OrganiseSitesJSONRequestBody = OrganiseSitesRequest
 
@@ -2839,6 +2873,31 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v0/me (the `GetMe` operationId).
 	GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetNotificationSettings Read which emails the signed-in owner gets.
+	//
+	// Every event is on until the owner turns it off. Content screening's notice that a file is withheld always goes out and has no setting. Dashboard sessions only: an API token gets `403 forbidden`.
+	//
+	// Corresponds with GET /api/v0/notification-settings (the `GetNotificationSettings` operationId).
+	GetNotificationSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetNotificationSettingsWithBody Choose which emails the signed-in owner gets.
+	//
+	// Changes the settings the body names, leaves the rest as they are and answers with all of them. An email already queued for an event turned off is not sent. Dashboard sessions only: an API token gets `403 forbidden`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /api/v0/notification-settings (the `SetNotificationSettings` operationId).
+	SetNotificationSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetNotificationSettings Choose which emails the signed-in owner gets.
+	//
+	// Changes the settings the body names, leaves the rest as they are and answers with all of them. An email already queued for an event turned off is not sent. Dashboard sessions only: an API token gets `403 forbidden`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /api/v0/notification-settings (the `SetNotificationSettings` operationId).
+	SetNotificationSettings(ctx context.Context, body SetNotificationSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// OrganiseSitesWithBody Change the group, tags or pin of many sites at once.
 	//
@@ -3878,6 +3937,61 @@ func (c *Client) GetHealth(ctx context.Context, reqEditors ...RequestEditorFn) (
 // Corresponds with GET /api/v0/me (the `GetMe` operationId).
 func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetMeRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetNotificationSettings Read which emails the signed-in owner gets.
+//
+// Every event is on until the owner turns it off. Content screening's notice that a file is withheld always goes out and has no setting. Dashboard sessions only: an API token gets `403 forbidden`.
+//
+// Corresponds with GET /api/v0/notification-settings (the `GetNotificationSettings` operationId).
+func (c *Client) GetNotificationSettings(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetNotificationSettingsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetNotificationSettingsWithBody Choose which emails the signed-in owner gets.
+//
+// Changes the settings the body names, leaves the rest as they are and answers with all of them. An email already queued for an event turned off is not sent. Dashboard sessions only: an API token gets `403 forbidden`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /api/v0/notification-settings (the `SetNotificationSettings` operationId).
+func (c *Client) SetNotificationSettingsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetNotificationSettingsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetNotificationSettings Choose which emails the signed-in owner gets.
+//
+// Changes the settings the body names, leaves the rest as they are and answers with all of them. An email already queued for an event turned off is not sent. Dashboard sessions only: an API token gets `403 forbidden`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /api/v0/notification-settings (the `SetNotificationSettings` operationId).
+func (c *Client) SetNotificationSettings(ctx context.Context, body SetNotificationSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetNotificationSettingsRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5807,6 +5921,73 @@ func NewGetMeRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewGetNotificationSettingsRequest constructs an http.Request for the GetNotificationSettings method
+func NewGetNotificationSettingsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/notification-settings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetNotificationSettingsRequest calls the generic SetNotificationSettings builder with application/json body
+func NewSetNotificationSettingsRequest(server string, body SetNotificationSettingsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetNotificationSettingsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSetNotificationSettingsRequestWithBody constructs an http.Request for the SetNotificationSettings method, with any body, and a specified content type
+func NewSetNotificationSettingsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/notification-settings")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -8618,6 +8799,33 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v0/me (the `GetMe` operationId).
 	GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
 
+	// GetNotificationSettingsWithResponse Read which emails the signed-in owner gets.
+	//
+	// Every event is on until the owner turns it off. Content screening's notice that a file is withheld always goes out and has no setting. Dashboard sessions only: an API token gets `403 forbidden`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/notification-settings (the `GetNotificationSettings` operationId).
+	GetNotificationSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetNotificationSettingsResponse, error)
+
+	// SetNotificationSettingsWithBodyWithResponse Choose which emails the signed-in owner gets.
+	//
+	// Changes the settings the body names, leaves the rest as they are and answers with all of them. An email already queued for an event turned off is not sent. Dashboard sessions only: an API token gets `403 forbidden`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v0/notification-settings (the `SetNotificationSettings` operationId).
+	SetNotificationSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetNotificationSettingsResponse, error)
+
+	// SetNotificationSettingsWithResponse Choose which emails the signed-in owner gets.
+	//
+	// Changes the settings the body names, leaves the rest as they are and answers with all of them. An email already queued for an event turned off is not sent. Dashboard sessions only: an API token gets `403 forbidden`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v0/notification-settings (the `SetNotificationSettings` operationId).
+	SetNotificationSettingsWithResponse(ctx context.Context, body SetNotificationSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*SetNotificationSettingsResponse, error)
+
 	// OrganiseSitesWithBodyWithResponse Change the group, tags or pin of many sites at once.
 	//
 	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
@@ -10474,6 +10682,137 @@ func (r GetMeResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetMeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetNotificationSettingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *NotificationSettings
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetNotificationSettingsResponse) GetJSON200() *NotificationSettings {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetNotificationSettingsResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetNotificationSettingsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetNotificationSettingsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetNotificationSettingsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetNotificationSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetNotificationSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetNotificationSettingsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetNotificationSettingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *NotificationSettings
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SetNotificationSettingsResponse) GetJSON200() *NotificationSettings {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SetNotificationSettingsResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r SetNotificationSettingsResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r SetNotificationSettingsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SetNotificationSettingsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SetNotificationSettingsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SetNotificationSettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetNotificationSettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetNotificationSettingsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -14740,6 +15079,51 @@ func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors 
 	return ParseGetMeResponse(rsp)
 }
 
+// GetNotificationSettingsWithResponse Read which emails the signed-in owner gets.
+//
+// Every event is on until the owner turns it off. Content screening's notice that a file is withheld always goes out and has no setting. Dashboard sessions only: an API token gets `403 forbidden`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/notification-settings (the `GetNotificationSettings` operationId).
+func (c *ClientWithResponses) GetNotificationSettingsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetNotificationSettingsResponse, error) {
+	rsp, err := c.GetNotificationSettings(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetNotificationSettingsResponse(rsp)
+}
+
+// SetNotificationSettingsWithBodyWithResponse Choose which emails the signed-in owner gets.
+//
+// Changes the settings the body names, leaves the rest as they are and answers with all of them. An email already queued for an event turned off is not sent. Dashboard sessions only: an API token gets `403 forbidden`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v0/notification-settings (the `SetNotificationSettings` operationId).
+func (c *ClientWithResponses) SetNotificationSettingsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetNotificationSettingsResponse, error) {
+	rsp, err := c.SetNotificationSettingsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetNotificationSettingsResponse(rsp)
+}
+
+// SetNotificationSettingsWithResponse Choose which emails the signed-in owner gets.
+//
+// Changes the settings the body names, leaves the rest as they are and answers with all of them. An email already queued for an event turned off is not sent. Dashboard sessions only: an API token gets `403 forbidden`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v0/notification-settings (the `SetNotificationSettings` operationId).
+func (c *ClientWithResponses) SetNotificationSettingsWithResponse(ctx context.Context, body SetNotificationSettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*SetNotificationSettingsResponse, error) {
+	rsp, err := c.SetNotificationSettings(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetNotificationSettingsResponse(rsp)
+}
+
 // OrganiseSitesWithBodyWithResponse Change the group, tags or pin of many sites at once.
 //
 // Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
@@ -16804,6 +17188,107 @@ func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetNotificationSettingsResponse parses an HTTP response from a GetNotificationSettingsWithResponse call
+func ParseGetNotificationSettingsResponse(rsp *http.Response) (*GetNotificationSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetNotificationSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationSettings
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetNotificationSettingsResponse parses an HTTP response from a SetNotificationSettingsWithResponse call
+func ParseSetNotificationSettingsResponse(rsp *http.Response) (*SetNotificationSettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetNotificationSettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest NotificationSettings
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

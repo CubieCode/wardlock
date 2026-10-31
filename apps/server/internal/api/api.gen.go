@@ -1352,6 +1352,37 @@ type Me struct {
 // MeCredential How this request was authenticated.
 type MeCredential string
 
+// NotificationSettings Which emails an owner gets, each `true` for on.
+type NotificationSettings struct {
+	// DomainFailing An active custom domain has failed its checks for 24 hours, and again if it lapses.
+	DomainFailing bool `json:"domainFailing"`
+
+	// DomainVerified A custom domain passed verification.
+	DomainVerified bool `json:"domainVerified"`
+
+	// LinkUsedUp A use-limited share link has no uses left.
+	LinkUsedUp bool `json:"linkUsedUp"`
+
+	// LinksExpiring Share links expire within 48 hours, at most one email a day.
+	LinksExpiring bool `json:"linksExpiring"`
+
+	// PreviewExpiring A preview expires within 2 days.
+	PreviewExpiring bool `json:"previewExpiring"`
+
+	// TokenExpiring An API token expires within 7 days.
+	TokenExpiring bool `json:"tokenExpiring"`
+}
+
+// NotificationSettingsUpdate The settings to change, as in `NotificationSettings`; one left out keeps its value.
+type NotificationSettingsUpdate struct {
+	DomainFailing   *bool `json:"domainFailing,omitempty"`
+	DomainVerified  *bool `json:"domainVerified,omitempty"`
+	LinkUsedUp      *bool `json:"linkUsedUp,omitempty"`
+	LinksExpiring   *bool `json:"linksExpiring,omitempty"`
+	PreviewExpiring *bool `json:"previewExpiring,omitempty"`
+	TokenExpiring   *bool `json:"tokenExpiring,omitempty"`
+}
+
 // OrganiseSitesRequest At least one of `addTagIds`, `removeTagIds`, `groupId`, `ungroup` and `pinned` must change something.
 type OrganiseSitesRequest struct {
 	// AddTagIds Tags to add to every site; tags a site has are kept.
@@ -2381,6 +2412,9 @@ type CreateGroupJSONRequestBody = CreateGroupRequest
 // UpdateGroupJSONRequestBody defines body for UpdateGroup for application/json ContentType.
 type UpdateGroupJSONRequestBody = UpdateGroupRequest
 
+// SetNotificationSettingsJSONRequestBody defines body for SetNotificationSettings for application/json ContentType.
+type SetNotificationSettingsJSONRequestBody = NotificationSettingsUpdate
+
 // OrganiseSitesJSONRequestBody defines body for OrganiseSites for application/json ContentType.
 type OrganiseSitesJSONRequestBody = OrganiseSitesRequest
 
@@ -2589,6 +2623,12 @@ type ServerInterface interface {
 	// GetMe Describe the signed-in owner and the credential used.
 	// (GET /api/v0/me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// GetNotificationSettings Read which emails the signed-in owner gets.
+	// (GET /api/v0/notification-settings)
+	GetNotificationSettings(w http.ResponseWriter, r *http.Request)
+	// SetNotificationSettings Choose which emails the signed-in owner gets.
+	// (PATCH /api/v0/notification-settings)
+	SetNotificationSettings(w http.ResponseWriter, r *http.Request)
 	// OrganiseSites Change the group, tags or pin of many sites at once.
 	// (POST /api/v0/organise)
 	OrganiseSites(w http.ResponseWriter, r *http.Request)
@@ -3100,6 +3140,34 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetNotificationSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetNotificationSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetNotificationSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetNotificationSettings operation middleware
+func (siw *ServerInterfaceWrapper) SetNotificationSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetNotificationSettings(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4998,6 +5066,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/owners", wrapper.InviteOwner)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/sessions", wrapper.ListSessions)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v0/sessions/{sessionId}", wrapper.RevokeSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/notification-settings", wrapper.GetNotificationSettings)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v0/notification-settings", wrapper.SetNotificationSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v0/passkeys", wrapper.ListPasskeys)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/passkeys", wrapper.CreatePasskey)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v0/passkeys/registration", wrapper.StartPasskeyRegistration)
@@ -6494,6 +6564,153 @@ type GetMedefaultJSONResponse struct {
 }
 
 func (response GetMedefaultJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetNotificationSettingsRequestObject struct {
+}
+
+type GetNotificationSettingsResponseObject interface {
+	VisitGetNotificationSettingsResponse(w http.ResponseWriter) error
+}
+
+type GetNotificationSettings200JSONResponse NotificationSettings
+
+func (response GetNotificationSettings200JSONResponse) VisitGetNotificationSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetNotificationSettings401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetNotificationSettings401JSONResponse) VisitGetNotificationSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetNotificationSettings403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response GetNotificationSettings403JSONResponse) VisitGetNotificationSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetNotificationSettingsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetNotificationSettingsdefaultJSONResponse) VisitGetNotificationSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetNotificationSettingsRequestObject struct {
+	Body *SetNotificationSettingsJSONRequestBody
+}
+
+type SetNotificationSettingsResponseObject interface {
+	VisitSetNotificationSettingsResponse(w http.ResponseWriter) error
+}
+
+type SetNotificationSettings200JSONResponse NotificationSettings
+
+func (response SetNotificationSettings200JSONResponse) VisitSetNotificationSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetNotificationSettings400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response SetNotificationSettings400JSONResponse) VisitSetNotificationSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetNotificationSettings401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetNotificationSettings401JSONResponse) VisitSetNotificationSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetNotificationSettings403JSONResponse struct{ ForbiddenJSONResponse }
+
+func (response SetNotificationSettings403JSONResponse) VisitSetNotificationSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetNotificationSettingsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SetNotificationSettingsdefaultJSONResponse) VisitSetNotificationSettingsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -11400,6 +11617,12 @@ type StrictServerInterface interface {
 	// GetMe Describe the signed-in owner and the credential used.
 	// (GET /api/v0/me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// GetNotificationSettings Read which emails the signed-in owner gets.
+	// (GET /api/v0/notification-settings)
+	GetNotificationSettings(ctx context.Context, request GetNotificationSettingsRequestObject) (GetNotificationSettingsResponseObject, error)
+	// SetNotificationSettings Choose which emails the signed-in owner gets.
+	// (PATCH /api/v0/notification-settings)
+	SetNotificationSettings(ctx context.Context, request SetNotificationSettingsRequestObject) (SetNotificationSettingsResponseObject, error)
 	// OrganiseSites Change the group, tags or pin of many sites at once.
 	// (POST /api/v0/organise)
 	OrganiseSites(ctx context.Context, request OrganiseSitesRequestObject) (OrganiseSitesResponseObject, error)
@@ -12100,6 +12323,61 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetNotificationSettings operation middleware
+func (sh *strictHandler) GetNotificationSettings(w http.ResponseWriter, r *http.Request) {
+	var request GetNotificationSettingsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetNotificationSettings(ctx, request.(GetNotificationSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetNotificationSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetNotificationSettingsResponseObject); ok {
+		if err := validResponse.VisitGetNotificationSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetNotificationSettings operation middleware
+func (sh *strictHandler) SetNotificationSettings(w http.ResponseWriter, r *http.Request) {
+	var request SetNotificationSettingsRequestObject
+
+	var body SetNotificationSettingsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetNotificationSettings(ctx, request.(SetNotificationSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetNotificationSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetNotificationSettingsResponseObject); ok {
+		if err := validResponse.VisitSetNotificationSettingsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

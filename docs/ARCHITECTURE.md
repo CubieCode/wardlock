@@ -95,6 +95,7 @@ Every v1 item in the foundation, core, access, dashboard and operations areas is
 | V5.4  | The traffic rollup (`traffic_*` tables, `store.Traffic`, `accesslog.Classify` and `Backfill`) and `getAnalytics` (`access.Service.Analytics`)                                                                                                                                                                                                                                                            | Access log pipeline, Data model, SPEC "Analytics"                           |
 | V5.5  | `listSiteSummaries` and `getSiteCounts` (`sites.Service.SiteSummaries` and `SiteCounts` over `store.Sites.Summaries`) and `listSignInProviders` (`access.Service.SignInProviders`)                                                                                                                                                                                                                       | SPEC "Site summaries", SPEC "OAuth and OIDC"                                |
 | V5.11 | `listExpiringLinks` (`sites.Service.ExpiringLinks` over `store.Sites.ExpiringLinks`, the same rule as `expiringLinks`)                                                                                                                                                                                                                                                                                   | SPEC "Site summaries"                                                       |
+| I6.2  | Owner notifications: `internal/notify`, `store.Notifications`, `notification_outbox` and `notification_opt_outs`, `share_links.used_up_at`, the Notifications page                                                                                                                                                                                                                                       | SPEC "Notifications"                                                        |
 
 O4.4, O4.6 and O4.7 changed documents only (the launch checklist, the alpha documentation refresh and the CLA text).
 
@@ -356,6 +357,8 @@ erDiagram
   owners ||--o{ owner_blobs : "owner_id"
   owners ||--o{ owner_blob_refs : "owner_id"
   owners ||--o{ owner_deploy_log : "owner_id"
+  owners ||--o{ notification_opt_outs : "owner_id"
+  owners ||--o{ notification_outbox : "owner_id"
   api_tokens |o--o| cli_login_requests : "api_token_id"
   owners ||--o{ sites : "owner_id"
   owners ||--o{ site_groups : "owner_id"
@@ -624,6 +627,24 @@ erDiagram
     INTEGER last_accessed_at
     INTEGER rotated_at
     INTEGER revoked_at
+    INTEGER used_up_at
+  }
+  notification_opt_outs {
+    TEXT owner_id PK, FK
+    TEXT event PK
+  }
+  notification_outbox {
+    TEXT id PK
+    TEXT channel
+    TEXT event_key
+    TEXT owner_id FK
+    TEXT event
+    TEXT payload
+    TEXT status
+    INTEGER attempts
+    INTEGER created_at
+    INTEGER next_attempt_at
+    INTEGER finished_at
   }
   site_sessions {
     TEXT id PK
@@ -766,6 +787,35 @@ flowchart LR
 - **Quarantine.** `serve` calls `Quarantine.Load` before listening and fails to start without it; `Quarantine.Watch` reloads the full list every 5 seconds, which is how `wardlockd admin moderation` decisions from another process reach a running server. Each load takes a generation first, and hashes the worker adds after a load began survive that load's replace, so a reload never drops a fresh quarantine.
 - **Edge.** `siteSource` marks a site `Screened` when screening is on and its owner is not exempt, and fills each `ServedFile`'s `Pending` (no verdict yet) and `Decoded` from `DeployScreening`. On a screened site the edge sends pending files `no-cache` instead of immutable, negotiates a `.gz` sibling only when its `Decoded` equals its base's hash, and never a `.br` sibling.
 - **Wiring.** `cmd/wardlockd/moderation.go` builds the service (with the OpenAI `Moderator` only when `WARDLOCK_MODERATION=openai`), always runs the quarantine watch so a file once withheld stays withheld with screening off, passes the `Quarantine` to the edge as `Config.Withheld`, subscribes `Service.Changed` to the deploys `Notifier`, gives the edge a second notifier for screening invalidations (`invalidators`), and adds `wardlock_moderation_backlog`, `wardlock_moderation_quarantined`, `wardlock_moderation_paused` and `wardlock_moderation_provider_errors_total` to `/metrics`. Garbage collection skips blobs whose row is `quarantined` without `discarded_at`.
+
+</details>
+
+## Owner notifications (I6.2)
+
+`internal/notify` emails owners. A worker in `wardlockd serve` reads what happened from the store and writes each event to a durable outbox, `notification_outbox`, with a key that can only be queued once per channel; it then sends what is due through the `Mailer`, retrying with backoff. Reading the store rather than being told means no other package changes to report an event, and a restart loses none. The withheld-file email is the exception: `moderation` calls `Service.Withheld`, through its own `OwnerNotices` interface, at the verdict.
+
+```mermaid
+flowchart LR
+  ST[(domains, share_links, api_tokens, previews)] -->|Detect, every 5 min| OB[(notification_outbox)]
+  MOD[moderation verdict] -->|Withheld, wakes the worker| OB
+  OB -->|Deliver, every minute| GATE{suspended, off or capped?}
+  GATE -->|no| MAIL[Mailer]
+  GATE -->|capped| HELD[held rows]
+  HELD -->|summarise once under the cap| OB
+```
+
+<details>
+<summary>Implementation detail</summary>
+
+- **Keys.** An outbox row is unique by `(channel, event_key)` and `Enqueue` is `ON CONFLICT DO NOTHING`, so `Detect` may read the same event as often as it likes. A key names the thing and the moment: `domain_failing:<id>:<failing_since>`, `token_expiring:<id>:<expires_at>`, `preview_expiring:<site>:<name>:<expires_at>`, `links_expiring:<owner>:<UTC date>`, `file_withheld:<sha256>:<verdict ms>:<site>`. A new failure, a later expiry or a new verdict is therefore a new event.
+- **Scans.** Each `store.Notifications` scan is instance-wide and skips suspended owners, taken-down sites and owners with an opt-out row for the event. One-off events are read `recent` (6 hours) back: they happen in the process running the worker, so the window only covers a slow pass. A lapse is read 7 days back. `retention` (30 days) keeps finished rows longer than any window, which is what stops a pruned key firing again. `share_links.used_up_at` is set in the `UseShareLink` statement itself, so `internal/access` is unchanged and links used up before the migration stay NULL and send nothing.
+- **Delivery.** `deliver` reads the recipient at send time, so the queue holds no address, and checks suspension, then (unless the event is mandatory) the opt-out and the cap. `Claim` moves the row to `sending` before `Mailer.Send`. A mail error reschedules it with `backoff`, and ends the batch so an outage costs one timeout a pass, not one per row; after `giveUpAfter` (72 hours), or for `ErrInvalidMessage`, it is `failed`. Bookkeeping after a send uses `context.WithoutCancel`, so a shutdown cannot strand a row.
+- **At most once.** `Recover` runs before the first pass and fails every row still `sending`: a crash between the SMTP answer and `Settle` leaves the outcome unknown, and the item asks for at most once.
+- **Cap.** `capped` counts `sent` rows in the last hour. A capped row becomes `held`; `summarise` waits until the count is under the cap, then `Summarise` queues one summary and marks the rows `summarised` in one transaction, using a key built from the first held ID. `file_withheld` and `summary` are mandatory: neither the opt-out nor the cap applies, but they are counted.
+- **Payload.** JSON written when the event is noticed: a `mail.Notice` whose `URL` is a dashboard path (the origin and settings link are added at send time, so a changed dashboard host applies to queued rows) or a `mail.Withheld`, rendered by the same template as before. `mail.Notice` is built only from names, labels and public IDs: no code path that builds one has a token or link URL to hand.
+- **Webhooks (I6.3).** `channel` and the store's channel arguments are there so webhooks can use the same table: a channel of their own, one row per webhook and event, `Due`, `Claim`, `Reschedule` and `Settle` as they are. Webhooks want at-least-once, so that channel would requeue rows `Recover` finds rather than failing them.
+- **Settings.** Opt-outs are rows, so every event, including one added later, is on until turned off. `setNotificationSettings` is a `PATCH`: a boolean left out of the body cannot be told from `false` otherwise, and the dashboard sends one setting at a time, so two tabs do not overwrite each other. `requireTokenScopes` gives tokens their `403`.
+- **Wiring.** `cmd/wardlockd/serve.go` builds the service, passes it to moderation and the API, and starts it with `startNotifications`. Only `serve` delivers: `Recover` assumes one process.
 
 </details>
 

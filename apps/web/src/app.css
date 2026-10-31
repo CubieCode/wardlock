@@ -66,6 +66,12 @@
   border-top: 1px solid var(--color-border);
 }
 
+.notification-groups {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 40rem;
+}
+
 .passkey-list {
   display: grid;
   margin: 0;

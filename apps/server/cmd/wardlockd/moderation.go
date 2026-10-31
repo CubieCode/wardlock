@@ -26,13 +26,14 @@ import (
 // with a Moderator when the operator turned it on, without one (operator
 // decisions only) otherwise. screened, when not nil, is told each site
 // whose files' screening state changed, for the edge.
-func newModeration(cfg platform.Config, log *slog.Logger, db *store.DB, blobs moderation.BlobOpener, mailer mail.Mailer, q *moderation.Quarantine, screened deploys.Notifier) *moderation.Service {
+func newModeration(cfg platform.Config, log *slog.Logger, db *store.DB, blobs moderation.BlobOpener, mailer mail.Mailer, notices moderation.OwnerNotices, q *moderation.Quarantine, screened deploys.Notifier) *moderation.Service {
 	c := moderation.Config{
 		Store:         db.Moderation(),
 		Blobs:         blobs,
 		Policy:        moderation.Policy{Quarantine: cfg.Moderation.Quarantine, Flag: cfg.Moderation.Flag},
 		Quarantine:    q,
 		Mailer:        mailer,
+		Notices:       notices,
 		AbuseEmail:    cfg.AbuseEmail,
 		DashboardHost: cfg.DashboardHost,
 		Log:           log,

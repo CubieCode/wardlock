@@ -106,6 +106,8 @@ linters:
               desc: platform is the base layer; it imports no other internal package
             - pkg: wardlock.nz/server/internal/moderation
               desc: platform is the base layer; it imports no other internal package
+            - pkg: wardlock.nz/server/internal/notify
+              desc: platform is the base layer; it imports no other internal package
             - pkg: wardlock.nz/server/internal/country
               desc: platform is the base layer; it imports no other internal package
             - pkg: wardlock.nz/server/internal/tls
@@ -135,6 +137,8 @@ linters:
               desc: store serves domain packages through repository interfaces; it never imports them
             - pkg: wardlock.nz/server/internal/moderation
               desc: store serves domain packages through repository interfaces; it never imports them
+            - pkg: wardlock.nz/server/internal/notify
+              desc: store serves domain packages through repository interfaces; it never imports them
             - pkg: wardlock.nz/server/internal/country
               desc: store serves domain packages through repository interfaces; it never imports them
             - pkg: wardlock.nz/server/internal/tls
@@ -161,6 +165,8 @@ linters:
             - pkg: wardlock.nz/server/internal/mail
               desc: the dashboard only serves embedded files; it reaches the server through the API
             - pkg: wardlock.nz/server/internal/moderation
+              desc: the dashboard only serves embedded files; it reaches the server through the API
+            - pkg: wardlock.nz/server/internal/notify
               desc: the dashboard only serves embedded files; it reaches the server through the API
             - pkg: wardlock.nz/server/internal/country
               desc: the dashboard only serves embedded files; it reaches the server through the API
@@ -191,6 +197,11 @@ linters:
               desc: moderation is a domain package; cmd/wardlockd wires it, the API never calls it
             - pkg: wardlock.nz/server/internal/edge
               desc: moderation tells the edge what to withhold through a value cmd/wardlockd passes it
+        notify:
+          files: ['**/apps/server/internal/notify/**']
+          deny:
+            - pkg: wardlock.nz/server/internal/edge
+              desc: notify works from the store and never sees a request
         owners:
           files: ['**/apps/server/internal/owners/**']
           deny:
@@ -212,6 +223,7 @@ linters:
             - '**/apps/server/internal/owners/**'
             - '**/apps/server/internal/edge/**'
             - '**/apps/server/internal/moderation/**'
+            - '**/apps/server/internal/notify/**'
             - '**/apps/server/internal/country/**'
           deny:
             - pkg: database/sql

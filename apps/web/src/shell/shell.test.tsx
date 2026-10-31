@@ -178,6 +178,7 @@ describe('rail', () => {
       'Groups and tags',
       'Passkeys',
       'API tokens',
+      'Notifications',
     ]);
     expect(
       within(rail)
@@ -492,7 +493,7 @@ describe('jump to', () => {
     expect(selected()).toMatch(/^drafts/);
     fireEvent.keyDown(input, { key: 'ArrowUp' });
     fireEvent.keyDown(input, { key: 'ArrowUp' });
-    expect(selected()).toBe('API tokens');
+    expect(selected()).toBe('Notifications');
 
     act(() => {
       screen
@@ -664,6 +665,7 @@ describe('below 48rem', () => {
         'Groups and tags',
         'Passkeys',
         'API tokens',
+        'Notifications',
         '/extra-one',
         '/extra-two',
       ]);
@@ -689,6 +691,7 @@ describe('below 48rem', () => {
       ['Groups and tags', '/organise'],
       ['Passkeys', '/passkeys'],
       ['API tokens', '/tokens'],
+      ['Notifications', '/notifications'],
     ]);
     // Theme and Sign out stay in the sheet.
     expect(within(sheet).getByRole('radio', { name: 'System' })).toBeTruthy();

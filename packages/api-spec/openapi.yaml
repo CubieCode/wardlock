@@ -514,6 +514,70 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v0/notification-settings:
+    get:
+      operationId: getNotificationSettings
+      summary: Read which emails the signed-in owner gets.
+      description: >-
+        Every event is on until the owner turns it off. Content screening's
+        notice that a file is withheld always goes out and has no setting.
+        Dashboard sessions only: an API token gets `403 forbidden`.
+      tags: [owners]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The owner's settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSettings'
+              example:
+                domainVerified: true
+                domainFailing: true
+                linkUsedUp: true
+                linksExpiring: false
+                tokenExpiring: true
+                previewExpiring: true
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      operationId: setNotificationSettings
+      summary: Choose which emails the signed-in owner gets.
+      description: >-
+        Changes the settings the body names, leaves the rest as they are and
+        answers with all of them. An email already queued for an event turned
+        off is not sent. Dashboard sessions only: an API token gets `403
+        forbidden`.
+      tags: [owners]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationSettingsUpdate'
+      responses:
+        '200':
+          description: The stored settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSettings'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
   /api/v0/passkeys:
     get:
       operationId: listPasskeys
@@ -3949,6 +4013,60 @@ components:
         lastUsedAt:
           description: The last sign-in with this passkey; absent if never used.
           $ref: '#/components/schemas/Timestamp'
+    NotificationSettings:
+      type: object
+      description: Which emails an owner gets, each `true` for on.
+      additionalProperties: false
+      required:
+        [
+          domainVerified,
+          domainFailing,
+          linkUsedUp,
+          linksExpiring,
+          tokenExpiring,
+          previewExpiring,
+        ]
+      properties:
+        domainVerified:
+          type: boolean
+          description: A custom domain passed verification.
+        domainFailing:
+          type: boolean
+          description: >-
+            An active custom domain has failed its checks for 24 hours, and
+            again if it lapses.
+        linkUsedUp:
+          type: boolean
+          description: A use-limited share link has no uses left.
+        linksExpiring:
+          type: boolean
+          description: >-
+            Share links expire within 48 hours, at most one email a day.
+        tokenExpiring:
+          type: boolean
+          description: An API token expires within 7 days.
+        previewExpiring:
+          type: boolean
+          description: A preview expires within 2 days.
+    NotificationSettingsUpdate:
+      type: object
+      description: >-
+        The settings to change, as in `NotificationSettings`; one left out
+        keeps its value.
+      additionalProperties: false
+      properties:
+        domainVerified:
+          type: boolean
+        domainFailing:
+          type: boolean
+        linkUsedUp:
+          type: boolean
+        linksExpiring:
+          type: boolean
+        tokenExpiring:
+          type: boolean
+        previewExpiring:
+          type: boolean
     PasskeyList:
       type: object
       additionalProperties: false
