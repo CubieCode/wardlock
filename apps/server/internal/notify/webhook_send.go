@@ -230,8 +230,8 @@ func (s *Service) disable(ctx context.Context, ownerID string, send store.Webhoo
 		Subject: "A webhook has been turned off",
 		Lead:    "Your webhook to " + host + " has failed for 3 days, so Wardlock has turned it off and dropped what was queued for it.",
 		Note:    "Once the endpoint works again, turn the webhook back on to receive new events.",
-		Action:  "Open the dashboard",
-		URL:     overviewPath,
+		Action:  "Review your webhooks",
+		URL:     webhooksPath,
 	}
 	e, err := s.entry(key(webhookDisabled, send.WebhookID, at), ownerID, webhookDisabled, emailPayload{Notice: &notice})
 	if err != nil {

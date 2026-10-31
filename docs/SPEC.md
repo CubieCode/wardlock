@@ -824,11 +824,11 @@ Wardlock emails an owner when something needs them, instead of waiting for them 
 
 A webhook sends signed JSON to an HTTPS endpoint of the owner's when something happens, for chat notifications and automation. An owner registers up to 10, each with a URL, a description, the events it wants (or all) and the sites it wants them from (or all). The **signing secret** is shown once, when the webhook is created.
 
-Every operation (`listWebhooks`, `createWebhook`, `getWebhook`, `updateWebhook`, `deleteWebhook`, `testWebhook`, `listWebhookDeliveries` and `redeliverWebhookDelivery`) takes a dashboard session or a token with the `manage` scope. The CLI has `wardlock webhook add`, `list`, `remove`, `test` and `deliveries` ([CLI](#cli-c15-c17-c19-c114)).
+Every operation (`listWebhooks`, `createWebhook`, `getWebhook`, `updateWebhook`, `deleteWebhook`, `testWebhook`, `listWebhookDeliveries` and `redeliverWebhookDelivery`) takes a dashboard session or a token with the `manage` scope. The CLI has `wardlock webhook add`, `list`, `remove`, `test` and `deliveries` ([CLI](#cli-c15-c17-c19-c114)). The dashboard's Webhooks page (`/webhooks`) does all of this too.
 
 - **Delivery.** Each event is a `POST` of the JSON below with `Wardlock-Event` and `Wardlock-Signature` headers. Any 2xx answer within 10 seconds is success.
 - **At least once.** A failed delivery is retried with backoff for 24 hours, and an event can arrive twice, so receivers deduplicate on its `id`.
-- **Disabling.** A webhook failing for 3 days in a row is turned off and its owner emailed, whatever their notification settings. It stays off until turned back on with `updateWebhook`.
+- **Disabling.** A webhook failing for 3 days in a row is turned off and its owner emailed, whatever their notification settings. It stays off until turned back on, on the dashboard's Webhooks page or with `updateWebhook`.
 - **History.** The last 50 deliveries of each webhook are kept, with status, duration and response code, and any can be redelivered.
 
 <details>

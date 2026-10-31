@@ -13,6 +13,8 @@ import { SitePage } from '../sites/site-page.js';
 import { siteTabs } from '../sites/site-page-tabs.js';
 import { SitesPage } from '../sites/sites-page.js';
 import { ApiTokensPage } from '../tokens/tokens-page.js';
+import { WebhookPage } from '../webhooks/webhook-page.js';
+import { WebhooksPage } from '../webhooks/webhooks-page.js';
 import {
   notificationsIcon,
   organiseIcon,
@@ -20,6 +22,7 @@ import {
   passkeysIcon,
   sitesIcon,
   tokensIcon,
+  webhooksIcon,
 } from './icons.js';
 
 export interface RouteContext {
@@ -112,5 +115,20 @@ export const shellRoutes: ShellRoute[] = [
     path: '/notifications',
     rail: { label: 'Notifications', icon: notificationsIcon },
     render: ({ api }) => <NotificationsPage api={api} />,
+  },
+  {
+    path: '/webhooks',
+    rail: { label: 'Webhooks', icon: webhooksIcon },
+    render: ({ api }) => <WebhooksPage api={api} />,
+  },
+  {
+    path: '/webhooks/:webhookId',
+    render: ({ api, params }) => (
+      <WebhookPage
+        key={params.webhookId}
+        api={api}
+        webhookId={params.webhookId!}
+      />
+    ),
   },
 ];

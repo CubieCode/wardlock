@@ -15,6 +15,7 @@ export const railPlaces = [
   'Passkeys',
   'API tokens',
   'Notifications',
+  'Webhooks',
 ];
 /** The pages Jump to lists: the rail's, with the sites map after Sites. */
 export const jumpPages = [
@@ -26,6 +27,7 @@ export const jumpPages = [
   'Passkeys',
   'API tokens',
   'Notifications',
+  'Webhooks',
 ];
 /** The places in the bottom bar below 48rem. */
 export const barPlaces = ['Overview', 'Sites', 'Analytics'];
@@ -35,6 +37,7 @@ export const sheetPlaces = [
   'Passkeys',
   'API tokens',
   'Notifications',
+  'Webhooks',
 ];
 
 export const isMobile = (info: TestInfo) => info.project.name === 'mobile';

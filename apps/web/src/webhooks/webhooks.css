@@ -1,0 +1,111 @@
+/* SPDX-FileCopyrightText: 2026 CubieCode */
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* Webhooks. Visual language comes from @wardlock/ui. */
+
+.webhook-intro {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.webhook-error,
+.webhook-off {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.webhook-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.webhook-choices {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-3);
+}
+
+/* An owner can have hundreds of sites. */
+.webhook-sites {
+  max-height: 16rem;
+  overflow-y: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+
+.webhook-endpoint {
+  display: grid;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+  font-weight: var(--font-weight-medium);
+}
+
+.webhook-url,
+.webhook-details {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: normal;
+  overflow-wrap: anywhere;
+}
+
+.webhook-url {
+  font-family: var(--font-mono);
+}
+
+.webhook-back {
+  margin-bottom: calc(-1 * var(--space-4));
+}
+
+.webhook-back a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target);
+}
+
+.webhook-status {
+  margin-top: calc(-1 * var(--space-2));
+}
+
+.webhook-facts {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.webhook-facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.webhook-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.webhook-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.webhook-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+@media (min-width: 48rem) {
+  .webhook-intro {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .webhook-facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .webhook-facts > :first-child {
+    grid-column: 1 / -1;
+  }
+}

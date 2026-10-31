@@ -179,6 +179,7 @@ describe('rail', () => {
       'Passkeys',
       'API tokens',
       'Notifications',
+      'Webhooks',
     ]);
     expect(
       within(rail)
@@ -493,7 +494,7 @@ describe('jump to', () => {
     expect(selected()).toMatch(/^drafts/);
     fireEvent.keyDown(input, { key: 'ArrowUp' });
     fireEvent.keyDown(input, { key: 'ArrowUp' });
-    expect(selected()).toBe('Notifications');
+    expect(selected()).toBe('Webhooks');
 
     act(() => {
       screen
@@ -666,6 +667,7 @@ describe('below 48rem', () => {
         'Passkeys',
         'API tokens',
         'Notifications',
+        'Webhooks',
         '/extra-one',
         '/extra-two',
       ]);
@@ -692,6 +694,7 @@ describe('below 48rem', () => {
       ['Passkeys', '/passkeys'],
       ['API tokens', '/tokens'],
       ['Notifications', '/notifications'],
+      ['Webhooks', '/webhooks'],
     ]);
     // Theme and Sign out stay in the sheet.
     expect(within(sheet).getByRole('radio', { name: 'System' })).toBeTruthy();
