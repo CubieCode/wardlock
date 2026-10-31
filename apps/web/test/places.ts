@@ -13,6 +13,7 @@ export const railPlaces = [
   'Analytics',
   'Groups and tags',
   'Passkeys',
+  'API tokens',
 ];
 /** The pages Jump to lists: the rail's, with the sites map after Sites. */
 export const jumpPages = [
@@ -22,11 +23,12 @@ export const jumpPages = [
   'Analytics',
   'Groups and tags',
   'Passkeys',
+  'API tokens',
 ];
 /** The places in the bottom bar below 48rem. */
 export const barPlaces = ['Overview', 'Sites', 'Analytics'];
 /** The places in the Account sheet below 48rem. */
-export const sheetPlaces = ['Groups and tags', 'Passkeys'];
+export const sheetPlaces = ['Groups and tags', 'Passkeys', 'API tokens'];
 
 export const isMobile = (info: TestInfo) => info.project.name === 'mobile';
 

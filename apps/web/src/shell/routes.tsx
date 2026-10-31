@@ -11,11 +11,13 @@ import { OverviewPage } from '../overview/overview.js';
 import { SitePage } from '../sites/site-page.js';
 import { siteTabs } from '../sites/site-page-tabs.js';
 import { SitesPage } from '../sites/sites-page.js';
+import { ApiTokensPage } from '../tokens/tokens-page.js';
 import {
   organiseIcon,
   overviewIcon,
   passkeysIcon,
   sitesIcon,
+  tokensIcon,
 } from './icons.js';
 
 export interface RouteContext {
@@ -98,5 +100,10 @@ export const shellRoutes: ShellRoute[] = [
     path: '/passkeys',
     rail: { label: 'Passkeys', icon: passkeysIcon },
     render: ({ api }) => <PasskeysPage api={api} />,
+  },
+  {
+    path: '/tokens',
+    rail: { label: 'API tokens', icon: tokensIcon },
+    render: ({ api }) => <ApiTokensPage api={api} />,
   },
 ];

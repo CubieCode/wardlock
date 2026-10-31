@@ -38,7 +38,11 @@ export function normaliseUserCode(raw: string) {
   return `${letters.slice(0, 4)}-${letters.slice(4)}`;
 }
 
-const scopeChoices: { scope: Scope; label: string; description: string }[] = [
+export const scopeChoices: {
+  scope: Scope;
+  label: string;
+  description: string;
+}[] = [
   {
     scope: 'deploy',
     label: 'Deploy',

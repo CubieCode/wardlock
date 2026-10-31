@@ -27,7 +27,7 @@ jobs:
           site: docs
 ```
 
-The token is a Wardlock API token with only the `deploy` scope, stored as a repository secret; see [Deploying from CI](../../docs/DEPLOYMENT.md#deploying-from-ci) for creating one. The action is MIT licensed ([LICENSE](LICENSE)), like the CLI.
+The token is a Wardlock API token with only the `deploy` scope, stored as a repository secret. Create one on the dashboard's API tokens page or with `wardlock token create`; see [Deploying from CI](../../docs/DEPLOYMENT.md#deploying-from-ci). The action is MIT licensed ([LICENSE](LICENSE)), like the CLI.
 
 ## Inputs and outputs
 
