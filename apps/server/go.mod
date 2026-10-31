@@ -14,7 +14,7 @@ require (
 	github.com/libdns/libdns v1.1.1
 	github.com/miekg/dns v1.1.73
 	github.com/minio/minio-go/v7 v7.4.1
-	github.com/oapi-codegen/runtime v1.7.0
+	github.com/oapi-codegen/runtime v1.8.0
 	github.com/oschwald/maxminddb-golang/v2 v2.8.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.58.0
