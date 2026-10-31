@@ -38,7 +38,7 @@ func (w *pathWorld) preview(ownerID, site, name, path string, days *int, files m
 	if err != nil {
 		w.t.Fatalf("create preview %s of %s: %v", name, site, err)
 	}
-	if _, d, err = w.svc.Activate(w.t.Context(), ownerID, site, d.ID); err != nil {
+	if _, d, err = w.svc.Activate(w.t.Context(), store.ActorFor(ownerID), site, d.ID); err != nil {
 		w.t.Fatalf("activate preview %s of %s: %v", name, site, err)
 	}
 	return d
@@ -78,13 +78,13 @@ func TestPreviewCreateRefusals(t *testing.T) {
 	} {
 		m := w.manifest(map[string]string{"index.html": "x"})
 		m.Preview, m.PreviewDays = tc.preview, tc.days
-		_, _, err := w.svc.Create(t.Context(), w.owner.ID, tc.site, m)
+		_, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), tc.site, m)
 		wantTarget(t, tc.name, err, tc.err, tc.target)
 	}
 	// The longest label that fits is accepted: 50 + 2 + 11.
 	m := w.manifest(map[string]string{"index.html": "x"})
 	m.Preview = "eleven-char"
-	if _, _, err := w.svc.Create(t.Context(), w.owner.ID, long, m); err != nil {
+	if _, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), long, m); err != nil {
 		t.Errorf("63-character label refused: %v", err)
 	}
 }
@@ -98,7 +98,7 @@ func TestPreviewDeployLeavesTheSiteAlone(t *testing.T) {
 	w.site(w.owner.ID, "docs")
 	live := w.live("docs", "", map[string]string{"index.html": "<h1>Live</h1>"})
 	clear(notified)
-	site, err := w.db.Sites().GetByOwnerName(t.Context(), w.owner.ID, "docs")
+	site, err := w.db.Sites().GetByOwnerName(t.Context(), store.ActorFor(w.owner.ID), "docs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,29 +112,29 @@ func TestPreviewDeployLeavesTheSiteAlone(t *testing.T) {
 	if s := deploys.StatusOf(site, first); s != deploys.StatusPreview {
 		t.Errorf("status = %s, want preview", s)
 	}
-	_, p, err := w.svc.Preview(t.Context(), w.owner.ID, "docs", "pr-1")
+	_, p, err := w.svc.Preview(t.Context(), store.ActorFor(w.owner.ID), "docs", "pr-1")
 	if err != nil || p.DeployID != first.ID || p.Days != store.DefaultPreviewDays {
 		t.Fatalf("Preview() = %+v, %v", p, err)
 	}
 	// Deploying to the same name replaces it, like a branch.
 	second := w.preview(w.owner.ID, "docs", "pr-1", "", nil, map[string]string{"index.html": "<h1>Two</h1>"})
-	if _, p, err = w.svc.Preview(t.Context(), w.owner.ID, "docs", "pr-1"); err != nil || p.DeployID != second.ID {
+	if _, p, err = w.svc.Preview(t.Context(), store.ActorFor(w.owner.ID), "docs", "pr-1"); err != nil || p.DeployID != second.ID {
 		t.Fatalf("Preview() after replacing = %+v, %v", p, err)
 	}
 	// Never promoted, neither is a rollback target.
 	for _, id := range []string{first.ID, second.ID} {
-		if _, _, err := w.svc.Rollback(t.Context(), w.owner.ID, "docs", id); !errors.Is(err, deploys.ErrNotActivated) {
+		if _, _, err := w.svc.Rollback(t.Context(), store.ActorFor(w.owner.ID), "docs", id); !errors.Is(err, deploys.ErrNotActivated) {
 			t.Errorf("Rollback(%s) = %v, want ErrNotActivated", id, err)
 		}
 	}
-	if _, _, err := w.svc.Rollback(t.Context(), w.owner.ID, "docs", ""); !errors.Is(err, deploys.ErrNoPreviousDeploy) {
+	if _, _, err := w.svc.Rollback(t.Context(), store.ActorFor(w.owner.ID), "docs", ""); !errors.Is(err, deploys.ErrNoPreviousDeploy) {
 		t.Errorf("Rollback() = %v, want ErrNoPreviousDeploy", err)
 	}
 	// Deleting stops it at once.
-	if err := w.svc.DeletePreview(t.Context(), w.owner.ID, "docs", "pr-1"); err != nil {
+	if err := w.svc.DeletePreview(t.Context(), store.ActorFor(w.owner.ID), "docs", "pr-1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := w.svc.Preview(t.Context(), w.owner.ID, "docs", "pr-1"); !errors.Is(err, deploys.ErrNotFound) {
+	if _, _, err := w.svc.Preview(t.Context(), store.ActorFor(w.owner.ID), "docs", "pr-1"); !errors.Is(err, deploys.ErrNotFound) {
 		t.Errorf("Preview() after delete = %v, want ErrNotFound", err)
 	}
 	if notified[site.ID] != 3 {
@@ -167,7 +167,7 @@ func TestPromote(t *testing.T) {
 	w.site(w.owner.ID, "docs")
 	live := w.live("docs", "", map[string]string{"index.html": "<h1>Live</h1>"})
 	p := w.preview(w.owner.ID, "docs", "pr-1", "", nil, map[string]string{"index.html": "<h1>Next</h1>"})
-	site, d, pv, err := w.svc.Promote(t.Context(), w.owner.ID, "docs", "pr-1")
+	site, d, pv, err := w.svc.Promote(t.Context(), store.ActorFor(w.owner.ID), "docs", "pr-1")
 	if err != nil || site.ActiveDeployID != p.ID || d.ID != p.ID || d.ActivatedAt.IsZero() || pv.DeployID != p.ID {
 		t.Fatalf("Promote() = %+v, %+v, %+v, %v", site, d, pv, err)
 	}
@@ -175,12 +175,12 @@ func TestPromote(t *testing.T) {
 		t.Errorf("status after promotion = %s, want active", s)
 	}
 	// An ordinary activation in history: rollback returns to the old live.
-	if _, back, err := w.svc.Rollback(t.Context(), w.owner.ID, "docs", ""); err != nil || back.ID != live.ID {
+	if _, back, err := w.svc.Rollback(t.Context(), store.ActorFor(w.owner.ID), "docs", ""); err != nil || back.ID != live.ID {
 		t.Fatalf("Rollback() = %+v, %v", back, err)
 	}
 	// Promoting again puts it back; promoting what is live changes nothing.
 	for range 2 {
-		if site, _, _, err := w.svc.Promote(t.Context(), w.owner.ID, "docs", "pr-1"); err != nil || site.ActiveDeployID != p.ID {
+		if site, _, _, err := w.svc.Promote(t.Context(), store.ActorFor(w.owner.ID), "docs", "pr-1"); err != nil || site.ActiveDeployID != p.ID {
 			t.Fatalf("Promote() again = %+v, %v", site, err)
 		}
 	}
@@ -188,14 +188,14 @@ func TestPromote(t *testing.T) {
 	// A path preview on a base no longer live is stale, until deployed again.
 	w.preview(w.owner.ID, "docs", "docs", "/docs/", nil, map[string]string{"index.html": "<h1>Docs</h1>"})
 	w.live("docs", "", map[string]string{"index.html": "<h1>Newer</h1>"})
-	if _, _, _, err := w.svc.Promote(t.Context(), w.owner.ID, "docs", "docs"); !errors.Is(err, deploys.ErrStaleBase) {
+	if _, _, _, err := w.svc.Promote(t.Context(), store.ActorFor(w.owner.ID), "docs", "docs"); !errors.Is(err, deploys.ErrStaleBase) {
 		t.Fatalf("Promote(stale path preview) = %v, want ErrStaleBase", err)
 	}
 	again := w.preview(w.owner.ID, "docs", "docs", "/docs/", nil, map[string]string{"index.html": "<h1>Docs</h1>"})
-	if site, _, _, err := w.svc.Promote(t.Context(), w.owner.ID, "docs", "docs"); err != nil || site.ActiveDeployID != again.ID {
+	if site, _, _, err := w.svc.Promote(t.Context(), store.ActorFor(w.owner.ID), "docs", "docs"); err != nil || site.ActiveDeployID != again.ID {
 		t.Fatalf("Promote() after deploying again = %+v, %v", site, err)
 	}
-	if _, _, _, err := w.svc.Promote(t.Context(), w.owner.ID, "docs", "missing"); !errors.Is(err, deploys.ErrNotFound) {
+	if _, _, _, err := w.svc.Promote(t.Context(), store.ActorFor(w.owner.ID), "docs", "missing"); !errors.Is(err, deploys.ErrNotFound) {
 		t.Errorf("Promote(missing) = %v, want ErrNotFound", err)
 	}
 }
@@ -210,7 +210,7 @@ func TestPreviewExpiry(t *testing.T) {
 	w.preview(w.owner.ID, "docs", "default", "", nil, map[string]string{"index.html": "c"})
 	list := func() []string {
 		t.Helper()
-		_, ps, err := w.svc.Previews(t.Context(), w.owner.ID, "docs", "", 10)
+		_, ps, err := w.svc.Previews(t.Context(), store.ActorFor(w.owner.ID), "docs", "", 10)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -228,9 +228,15 @@ func TestPreviewExpiry(t *testing.T) {
 		t.Fatalf("previews after 2 days = %s", got)
 	}
 	for _, op := range []func() error{
-		func() error { _, _, err := w.svc.Preview(t.Context(), w.owner.ID, "docs", "short"); return err },
-		func() error { return w.svc.DeletePreview(t.Context(), w.owner.ID, "docs", "short") },
-		func() error { _, _, _, err := w.svc.Promote(t.Context(), w.owner.ID, "docs", "short"); return err },
+		func() error {
+			_, _, err := w.svc.Preview(t.Context(), store.ActorFor(w.owner.ID), "docs", "short")
+			return err
+		},
+		func() error { return w.svc.DeletePreview(t.Context(), store.ActorFor(w.owner.ID), "docs", "short") },
+		func() error {
+			_, _, _, err := w.svc.Promote(t.Context(), store.ActorFor(w.owner.ID), "docs", "short")
+			return err
+		},
 	} {
 		if err := op(); !errors.Is(err, deploys.ErrNotFound) {
 			t.Errorf("expired preview: %v, want ErrNotFound", err)
@@ -248,14 +254,14 @@ func TestPreviewQuotas(t *testing.T) {
 	w.live("docs", "", map[string]string{"index.html": "0123456789"})
 	m := w.manifest(map[string]string{"index.html": "0123456789abcdefghijk"})
 	m.Preview = "big"
-	if _, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", m); !errors.Is(err, deploys.ErrLimitExceeded) {
+	if _, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", m); !errors.Is(err, deploys.ErrLimitExceeded) {
 		t.Fatalf("preview over storage: %v, want the storage quota", err)
 	}
 	w.preview(w.owner.ID, "docs", "small", "", nil, map[string]string{"index.html": "0123456789"})
 	m = w.manifest(map[string]string{"index.html": "0123456789"})
 	m.Preview = "small"
 	var te *deploys.TargetError
-	if _, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", m); !errors.As(err, &te) || te.Target != "deploys" {
+	if _, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", m); !errors.As(err, &te) || te.Target != "deploys" {
 		t.Fatalf("third deploy of the day, a preview: %v, want the daily quota", err)
 	}
 }
@@ -269,18 +275,30 @@ func TestPreviewsAreOwnerScoped(t *testing.T) {
 	m := w.manifest(map[string]string{"index.html": "x"})
 	m.Preview = "pr-1"
 	for name, op := range map[string]func() error{
-		"Create":        func() error { _, _, err := w.svc.Create(t.Context(), other.ID, "docs", m); return err },
-		"Activate":      func() error { _, _, err := w.svc.Activate(t.Context(), other.ID, "docs", d.ID); return err },
-		"Preview":       func() error { _, _, err := w.svc.Preview(t.Context(), other.ID, "docs", "pr-1"); return err },
-		"Previews":      func() error { _, _, err := w.svc.Previews(t.Context(), other.ID, "docs", "", 10); return err },
-		"DeletePreview": func() error { return w.svc.DeletePreview(t.Context(), other.ID, "docs", "pr-1") },
-		"Promote":       func() error { _, _, _, err := w.svc.Promote(t.Context(), other.ID, "docs", "pr-1"); return err },
+		"Create": func() error { _, _, err := w.svc.Create(t.Context(), store.ActorFor(other.ID), "docs", m); return err },
+		"Activate": func() error {
+			_, _, err := w.svc.Activate(t.Context(), store.ActorFor(other.ID), "docs", d.ID)
+			return err
+		},
+		"Preview": func() error {
+			_, _, err := w.svc.Preview(t.Context(), store.ActorFor(other.ID), "docs", "pr-1")
+			return err
+		},
+		"Previews": func() error {
+			_, _, err := w.svc.Previews(t.Context(), store.ActorFor(other.ID), "docs", "", 10)
+			return err
+		},
+		"DeletePreview": func() error { return w.svc.DeletePreview(t.Context(), store.ActorFor(other.ID), "docs", "pr-1") },
+		"Promote": func() error {
+			_, _, _, err := w.svc.Promote(t.Context(), store.ActorFor(other.ID), "docs", "pr-1")
+			return err
+		},
 	} {
 		if err := op(); !errors.Is(err, deploys.ErrNotFound) {
 			t.Errorf("%s by another owner: %v, want ErrNotFound", name, err)
 		}
 	}
-	if _, p, err := w.svc.Preview(t.Context(), w.owner.ID, "docs", "pr-1"); err != nil || p.DeployID != d.ID {
+	if _, p, err := w.svc.Preview(t.Context(), store.ActorFor(w.owner.ID), "docs", "pr-1"); err != nil || p.DeployID != d.ID {
 		t.Fatalf("the owner's preview after another owner's attempts = %+v, %v", p, err)
 	}
 }
@@ -289,7 +307,7 @@ func TestPreviewsOnATakenDownSite(t *testing.T) {
 	w := newPathWorld(t)
 	w.site(w.owner.ID, "docs")
 	w.preview(w.owner.ID, "docs", "pr-1", "", nil, map[string]string{"index.html": "x"})
-	site, err := w.db.Sites().GetByOwnerName(t.Context(), w.owner.ID, "docs")
+	site, err := w.db.Sites().GetByOwnerName(t.Context(), store.ActorFor(w.owner.ID), "docs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,15 +317,21 @@ func TestPreviewsOnATakenDownSite(t *testing.T) {
 	m := w.manifest(map[string]string{"index.html": "y"})
 	m.Preview = "pr-2"
 	for name, op := range map[string]func() error{
-		"Create":        func() error { _, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", m); return err },
-		"DeletePreview": func() error { return w.svc.DeletePreview(t.Context(), w.owner.ID, "docs", "pr-1") },
-		"Promote":       func() error { _, _, _, err := w.svc.Promote(t.Context(), w.owner.ID, "docs", "pr-1"); return err },
+		"Create": func() error {
+			_, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", m)
+			return err
+		},
+		"DeletePreview": func() error { return w.svc.DeletePreview(t.Context(), store.ActorFor(w.owner.ID), "docs", "pr-1") },
+		"Promote": func() error {
+			_, _, _, err := w.svc.Promote(t.Context(), store.ActorFor(w.owner.ID), "docs", "pr-1")
+			return err
+		},
 	} {
 		if err := op(); !errors.Is(err, deploys.ErrSiteUnavailable) {
 			t.Errorf("%s: %v, want ErrSiteUnavailable", name, err)
 		}
 	}
-	if _, ps, err := w.svc.Previews(t.Context(), w.owner.ID, "docs", "", 10); err != nil || len(ps) != 1 {
+	if _, ps, err := w.svc.Previews(t.Context(), store.ActorFor(w.owner.ID), "docs", "", 10); err != nil || len(ps) != 1 {
 		t.Errorf("Previews() of a taken-down site = %+v, %v; want its preview", ps, err)
 	}
 }
@@ -321,16 +345,16 @@ func TestGCRemovesExpiredAndReplacedPreviews(t *testing.T) {
 		t.Helper()
 		h := hashOf(content)
 		m := deploys.Manifest{Files: []store.DeployFile{{Path: "index.html", SHA256: h, Size: int64(len(content))}}, Preview: name, PreviewDays: &days}
-		d, missing, err := w.svc.Create(t.Context(), o, "docs", m)
+		d, missing, err := w.svc.Create(t.Context(), store.ActorFor(o), "docs", m)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for range missing {
-			if err := w.svc.Upload(t.Context(), o, "docs", d.ID, h, strings.NewReader(content)); err != nil {
+			if err := w.svc.Upload(t.Context(), store.ActorFor(o), "docs", d.ID, h, strings.NewReader(content)); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if _, _, err := w.svc.Activate(t.Context(), o, "docs", d.ID); err != nil {
+		if _, _, err := w.svc.Activate(t.Context(), store.ActorFor(o), "docs", d.ID); err != nil {
 			t.Fatal(err)
 		}
 		return d.ID
@@ -345,7 +369,7 @@ func TestGCRemovesExpiredAndReplacedPreviews(t *testing.T) {
 		t.Fatalf("GC = %+v, want 1 preview expired and 2 deploys pruned", res)
 	}
 	for id, want := range map[string]bool{replaced: false, expiring: false, serving: true} {
-		_, err := w.db.Deploys().Get(t.Context(), o, mustSiteID(t, w, o, "docs"), id)
+		_, err := w.db.Deploys().Get(t.Context(), store.ActorFor(o), mustSiteID(t, w, o, "docs"), id)
 		if (err == nil) != want {
 			t.Errorf("deploy %s kept = %t, want %t", id, err == nil, want)
 		}
@@ -360,7 +384,7 @@ func TestGCRemovesExpiredAndReplacedPreviews(t *testing.T) {
 
 func mustSiteID(t *testing.T, w *gcWorld, ownerID, name string) string {
 	t.Helper()
-	s, err := w.db.Sites().GetByOwnerName(t.Context(), ownerID, name)
+	s, err := w.db.Sites().GetByOwnerName(t.Context(), store.ActorFor(ownerID), name)
 	if err != nil {
 		t.Fatal(err)
 	}

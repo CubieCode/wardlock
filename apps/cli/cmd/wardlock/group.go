@@ -143,7 +143,7 @@ func groupCreate(ctx context.Context, a *app, args []string) error {
 	if *note != "" {
 		body.Note = note
 	}
-	res, err := c.api.CreateGroupWithResponse(ctx, body, c.auth)
+	res, err := c.api.CreateGroupWithResponse(ctx, nil, body, c.auth)
 	if err != nil {
 		return c.unreachable(ctx, err)
 	}

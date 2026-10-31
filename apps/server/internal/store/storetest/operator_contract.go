@@ -176,7 +176,7 @@ func sitesOperatorContract(t *testing.T, open Opener) {
 		f.must(f.r.Sites.TakeDown(t.Context(), s.ID, at))
 		f.must(f.r.Sites.TakeDown(t.Context(), s.ID, at.Add(time.Hour)))
 		for name, get := range map[string]func() (store.Site, error){
-			"Get":       func() (store.Site, error) { return f.r.Sites.Get(t.Context(), o.ID, s.ID) },
+			"Get":       func() (store.Site, error) { return f.r.Sites.Get(t.Context(), store.ActorFor(o.ID), s.ID) },
 			"GetByName": func() (store.Site, error) { return f.r.Sites.GetByName(t.Context(), s.Name) },
 			"GetByID":   func() (store.Site, error) { return f.r.Sites.GetByID(t.Context(), s.ID) },
 		} {
@@ -187,8 +187,8 @@ func sitesOperatorContract(t *testing.T, open Opener) {
 			}
 		}
 		// The owner can neither switch deploys nor delete the site.
-		wantErr(t, f.r.Sites.SetActiveDeploy(t.Context(), o.ID, s.ID, next.ID), store.ErrNotFound)
-		wantErr(t, f.r.Sites.Delete(t.Context(), o.ID, s.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.SetActiveDeploy(t.Context(), store.ActorFor(o.ID), s.ID, next.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.Delete(t.Context(), store.ActorFor(o.ID), s.ID), store.ErrNotFound)
 		got, err := f.r.Sites.GetByID(t.Context(), s.ID)
 		wantErr(t, err, nil)
 		if got.ActiveDeployID != d.ID {
@@ -201,7 +201,7 @@ func sitesOperatorContract(t *testing.T, open Opener) {
 		if !got.TakenDownAt.IsZero() {
 			t.Fatalf("TakenDownAt after restore = %v", got.TakenDownAt)
 		}
-		f.must(f.r.Sites.SetActiveDeploy(t.Context(), o.ID, s.ID, next.ID))
+		f.must(f.r.Sites.SetActiveDeploy(t.Context(), store.ActorFor(o.ID), s.ID, next.ID))
 	})
 	t.Run("TakeDownUnknown", func(t *testing.T) {
 		t.Parallel()
@@ -223,7 +223,7 @@ func sitesOperatorContract(t *testing.T, open Opener) {
 		f.must(f.r.Sites.TearDown(t.Context(), s.ID))
 		_, err := f.r.Sites.GetByID(t.Context(), s.ID)
 		wantErr(t, err, store.ErrNotFound)
-		_, err = f.r.Deploys.Get(t.Context(), o.ID, s.ID, d.ID)
+		_, err = f.r.Deploys.Get(t.Context(), store.ActorFor(o.ID), s.ID, d.ID)
 		wantErr(t, err, store.ErrNotFound)
 	})
 	t.Run("UnavailableAndListAll", func(t *testing.T) {

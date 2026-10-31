@@ -144,7 +144,7 @@ func (q *Queries) FailInterruptedNotifications(ctx context.Context, arg FailInte
 }
 
 const getNotificationRecipient = `-- name: GetNotificationRecipient :one
-SELECT email, suspended_at FROM owners WHERE id = ?1
+SELECT email, suspended_at FROM owners WHERE id = ?1 AND kind = 'owner'
 `
 
 type GetNotificationRecipientRow struct {

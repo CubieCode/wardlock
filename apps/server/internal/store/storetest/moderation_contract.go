@@ -26,7 +26,7 @@ func moderationContract(t *testing.T, open Opener) {
 		s := f.site(ownerID)
 		d := f.deployFiles(ownerID, s.ID, files...)
 		f.uploadAll(ownerID, s.ID, d.ID)
-		d, err := f.r.Deploys.Activate(f.t.Context(), ownerID, s.ID, d.ID, now)
+		d, err := f.r.Deploys.Activate(f.t.Context(), store.ActorFor(ownerID), s.ID, d.ID, now)
 		f.must(err)
 		return s, d
 	}
@@ -380,7 +380,7 @@ func moderationContract(t *testing.T, open Opener) {
 		// hash is listed by any deploy now.
 		d := f.deployFiles(o.ID, s.ID, file("index.html", '6'))
 		f.uploadAll(o.ID, s.ID, d.ID)
-		_, err := f.r.Deploys.Activate(ctx, o.ID, s.ID, d.ID, now)
+		_, err := f.r.Deploys.Activate(ctx, store.ActorFor(o.ID), s.ID, d.ID, now)
 		f.must(err)
 		deleted, err := f.r.GC.DeletePrunableDeploy(ctx, old.ID, now)
 		if err != nil || !deleted {

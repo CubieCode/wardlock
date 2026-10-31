@@ -131,7 +131,7 @@ func tagCreate(ctx context.Context, a *app, args []string) error {
 	if err != nil {
 		return err
 	}
-	res, err := c.api.CreateTagWithResponse(ctx, body, c.auth)
+	res, err := c.api.CreateTagWithResponse(ctx, nil, body, c.auth)
 	if err != nil {
 		return c.unreachable(ctx, err)
 	}

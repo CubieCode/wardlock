@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"wardlock.nz/server/internal/store/sqlcgen"
@@ -38,8 +39,13 @@ type Domain struct {
 	Hostname          string // lowercase A-label, no trailing dot or port
 	Status            DomainStatus
 	VerificationToken string
-	CreatedAt         time.Time
-	LastCheckedAt     time.Time
+	// CreatedBy is who made it: the owner, or for a team token's work the
+	// team, with CreatedByToken naming the token (T7.1). Read only: the
+	// repository records its actor.
+	CreatedBy      string
+	CreatedByToken string
+	CreatedAt      time.Time
+	LastCheckedAt  time.Time
 	// VerifiedAt is when the domain last became active; zero if never.
 	VerifiedAt time.Time
 	// FailingSince is the first failure in the current run of failed checks.
@@ -56,19 +62,19 @@ type Domain struct {
 // Domains stores custom domains. A hostname belongs to at most one site on
 // the instance (ErrConflict otherwise).
 type Domains interface {
-	// Create attaches d to one of ownerID's sites.
-	Create(ctx context.Context, ownerID string, d Domain) error
-	// Get returns the domain hostname of ownerID's site siteID, whatever
+	// Create attaches d to a site the actor can edit.
+	Create(ctx context.Context, actor Actor, d Domain) error
+	// Get returns the domain hostname of site siteID, whatever
 	// its status. A missing domain, site or another owner's site is
 	// ErrNotFound alike.
-	Get(ctx context.Context, ownerID, siteID, hostname string) (Domain, error)
-	// List returns up to limit of the domains of ownerID's site siteID
+	Get(ctx context.Context, actor Actor, siteID, hostname string) (Domain, error)
+	// List returns up to limit of the domains of site siteID
 	// ordered by hostname, after afterHostname ("" for the first page).
 	// Another owner's site lists nothing.
-	List(ctx context.Context, ownerID, siteID, afterHostname string, limit int) ([]Domain, error)
-	// Delete detaches hostname from ownerID's site siteID (ErrNotFound if
+	List(ctx context.Context, actor Actor, siteID, afterHostname string, limit int) ([]Domain, error)
+	// Delete detaches hostname from site siteID (ErrNotFound if
 	// it is not attached there).
-	Delete(ctx context.Context, ownerID, siteID, hostname string) error
+	Delete(ctx context.Context, actor Actor, siteID, hostname string) error
 	// GetActiveByHostname finds an active domain on any site. It is the
 	// instance-wide routing lookup for the edge; a pending or lapsed
 	// hostname is ErrNotFound.
@@ -101,7 +107,12 @@ func (db *DB) Domains() Domains { return domainsRepo{db} }
 
 type domainsRepo struct{ db *DB }
 
-func (r domainsRepo) Create(ctx context.Context, ownerID string, d Domain) error {
+func (r domainsRepo) Create(ctx context.Context, actor Actor, d Domain) error {
+	ownerID, err := r.db.authorizeSite(ctx, actor, d.SiteID, RoleEditor)
+	if err != nil {
+		return err
+	}
+	by, token := actor.MadeBy()
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		if err := requireSite(ctx, q, ownerID, d.SiteID); err != nil {
 			return err
@@ -118,11 +129,17 @@ func (r domainsRepo) Create(ctx context.Context, ownerID string, d Domain) error
 			FailingSince:      nullMs(d.FailingSince),
 			LastFailureReason: nullString(string(d.LastFailureReason)),
 			FailureDetail:     nullString(d.FailureDetail),
+			CreatedBy:         nullString(by),
+			CreatedByToken:    nullString(token),
 		}))
 	})
 }
 
-func (r domainsRepo) Get(ctx context.Context, ownerID, siteID, hostname string) (Domain, error) {
+func (r domainsRepo) Get(ctx context.Context, actor Actor, siteID, hostname string) (Domain, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if err != nil {
+		return Domain{}, err
+	}
 	row, err := r.db.q.GetDomain(ctx, sqlcgen.GetDomainParams{SiteID: siteID, Hostname: hostname, OwnerID: ownerID})
 	if err != nil {
 		return Domain{}, mapErr("get domain", err)
@@ -130,7 +147,14 @@ func (r domainsRepo) Get(ctx context.Context, ownerID, siteID, hostname string) 
 	return ownedDomainFrom(row.Domain, row.IsPrimary), nil
 }
 
-func (r domainsRepo) List(ctx context.Context, ownerID, siteID, afterHostname string, limit int) ([]Domain, error) {
+func (r domainsRepo) List(ctx context.Context, actor Actor, siteID, afterHostname string, limit int) ([]Domain, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if errors.Is(err, ErrNotFound) {
+		return []Domain{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	rows, err := r.db.q.ListDomains(ctx, sqlcgen.ListDomainsParams{
 		SiteID: siteID, OwnerID: ownerID, AfterHostname: afterHostname, RowLimit: int64(limit),
 	})
@@ -144,8 +168,12 @@ func (r domainsRepo) List(ctx context.Context, ownerID, siteID, afterHostname st
 	return out, nil
 }
 
-func (r domainsRepo) Delete(ctx context.Context, ownerID, siteID, hostname string) error {
-	_, err := r.db.q.DeleteDomain(ctx, sqlcgen.DeleteDomainParams{SiteID: siteID, Hostname: hostname, OwnerID: ownerID})
+func (r domainsRepo) Delete(ctx context.Context, actor Actor, siteID, hostname string) error {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleEditor)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.q.DeleteDomain(ctx, sqlcgen.DeleteDomainParams{SiteID: siteID, Hostname: hostname, OwnerID: ownerID})
 	return mapErr("delete domain", err)
 }
 
@@ -221,6 +249,8 @@ func domainFrom(row sqlcgen.GetActiveDomainByHostnameRow) Domain {
 		FailingSince:      fromNullMs(row.FailingSince),
 		LastFailureReason: DomainFailure(row.LastFailureReason.String),
 		FailureDetail:     row.FailureDetail.String,
+		CreatedBy:         row.CreatedBy.String,
+		CreatedByToken:    row.CreatedByToken.String,
 	}
 }
 
@@ -230,6 +260,7 @@ func ownedDomainFrom(d sqlcgen.Domain, isPrimary int64) Domain {
 		ID: d.ID, SiteID: d.SiteID, Hostname: d.Hostname, Status: d.Status, VerificationToken: d.VerificationToken,
 		CreatedAt: d.CreatedAt, LastCheckedAt: d.LastCheckedAt, VerifiedAt: d.VerifiedAt, FailingSince: d.FailingSince,
 		LastFailureReason: d.LastFailureReason, FailureDetail: d.FailureDetail,
+		CreatedBy: d.CreatedBy, CreatedByToken: d.CreatedByToken,
 	})
 	out.Primary = isPrimary == 1
 	return out

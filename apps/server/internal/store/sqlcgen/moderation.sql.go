@@ -45,6 +45,7 @@ SELECT COUNT(*) FROM deploy_files
 JOIN sites ON (sites.active_deploy_id = deploy_files.deploy_id
   OR EXISTS (SELECT 1 FROM previews WHERE previews.site_id = sites.id AND previews.deploy_id = deploy_files.deploy_id))
 JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
 WHERE deploy_files.sha256 = ?1
   AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
   AND (lower(deploy_files.path) LIKE '%.html' OR lower(deploy_files.path) LIKE '%.htm'
@@ -325,12 +326,14 @@ func (q *Queries) ListModerationReview(ctx context.Context) ([]ModerationResult,
 }
 
 const listModerationUses = `-- name: ListModerationUses :many
-SELECT DISTINCT sites.id AS site_id, sites.name AS site_name, owners.id AS owner_id, owners.email AS owner_email, deploy_files.path,
+SELECT DISTINCT sites.id AS site_id, sites.name AS site_name, owners.id AS owner_id,
+  CAST(COALESCE('team ' || teams.name, owners.email) AS TEXT) AS owner_email, deploy_files.path,
   sites.taken_down_at, owners.suspended_at
 FROM deploy_files
 JOIN sites ON (sites.active_deploy_id = deploy_files.deploy_id
   OR EXISTS (SELECT 1 FROM previews WHERE previews.site_id = sites.id AND previews.deploy_id = deploy_files.deploy_id))
 JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
 WHERE deploy_files.sha256 = ?1
 ORDER BY sites.name, deploy_files.path
 `
@@ -454,6 +457,7 @@ FROM deploy_files
 JOIN sites ON (sites.active_deploy_id = deploy_files.deploy_id
   OR EXISTS (SELECT 1 FROM previews WHERE previews.site_id = sites.id AND previews.deploy_id = deploy_files.deploy_id))
 JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
 WHERE deploy_files.sha256 = ?1
   AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
 LIMIT 1
@@ -605,7 +609,7 @@ func (q *Queries) RetryModeration(ctx context.Context, arg RetryModerationParams
 }
 
 const setOwnerModerationExempt = `-- name: SetOwnerModerationExempt :execrows
-UPDATE owners SET moderation_exempt = ?1 WHERE id = ?2
+UPDATE owners SET moderation_exempt = ?1 WHERE id = ?2 AND kind = 'owner'
 `
 
 type SetOwnerModerationExemptParams struct {

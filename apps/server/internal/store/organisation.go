@@ -74,38 +74,48 @@ type OrganiseChange struct {
 	MaxTagsPerSite int
 }
 
-// Organisation stores owners' groups and tags and which sites are in them.
-// Every method matches only ownerID's rows; another owner's group, tag or
-// site is ErrNotFound, exactly like a missing one.
-type Organisation interface {
-	// ListGroups returns every one of the owner's groups by name key.
-	ListGroups(ctx context.Context, ownerID string) ([]Group, error)
-	GetGroup(ctx context.Context, ownerID, id string) (Group, error)
-	// CreateGroup inserts g. A NameKey the owner already uses is ErrConflict;
-	// an owner who already has max groups (when max > 0) gets
-	// ErrLimitReached. Concurrent creates by one owner are serialised.
-	CreateGroup(ctx context.Context, g Group, max int) error
-	// UpdateGroup sets g's name, name key and note.
-	UpdateGroup(ctx context.Context, g Group) error
-	// DeleteGroup deletes the group; its sites become ungrouped.
-	DeleteGroup(ctx context.Context, ownerID, id string) error
+// pinOnly reports whether c changes nothing but the actor's own pin.
+func (c OrganiseChange) pinOnly() bool {
+	return c.SetPinned && !c.SetGroup && !c.SetTags && len(c.AddTagIDs) == 0 && len(c.RemoveTagIDs) == 0
+}
 
-	// ListTags returns every one of the owner's tags by name.
-	ListTags(ctx context.Context, ownerID string) ([]Tag, error)
-	GetTag(ctx context.Context, ownerID, id string) (Tag, error)
+// Organisation stores accounts' groups and tags and which sites are in
+// them. Groups and tags belong to an account (an owner, or a team, T7.1) and
+// the sites they hold to the same account: Group.OwnerID and Tag.OwnerID name
+// it, and every method checks the actor against it. A group, tag or site the
+// actor cannot see is ErrNotFound, exactly like a missing one, and changing
+// one with too low a role is ErrForbiddenRole.
+type Organisation interface {
+	// ListGroups returns every one of the account's groups by name key.
+	ListGroups(ctx context.Context, actor Actor, accountID string) ([]Group, error)
+	GetGroup(ctx context.Context, actor Actor, id string) (Group, error)
+	// CreateGroup inserts g. A NameKey the account already uses is
+	// ErrConflict; an account that already has max groups (when max > 0)
+	// gets ErrLimitReached. Concurrent creates by one account are serialised.
+	CreateGroup(ctx context.Context, actor Actor, g Group, max int) error
+	// UpdateGroup sets g's name, name key and note.
+	UpdateGroup(ctx context.Context, actor Actor, g Group) error
+	// DeleteGroup deletes the group; its sites become ungrouped.
+	DeleteGroup(ctx context.Context, actor Actor, id string) error
+
+	// ListTags returns every one of the account's tags by name.
+	ListTags(ctx context.Context, actor Actor, accountID string) ([]Tag, error)
+	GetTag(ctx context.Context, actor Actor, id string) (Tag, error)
 	// CreateTag inserts t, choosing its colour when t.Colour is AutoColour,
 	// and returns it as stored. Errors as for CreateGroup.
-	CreateTag(ctx context.Context, t Tag, max int) (Tag, error)
+	CreateTag(ctx context.Context, actor Actor, t Tag, max int) (Tag, error)
 	// UpdateTag sets t's name and colour.
-	UpdateTag(ctx context.Context, t Tag) error
+	UpdateTag(ctx context.Context, actor Actor, t Tag) error
 	// DeleteTag deletes the tag and removes it from its sites.
-	DeleteTag(ctx context.Context, ownerID, id string) error
+	DeleteTag(ctx context.Context, actor Actor, id string) error
 
-	// Organise applies c to each of the owner's sites named in siteNames,
+	// Organise applies c to each of accountID's sites named in siteNames,
 	// all or nothing, and returns each site's organisation from before
 	// the change, in siteNames order. Any site, group or tag that is not
-	// the owner's is ErrNotFound and changes nothing.
-	Organise(ctx context.Context, ownerID string, siteNames []string, c OrganiseChange) ([]SiteOrganisation, error)
+	// the account's is ErrNotFound and changes nothing. A change that only
+	// pins needs a viewer, since a pin is the actor's own (T7.1); anything
+	// else needs an editor.
+	Organise(ctx context.Context, actor Actor, accountID string, siteNames []string, c OrganiseChange) ([]SiteOrganisation, error)
 }
 
 // Organisation returns the SQLite Organisation repository.
@@ -113,8 +123,11 @@ func (db *DB) Organisation() Organisation { return organisationRepo{db} }
 
 type organisationRepo struct{ db *DB }
 
-func (r organisationRepo) ListGroups(ctx context.Context, ownerID string) ([]Group, error) {
-	rows, err := r.db.q.ListGroups(ctx, ownerID)
+func (r organisationRepo) ListGroups(ctx context.Context, actor Actor, accountID string) ([]Group, error) {
+	if err := actor.Require(accountID, RoleViewer); err != nil {
+		return nil, fmt.Errorf("list groups: %w", err)
+	}
+	rows, err := r.db.q.ListGroups(ctx, accountID)
 	if err != nil {
 		return nil, mapErr("list groups", err)
 	}
@@ -125,15 +138,21 @@ func (r organisationRepo) ListGroups(ctx context.Context, ownerID string) ([]Gro
 	return out, nil
 }
 
-func (r organisationRepo) GetGroup(ctx context.Context, ownerID, id string) (Group, error) {
-	row, err := r.db.q.GetGroup(ctx, sqlcgen.GetGroupParams{ID: id, OwnerID: ownerID})
+func (r organisationRepo) GetGroup(ctx context.Context, actor Actor, id string) (Group, error) {
+	row, err := r.db.q.GetGroupByID(ctx, id)
 	if err != nil {
 		return Group{}, mapErr("get group", err)
+	}
+	if err := actor.Require(row.OwnerID, RoleViewer); err != nil {
+		return Group{}, fmt.Errorf("get group: %w", err)
 	}
 	return groupFrom(row), nil
 }
 
-func (r organisationRepo) CreateGroup(ctx context.Context, g Group, max int) error {
+func (r organisationRepo) CreateGroup(ctx context.Context, actor Actor, g Group, max int) error {
+	if err := actor.Require(g.OwnerID, RoleEditor); err != nil {
+		return fmt.Errorf("create group: %w", err)
+	}
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		if err := lockOwnerCount(ctx, q, g.OwnerID, max, q.CountGroups); err != nil {
 			return fmt.Errorf("create group: %w", err)
@@ -144,18 +163,35 @@ func (r organisationRepo) CreateGroup(ctx context.Context, g Group, max int) err
 	})
 }
 
-func (r organisationRepo) UpdateGroup(ctx context.Context, g Group) error {
-	n, err := r.db.q.UpdateGroup(ctx, sqlcgen.UpdateGroupParams{ID: g.ID, OwnerID: g.OwnerID, Name: g.Name, NameKey: g.NameKey, Note: nullString(g.Note)})
+func (r organisationRepo) UpdateGroup(ctx context.Context, actor Actor, g Group) error {
+	cur, err := r.GetGroup(ctx, actor, g.ID)
+	if err != nil {
+		return err
+	}
+	if err := actor.Require(cur.OwnerID, RoleEditor); err != nil {
+		return fmt.Errorf("update group: %w", err)
+	}
+	n, err := r.db.q.UpdateGroup(ctx, sqlcgen.UpdateGroupParams{ID: g.ID, OwnerID: cur.OwnerID, Name: g.Name, NameKey: g.NameKey, Note: nullString(g.Note)})
 	return rowsAffected("update group", n, err)
 }
 
-func (r organisationRepo) DeleteGroup(ctx context.Context, ownerID, id string) error {
-	n, err := r.db.q.DeleteGroup(ctx, sqlcgen.DeleteGroupParams{ID: id, OwnerID: ownerID})
+func (r organisationRepo) DeleteGroup(ctx context.Context, actor Actor, id string) error {
+	cur, err := r.GetGroup(ctx, actor, id)
+	if err != nil {
+		return err
+	}
+	if err := actor.Require(cur.OwnerID, RoleEditor); err != nil {
+		return fmt.Errorf("delete group: %w", err)
+	}
+	n, err := r.db.q.DeleteGroup(ctx, sqlcgen.DeleteGroupParams{ID: id, OwnerID: cur.OwnerID})
 	return rowsAffected("delete group", n, err)
 }
 
-func (r organisationRepo) ListTags(ctx context.Context, ownerID string) ([]Tag, error) {
-	rows, err := r.db.q.ListTags(ctx, ownerID)
+func (r organisationRepo) ListTags(ctx context.Context, actor Actor, accountID string) ([]Tag, error) {
+	if err := actor.Require(accountID, RoleViewer); err != nil {
+		return nil, fmt.Errorf("list tags: %w", err)
+	}
+	rows, err := r.db.q.ListTags(ctx, accountID)
 	if err != nil {
 		return nil, mapErr("list tags", err)
 	}
@@ -166,15 +202,21 @@ func (r organisationRepo) ListTags(ctx context.Context, ownerID string) ([]Tag, 
 	return out, nil
 }
 
-func (r organisationRepo) GetTag(ctx context.Context, ownerID, id string) (Tag, error) {
-	row, err := r.db.q.GetTag(ctx, sqlcgen.GetTagParams{ID: id, OwnerID: ownerID})
+func (r organisationRepo) GetTag(ctx context.Context, actor Actor, id string) (Tag, error) {
+	row, err := r.db.q.GetTagByID(ctx, id)
 	if err != nil {
 		return Tag{}, mapErr("get tag", err)
+	}
+	if err := actor.Require(row.OwnerID, RoleViewer); err != nil {
+		return Tag{}, fmt.Errorf("get tag: %w", err)
 	}
 	return tagFrom(row), nil
 }
 
-func (r organisationRepo) CreateTag(ctx context.Context, t Tag, max int) (Tag, error) {
+func (r organisationRepo) CreateTag(ctx context.Context, actor Actor, t Tag, max int) (Tag, error) {
+	if err := actor.Require(t.OwnerID, RoleEditor); err != nil {
+		return Tag{}, fmt.Errorf("create tag: %w", err)
+	}
 	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		if err := lockOwnerCount(ctx, q, t.OwnerID, max, q.CountTags); err != nil {
 			return fmt.Errorf("create tag: %w", err)
@@ -212,20 +254,41 @@ func freeColour(used []int64) int {
 	return 0
 }
 
-func (r organisationRepo) UpdateTag(ctx context.Context, t Tag) error {
-	n, err := r.db.q.UpdateTag(ctx, sqlcgen.UpdateTagParams{ID: t.ID, OwnerID: t.OwnerID, Name: t.Name, Colour: int64(t.Colour)})
+func (r organisationRepo) UpdateTag(ctx context.Context, actor Actor, t Tag) error {
+	cur, err := r.GetTag(ctx, actor, t.ID)
+	if err != nil {
+		return err
+	}
+	if err := actor.Require(cur.OwnerID, RoleEditor); err != nil {
+		return fmt.Errorf("update tag: %w", err)
+	}
+	n, err := r.db.q.UpdateTag(ctx, sqlcgen.UpdateTagParams{ID: t.ID, OwnerID: cur.OwnerID, Name: t.Name, Colour: int64(t.Colour)})
 	return rowsAffected("update tag", n, err)
 }
 
-func (r organisationRepo) DeleteTag(ctx context.Context, ownerID, id string) error {
-	n, err := r.db.q.DeleteTag(ctx, sqlcgen.DeleteTagParams{ID: id, OwnerID: ownerID})
+func (r organisationRepo) DeleteTag(ctx context.Context, actor Actor, id string) error {
+	cur, err := r.GetTag(ctx, actor, id)
+	if err != nil {
+		return err
+	}
+	if err := actor.Require(cur.OwnerID, RoleEditor); err != nil {
+		return fmt.Errorf("delete tag: %w", err)
+	}
+	n, err := r.db.q.DeleteTag(ctx, sqlcgen.DeleteTagParams{ID: id, OwnerID: cur.OwnerID})
 	return rowsAffected("delete tag", n, err)
 }
 
-func (r organisationRepo) Organise(ctx context.Context, ownerID string, siteNames []string, c OrganiseChange) ([]SiteOrganisation, error) {
+func (r organisationRepo) Organise(ctx context.Context, actor Actor, ownerID string, siteNames []string, c OrganiseChange) ([]SiteOrganisation, error) {
+	need := RoleEditor
+	if c.pinOnly() {
+		need = RoleViewer
+	}
+	if err := actor.Require(ownerID, need); err != nil {
+		return nil, fmt.Errorf("organise sites: %w", err)
+	}
 	var prior []SiteOrganisation
 	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
-		// Concurrent changes by one owner take turns, so neither can take
+		// Concurrent changes by one account take turns, so neither can take
 		// a site past MaxTagsPerSite.
 		if _, err := q.LockOwnerQuotas(ctx, ownerID); err != nil {
 			return mapErr("lock owner", err)
@@ -244,7 +307,7 @@ func (r organisationRepo) Organise(ctx context.Context, ownerID string, siteName
 		}
 		prior = make([]SiteOrganisation, 0, len(siteNames))
 		for _, name := range siteNames {
-			before, err := organiseSite(ctx, q, ownerID, name, c)
+			before, err := organiseSite(ctx, q, actor, ownerID, name, c)
 			if err != nil {
 				return err
 			}
@@ -260,7 +323,7 @@ func (r organisationRepo) Organise(ctx context.Context, ownerID string, siteName
 
 // organiseSite applies c to one site in Organise's transaction and returns
 // its organisation from before.
-func organiseSite(ctx context.Context, q *sqlcgen.Queries, ownerID, name string, c OrganiseChange) (SiteOrganisation, error) {
+func organiseSite(ctx context.Context, q *sqlcgen.Queries, actor Actor, ownerID, name string, c OrganiseChange) (SiteOrganisation, error) {
 	row, err := q.GetSiteOrganisation(ctx, sqlcgen.GetSiteOrganisationParams{Name: name, OwnerID: ownerID})
 	if err != nil {
 		return SiteOrganisation{}, mapErr("find site", err)
@@ -272,8 +335,13 @@ func organiseSite(ctx context.Context, q *sqlcgen.Queries, ownerID, name string,
 	if tagIDs == nil {
 		tagIDs = []string{}
 	}
-	before := SiteOrganisation{
-		SiteID: row.ID, SiteName: name, GroupID: row.GroupID.String, TagIDs: tagIDs, PinnedAt: fromNullMs(row.PinnedAt),
+	before := SiteOrganisation{SiteID: row.ID, SiteName: name, GroupID: row.GroupID.String, TagIDs: tagIDs}
+	pinned, err := q.GetSitePin(ctx, sqlcgen.GetSitePinParams{OwnerID: actor.OwnerID, SiteID: row.ID})
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return SiteOrganisation{}, mapErr("get site pin", err)
+	}
+	if err == nil {
+		before.PinnedAt = fromMs(pinned)
 	}
 	if c.SetGroup {
 		n, err := q.SetSiteGroup(ctx, sqlcgen.SetSiteGroupParams{GroupID: nullString(c.GroupID), SiteID: row.ID, OwnerID: ownerID})
@@ -308,14 +376,13 @@ func organiseSite(ctx context.Context, q *sqlcgen.Queries, ownerID, name string,
 		}
 	}
 	if c.SetPinned {
-		var n int64
 		if c.PinnedAt.IsZero() {
-			n, err = q.UnpinSite(ctx, sqlcgen.UnpinSiteParams{SiteID: row.ID, OwnerID: ownerID})
+			err = q.UnpinSite(ctx, sqlcgen.UnpinSiteParams{SiteID: row.ID, OwnerID: actor.OwnerID})
 		} else {
-			n, err = q.PinSite(ctx, sqlcgen.PinSiteParams{PinnedAt: nullMs(c.PinnedAt), SiteID: row.ID, OwnerID: ownerID})
+			err = q.PinSite(ctx, sqlcgen.PinSiteParams{PinnedAt: ms(c.PinnedAt), SiteID: row.ID, OwnerID: actor.OwnerID})
 		}
-		if err := rowsAffected("pin site", n, err); err != nil {
-			return SiteOrganisation{}, err
+		if err != nil {
+			return SiteOrganisation{}, mapErr("pin site", err)
 		}
 	}
 	return before, nil

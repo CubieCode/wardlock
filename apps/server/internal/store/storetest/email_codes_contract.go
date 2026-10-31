@@ -19,7 +19,7 @@ func (f *fixture) emailPolicy(ownerID, siteID, prefix string) store.Policy {
 	p := f.validPolicy(siteID)
 	p.PathPrefix, p.EmailEnabled = prefix, true
 	p.Allowlist = store.Allowlist{Emails: []string{"ana@example.test"}, Domains: []string{"*.example.test", "example.test"}}
-	f.must(f.r.Policies.Create(f.t.Context(), ownerID, p))
+	f.must(f.r.Policies.Create(f.t.Context(), store.ActorFor(ownerID), p))
 	return p
 }
 
@@ -35,7 +35,7 @@ func policiesSetAllowlist(t *testing.T, open Opener) {
 		docs := f.validPolicy(s.ID)
 		docs.PathPrefix = "/docs/"
 		docs.Allowlist = store.Allowlist{GitHubOrgs: []string{"example-org"}}
-		f.must(f.r.Policies.Create(ctx, a.ID, docs))
+		f.must(f.r.Policies.Create(ctx, store.ActorFor(a.ID), docs))
 		other := f.site(a.ID)
 		f.emailPolicy(a.ID, other.ID, "/")
 
@@ -45,12 +45,12 @@ func policiesSetAllowlist(t *testing.T, open Opener) {
 		if len(got) != 2 || !reflect.DeepEqual(got[0], p) || !reflect.DeepEqual(got[1], docs) {
 			t.Fatalf("ForSite = %+v, want %+v and %+v", got, p, docs)
 		}
-		listed, err := f.r.Policies.List(ctx, a.ID, s.ID, "", 10)
+		listed, err := f.r.Policies.List(ctx, store.ActorFor(a.ID), s.ID, "", 10)
 		f.must(err)
 		if !reflect.DeepEqual(listed, got) {
 			t.Fatalf("List = %+v, want %+v", listed, got)
 		}
-		if page, err := f.r.Policies.List(ctx, b.ID, s.ID, "", 10); err != nil || len(page) != 0 {
+		if page, err := f.r.Policies.List(ctx, store.ActorFor(b.ID), s.ID, "", 10); err != nil || len(page) != 0 {
 			t.Fatalf("owner B lists %+v, %v", page, err)
 		}
 
@@ -77,7 +77,7 @@ func policiesSetAllowlist(t *testing.T, open Opener) {
 			q := p
 			q.ID, q.UpdatedAt, q.Allowlist = store.NewID(), at, store.Allowlist{}
 			mutate(&q)
-			return f.r.Policies.Set(ctx, a.ID, q)
+			return f.r.Policies.Set(ctx, store.ActorFor(a.ID), q)
 		}
 
 		// Keeping the allowlist, or setting the same entries in another
@@ -148,14 +148,14 @@ func policiesSetAllowlist(t *testing.T, open Opener) {
 		if created.Version != 1 || !created.Allowlist.Equal(store.Allowlist{Domains: []string{"example.test"}}) {
 			t.Fatalf("created %+v", created)
 		}
-		_, err = f.r.Policies.Set(ctx, b.ID, store.Policy{
+		_, err = f.r.Policies.Set(ctx, store.ActorFor(b.ID), store.Policy{
 			ID: store.NewID(), SiteID: s.ID, PathPrefix: "/", Visibility: store.Protected, EmailEnabled: true,
 			Allowlist: store.Allowlist{Emails: []string{"eve@example.test"}}, UpdatedAt: at,
 		})
 		wantErr(t, err, store.ErrNotFound)
 
 		// Deleting a policy deletes its allowlist.
-		f.must(f.r.Policies.Delete(ctx, a.ID, s.ID, created.ID))
+		f.must(f.r.Policies.Delete(ctx, store.ActorFor(a.ID), s.ID, created.ID))
 		after, err = f.r.Policies.ForSite(ctx, s.ID)
 		f.must(err)
 		if len(after) != 2 {
@@ -188,7 +188,7 @@ func emailCodesContract(t *testing.T, open Opener) {
 		ctx := t.Context()
 		links := f.validPolicy(p.SiteID)
 		links.PathPrefix = "/links/"
-		f.must(f.r.Policies.Create(ctx, o.ID, links))
+		f.must(f.r.Policies.Create(ctx, store.ActorFor(o.ID), links))
 		other := f.site(o.ID)
 		for name, c := range map[string]store.VisitorEmailCode{
 			"another version":           code(func(c *store.VisitorEmailCode) { c.PolicyVersion = p.Version + 1 }),
@@ -242,7 +242,7 @@ func emailCodesContract(t *testing.T, open Opener) {
 		f.must(f.r.EmailCodes.Put(ctx, code(func(c *store.VisitorEmailCode) {
 			c.PolicyID, c.CreatedAt, c.ExpiresAt = docs.ID, now.Add(11*time.Minute), now.Add(21*time.Minute)
 		})))
-		f.must(f.r.Policies.Delete(ctx, o.ID, p.SiteID, docs.ID))
+		f.must(f.r.Policies.Delete(ctx, store.ActorFor(o.ID), p.SiteID, docs.ID))
 		if _, err := f.r.EmailCodes.Get(ctx, p.SiteID, docs.ID, "address-1"); !errors.Is(err, store.ErrNotFound) {
 			t.Fatalf("a deleted policy's code remains: %v", err)
 		}
@@ -307,7 +307,7 @@ func emailCodesContract(t *testing.T, open Opener) {
 		ctx := t.Context()
 		links := f.validPolicy(p.SiteID)
 		links.PathPrefix = "/links/"
-		f.must(f.r.Policies.Create(ctx, o.ID, links))
+		f.must(f.r.Policies.Create(ctx, store.ActorFor(o.ID), links))
 		other := f.site(o.ID)
 		session := func(mutate func(*store.SiteSession)) store.SiteSession {
 			ss := store.SiteSession{

@@ -57,7 +57,7 @@ func linkFailed(err error) (*failure, error) {
 	return nil, err
 }
 
-func (s *Server) shareLinkBody(l store.ShareLink) ShareLink {
+func (s *Server) shareLinkBody(ctx context.Context, l store.ShareLink) ShareLink {
 	out := ShareLink{
 		Id:             l.ID,
 		PublicId:       l.PublicID,
@@ -68,6 +68,7 @@ func (s *Server) shareLinkBody(l store.ShareLink) ShareLink {
 		ExpiresAt:      optionalMillis(l.ExpiresAt),
 		LastAccessedAt: optionalMillis(l.LastAccessedAt),
 		RotatedAt:      optionalMillis(l.RotatedAt),
+		CreatedBy:      s.creator(ctx, l.CreatedBy, l.CreatedByToken),
 	}
 	if l.Label != "" {
 		out.Label = &l.Label
@@ -96,15 +97,15 @@ func optionalMillis(t time.Time) *Timestamp {
 }
 
 // createdShareLink is a link with its token and URL, shown once.
-func (s *Server) createdShareLink(site string, l store.ShareLink, token string) CreatedShareLink {
+func (s *Server) createdShareLink(ctx context.Context, site string, l store.ShareLink, token string) CreatedShareLink {
 	base := strings.TrimSuffix(s.siteURL(s.Sites.Hostname(site)), "/")
 	u := base + (&url.URL{Path: l.PathPrefix}).EscapedPath() + "?t=" + url.QueryEscape(token)
-	return CreatedShareLink{ShareLink: s.shareLinkBody(l), Token: token, Url: u}
+	return CreatedShareLink{ShareLink: s.shareLinkBody(ctx, l), Token: token, Url: u}
 }
 
 // ListShareLinks lists a site's unrevoked links, newest first.
 func (s *Server) ListShareLinks(ctx context.Context, req ListShareLinksRequestObject) (ListShareLinksResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListShareLinksdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -116,7 +117,7 @@ func (s *Server) ListShareLinks(ctx context.Context, req ListShareLinksRequestOb
 	if !ok {
 		return ListShareLinksdefaultJSONResponse(*badCursor), nil
 	}
-	list, err := s.Access.ListLinks(ctx, owner, req.Site, before, beforeID, limit+1)
+	list, err := s.Access.ListLinks(ctx, actor, req.Site, before, beforeID, limit+1)
 	if err != nil {
 		f, err := linkFailed(err)
 		if f == nil {
@@ -131,7 +132,7 @@ func (s *Server) ListShareLinks(ctx context.Context, req ListShareLinksRequestOb
 		page.NextCursor = encodeCursor(strconv.FormatInt(last.CreatedAt.UnixMilli(), 10) + ":" + last.ID)
 	}
 	for _, l := range list {
-		page.Items = append(page.Items, s.shareLinkBody(l))
+		page.Items = append(page.Items, s.shareLinkBody(ctx, l))
 	}
 	return page, nil
 }
@@ -151,7 +152,7 @@ func linkCursor(c *Cursor) (time.Time, string, bool) {
 
 // CreateShareLink creates a link and shows its token once.
 func (s *Server) CreateShareLink(ctx context.Context, req CreateShareLinkRequestObject) (CreateShareLinkResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return CreateShareLinkdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -174,7 +175,7 @@ func (s *Server) CreateShareLink(ctx context.Context, req CreateShareLinkRequest
 			n.MaxUses = int(*b.MaxUses)
 		}
 	}
-	l, token, err := s.Access.CreateLink(ctx, owner, req.Site, n)
+	l, token, err := s.Access.CreateLink(ctx, actor, req.Site, n)
 	if err != nil {
 		f, err := linkFailed(err)
 		if f == nil {
@@ -182,16 +183,16 @@ func (s *Server) CreateShareLink(ctx context.Context, req CreateShareLinkRequest
 		}
 		return CreateShareLinkdefaultJSONResponse(*f), nil
 	}
-	return CreateShareLink201JSONResponse(s.createdShareLink(req.Site, l, token)), nil
+	return CreateShareLink201JSONResponse(s.createdShareLink(ctx, req.Site, l, token)), nil
 }
 
 // RevokeShareLink revokes a link by its public ID.
 func (s *Server) RevokeShareLink(ctx context.Context, req RevokeShareLinkRequestObject) (RevokeShareLinkResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return RevokeShareLinkdefaultJSONResponse(*unauthenticated), nil
 	}
-	if err := s.Access.RevokeLink(ctx, owner, req.Site, req.LinkId); err != nil {
+	if err := s.Access.RevokeLink(ctx, actor, req.Site, req.LinkId); err != nil {
 		f, err := linkFailed(err)
 		if f == nil {
 			return nil, err
@@ -203,11 +204,11 @@ func (s *Server) RevokeShareLink(ctx context.Context, req RevokeShareLinkRequest
 
 // RotateShareLink gives a link a new token and shows it once.
 func (s *Server) RotateShareLink(ctx context.Context, req RotateShareLinkRequestObject) (RotateShareLinkResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return RotateShareLinkdefaultJSONResponse(*unauthenticated), nil
 	}
-	l, token, err := s.Access.RotateLink(ctx, owner, req.Site, req.LinkId)
+	l, token, err := s.Access.RotateLink(ctx, actor, req.Site, req.LinkId)
 	if err != nil {
 		f, err := linkFailed(err)
 		if f == nil {
@@ -215,17 +216,17 @@ func (s *Server) RotateShareLink(ctx context.Context, req RotateShareLinkRequest
 		}
 		return RotateShareLinkdefaultJSONResponse(*f), nil
 	}
-	return RotateShareLink200JSONResponse(s.createdShareLink(req.Site, l, token)), nil
+	return RotateShareLink200JSONResponse(s.createdShareLink(ctx, req.Site, l, token)), nil
 }
 
 // ListShareLinkAccessLog lists one link's access-log entries, newest first.
 func (s *Server) ListShareLinkAccessLog(ctx context.Context, req ListShareLinkAccessLogRequestObject) (ListShareLinkAccessLogResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListShareLinkAccessLogdefaultJSONResponse(*unauthenticated), nil
 	}
 	page, f, err := s.accessLogPage(req.Params.Limit, req.Params.Cursor, func(cursor store.AccessCursor, limit int) ([]access.LoggedAccess, error) {
-		return s.Access.LinkAccessLog(ctx, owner, req.Site, req.LinkId, cursor, limit)
+		return s.Access.LinkAccessLog(ctx, actor, req.Site, req.LinkId, cursor, limit)
 	})
 	if f != nil {
 		return ListShareLinkAccessLogdefaultJSONResponse(*f), nil
@@ -238,12 +239,12 @@ func (s *Server) ListShareLinkAccessLog(ctx context.Context, req ListShareLinkAc
 
 // ListSiteAccessLog lists a site's access-log entries, newest first.
 func (s *Server) ListSiteAccessLog(ctx context.Context, req ListSiteAccessLogRequestObject) (ListSiteAccessLogResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListSiteAccessLogdefaultJSONResponse(*unauthenticated), nil
 	}
 	page, f, err := s.accessLogPage(req.Params.Limit, req.Params.Cursor, func(cursor store.AccessCursor, limit int) ([]access.LoggedAccess, error) {
-		return s.Access.SiteAccessLog(ctx, owner, req.Site, cursor, limit)
+		return s.Access.SiteAccessLog(ctx, actor, req.Site, cursor, limit)
 	})
 	if f != nil {
 		return ListSiteAccessLogdefaultJSONResponse(*f), nil

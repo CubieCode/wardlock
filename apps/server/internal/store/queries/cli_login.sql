@@ -20,16 +20,17 @@ SET status = sqlc.arg(status),
 WHERE user_code = sqlc.arg(user_code)
   AND status = 'pending'
   AND expires_at > sqlc.arg(decided_at)
-  -- A suspended owner decides nothing, even racing the suspension (A2.13).
+  -- A suspended owner decides nothing, even racing the suspension (A2.13),
+  -- and neither does a team.
   AND NOT EXISTS (
-    SELECT 1 FROM owners WHERE owners.id = sqlc.arg(owner_id) AND owners.suspended_at IS NOT NULL
+    SELECT 1 FROM owners WHERE owners.id = sqlc.arg(owner_id) AND (owners.suspended_at IS NOT NULL OR owners.kind = 'team')
   );
 
 -- name: RedeemCLILogin :execrows
 UPDATE cli_login_requests SET status = 'redeemed', api_token_id = sqlc.arg(api_token_id)
 WHERE cli_login_requests.id = sqlc.arg(id) AND status = 'approved' AND expires_at > sqlc.arg(now)
   AND NOT EXISTS (
-    SELECT 1 FROM owners WHERE owners.id = cli_login_requests.owner_id AND owners.suspended_at IS NOT NULL
+    SELECT 1 FROM owners WHERE owners.id = cli_login_requests.owner_id AND (owners.suspended_at IS NOT NULL OR owners.kind = 'team')
   );
 
 -- Suspension denies the owner's approved logins the CLI has not yet

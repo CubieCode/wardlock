@@ -57,6 +57,9 @@ const (
 	QuotaStorage       Quota = "storage"
 	QuotaSites         Quota = "sites"
 	QuotaDeploysPerDay Quota = "deploys_per_day"
+	// QuotaTeams is how many teams an owner may start (T7.1). It is not one
+	// of Quotas: it applies to a person, not an account.
+	QuotaTeams Quota = "teams"
 )
 
 // ErrQuotaExceeded means a write would take the owner past one of their

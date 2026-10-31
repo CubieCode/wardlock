@@ -85,23 +85,23 @@ func (w *world) publish(ownerID string, files map[string]string) {
 		Limits: deploys.DefaultLimits(), Now: w.now, Renditions: w.db.Renditions(),
 	})
 	name := "site-" + strings.ToLower(store.NewID()[20:])
-	if err := w.db.Sites().Create(ctx, store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: w.now()}, store.Quotas{}); err != nil {
+	if err := w.db.Sites().Create(ctx, store.ActorFor(store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: w.now()}.OwnerID), store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: w.now()}, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	var m deploys.Manifest
 	for p, body := range files {
 		m.Files = append(m.Files, store.DeployFile{Path: p, SHA256: hashOf(body), Size: int64(len(body))})
 	}
-	d, _, err := svc.Create(ctx, ownerID, name, m)
+	d, _, err := svc.Create(ctx, store.ActorFor(ownerID), name, m)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range m.Files {
-		if err := svc.Upload(ctx, ownerID, name, d.ID, f.SHA256, strings.NewReader(files[f.Path])); err != nil {
+		if err := svc.Upload(ctx, store.ActorFor(ownerID), name, d.ID, f.SHA256, strings.NewReader(files[f.Path])); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := svc.Activate(ctx, ownerID, name, d.ID); err != nil {
+	if _, _, err := svc.Activate(ctx, store.ActorFor(ownerID), name, d.ID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -887,7 +887,7 @@ func TestWithheldEvent(t *testing.T) {
 	img := png1("nsfw", 0)
 	w.publish(w.owner.ID, map[string]string{"a.png": img})
 	w.publish(w.owner.ID, map[string]string{"b.png": img})
-	ss, err := w.db.Sites().List(ctx, w.owner.ID, "", 10)
+	ss, err := w.db.Sites().List(ctx, store.ActorFor(w.owner.ID), "", "", 10)
 	if err != nil || len(ss) != 2 {
 		t.Fatalf("sites: %v, %v", ss, err)
 	}
@@ -918,7 +918,7 @@ func TestOwnerNotices(t *testing.T) {
 	w.publish(w.owner.ID, map[string]string{"a.png": img})
 	w.publish(w.owner.ID, map[string]string{"b.png": img})
 	w.publish(suspended.ID, map[string]string{"c.png": img})
-	ss, err := w.db.Sites().List(ctx, w.owner.ID, "", 10)
+	ss, err := w.db.Sites().List(ctx, store.ActorFor(w.owner.ID), "", "", 10)
 	if err != nil || len(ss) != 2 {
 		t.Fatalf("sites: %v, %v", ss, err)
 	}
@@ -969,7 +969,7 @@ func TestInvalidate(t *testing.T) {
 	}
 	svc := moderation.New(c)
 	svc.Pass(t.Context())
-	ss, err := w.db.Sites().List(t.Context(), w.owner.ID, "", 10)
+	ss, err := w.db.Sites().List(t.Context(), store.ActorFor(w.owner.ID), "", "", 10)
 	if err != nil || len(got) != 1 || got[0] != ss[0].ID {
 		t.Fatalf("invalidated %v, want %s (%v)", got, ss[0].ID, err)
 	}

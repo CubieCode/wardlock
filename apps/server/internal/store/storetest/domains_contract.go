@@ -24,7 +24,7 @@ func domainsContract(t *testing.T, open Opener) {
 		s := f.site(o.ID)
 		active := f.validDomain(s.ID)
 		active.Status, active.LastCheckedAt, active.VerifiedAt = store.DomainActive, now, now
-		f.must(f.r.Domains.Create(t.Context(), o.ID, active))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), active))
 		got, err := f.r.Domains.GetActiveByHostname(t.Context(), active.Hostname)
 		if err != nil {
 			t.Fatal(err)
@@ -38,7 +38,7 @@ func domainsContract(t *testing.T, open Opener) {
 			if status == store.DomainLapsed {
 				d.LastCheckedAt, d.FailingSince, d.LastFailureReason, d.FailureDetail = now, now, store.DomainNoRecord, "No CNAME or TXT record found."
 			}
-			f.must(f.r.Domains.Create(t.Context(), o.ID, d))
+			f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), d))
 			_, err := f.r.Domains.GetActiveByHostname(t.Context(), d.Hostname)
 			wantErr(t, err, store.ErrNotFound)
 		}
@@ -51,21 +51,21 @@ func domainsContract(t *testing.T, open Opener) {
 		o := f.owner()
 		s := f.site(o.ID)
 		d := f.validDomain(s.ID)
-		f.must(f.r.Domains.Create(t.Context(), o.ID, d))
-		got, err := f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname)
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), d))
+		got, err := f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), s.ID, d.Hostname)
 		if err != nil || got != d {
 			t.Fatalf("Get() = %+v, %v; want %+v", got, err, d)
 		}
 		// Another owner, another of the owner's sites, an unknown hostname
 		// and an unknown site are all simply not found.
 		other := f.owner()
-		_, err = f.r.Domains.Get(t.Context(), other.ID, s.ID, d.Hostname)
+		_, err = f.r.Domains.Get(t.Context(), store.ActorFor(other.ID), s.ID, d.Hostname)
 		wantErr(t, err, store.ErrNotFound)
-		_, err = f.r.Domains.Get(t.Context(), o.ID, f.site(o.ID).ID, d.Hostname)
+		_, err = f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), f.site(o.ID).ID, d.Hostname)
 		wantErr(t, err, store.ErrNotFound)
-		_, err = f.r.Domains.Get(t.Context(), o.ID, s.ID, "unknown.example.test")
+		_, err = f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), s.ID, "unknown.example.test")
 		wantErr(t, err, store.ErrNotFound)
-		_, err = f.r.Domains.Get(t.Context(), o.ID, store.NewID(), d.Hostname)
+		_, err = f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), store.NewID(), d.Hostname)
 		wantErr(t, err, store.ErrNotFound)
 	})
 	t.Run("List", func(t *testing.T) {
@@ -77,11 +77,11 @@ func domainsContract(t *testing.T, open Opener) {
 		for _, h := range []string{"b.example.test", "a.example.test", "c.example.test"} {
 			d := f.validDomain(s.ID)
 			d.Hostname = h
-			f.must(f.r.Domains.Create(t.Context(), o.ID, d))
+			f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), d))
 			want = append(want, h)
 		}
 		// A domain of another site is not listed.
-		f.must(f.r.Domains.Create(t.Context(), o.ID, f.validDomain(f.site(o.ID).ID)))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), f.validDomain(f.site(o.ID).ID)))
 		slices.Sort(want)
 		hosts := func(ds []store.Domain) []string {
 			var out []string
@@ -90,19 +90,19 @@ func domainsContract(t *testing.T, open Opener) {
 			}
 			return out
 		}
-		got, err := f.r.Domains.List(t.Context(), o.ID, s.ID, "", 10)
+		got, err := f.r.Domains.List(t.Context(), store.ActorFor(o.ID), s.ID, "", 10)
 		if err != nil || !slices.Equal(hosts(got), want) {
 			t.Fatalf("List() = %v, %v; want %v", hosts(got), err, want)
 		}
-		got, err = f.r.Domains.List(t.Context(), o.ID, s.ID, "", 2)
+		got, err = f.r.Domains.List(t.Context(), store.ActorFor(o.ID), s.ID, "", 2)
 		if err != nil || !slices.Equal(hosts(got), want[:2]) {
 			t.Fatalf("List(limit 2) = %v, %v", hosts(got), err)
 		}
-		got, err = f.r.Domains.List(t.Context(), o.ID, s.ID, want[1], 10)
+		got, err = f.r.Domains.List(t.Context(), store.ActorFor(o.ID), s.ID, want[1], 10)
 		if err != nil || !slices.Equal(hosts(got), want[2:]) {
 			t.Fatalf("List(after %s) = %v, %v", want[1], hosts(got), err)
 		}
-		got, err = f.r.Domains.List(t.Context(), f.owner().ID, s.ID, "", 10)
+		got, err = f.r.Domains.List(t.Context(), store.ActorFor(f.owner().ID), s.ID, "", 10)
 		if err != nil || len(got) != 0 {
 			t.Fatalf("another owner's List() = %v, %v; want nothing", hosts(got), err)
 		}
@@ -113,18 +113,18 @@ func domainsContract(t *testing.T, open Opener) {
 		o := f.owner()
 		s := f.site(o.ID)
 		d := f.validDomain(s.ID)
-		f.must(f.r.Domains.Create(t.Context(), o.ID, d))
-		wantErr(t, f.r.Domains.Delete(t.Context(), f.owner().ID, s.ID, d.Hostname), store.ErrNotFound)
-		wantErr(t, f.r.Domains.Delete(t.Context(), o.ID, f.site(o.ID).ID, d.Hostname), store.ErrNotFound)
-		f.must(f.r.Domains.Delete(t.Context(), o.ID, s.ID, d.Hostname))
-		_, err := f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname)
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), d))
+		wantErr(t, f.r.Domains.Delete(t.Context(), store.ActorFor(f.owner().ID), s.ID, d.Hostname), store.ErrNotFound)
+		wantErr(t, f.r.Domains.Delete(t.Context(), store.ActorFor(o.ID), f.site(o.ID).ID, d.Hostname), store.ErrNotFound)
+		f.must(f.r.Domains.Delete(t.Context(), store.ActorFor(o.ID), s.ID, d.Hostname))
+		_, err := f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), s.ID, d.Hostname)
 		wantErr(t, err, store.ErrNotFound)
-		wantErr(t, f.r.Domains.Delete(t.Context(), o.ID, s.ID, d.Hostname), store.ErrNotFound)
+		wantErr(t, f.r.Domains.Delete(t.Context(), store.ActorFor(o.ID), s.ID, d.Hostname), store.ErrNotFound)
 		// The hostname is free again, for any site.
 		other := f.owner()
 		again := f.validDomain(f.site(other.ID).ID)
 		again.Hostname = d.Hostname
-		f.must(f.r.Domains.Create(t.Context(), other.ID, again))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(other.ID), again))
 	})
 	t.Run("RecordCheck", func(t *testing.T) {
 		t.Parallel()
@@ -132,14 +132,14 @@ func domainsContract(t *testing.T, open Opener) {
 		o := f.owner()
 		s := f.site(o.ID)
 		d := f.validDomain(s.ID)
-		f.must(f.r.Domains.Create(t.Context(), o.ID, d))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), d))
 
 		later := now.Add(time.Minute)
 		failed := d
 		failed.LastCheckedAt, failed.FailingSince = later, later
 		failed.LastFailureReason, failed.FailureDetail = store.DomainNoRecord, "No CNAME or TXT record found."
 		f.must(f.r.Domains.RecordCheck(t.Context(), d, failed))
-		got, err := f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname)
+		got, err := f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), s.ID, d.Hostname)
 		if err != nil || got != failed {
 			t.Fatalf("after a failed check Get() = %+v, %v; want %+v", got, err, failed)
 		}
@@ -149,7 +149,7 @@ func domainsContract(t *testing.T, open Opener) {
 		passed.LastCheckedAt = passed.VerifiedAt
 		passed.FailingSince, passed.LastFailureReason, passed.FailureDetail = time.Time{}, "", ""
 		f.must(f.r.Domains.RecordCheck(t.Context(), failed, passed))
-		got, err = f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname)
+		got, err = f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), s.ID, d.Hostname)
 		if err != nil || got != passed {
 			t.Fatalf("after a passed check Get() = %+v, %v; want %+v", got, err, passed)
 		}
@@ -167,7 +167,7 @@ func domainsContract(t *testing.T, open Opener) {
 		sameStatus.LastCheckedAt = later // read before the passing check
 		wantErr(t, f.r.Domains.RecordCheck(t.Context(), sameStatus, stale), store.ErrNotFound)
 		wantErr(t, f.r.Domains.RecordCheck(t.Context(), d, stale), store.ErrNotFound) // never checked
-		got, err = f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname)
+		got, err = f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), s.ID, d.Hostname)
 		if err != nil || got != passed {
 			t.Fatalf("a stale check changed the domain: %+v, %v", got, err)
 		}
@@ -183,12 +183,12 @@ func domainsContract(t *testing.T, open Opener) {
 
 		// A check for a removed claim changes nothing, even when the
 		// hostname has been claimed again under a new ID.
-		f.must(f.r.Domains.Delete(t.Context(), o.ID, s.ID, d.Hostname))
+		f.must(f.r.Domains.Delete(t.Context(), store.ActorFor(o.ID), s.ID, d.Hostname))
 		again := f.validDomain(s.ID)
 		again.Hostname = d.Hostname
-		f.must(f.r.Domains.Create(t.Context(), o.ID, again))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), again))
 		wantErr(t, f.r.Domains.RecordCheck(t.Context(), passed, stale), store.ErrNotFound)
-		got, err = f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname)
+		got, err = f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), s.ID, d.Hostname)
 		if err != nil || got != again {
 			t.Fatalf("a stale check changed the new claim: %+v, %v", got, err)
 		}
@@ -203,7 +203,7 @@ func domainsContract(t *testing.T, open Opener) {
 		add := func(mutate func(d *store.Domain)) store.Domain {
 			d := f.validDomain(s.ID)
 			mutate(&d)
-			f.must(f.r.Domains.Create(t.Context(), o.ID, d))
+			f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), d))
 			return d
 		}
 		var want []string
@@ -271,7 +271,7 @@ func domainsContract(t *testing.T, open Opener) {
 			if status == store.DomainLapsed {
 				d.FailingSince, d.LastFailureReason = created, store.DomainNoRecord
 			}
-			f.must(f.r.Domains.Create(t.Context(), o.ID, d))
+			f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), d))
 			return d
 		}
 		want := []string{
@@ -310,13 +310,13 @@ func domainsContract(t *testing.T, open Opener) {
 		cutoff := now.Add(-7 * 24 * time.Hour)
 		old := f.validDomain(s.ID)
 		old.CreatedAt = cutoff
-		f.must(f.r.Domains.Create(t.Context(), o.ID, old))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), old))
 		young := f.validDomain(s.ID)
 		young.CreatedAt = cutoff.Add(time.Millisecond)
-		f.must(f.r.Domains.Create(t.Context(), o.ID, young))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), young))
 		verified := f.validDomain(s.ID)
 		verified.CreatedAt = cutoff.Add(-time.Hour)
-		f.must(f.r.Domains.Create(t.Context(), o.ID, verified))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), verified))
 		// It became active after the worker listed it.
 		active := verified
 		active.Status, active.LastCheckedAt, active.VerifiedAt = store.DomainActive, now, now
@@ -328,10 +328,10 @@ func domainsContract(t *testing.T, open Opener) {
 		f.must(f.r.Domains.DeleteExpiredPending(t.Context(), old.ID, cutoff))
 		wantErr(t, f.r.Domains.DeleteExpiredPending(t.Context(), old.ID, cutoff), store.ErrNotFound)
 
-		_, err := f.r.Domains.Get(t.Context(), o.ID, s.ID, old.Hostname)
+		_, err := f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), s.ID, old.Hostname)
 		wantErr(t, err, store.ErrNotFound)
 		for _, d := range []store.Domain{young, active} {
-			if _, err := f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname); err != nil {
+			if _, err := f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), s.ID, d.Hostname); err != nil {
 				t.Fatalf("%s was deleted: %v", d.Hostname, err)
 			}
 		}
@@ -339,10 +339,10 @@ func domainsContract(t *testing.T, open Opener) {
 		other := f.owner()
 		again := f.validDomain(f.site(other.ID).ID)
 		again.Hostname = old.Hostname
-		f.must(f.r.Domains.Create(t.Context(), other.ID, again))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(other.ID), again))
 		// A new claim of the same hostname is not the old claim's ID.
 		wantErr(t, f.r.Domains.DeleteExpiredPending(t.Context(), old.ID, now), store.ErrNotFound)
-		if _, err := f.r.Domains.Get(t.Context(), other.ID, again.SiteID, again.Hostname); err != nil {
+		if _, err := f.r.Domains.Get(t.Context(), store.ActorFor(other.ID), again.SiteID, again.Hostname); err != nil {
 			t.Fatalf("the new claim was deleted: %v", err)
 		}
 	})
@@ -358,7 +358,9 @@ func domainsCreateContract(t *testing.T, open Opener) {
 			o := f.owner()
 			return owned{o.ID, f.validDomain(f.site(o.ID).ID)}
 		},
-		func(f *fixture, v owned) error { return f.r.Domains.Create(f.t.Context(), v.ownerID, v.d) },
+		func(f *fixture, v owned) error {
+			return f.r.Domains.Create(f.t.Context(), store.ActorFor(v.ownerID), v.d)
+		},
 		[]insertCase[owned]{
 			{name: "valid"},
 			{name: "failing with reason", mutate: func(_ *fixture, v *owned) {
@@ -373,12 +375,12 @@ func domainsCreateContract(t *testing.T, open Opener) {
 				o := f.owner()
 				other := f.validDomain(f.site(o.ID).ID)
 				other.Hostname = v.d.Hostname
-				f.must(f.r.Domains.Create(f.t.Context(), o.ID, other))
+				f.must(f.r.Domains.Create(f.t.Context(), store.ActorFor(o.ID), other))
 			}, want: store.ErrConflict},
 			{name: "duplicate verification token", mutate: func(f *fixture, v *owned) {
 				other := f.validDomain(v.d.SiteID)
 				other.VerificationToken = v.d.VerificationToken
-				f.must(f.r.Domains.Create(f.t.Context(), v.ownerID, other))
+				f.must(f.r.Domains.Create(f.t.Context(), store.ActorFor(v.ownerID), other))
 			}, want: store.ErrConflict},
 			{name: "another owner's site", mutate: func(f *fixture, v *owned) { v.ownerID = f.owner().ID }, want: store.ErrNotFound},
 			{name: "unknown site", mutate: func(_ *fixture, v *owned) { v.d.SiteID = store.NewID() }, want: store.ErrNotFound},

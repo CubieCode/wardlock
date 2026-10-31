@@ -40,31 +40,20 @@ func policyFailed(err error) (*failure, error) {
 	return nil, err
 }
 
-func policyBody(p store.Policy) Policy {
+func (s *Server) policyBody(ctx context.Context, p store.Policy) Policy {
 	out := Policy{
 		Id:         p.ID,
 		Path:       p.PathPrefix,
 		Visibility: PolicyVisibility(p.Visibility),
-		Methods:    []PolicyMethod{},
+		Methods:    policyMethods(p),
 		Allowlist:  PolicyAllowlist{Emails: []string{}, Domains: []string{}, GithubOrgs: &[]string{}},
 		Version:    math.MaxInt32, // a policy changed two billion times stays valid
 		CreatedAt:  p.CreatedAt.UnixMilli(),
 		UpdatedAt:  p.UpdatedAt.UnixMilli(),
+		CreatedBy:  s.creator(ctx, p.CreatedBy, p.CreatedByToken),
 	}
 	if p.Version >= 1 && p.Version <= math.MaxInt32 {
 		out.Version = int32(p.Version)
-	}
-	if p.LinksEnabled {
-		out.Methods = append(out.Methods, PolicyMethodLinks)
-	}
-	if p.PasswordEnabled {
-		out.Methods = append(out.Methods, PolicyMethodPassword)
-	}
-	if p.EmailEnabled {
-		out.Methods = append(out.Methods, PolicyMethodEmail)
-	}
-	if p.OAuthEnabled {
-		out.Methods = append(out.Methods, PolicyMethodOauth)
 	}
 	out.Allowlist.Emails = append(out.Allowlist.Emails, p.Allowlist.Emails...)
 	out.Allowlist.Domains = append(out.Allowlist.Domains, p.Allowlist.Domains...)
@@ -72,9 +61,27 @@ func policyBody(p store.Policy) Policy {
 	return out
 }
 
+// policyMethods lists a policy's enabled methods.
+func policyMethods(p store.Policy) []PolicyMethod {
+	out := []PolicyMethod{}
+	if p.LinksEnabled {
+		out = append(out, PolicyMethodLinks)
+	}
+	if p.PasswordEnabled {
+		out = append(out, PolicyMethodPassword)
+	}
+	if p.EmailEnabled {
+		out = append(out, PolicyMethodEmail)
+	}
+	if p.OAuthEnabled {
+		out = append(out, PolicyMethodOauth)
+	}
+	return out
+}
+
 // ListPolicies lists a site's policies by path, the default first.
 func (s *Server) ListPolicies(ctx context.Context, req ListPoliciesRequestObject) (ListPoliciesResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListPoliciesdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -86,7 +93,7 @@ func (s *Server) ListPolicies(ctx context.Context, req ListPoliciesRequestObject
 	if !ok || (after != "" && access.CheckPrefix(after) != nil) {
 		return ListPoliciesdefaultJSONResponse(*badCursor), nil
 	}
-	list, err := s.Access.List(ctx, owner, req.Site, after, limit+1)
+	list, err := s.Access.List(ctx, actor, req.Site, after, limit+1)
 	if err != nil {
 		f, err := policyFailed(err)
 		if f == nil {
@@ -100,14 +107,14 @@ func (s *Server) ListPolicies(ctx context.Context, req ListPoliciesRequestObject
 		page.NextCursor = encodeCursor(list[limit-1].PathPrefix)
 	}
 	for _, p := range list {
-		page.Items = append(page.Items, policyBody(p))
+		page.Items = append(page.Items, s.policyBody(ctx, p))
 	}
 	return page, nil
 }
 
 // SetPolicy creates or replaces the policy for a path.
 func (s *Server) SetPolicy(ctx context.Context, req SetPolicyRequestObject) (SetPolicyResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return SetPolicydefaultJSONResponse(*unauthenticated), nil
 	}
@@ -154,7 +161,7 @@ func (s *Server) SetPolicy(ctx context.Context, req SetPolicyRequestObject) (Set
 			return SetPolicydefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_policy", "The password cannot be empty; omit it to keep the current one.", "password")), nil
 		}
 	}
-	p, err := s.Access.Set(ctx, owner, req.Site, rule)
+	p, err := s.Access.Set(ctx, actor, req.Site, rule)
 	if err != nil {
 		f, err := policyFailed(err)
 		if f == nil {
@@ -162,16 +169,16 @@ func (s *Server) SetPolicy(ctx context.Context, req SetPolicyRequestObject) (Set
 		}
 		return SetPolicydefaultJSONResponse(*f), nil
 	}
-	return SetPolicy200JSONResponse(policyBody(p)), nil
+	return SetPolicy200JSONResponse(s.policyBody(ctx, p)), nil
 }
 
 // DeletePolicy removes a path policy.
 func (s *Server) DeletePolicy(ctx context.Context, req DeletePolicyRequestObject) (DeletePolicyResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return DeletePolicydefaultJSONResponse(*unauthenticated), nil
 	}
-	if err := s.Access.Delete(ctx, owner, req.Site, req.PolicyId); err != nil {
+	if err := s.Access.Delete(ctx, actor, req.Site, req.PolicyId); err != nil {
 		f, err := policyFailed(err)
 		if f == nil {
 			return nil, err
@@ -188,7 +195,7 @@ var signInProviderOrder = []SignInProviderId{SignInProviderIdGithub, SignInProvi
 // configured, by ID and button name only: never a client ID, secret or
 // issuer.
 func (s *Server) ListSignInProviders(ctx context.Context, _ ListSignInProvidersRequestObject) (ListSignInProvidersResponseObject, error) {
-	if _, ok := OwnerID(ctx); !ok {
+	if _, ok := ActorOf(ctx); !ok {
 		return ListSignInProvidersdefaultJSONResponse(*unauthenticated), nil
 	}
 	out := ListSignInProviders200JSONResponse{Items: []SignInProvider{}}

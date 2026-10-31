@@ -394,6 +394,345 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v0/teams': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List the teams the caller is in.
+     * @description Every team the owner belongs to, by name, with their role in each. A team token sees its own team. Not paged.
+     */
+    get: operations['listTeams'];
+    put?: never;
+    /**
+     * Create a team.
+     * @description The signed-in owner becomes its first admin. An owner who has already started as many teams as the instance allows gets `413 limit_exceeded` with target `name`.
+     */
+    post: operations['createTeam'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/teams/{teamId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+      };
+      cookie?: never;
+    };
+    /**
+     * Get a team.
+     * @description A team the caller is not in answers the same `404` as a missing one.
+     */
+    get: operations['getTeam'];
+    put?: never;
+    post?: never;
+    /**
+     * Delete a team.
+     * @description Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. Its tokens, groups, tags, members and invitations go with it.
+     */
+    delete: operations['deleteTeam'];
+    options?: never;
+    head?: never;
+    /**
+     * Rename a team.
+     * @description Admins only (`403 forbidden_role`).
+     */
+    patch: operations['updateTeam'];
+    trace?: never;
+  };
+  '/api/v0/teams/{teamId}/members': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+      };
+      cookie?: never;
+    };
+    /**
+     * List a team's members.
+     * @description Any member, by address.
+     */
+    get: operations['listTeamMembers'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/teams/{teamId}/members/{ownerId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+        /**
+         * @description The member's owner ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e91
+         */
+        ownerId: components['parameters']['OwnerId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Remove a member, or leave a team.
+     * @description An admin may remove anyone; any member may remove themselves. It ends their access on their next request, and what they made stays with the team. Removing the last admin answers `409 team_needs_admin`.
+     */
+    delete: operations['removeTeamMember'];
+    options?: never;
+    head?: never;
+    /**
+     * Change a member's role.
+     * @description Admins only. Taking the role of the last working admin answers `409 team_needs_admin`.
+     */
+    patch: operations['setTeamMemberRole'];
+    trace?: never;
+  };
+  '/api/v0/teams/{teamId}/invitations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+      };
+      cookie?: never;
+    };
+    /**
+     * List a team's open invitations.
+     * @description Admins only, newest first. Not paged: expired invitations are left out.
+     */
+    get: operations['listTeamInvitations'];
+    put?: never;
+    /**
+     * Invite an address to a team.
+     * @description Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+     */
+    post: operations['inviteTeamMember'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/teams/{teamId}/invitations/{invitationId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+        /**
+         * @description The invitation's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92
+         */
+        invitationId: components['parameters']['InvitationId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Cancel an invitation.
+     * @description Admins only.
+     */
+    delete: operations['deleteTeamInvitation'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/teams/{teamId}/tokens': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+      };
+      cookie?: never;
+    };
+    /**
+     * List a team's tokens.
+     * @description Admins only, newest first. Team tokens belong to the team, so they outlive whoever made them.
+     */
+    get: operations['listTeamTokens'];
+    put?: never;
+    /**
+     * Create a team token.
+     * @description Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+     */
+    post: operations['createTeamToken'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/teams/{teamId}/tokens/{tokenId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+        /**
+         * @description The API token's ID (not its public ID).
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20
+         */
+        tokenId: components['parameters']['TokenId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Revoke a team token.
+     * @description Admins only. Takes effect on the token's next request.
+     */
+    delete: operations['revokeTeamToken'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/team-invitations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List invitations to the signed-in owner.
+     * @description Open invitations to the owner's own verified address, newest first.
+     */
+    get: operations['listMyTeamInvitations'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/team-invitations/{invitationId}/accept': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The invitation's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92
+         */
+        invitationId: components['parameters']['InvitationId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Accept an invitation.
+     * @description Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one and an expired one answer the same `404`. Accepting twice changes nothing, while still a member.
+     */
+    post: operations['acceptTeamInvitation'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/team-invitations/{invitationId}/decline': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The invitation's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92
+         */
+        invitationId: components['parameters']['InvitationId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Decline an invitation.
+     * @description As `acceptTeamInvitation`, the invitation must be to the owner's own address.
+     */
+    post: operations['declineTeamInvitation'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v0/sites/{site}/transfer': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Move a site to or from a team.
+     * @description Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+     */
+    post: operations['transferSite'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v0/webhooks': {
     parameters: {
       query?: never;
@@ -621,13 +960,13 @@ export interface paths {
     };
     /**
      * List the owner's sites.
-     * @description Ordered by name. With `hostname`, answers the owner's site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
+     * @description Every site the caller can see: their own and their teams', ordered by name; `team` narrows it to one team. With `hostname`, answers the site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
      */
     get: operations['listSites'];
     put?: never;
     /**
      * Create an empty site.
-     * @description Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
+     * @description Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
      */
     post: operations['createSite'];
     delete?: never;
@@ -1533,6 +1872,85 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    /** @description Whose a site is. `name` is an owner's address or a team's name. */
+    SiteOwner: {
+      /** @enum {string} */
+      kind: 'owner' | 'team';
+      id: components['schemas']['Id'];
+      name: string;
+    };
+    /** @description Who made this: the member, kept after they leave, or the team token that did. Absent where nothing was recorded. */
+    CreatedBy: {
+      /** @enum {string} */
+      kind: 'owner' | 'token';
+      id: components['schemas']['Id'];
+      /** @description The owner's address, or the token's name. */
+      name: string;
+    };
+    /**
+     * @description `admin`: members, roles, team settings and deleting the team, plus everything an editor can do. `editor`: everything an owner can do to a site. `viewer`: reads only, including analytics and the access log.
+     * @enum {string}
+     */
+    TeamRole: 'admin' | 'editor' | 'viewer';
+    Team: {
+      id: components['schemas']['Id'];
+      name: components['schemas']['TeamName'];
+      role: components['schemas']['TeamRole'];
+      createdAt: components['schemas']['Timestamp'];
+    };
+    /** @example Web team */
+    TeamName: string;
+    TeamList: {
+      items: components['schemas']['Team'][];
+    };
+    CreateTeamRequest: {
+      name: components['schemas']['TeamName'];
+    };
+    UpdateTeamRequest: {
+      name: components['schemas']['TeamName'];
+    };
+    TeamMember: {
+      ownerId: components['schemas']['Id'];
+      email: components['schemas']['Email'];
+      role: components['schemas']['TeamRole'];
+      createdAt: components['schemas']['Timestamp'];
+      /** @description True while the operator has suspended them, which ends their access. */
+      suspended: boolean;
+    };
+    TeamMemberPage: {
+      items: components['schemas']['TeamMember'][];
+      nextCursor?: components['schemas']['Cursor'];
+    };
+    SetTeamMemberRoleRequest: {
+      role: components['schemas']['TeamRole'];
+    };
+    TeamInvitation: {
+      id: components['schemas']['Id'];
+      teamId: components['schemas']['Id'];
+      teamName: components['schemas']['TeamName'];
+      email: components['schemas']['Email'];
+      role: components['schemas']['TeamRole'];
+      createdAt: components['schemas']['Timestamp'];
+      expiresAt: components['schemas']['Timestamp'];
+    };
+    TeamInvitationList: {
+      items: components['schemas']['TeamInvitation'][];
+    };
+    CreateTeamInvitationRequest: {
+      email: components['schemas']['Email'];
+      role: components['schemas']['TeamRole'];
+    };
+    TransferSiteRequest: {
+      to: {
+        /**
+         * @description `owner` is the caller's own account.
+         * @enum {string}
+         */
+        kind: 'owner' | 'team';
+        /** @description The team, for `team`; refused with `owner`. */
+        id?: components['schemas']['Id'];
+      };
+    };
     Health: {
       /** @enum {string} */
       status: 'ok';
@@ -1635,6 +2053,11 @@ export interface components {
     };
     Me: {
       owner: components['schemas']['Owner'];
+      /** @description Set for a team token, which belongs to this team and to no person. `owner` then names the team's own account. */
+      team?: {
+        id: components['schemas']['Id'];
+        name: components['schemas']['TeamName'];
+      };
       /**
        * @description How this request was authenticated.
        * @enum {string}
@@ -1898,6 +2321,7 @@ export interface components {
     Site: {
       id: components['schemas']['Id'];
       name: components['schemas']['SiteName'];
+      owner: components['schemas']['SiteOwner'];
       /** @description True while the instance's operator has taken the site down: visitors see an unavailable page on every hostname, and deploys, activations, rollbacks and deletion answer `409 site_unavailable`. Only the operator can restore it. */
       unavailable: boolean;
       /** @description `<name>.<base domain>`. */
@@ -1927,6 +2351,8 @@ export interface components {
     };
     CreateSiteRequest: {
       name: components['schemas']['SiteName'];
+      /** @description Create the site under this team rather than the caller's own account. */
+      team?: components['schemas']['Id'];
     };
     /**
      * @description 1 to 40 characters with no control characters, unique among the owner's groups ignoring case: names are compared after Unicode NFC normalisation and lowercasing, so "Board" and "board", or "Kōwhai" and "KŌWHAI", cannot both exist. Surrounding spaces are trimmed; the name is kept and shown as typed.
@@ -2023,6 +2449,7 @@ export interface components {
       prior: components['schemas']['SiteOrganisation'][];
     };
     Deploy: {
+      createdBy?: components['schemas']['CreatedBy'];
       id: components['schemas']['Id'];
       /**
        * @description `pending` until first activated; `active` while it is the site's active deploy; `inactive` once replaced or rolled back from; `preview` for a preview deploy activated as its preview and never on the live site (C1.19), which is not a rollback target until promoted.
@@ -2200,6 +2627,7 @@ export interface components {
       value: string;
     };
     Domain: {
+      createdBy?: components['schemas']['CreatedBy'];
       id: components['schemas']['Id'];
       hostname: components['schemas']['Hostname'];
       /**
@@ -2284,6 +2712,7 @@ export interface components {
       githubOrgs?: string[];
     };
     Policy: {
+      createdBy?: components['schemas']['CreatedBy'];
       id: components['schemas']['Id'];
       path: components['schemas']['PolicyPath'];
       visibility: components['schemas']['PolicyVisibility'];
@@ -2326,6 +2755,7 @@ export interface components {
      */
     ShareLinkStatus: 'active' | 'expired' | 'used_up';
     ShareLink: {
+      createdBy?: components['schemas']['CreatedBy'];
       id: components['schemas']['Id'];
       publicId: components['schemas']['LinkPublicId'];
       /** @description Free text for the owner; never part of the URL. Absent when empty. */
@@ -2701,7 +3131,7 @@ export interface components {
         'application/json': components['schemas']['Error'];
       };
     };
-    /** @description The credential lacks the scope this operation needs, or a cookie-authenticated request came from another origin. */
+    /** @description The credential lacks the scope this operation needs, a cookie-authenticated request came from another origin, or (`forbidden_role`) the caller can see the team or site but their role does not allow this. */
     Forbidden: {
       headers: {
         [name: string]: unknown;
@@ -2716,7 +3146,7 @@ export interface components {
         'application/json': components['schemas']['Error'];
       };
     };
-    /** @description No such resource for this owner. Missing resources and other owners' resources get the same response. */
+    /** @description No such resource for this caller. Missing resources and resources of other owners and teams get the same response. */
     NotFound: {
       headers: {
         [name: string]: unknown;
@@ -2883,6 +3313,26 @@ export interface components {
      * @example c2l0ZTpkb2Nz
      */
     Cursor: components['schemas']['Cursor'];
+    /**
+     * @description The team's ID.
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+     */
+    TeamId: components['schemas']['Id'];
+    /**
+     * @description The member's owner ID.
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e91
+     */
+    OwnerId: components['schemas']['Id'];
+    /**
+     * @description The invitation's ID.
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92
+     */
+    InvitationId: components['schemas']['Id'];
+    /**
+     * @description A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+     * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+     */
+    TeamFilter: components['schemas']['Id'];
     /**
      * @description The site's name.
      * @example docs
@@ -3734,6 +4184,755 @@ export interface operations {
       default: components['responses']['Error'];
     };
   };
+  listTeams: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Every team. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90",
+           *           "name": "Web team",
+           *           "role": "admin",
+           *           "createdAt": 1767225600000
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['TeamList'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      default: components['responses']['Error'];
+    };
+  };
+  createTeam: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "name": "Web team"
+         *     }
+         */
+        'application/json': components['schemas']['CreateTeamRequest'];
+      };
+    };
+    responses: {
+      /** @description Created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90",
+           *       "name": "Web team",
+           *       "role": "admin",
+           *       "createdAt": 1767225600000
+           *     }
+           */
+          'application/json': components['schemas']['Team'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      413: components['responses']['TooLarge'];
+      default: components['responses']['Error'];
+    };
+  };
+  getTeam: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90",
+           *       "name": "Web team",
+           *       "role": "admin",
+           *       "createdAt": 1767225600000
+           *     }
+           */
+          'application/json': components['schemas']['Team'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  deleteTeam: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Done. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  updateTeam: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "name": "Web team"
+         *     }
+         */
+        'application/json': components['schemas']['UpdateTeamRequest'];
+      };
+    };
+    responses: {
+      /** @description OK. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90",
+           *       "name": "Web team",
+           *       "role": "admin",
+           *       "createdAt": 1767225600000
+           *     }
+           */
+          'application/json': components['schemas']['Team'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  listTeamMembers: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+      };
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "ownerId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e91",
+           *           "email": "member@example.com",
+           *           "role": "editor",
+           *           "createdAt": 1767225600000,
+           *           "suspended": false
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['TeamMemberPage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  removeTeamMember: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+        /**
+         * @description The member's owner ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e91
+         */
+        ownerId: components['parameters']['OwnerId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Done. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  setTeamMemberRole: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+        /**
+         * @description The member's owner ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e91
+         */
+        ownerId: components['parameters']['OwnerId'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "role": "viewer"
+         *     }
+         */
+        'application/json': components['schemas']['SetTeamMemberRoleRequest'];
+      };
+    };
+    responses: {
+      /** @description OK. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "ownerId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e91",
+           *       "email": "member@example.com",
+           *       "role": "editor",
+           *       "createdAt": 1767225600000,
+           *       "suspended": false
+           *     }
+           */
+          'application/json': components['schemas']['TeamMember'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  listTeamInvitations: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92",
+           *           "teamId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90",
+           *           "teamName": "Web team",
+           *           "email": "member@example.com",
+           *           "role": "editor",
+           *           "createdAt": 1767225600000,
+           *           "expiresAt": 1767830400000
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['TeamInvitationList'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  inviteTeamMember: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "email": "member@example.com",
+         *       "role": "editor"
+         *     }
+         */
+        'application/json': components['schemas']['CreateTeamInvitationRequest'];
+      };
+    };
+    responses: {
+      /** @description Created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92",
+           *       "teamId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90",
+           *       "teamName": "Web team",
+           *       "email": "member@example.com",
+           *       "role": "editor",
+           *       "createdAt": 1767225600000,
+           *       "expiresAt": 1767830400000
+           *     }
+           */
+          'application/json': components['schemas']['TeamInvitation'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      429: components['responses']['RateLimited'];
+      default: components['responses']['Error'];
+    };
+  };
+  deleteTeamInvitation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+        /**
+         * @description The invitation's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92
+         */
+        invitationId: components['parameters']['InvitationId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Done. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  listTeamTokens: {
+    parameters: {
+      query?: {
+        /**
+         * @description Page size.
+         * @example 50
+         */
+        limit?: components['parameters']['Limit'];
+        /**
+         * @description The `nextCursor` of the previous page.
+         * @example c2l0ZTpkb2Nz
+         */
+        cursor?: components['parameters']['Cursor'];
+      };
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20",
+           *           "publicId": "k7m2q6xw4a",
+           *           "name": "CI deploys",
+           *           "scopes": [
+           *             "deploy"
+           *           ],
+           *           "createdAt": 1767225600000
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['ApiTokenPage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  createTeamToken: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "name": "CI deploys",
+         *       "scopes": [
+         *         "deploy"
+         *       ]
+         *     }
+         */
+        'application/json': components['schemas']['CreateApiTokenRequest'];
+      };
+    };
+    responses: {
+      /** @description Created. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CreatedApiToken'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  revokeTeamToken: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The team's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        teamId: components['parameters']['TeamId'];
+        /**
+         * @description The API token's ID (not its public ID).
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e20
+         */
+        tokenId: components['parameters']['TokenId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Done. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  listMyTeamInvitations: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "items": [
+           *         {
+           *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92",
+           *           "teamId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90",
+           *           "teamName": "Web team",
+           *           "email": "member@example.com",
+           *           "role": "editor",
+           *           "createdAt": 1767225600000,
+           *           "expiresAt": 1767830400000
+           *         }
+           *       ]
+           *     }
+           */
+          'application/json': components['schemas']['TeamInvitationList'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      default: components['responses']['Error'];
+    };
+  };
+  acceptTeamInvitation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The invitation's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92
+         */
+        invitationId: components['parameters']['InvitationId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          /**
+           * @example {
+           *       "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90",
+           *       "name": "Web team",
+           *       "role": "admin",
+           *       "createdAt": 1767225600000
+           *     }
+           */
+          'application/json': components['schemas']['Team'];
+        };
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  declineTeamInvitation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The invitation's ID.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92
+         */
+        invitationId: components['parameters']['InvitationId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Done. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  transferSite: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description The site's name.
+         * @example docs
+         */
+        site: components['parameters']['SiteName'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        /**
+         * @example {
+         *       "to": {
+         *         "kind": "team",
+         *         "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90"
+         *       }
+         *     }
+         */
+        'application/json': components['schemas']['TransferSiteRequest'];
+      };
+    };
+    responses: {
+      /** @description OK. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Site'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthenticated'];
+      403: components['responses']['Forbidden'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      413: components['responses']['TooLarge'];
+      default: components['responses']['Error'];
+    };
+  };
   listWebhooks: {
     parameters: {
       query?: never;
@@ -4251,6 +5450,11 @@ export interface operations {
          * @example docs.example.com
          */
         hostname?: components['schemas']['Hostname'];
+        /**
+         * @description A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        team?: components['parameters']['TeamFilter'];
       };
       header?: never;
       path?: never;
@@ -4271,6 +5475,11 @@ export interface operations {
            *           "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01",
            *           "name": "docs",
            *           "hostname": "docs.wardlock.example.net",
+           *           "owner": {
+           *             "kind": "owner",
+           *             "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e00",
+           *             "name": "owner@example.com"
+           *           },
            *           "url": "https://docs.wardlock.example.net/",
            *           "createdAt": 1767225600000,
            *           "unavailable": false,
@@ -4321,6 +5530,11 @@ export interface operations {
            *       "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01",
            *       "name": "docs",
            *       "hostname": "docs.wardlock.example.net",
+           *       "owner": {
+           *         "kind": "owner",
+           *         "id": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e00",
+           *         "name": "owner@example.com"
+           *       },
            *       "url": "https://docs.wardlock.example.net/",
            *       "createdAt": 1767225600000,
            *       "unavailable": false,
@@ -5832,7 +7046,13 @@ export interface operations {
   };
   listGroups: {
     parameters: {
-      query?: never;
+      query?: {
+        /**
+         * @description A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        team?: components['parameters']['TeamFilter'];
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -5867,7 +7087,13 @@ export interface operations {
   };
   createGroup: {
     parameters: {
-      query?: never;
+      query?: {
+        /**
+         * @description A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        team?: components['parameters']['TeamFilter'];
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -5972,7 +7198,13 @@ export interface operations {
   };
   listTags: {
     parameters: {
-      query?: never;
+      query?: {
+        /**
+         * @description A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        team?: components['parameters']['TeamFilter'];
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -6007,7 +7239,13 @@ export interface operations {
   };
   createTag: {
     parameters: {
-      query?: never;
+      query?: {
+        /**
+         * @description A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        team?: components['parameters']['TeamFilter'];
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -6111,7 +7349,13 @@ export interface operations {
   };
   organiseSites: {
     parameters: {
-      query?: never;
+      query?: {
+        /**
+         * @description A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        team?: components['parameters']['TeamFilter'];
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -6194,6 +7438,11 @@ export interface operations {
          * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e80
          */
         tag?: components['schemas']['Id'];
+        /**
+         * @description A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        team?: components['parameters']['TeamFilter'];
       };
       header?: never;
       path?: never;
@@ -6376,6 +7625,11 @@ export interface operations {
          * @example deploy
          */
         sort?: components['schemas']['SiteSort'];
+        /**
+         * @description A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        team?: components['parameters']['TeamFilter'];
       };
       header?: never;
       path?: never;
@@ -6444,7 +7698,13 @@ export interface operations {
   };
   getSiteCounts: {
     parameters: {
-      query?: never;
+      query?: {
+        /**
+         * @description A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        team?: components['parameters']['TeamFilter'];
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -6499,6 +7759,11 @@ export interface operations {
          * @example 50
          */
         limit?: components['parameters']['Limit'];
+        /**
+         * @description A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+         * @example 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90
+         */
+        team?: components['parameters']['TeamFilter'];
       };
       header?: never;
       path?: never;

@@ -23,7 +23,7 @@ var (
 // (V5.4). The owner comes from the verified request context; a missing or
 // another owner's site, group or tag answers the same 404.
 func (s *Server) GetAnalytics(ctx context.Context, req GetAnalyticsRequestObject) (GetAnalyticsResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return GetAnalyticsdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -34,8 +34,8 @@ func (s *Server) GetAnalytics(ctx context.Context, req GetAnalyticsRequestObject
 	if !slices.Contains(access.AnalyticsRanges, int(days)) {
 		return GetAnalyticsdefaultJSONResponse(*badAnalyticsDays), nil
 	}
-	scope := access.AnalyticsScope{SiteName: deref(req.Params.Site), GroupID: deref(req.Params.Group), TagID: deref(req.Params.Tag)}
-	a, err := s.Access.Analytics(ctx, owner, scope, int(days))
+	scope := access.AnalyticsScope{Account: deref(req.Params.Team), SiteName: deref(req.Params.Site), GroupID: deref(req.Params.Group), TagID: deref(req.Params.Tag)}
+	a, err := s.Access.Analytics(ctx, actor, scope, int(days))
 	switch {
 	case errors.Is(err, access.ErrInvalidAnalytics):
 		return GetAnalyticsdefaultJSONResponse(*badAnalyticsScope), nil

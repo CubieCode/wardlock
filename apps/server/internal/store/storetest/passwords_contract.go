@@ -20,10 +20,10 @@ func passwordSessionsContract(t *testing.T, open Opener) {
 		s := f.site(o.ID)
 		p := f.validPolicy(s.ID)
 		p.PasswordEnabled, p.PasswordHash = true, "$argon2id$stand-in"
-		f.must(f.r.Policies.Create(ctx, o.ID, p))
+		f.must(f.r.Policies.Create(ctx, store.ActorFor(o.ID), p))
 		links := f.validPolicy(s.ID)
 		links.PathPrefix = "/links/"
-		f.must(f.r.Policies.Create(ctx, o.ID, links))
+		f.must(f.r.Policies.Create(ctx, store.ActorFor(o.ID), links))
 		other := f.site(o.ID)
 
 		session := func(mutate func(*store.SiteSession)) store.SiteSession {
@@ -74,15 +74,15 @@ func policiesSetPassword(t *testing.T, open Opener) {
 		s := f.site(o.ID)
 		p := f.validPolicy(s.ID)
 		p.PasswordEnabled, p.PasswordHash = true, "$argon2id$stand-in"
-		f.must(f.r.Policies.Create(ctx, o.ID, p))
+		f.must(f.r.Policies.Create(ctx, store.ActorFor(o.ID), p))
 		docs := f.validPolicy(s.ID)
 		docs.PathPrefix, docs.PasswordEnabled, docs.PasswordHash = "/docs/", true, "$argon2id$stand-in"
-		f.must(f.r.Policies.Create(ctx, o.ID, docs))
+		f.must(f.r.Policies.Create(ctx, store.ActorFor(o.ID), docs))
 		l := f.link(o.ID, s.ID)
 		other := f.site(o.ID)
 		otherPolicy := f.validPolicy(other.ID)
 		otherPolicy.PasswordEnabled, otherPolicy.PasswordHash = true, "$argon2id$stand-in"
-		f.must(f.r.Policies.Create(ctx, o.ID, otherPolicy))
+		f.must(f.r.Policies.Create(ctx, store.ActorFor(o.ID), otherPolicy))
 
 		session := func(siteID, policyID string, m store.SessionMethod, linkID string, version int, revoked time.Time) store.SiteSession {
 			ss := store.SiteSession{
@@ -104,7 +104,7 @@ func policiesSetPassword(t *testing.T, open Opener) {
 		set := func(hash string) (store.Policy, error) {
 			q := p
 			q.ID, q.PasswordEnabled, q.PasswordHash, q.UpdatedAt = store.NewID(), hash != "", hash, at
-			return f.r.Policies.Set(ctx, o.ID, q)
+			return f.r.Policies.Set(ctx, store.ActorFor(o.ID), q)
 		}
 		revokedAt := func(ss store.SiteSession) time.Time {
 			got, err := f.r.Sessions.GetSiteByTokenHash(ctx, ss.TokenHash)
@@ -148,7 +148,7 @@ func policiesSetPassword(t *testing.T, open Opener) {
 		fresh := session(s.ID, p.ID, store.SessionPassword, "", changed.Version, time.Time{})
 		q := p
 		q.ID, q.PasswordEnabled, q.PasswordHash, q.UpdatedAt = store.NewID(), false, "", at.Add(time.Minute)
-		if _, err := f.r.Policies.Set(ctx, o.ID, q); err != nil {
+		if _, err := f.r.Policies.Set(ctx, store.ActorFor(o.ID), q); err != nil {
 			t.Fatal(err)
 		}
 		if !revokedAt(fresh).Equal(at.Add(time.Minute)) {
@@ -159,7 +159,7 @@ func policiesSetPassword(t *testing.T, open Opener) {
 		}
 		missing := p
 		missing.ID, missing.PathPrefix, missing.PasswordHash = store.NewID(), "/new/", store.KeepPasswordHash
-		if _, err := f.r.Policies.Set(ctx, o.ID, missing); !errors.Is(err, store.ErrNoPasswordToKeep) {
+		if _, err := f.r.Policies.Set(ctx, store.ActorFor(o.ID), missing); !errors.Is(err, store.ErrNoPasswordToKeep) {
 			t.Fatalf("keep on a new policy: %v", err)
 		}
 	})

@@ -593,9 +593,9 @@ func (s *Service) EndSession(ctx context.Context, siteID, cookie string) error {
 	return nil
 }
 
-// ownedSite finds ownerID's site called name.
-func (s *Service) ownedSite(ctx context.Context, ownerID, name string) (store.Site, error) {
-	site, err := s.c.Sites.GetByOwnerName(ctx, ownerID, name)
+// ownedSite finds the actor's site called name.
+func (s *Service) ownedSite(ctx context.Context, actor store.Actor, name string) (store.Site, error) {
+	site, err := s.c.Sites.GetByOwnerName(ctx, actor, name)
 	if errors.Is(err, store.ErrNotFound) {
 		return store.Site{}, fmt.Errorf("get site: %w", ErrNotFound)
 	}
@@ -605,25 +605,38 @@ func (s *Service) ownedSite(ctx context.Context, ownerID, name string) (store.Si
 	return site, nil
 }
 
-// List returns up to limit of the policies of ownerID's site called name,
+// editableSite is ownedSite for a write, refusing a role that may not make
+// one before anything else runs.
+func (s *Service) editableSite(ctx context.Context, actor store.Actor, name string) (store.Site, error) {
+	site, err := s.ownedSite(ctx, actor, name)
+	if err != nil {
+		return store.Site{}, err
+	}
+	if err := actor.Require(site.OwnerID, store.RoleEditor); err != nil {
+		return store.Site{}, fmt.Errorf("site: %w", err)
+	}
+	return site, nil
+}
+
+// List returns up to limit of the policies of the actor's site called name,
 // ordered by path prefix after afterPrefix ("" for the first page). The
 // site default is always among them.
-func (s *Service) List(ctx context.Context, ownerID, siteName, afterPrefix string, limit int) ([]store.Policy, error) {
-	site, err := s.ownedSite(ctx, ownerID, siteName)
+func (s *Service) List(ctx context.Context, actor store.Actor, siteName, afterPrefix string, limit int) ([]store.Policy, error) {
+	site, err := s.ownedSite(ctx, actor, siteName)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := s.sitePolicies(ctx, site.ID); err != nil {
 		return nil, err
 	}
-	ps, err := s.c.Policies.List(ctx, ownerID, site.ID, afterPrefix, limit)
+	ps, err := s.c.Policies.List(ctx, actor, site.ID, afterPrefix, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list policies: %w", err)
 	}
 	return ps, nil
 }
 
-// Set makes r the policy for its path prefix on ownerID's site called
+// Set makes r the policy for its path prefix on the actor's site called
 // name, creating it or replacing its settings. A change increments the
 // policy's version, which ends every site session bound to it on the next
 // request; setting identical settings changes nothing. A new password
@@ -631,14 +644,14 @@ func (s *Service) List(ctx context.Context, ownerID, siteName, afterPrefix strin
 // revokes the policy's password sessions outright; so does a changed
 // allowlist for the email and OAuth sessions. A public policy's allowlist
 // is cleared.
-func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (store.Policy, error) {
+func (s *Service) Set(ctx context.Context, actor store.Actor, siteName string, r Rule) (store.Policy, error) {
 	if err := checkRule(r); err != nil {
 		return store.Policy{}, err
 	}
 	if r.OAuth && len(s.c.OAuth.Providers) == 0 {
 		return store.Policy{}, &TargetError{Err: ErrInvalidPolicy, Target: "methods", Message: "No OAuth or OIDC providers are configured on this server."}
 	}
-	site, err := s.ownedSite(ctx, ownerID, siteName)
+	site, err := s.editableSite(ctx, actor, siteName)
 	if err != nil {
 		return store.Policy{}, err
 	}
@@ -660,7 +673,7 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 			return store.Policy{}, err
 		}
 	}
-	p, err := s.c.Policies.Set(ctx, ownerID, store.Policy{
+	p, err := s.c.Policies.Set(ctx, actor, store.Policy{
 		ID: store.NewID(), SiteID: site.ID, PathPrefix: r.PathPrefix,
 		Visibility: r.Visibility, LinksEnabled: r.Links,
 		PasswordEnabled: r.Password, PasswordHash: hash,
@@ -692,13 +705,13 @@ func (s *Service) Set(ctx context.Context, ownerID, siteName string, r Rule) (st
 	return p, nil
 }
 
-// Delete removes path policy id from ownerID's site called name, ending
+// Delete removes path policy id from the actor's site called name, ending
 // the sessions bound to it; its paths fall back to the next longest prefix.
 // The site default cannot be deleted (ErrDefaultPolicy). Nor can any
 // policy of a taken-down site (ErrSiteUnavailable): deleting one deletes
 // the sessions it issued, which record who had access (A2.13).
-func (s *Service) Delete(ctx context.Context, ownerID, siteName, id string) error {
-	site, err := s.ownedSite(ctx, ownerID, siteName)
+func (s *Service) Delete(ctx context.Context, actor store.Actor, siteName, id string) error {
+	site, err := s.editableSite(ctx, actor, siteName)
 	if err != nil {
 		return err
 	}
@@ -714,7 +727,7 @@ func (s *Service) Delete(ctx context.Context, ownerID, siteName, id string) erro
 			return ErrDefaultPolicy
 		}
 	}
-	err = s.c.Policies.Delete(ctx, ownerID, site.ID, id)
+	err = s.c.Policies.Delete(ctx, actor, site.ID, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return fmt.Errorf("delete policy: %w", ErrNotFound)
 	}

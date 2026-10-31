@@ -3,7 +3,8 @@
 -- name: CreatePasskey :execrows
 INSERT INTO owner_passkeys (id, owner_id, credential_id, credential, sign_count, name, created_at, last_used_at)
 SELECT sqlc.arg(id), sqlc.arg(owner_id), sqlc.arg(credential_id), sqlc.arg(credential), sqlc.arg(sign_count), sqlc.arg(name), sqlc.arg(created_at), sqlc.narg(last_used_at)
-WHERE (SELECT count(*) FROM owner_passkeys AS existing WHERE existing.owner_id = sqlc.arg(owner_id)) < CAST(sqlc.arg(max_passkeys) AS INTEGER);
+WHERE (SELECT count(*) FROM owner_passkeys AS existing WHERE existing.owner_id = sqlc.arg(owner_id)) < CAST(sqlc.arg(max_passkeys) AS INTEGER)
+  AND NOT EXISTS (SELECT 1 FROM owners WHERE owners.id = sqlc.arg(owner_id) AND owners.kind = 'team');
 
 -- Oldest first, so an owner's list keeps its order as passkeys are added.
 -- name: ListOwnerPasskeys :many

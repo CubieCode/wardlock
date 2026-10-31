@@ -688,7 +688,7 @@ func TestListSites(t *testing.T) {
 
 	// The hostname filter: base-domain names and custom domains of any status.
 	alpha := hs.createSite(a, "golf")
-	stored, err := hs.db.Sites().GetByOwnerName(t.Context(), a, "golf")
+	stored, err := hs.db.Sites().GetByOwnerName(t.Context(), store.ActorFor(a), "golf")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -696,7 +696,7 @@ func TestListSites(t *testing.T) {
 		ID: store.NewID(), SiteID: stored.ID, Hostname: "docs.example.test", Status: store.DomainPending,
 		VerificationToken: "verify-token-000001", CreatedAt: time.Now(),
 	}
-	if err := hs.db.Domains().Create(t.Context(), a, dom); err != nil {
+	if err := hs.db.Domains().Create(t.Context(), store.ActorFor(a), dom); err != nil {
 		t.Fatal(err)
 	}
 	for host, want := range map[string]string{

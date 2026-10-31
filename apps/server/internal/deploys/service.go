@@ -146,8 +146,8 @@ type Service struct {
 // NewService returns a Service over c.
 func NewService(c Config) *Service { return &Service{c: c, slots: make(chan struct{}, renderSlots)} }
 
-func (s *Service) site(ctx context.Context, ownerID, name string) (store.Site, error) {
-	site, err := s.c.Sites.GetByOwnerName(ctx, ownerID, name)
+func (s *Service) site(ctx context.Context, actor store.Actor, name string) (store.Site, error) {
+	site, err := s.c.Sites.GetByOwnerName(ctx, actor, name)
 	return site, storeErr("find site", err)
 }
 
@@ -155,12 +155,28 @@ func (s *Service) site(ctx context.Context, ownerID, name string) (store.Site, e
 // deploys, activations and rollbacks are refused with ErrSiteUnavailable,
 // and so is reading its files (Files, Open): they are kept for the
 // operator, never handed out for rehosting.
-func (s *Service) changeable(ctx context.Context, ownerID, name string) (store.Site, error) {
-	site, err := s.site(ctx, ownerID, name)
+func (s *Service) changeable(ctx context.Context, actor store.Actor, name string) (store.Site, error) {
+	site, err := s.site(ctx, actor, name)
 	if err == nil && !site.TakenDownAt.IsZero() {
 		return store.Site{}, ErrSiteUnavailable
 	}
 	return site, err
+}
+
+// writable is changeable for a write: a role that may not make one is
+// refused before anything is stored.
+func (s *Service) writable(ctx context.Context, actor store.Actor, name string) (store.Site, error) {
+	site, err := s.site(ctx, actor, name)
+	if err != nil {
+		return store.Site{}, err
+	}
+	if err := actor.Require(site.OwnerID, store.RoleEditor); err != nil {
+		return store.Site{}, fmt.Errorf("site: %w", err)
+	}
+	if !site.TakenDownAt.IsZero() {
+		return store.Site{}, ErrSiteUnavailable
+	}
+	return site, nil
 }
 
 // Create records a pending deploy from m and returns it with the hashes the
@@ -174,8 +190,8 @@ func (s *Service) changeable(ctx context.Context, ownerID, name string) (store.S
 // deploy exactly as to a full one. With m.Preview it is a preview deploy
 // (C1.19), checked like any other, whose name must be valid and whose
 // hostname label no site may hold (ErrInvalidPreview, ErrPreviewNameTaken).
-func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manifest) (store.Deploy, []string, error) {
-	site, err := s.changeable(ctx, ownerID, siteName)
+func (s *Service) Create(ctx context.Context, actor store.Actor, siteName string, m Manifest) (store.Deploy, []string, error) {
+	site, err := s.writable(ctx, actor, siteName)
 	if err != nil {
 		return store.Deploy{}, nil, err
 	}
@@ -183,8 +199,9 @@ func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manife
 		return store.Deploy{}, nil, err
 	}
 	d := store.Deploy{ID: store.NewID(), SiteID: site.ID, Message: m.Message, Preview: m.Preview, PreviewDays: m.PreviewDays}
+	d.CreatedBy, d.CreatedByToken = actor.MadeBy()
 	if m.Path != "" {
-		if err := s.merge(ctx, ownerID, site, &m, &d); err != nil {
+		if err := s.merge(ctx, actor, site, &m, &d); err != nil {
 			return store.Deploy{}, nil, err
 		}
 	}
@@ -194,7 +211,7 @@ func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manife
 	if err := validateRules(&m); err != nil {
 		return store.Deploy{}, nil, err
 	}
-	if err := s.checkHeldSizes(ctx, ownerID, &m); err != nil {
+	if err := s.checkHeldSizes(ctx, actor, site.OwnerID, &m); err != nil {
 		return store.Deploy{}, nil, err
 	}
 	d.FileCount = len(m.Files)
@@ -210,13 +227,13 @@ func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manife
 	for _, f := range m.Files {
 		d.TotalSize += f.Size
 	}
-	if err := s.c.Deploys.Create(ctx, ownerID, d, m.Files, s.c.Quotas); err != nil {
+	if err := s.c.Deploys.Create(ctx, actor, d, m.Files, s.c.Quotas); err != nil {
 		if qe := (*store.QuotaError)(nil); errors.As(err, &qe) {
 			return store.Deploy{}, nil, quotaErr(qe)
 		}
 		return store.Deploy{}, nil, storeErr("create deploy", err)
 	}
-	missing, err := s.missing(ctx, ownerID, site.ID, d.ID)
+	missing, err := s.missing(ctx, actor, site.ID, d.ID)
 	if err != nil {
 		return store.Deploy{}, nil, err
 	}
@@ -227,7 +244,7 @@ func (s *Service) Create(ctx context.Context, ownerID, siteName string, m Manife
 // the site's active deploy, pinned as d's base, outside the prefix, as they
 // are, and m's files under it. SPA, ImmutableAssets, Redirects and Headers
 // left unset follow the base. A site with nothing live takes m's files alone.
-func (s *Service) merge(ctx context.Context, ownerID string, site store.Site, m *Manifest, d *store.Deploy) error {
+func (s *Service) merge(ctx context.Context, actor store.Actor, site store.Site, m *Manifest, d *store.Deploy) error {
 	prefix, err := NormalisePrefix(m.Path)
 	if err != nil {
 		return err
@@ -244,7 +261,7 @@ func (s *Service) merge(ctx context.Context, ownerID string, site store.Site, m 
 		files = append(files, f)
 	}
 	if site.ActiveDeployID != "" {
-		base, err := s.c.Deploys.Get(ctx, ownerID, site.ID, site.ActiveDeployID)
+		base, err := s.c.Deploys.Get(ctx, actor, site.ID, site.ActiveDeployID)
 		if errors.Is(err, store.ErrNotFound) {
 			// Replaced and collected since the site was read.
 			return ErrStaleBase
@@ -252,7 +269,7 @@ func (s *Service) merge(ctx context.Context, ownerID string, site store.Site, m 
 		if err != nil {
 			return storeErr("find base deploy", err)
 		}
-		kept, err := s.c.Deploys.Manifest(ctx, ownerID, site.ID, base.ID)
+		kept, err := s.c.Deploys.Manifest(ctx, actor, site.ID, base.ID)
 		if err != nil {
 			return storeErr("list base files", err)
 		}
@@ -287,7 +304,7 @@ func (s *Service) merge(ctx context.Context, ownerID string, site store.Site, m 
 // files under its prefix; the base's were checked when the base was created,
 // and validate has made any base file sharing one of their hashes list the
 // same size.
-func (s *Service) checkHeldSizes(ctx context.Context, ownerID string, m *Manifest) error {
+func (s *Service) checkHeldSizes(ctx context.Context, actor store.Actor, account string, m *Manifest) error {
 	dir := ""
 	if m.Path != "" {
 		dir = m.Path[1:]
@@ -303,7 +320,7 @@ func (s *Service) checkHeldSizes(ctx context.Context, ownerID string, m *Manifes
 	if len(hashes) == 0 {
 		return nil
 	}
-	held, err := s.c.Deploys.HeldBlobSizes(ctx, ownerID, hashes)
+	held, err := s.c.Deploys.HeldBlobSizes(ctx, actor, account, hashes)
 	if err != nil {
 		return storeErr("find held blobs", err)
 	}
@@ -351,12 +368,12 @@ func quotaErr(qe *store.QuotaError) error {
 
 // missing returns the deploy's hashes the owner has not uploaded or whose
 // blob is no longer stored, in hash order.
-func (s *Service) missing(ctx context.Context, ownerID, siteID, deployID string) ([]string, error) {
-	unclaimed, err := s.c.Deploys.MissingBlobs(ctx, ownerID, siteID, deployID)
+func (s *Service) missing(ctx context.Context, actor store.Actor, siteID, deployID string) ([]string, error) {
+	unclaimed, err := s.c.Deploys.MissingBlobs(ctx, actor, siteID, deployID)
 	if err != nil {
 		return nil, storeErr("list missing blobs", err)
 	}
-	hashes, err := s.c.Deploys.Hashes(ctx, ownerID, siteID, deployID)
+	hashes, err := s.c.Deploys.Hashes(ctx, actor, siteID, deployID)
 	if err != nil {
 		return nil, storeErr("list manifest hashes", err)
 	}
@@ -385,18 +402,18 @@ func (s *Service) missing(ctx context.Context, ownerID, siteID, deployID string)
 // longer than the per-file limit is ErrLimitExceeded. Re-uploading a blob
 // already stored verifies it again without rewriting it. A taken-down site
 // takes no uploads (ErrSiteUnavailable).
-func (s *Service) Upload(ctx context.Context, ownerID, siteName, deployID, hash string, body io.Reader) error {
-	site, err := s.changeable(ctx, ownerID, siteName)
+func (s *Service) Upload(ctx context.Context, actor store.Actor, siteName, deployID, hash string, body io.Reader) error {
+	site, err := s.writable(ctx, actor, siteName)
 	if err != nil {
 		return err
 	}
-	if _, err := s.c.Deploys.Get(ctx, ownerID, site.ID, deployID); err != nil {
+	if _, err := s.c.Deploys.Get(ctx, actor, site.ID, deployID); err != nil {
 		return storeErr("find deploy", err)
 	}
 	if !ValidHash(hash) {
 		return ErrUnexpectedBlob
 	}
-	size, err := s.c.Deploys.ManifestSize(ctx, ownerID, site.ID, deployID, hash)
+	size, err := s.c.Deploys.ManifestSize(ctx, actor, site.ID, deployID, hash)
 	if errors.Is(err, store.ErrNotFound) {
 		return ErrUnexpectedBlob
 	}
@@ -419,7 +436,7 @@ func (s *Service) Upload(ctx context.Context, ownerID, siteName, deployID, hash 
 	if err != nil {
 		return fmt.Errorf("store blob: %w", err)
 	}
-	err = s.c.Deploys.RecordUpload(ctx, ownerID, store.Blob{SHA256: hash, Size: size, CreatedAt: s.now()})
+	err = s.c.Deploys.RecordUpload(ctx, actor, site.OwnerID, store.Blob{SHA256: hash, Size: size, CreatedAt: s.now()})
 	return storeErr("record upload", err)
 }
 
@@ -441,12 +458,12 @@ func (c *countingReader) Read(p []byte) (int, error) {
 // ErrStaleBase for a path deploy whose base the site no longer serves and
 // ErrInvalidManifest, for good, when the deploy lists a hash the owner holds
 // at a size other than the stored blob's (C1.16).
-func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID string) (store.Site, store.Deploy, error) {
-	site, err := s.changeable(ctx, ownerID, siteName)
+func (s *Service) Activate(ctx context.Context, actor store.Actor, siteName, deployID string) (store.Site, store.Deploy, error) {
+	site, err := s.writable(ctx, actor, siteName)
 	if err != nil {
 		return store.Site{}, store.Deploy{}, err
 	}
-	d, err := s.c.Deploys.Get(ctx, ownerID, site.ID, deployID)
+	d, err := s.c.Deploys.Get(ctx, actor, site.ID, deployID)
 	if err != nil {
 		return store.Site{}, store.Deploy{}, storeErr("find deploy", err)
 	}
@@ -458,7 +475,7 @@ func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID stri
 		// renditions.
 		return store.Site{}, store.Deploy{}, ErrStaleBase
 	}
-	missing, err := s.missing(ctx, ownerID, site.ID, deployID)
+	missing, err := s.missing(ctx, actor, site.ID, deployID)
 	if err != nil {
 		return store.Site{}, store.Deploy{}, err
 	}
@@ -472,15 +489,15 @@ func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID stri
 	// it was created, through another deploy, at a size this one does not
 	// list; Create could not catch that. Checked again in the activation
 	// transaction; this spares the renditions.
-	if err := s.c.Deploys.CheckHeldSizes(ctx, ownerID, site.ID, deployID); err != nil {
+	if err := s.c.Deploys.CheckHeldSizes(ctx, actor, site.ID, deployID); err != nil {
 		return store.Site{}, store.Deploy{}, heldSizeErr("check held sizes", err)
 	}
-	if err := s.render(ctx, ownerID, site, deployID); err != nil {
+	if err := s.render(ctx, actor, site, deployID); err != nil {
 		return store.Site{}, store.Deploy{}, err
 	}
 	// The store re-checks the owner's uploads and their sizes inside the
 	// transaction.
-	d, err = s.c.Deploys.Activate(ctx, ownerID, site.ID, deployID, s.now())
+	d, err = s.c.Deploys.Activate(ctx, actor, site.ID, deployID, s.now())
 	if err != nil {
 		return store.Site{}, store.Deploy{}, heldSizeErr("activate deploy", err)
 	}
@@ -497,12 +514,12 @@ func (s *Service) Activate(ctx context.Context, ownerID, siteName, deployID stri
 
 // Rollback reactivates deployID, or with "" the deploy active before the
 // current one, and notifies subscribers.
-func (s *Service) Rollback(ctx context.Context, ownerID, siteName, deployID string) (store.Site, store.Deploy, error) {
-	site, err := s.changeable(ctx, ownerID, siteName)
+func (s *Service) Rollback(ctx context.Context, actor store.Actor, siteName, deployID string) (store.Site, store.Deploy, error) {
+	site, err := s.writable(ctx, actor, siteName)
 	if err != nil {
 		return store.Site{}, store.Deploy{}, err
 	}
-	d, changed, err := s.c.Deploys.Rollback(ctx, ownerID, site.ID, deployID, s.now())
+	d, changed, err := s.c.Deploys.Rollback(ctx, actor, site.ID, deployID, s.now())
 	if err != nil {
 		return store.Site{}, store.Deploy{}, storeErr("rollback", err)
 	}
@@ -528,12 +545,12 @@ func (s *Service) served(ctx context.Context, site store.Site, d store.Deploy, c
 
 // List returns the site and up to limit of its deploys, newest first,
 // strictly older than before.
-func (s *Service) List(ctx context.Context, ownerID, siteName string, before store.DeployCursor, limit int) (store.Site, []store.Deploy, error) {
-	site, err := s.site(ctx, ownerID, siteName)
+func (s *Service) List(ctx context.Context, actor store.Actor, siteName string, before store.DeployCursor, limit int) (store.Site, []store.Deploy, error) {
+	site, err := s.site(ctx, actor, siteName)
 	if err != nil {
 		return store.Site{}, nil, err
 	}
-	deploys, err := s.c.Deploys.List(ctx, ownerID, site.ID, before, limit)
+	deploys, err := s.c.Deploys.List(ctx, actor, site.ID, before, limit)
 	if err != nil {
 		return store.Site{}, nil, storeErr("list deploys", err)
 	}
@@ -544,12 +561,12 @@ func (s *Service) List(ctx context.Context, ownerID, siteName string, before sto
 // by path, with paths after after ("" for the first page). Any deploy in
 // the site's history can be read, but not on a taken-down site
 // (ErrSiteUnavailable).
-func (s *Service) Files(ctx context.Context, ownerID, siteName, deployID, after string, limit int) ([]store.DeployFile, error) {
-	site, err := s.changeable(ctx, ownerID, siteName)
+func (s *Service) Files(ctx context.Context, actor store.Actor, siteName, deployID, after string, limit int) ([]store.DeployFile, error) {
+	site, err := s.changeable(ctx, actor, siteName)
 	if err != nil {
 		return nil, err
 	}
-	files, err := s.c.Deploys.FilesPage(ctx, ownerID, site.ID, deployID, after, limit)
+	files, err := s.c.Deploys.FilesPage(ctx, actor, site.ID, deployID, after, limit)
 	return files, storeErr("list deploy files", err)
 }
 
@@ -560,15 +577,15 @@ func (s *Service) Files(ctx context.Context, ownerID, siteName, deployID, after 
 // body garbage collection has removed are all ErrNotFound, like a missing
 // site or deploy. A withheld file is ErrWithheld; a taken-down site,
 // ErrSiteUnavailable.
-func (s *Service) Open(ctx context.Context, ownerID, siteName, deployID, hash string) (io.ReadSeekCloser, int64, error) {
-	site, err := s.changeable(ctx, ownerID, siteName)
+func (s *Service) Open(ctx context.Context, actor store.Actor, siteName, deployID, hash string) (io.ReadSeekCloser, int64, error) {
+	site, err := s.changeable(ctx, actor, siteName)
 	if err != nil {
 		return nil, 0, err
 	}
 	if !ValidHash(hash) {
 		return nil, 0, ErrNotFound
 	}
-	size, err := s.c.Deploys.HeldSize(ctx, ownerID, site.ID, deployID, hash)
+	size, err := s.c.Deploys.HeldSize(ctx, actor, site.ID, deployID, hash)
 	if err != nil {
 		return nil, 0, storeErr("find held blob", err)
 	}

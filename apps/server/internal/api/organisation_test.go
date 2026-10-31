@@ -436,7 +436,7 @@ func TestOrganiseSitesBulkLimits(t *testing.T) {
 	names := make([]string, 500)
 	for i := range names {
 		names[i] = fmt.Sprintf("site-%03d", i)
-		if err := hs.db.Sites().Create(t.Context(), store.Site{ID: store.NewID(), OwnerID: a, Name: names[i], CreatedAt: hs.now()}, store.Quotas{}); err != nil {
+		if err := hs.db.Sites().Create(t.Context(), store.ActorFor(store.Site{ID: store.NewID(), OwnerID: a, Name: names[i], CreatedAt: hs.now()}.OwnerID), store.Site{ID: store.NewID(), OwnerID: a, Name: names[i], CreatedAt: hs.now()}, store.Quotas{}); err != nil {
 			t.Fatal(err)
 		}
 	}

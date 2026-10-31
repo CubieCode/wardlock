@@ -147,10 +147,10 @@ type Traffic interface {
 	// table, on every site except a taken-down site or a suspended owner's,
 	// and reports whether there was one. It is the retention job.
 	PruneHour(ctx context.Context, cutoff time.Time) (bool, error)
-	// Report sums ownerID's requests in scope over the hours from from up
+	// Report sums the account the account's requests in scope over the hours from from up
 	// to but not including to. A missing or foreign site, group or tag is
 	// ErrNotFound.
-	Report(ctx context.Context, ownerID string, scope TrafficScope, from, to time.Time) (TrafficReport, error)
+	Report(ctx context.Context, actor Actor, ownerID string, scope TrafficScope, from, to time.Time) (TrafficReport, error)
 }
 
 // Traffic returns the SQLite Traffic repository.
@@ -358,7 +358,10 @@ func (r trafficRepo) PruneHour(ctx context.Context, cutoff time.Time) (bool, err
 	return pruned, err
 }
 
-func (r trafficRepo) Report(ctx context.Context, ownerID string, scope TrafficScope, from, to time.Time) (TrafficReport, error) {
+func (r trafficRepo) Report(ctx context.Context, actor Actor, ownerID string, scope TrafficScope, from, to time.Time) (TrafficReport, error) {
+	if err := actor.Require(ownerID, RoleViewer); err != nil {
+		return TrafficReport{}, fmt.Errorf("traffic report: %w", err)
+	}
 	if err := r.checkScope(ctx, ownerID, scope); err != nil {
 		return TrafficReport{}, err
 	}
@@ -439,7 +442,7 @@ func (r trafficRepo) Report(ctx context.Context, ownerID string, scope TrafficSc
 }
 
 // checkScope answers ErrNotFound for a scope naming more than one thing
-// or a site, group or tag that is missing or not ownerID's.
+// or a site, group or tag that is missing or not the account's.
 func (r trafficRepo) checkScope(ctx context.Context, ownerID string, s TrafficScope) error {
 	named := 0
 	var err error

@@ -18,7 +18,7 @@ INSERT INTO owner_sessions (id, owner_id, token_hash, created_at, last_seen_at, 
 SELECT CAST(?1 AS TEXT), owners.id, CAST(?2 AS TEXT), CAST(?3 AS INTEGER),
   CAST(?4 AS INTEGER), CAST(?5 AS INTEGER), CAST(?6 AS INTEGER),
   CAST(?7 AS TEXT)
-FROM owners WHERE owners.id = ?8 AND owners.suspended_at IS NULL
+FROM owners WHERE owners.id = ?8 AND owners.kind = 'owner' AND owners.suspended_at IS NULL
 `
 
 type CreateOwnerSessionParams struct {
@@ -32,7 +32,7 @@ type CreateOwnerSessionParams struct {
 	OwnerID    string
 }
 
-// Inserts nothing for an unknown or suspended owner, in the same statement
+// Inserts nothing for a team or an unknown or suspended owner, in the same statement
 // that reads the suspension, so a session can never be created by a
 // sign-in that raced a suspension (A2.13).
 func (q *Queries) CreateOwnerSession(ctx context.Context, arg CreateOwnerSessionParams) (int64, error) {
@@ -92,7 +92,7 @@ const getOwnerSessionByTokenHash = `-- name: GetOwnerSessionByTokenHash :one
 SELECT owner_sessions.id, owner_sessions.owner_id, owner_sessions.token_hash, owner_sessions.created_at,
   owner_sessions.last_seen_at, owner_sessions.expires_at, owner_sessions.revoked_at, owner_sessions.user_agent
 FROM owner_sessions JOIN owners ON owners.id = owner_sessions.owner_id
-WHERE owner_sessions.token_hash = ?1 AND owners.suspended_at IS NULL
+WHERE owner_sessions.token_hash = ?1 AND owners.kind = 'owner' AND owners.suspended_at IS NULL
 `
 
 // A suspended owner's sessions are never found (A2.13).

@@ -38,7 +38,7 @@ func TestCreateLink(t *testing.T) {
 		{name: "reserved path", n: access.NewLink{PathPrefix: "/.wardlock/"}, target: "path"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			l, token, err := h.svc.CreateLink(t.Context(), o, "docs", tc.n)
+			l, token, err := h.svc.CreateLink(t.Context(), store.ActorFor(o), "docs", tc.n)
 			if tc.target != "" {
 				var te *access.TargetError
 				if !errors.As(err, &te) || te.Target != tc.target {
@@ -73,7 +73,7 @@ func TestLinkOwnerIsolation(t *testing.T) {
 	a, b := h.owner(), h.owner()
 	h.site(a, "docs")
 	h.site(b, "mine")
-	l, _, err := h.svc.CreateLink(ctx, a, "docs", access.NewLink{})
+	l, _, err := h.svc.CreateLink(ctx, store.ActorFor(a), "docs", access.NewLink{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,21 +88,21 @@ func TestLinkOwnerIsolation(t *testing.T) {
 		{"malformed link ID", a, "docs", "../x"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := h.svc.RevokeLink(ctx, tc.owner, tc.site, tc.id); !errors.Is(err, access.ErrNotFound) {
+			if err := h.svc.RevokeLink(ctx, store.ActorFor(tc.owner), tc.site, tc.id); !errors.Is(err, access.ErrNotFound) {
 				t.Fatalf("revoke: %v", err)
 			}
-			if _, _, err := h.svc.RotateLink(ctx, tc.owner, tc.site, tc.id); !errors.Is(err, access.ErrNotFound) {
+			if _, _, err := h.svc.RotateLink(ctx, store.ActorFor(tc.owner), tc.site, tc.id); !errors.Is(err, access.ErrNotFound) {
 				t.Fatalf("rotate: %v", err)
 			}
 		})
 	}
-	if _, _, err := h.svc.CreateLink(ctx, b, "docs", access.NewLink{}); !errors.Is(err, access.ErrNotFound) {
+	if _, _, err := h.svc.CreateLink(ctx, store.ActorFor(b), "docs", access.NewLink{}); !errors.Is(err, access.ErrNotFound) {
 		t.Fatalf("create on another owner's site: %v", err)
 	}
-	if _, err := h.svc.ListLinks(ctx, b, "docs", time.Time{}, "", 10); !errors.Is(err, access.ErrNotFound) {
+	if _, err := h.svc.ListLinks(ctx, store.ActorFor(b), "docs", time.Time{}, "", 10); !errors.Is(err, access.ErrNotFound) {
 		t.Fatalf("list another owner's site: %v", err)
 	}
-	ls, err := h.svc.ListLinks(ctx, a, "docs", time.Time{}, "", 10)
+	ls, err := h.svc.ListLinks(ctx, store.ActorFor(a), "docs", time.Time{}, "", 10)
 	if err != nil || len(ls) != 1 || ls[0].ID != l.ID {
 		t.Fatalf("owner's list: %v %v", ls, err)
 	}
@@ -137,13 +137,13 @@ func TestDecideWithTokens(t *testing.T) {
 		ID: store.NewID(), SiteID: s.ID, PathPrefix: "/pw/", Visibility: store.Protected,
 		PasswordEnabled: true, PasswordHash: "$argon2id$stand-in", Version: 1, CreatedAt: start, UpdatedAt: start,
 	}
-	if err := h.db.Policies().Create(ctx, o, pw); err != nil {
+	if err := h.db.Policies().Create(ctx, store.ActorFor(o), pw); err != nil {
 		t.Fatal(err)
 	}
 	h.protect(o, "docs")
 	h.protect(o, "other")
 	mk := func(site string, n access.NewLink) (store.ShareLink, string) {
-		l, token, err := h.svc.CreateLink(ctx, o, site, n)
+		l, token, err := h.svc.CreateLink(ctx, store.ActorFor(o), site, n)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -234,12 +234,12 @@ func TestIssueRacesRotationAndRevocation(t *testing.T) {
 		end  func(h *harness, o string, l store.ShareLink)
 	}{
 		{"rotated", func(h *harness, o string, l store.ShareLink) {
-			if _, _, err := h.svc.RotateLink(ctx, o, "docs", l.PublicID); err != nil {
+			if _, _, err := h.svc.RotateLink(ctx, store.ActorFor(o), "docs", l.PublicID); err != nil {
 				t.Fatal(err)
 			}
 		}},
 		{"revoked", func(h *harness, o string, l store.ShareLink) {
-			if err := h.svc.RevokeLink(ctx, o, "docs", l.PublicID); err != nil {
+			if err := h.svc.RevokeLink(ctx, store.ActorFor(o), "docs", l.PublicID); err != nil {
 				t.Fatal(err)
 			}
 		}},
@@ -250,7 +250,7 @@ func TestIssueRacesRotationAndRevocation(t *testing.T) {
 			o := h.owner()
 			s := h.site(o, "docs")
 			h.protect(o, "docs")
-			l, token, err := h.svc.CreateLink(ctx, o, "docs", access.NewLink{ExpiresAt: start.Add(time.Hour)})
+			l, token, err := h.svc.CreateLink(ctx, store.ActorFor(o), "docs", access.NewLink{ExpiresAt: start.Add(time.Hour)})
 			if err != nil {
 				t.Fatal(err)
 			}

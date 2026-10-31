@@ -172,7 +172,7 @@ func (f *fixture) backfill() {
 
 func (f *fixture) report(ownerID string, scope store.TrafficScope) store.TrafficReport {
 	f.t.Helper()
-	r, err := f.r.Traffic.Report(f.t.Context(), ownerID, scope, allFrom, allTo)
+	r, err := f.r.Traffic.Report(f.t.Context(), store.ActorFor(ownerID), ownerID, scope, allFrom, allTo)
 	f.must(err)
 	return r
 }
@@ -284,12 +284,12 @@ func trafficContract(t *testing.T, open Opener) {
 		if len(r.Paths) != store.TrafficTopLimit || r.Paths[0].Path != "/page-00" || r.Paths[0].Allowed != 2 {
 			t.Errorf("Paths = %+v, want /page-00 first with 2", r.Paths)
 		}
-		first, err := f.r.Traffic.Report(t.Context(), o.ID, store.TrafficScope{}, now.Truncate(time.Hour), now.Truncate(time.Hour).Add(time.Hour))
+		first, err := f.r.Traffic.Report(t.Context(), store.ActorFor(o.ID), o.ID, store.TrafficScope{}, now.Truncate(time.Hour), now.Truncate(time.Hour).Add(time.Hour))
 		f.must(err)
 		if kept := first.Hours[0].Allowed + first.Hours[0].Refused - first.OtherPaths.Allowed - first.OtherPaths.Refused; kept != store.MaxTrafficPaths+1 {
 			t.Errorf("requests on kept paths = %d, want %d", kept, store.MaxTrafficPaths+1)
 		}
-		next, err := f.r.Traffic.Report(t.Context(), o.ID, store.TrafficScope{}, now.Truncate(time.Hour).Add(time.Hour), allTo)
+		next, err := f.r.Traffic.Report(t.Context(), store.ActorFor(o.ID), o.ID, store.TrafficScope{}, now.Truncate(time.Hour).Add(time.Hour), allTo)
 		f.must(err)
 		if len(next.Paths) != 1 || next.Paths[0].Path != "/page-59" {
 			t.Errorf("next hour Paths = %+v, want /page-59 kept", next.Paths)
@@ -302,9 +302,9 @@ func trafficContract(t *testing.T, open Opener) {
 		a, b, c := f.site(o.ID), f.site(o.ID), f.site(o.ID)
 		g := f.group(o.ID, "Clients")
 		red, blue := f.tag(o.ID, "red"), f.tag(o.ID, "blue")
-		_, err := f.r.Organisation.Organise(t.Context(), o.ID, []string{a.Name, b.Name}, store.OrganiseChange{SetGroup: true, GroupID: g.ID, AddTagIDs: []string{red.ID}})
+		_, err := f.r.Organisation.Organise(t.Context(), store.ActorFor(o.ID), o.ID, []string{a.Name, b.Name}, store.OrganiseChange{SetGroup: true, GroupID: g.ID, AddTagIDs: []string{red.ID}})
 		f.must(err)
-		_, err = f.r.Organisation.Organise(t.Context(), o.ID, []string{a.Name}, store.OrganiseChange{AddTagIDs: []string{blue.ID}})
+		_, err = f.r.Organisation.Organise(t.Context(), store.ActorFor(o.ID), o.ID, []string{a.Name}, store.OrganiseChange{AddTagIDs: []string{blue.ID}})
 		f.must(err)
 		foreignSite, foreignGroup, foreignTag := f.site(other.ID), f.group(other.ID, "Clients"), f.tag(other.ID, "red")
 		f.backfill()
@@ -362,7 +362,7 @@ func trafficContract(t *testing.T, open Opener) {
 			{SiteID: store.NewID()}, {GroupID: store.NewID()}, {TagID: store.NewID()},
 			{SiteID: a.ID, GroupID: g.ID},
 		} {
-			_, err := f.r.Traffic.Report(t.Context(), o.ID, scope, allFrom, allTo)
+			_, err := f.r.Traffic.Report(t.Context(), store.ActorFor(o.ID), o.ID, scope, allFrom, allTo)
 			wantErr(t, err, store.ErrNotFound)
 		}
 		// The other owner sees only their own site.
@@ -386,7 +386,7 @@ func trafficContract(t *testing.T, open Opener) {
 			f.entry(s.ID, hour.Add(time.Hour), 200, store.ViaPublic, "", "/", ""),
 		}))
 		// from is inclusive and to exclusive.
-		r, err := f.r.Traffic.Report(t.Context(), o.ID, store.TrafficScope{}, hour, hour.Add(time.Hour))
+		r, err := f.r.Traffic.Report(t.Context(), store.ActorFor(o.ID), o.ID, store.TrafficScope{}, hour, hour.Add(time.Hour))
 		f.must(err)
 		if len(r.Hours) != 1 || !r.Hours[0].Hour.Equal(hour) || r.Hours[0].Allowed != 2 {
 			t.Errorf("Hours = %+v, want 2 in %v", r.Hours, hour)
@@ -422,7 +422,7 @@ func trafficContract(t *testing.T, open Opener) {
 			t.Fatalf("PruneHour() with nothing left = %v, %v; want false", pruned, err)
 		}
 		hoursOf := func(ownerID string, s store.Site) int {
-			r, err := f.r.Traffic.Report(t.Context(), ownerID, store.TrafficScope{SiteID: s.ID}, allFrom, allTo)
+			r, err := f.r.Traffic.Report(t.Context(), store.ActorFor(ownerID), ownerID, store.TrafficScope{SiteID: s.ID}, allFrom, allTo)
 			f.must(err)
 			if len(r.Paths) != 1 || len(r.Links) != 1 || len(r.Browsers) != 1 || len(r.Countries) != 1 {
 				t.Errorf("%s: paths %v, links %v, browsers %v, countries %v; want one each", s.Name, r.Paths, r.Links, r.Browsers, r.Countries)
@@ -440,7 +440,7 @@ func trafficContract(t *testing.T, open Opener) {
 		if got := hoursOf(suspended.ID, held); got != 3 {
 			t.Errorf("suspended owner's site hours = %d, want 3", got)
 		}
-		r, err := f.r.Traffic.Report(t.Context(), o.ID, store.TrafficScope{SiteID: live.ID}, allFrom, hour)
+		r, err := f.r.Traffic.Report(t.Context(), store.ActorFor(o.ID), o.ID, store.TrafficScope{SiteID: live.ID}, allFrom, hour)
 		f.must(err)
 		if len(r.Paths)+len(r.Links)+len(r.Browsers)+len(r.Via)+len(r.Countries) != 0 {
 			t.Errorf("pruned hours left rows: %+v", r)
@@ -460,11 +460,11 @@ func trafficContract(t *testing.T, open Opener) {
 			t.Fatalf("after takedown Sites = %+v, want both kept", r.Sites)
 		}
 		f.must(f.r.Sites.TearDown(t.Context(), s.ID))
-		f.must(f.r.Sites.Delete(t.Context(), o.ID, deleted.ID))
+		f.must(f.r.Sites.Delete(t.Context(), store.ActorFor(o.ID), deleted.ID))
 		// A new site with a torn-down site's name starts with nothing.
 		reused := f.validSite(o.ID)
 		reused.Name = s.Name
-		f.must(f.r.Sites.Create(t.Context(), reused, store.Quotas{}))
+		f.must(f.r.Sites.Create(t.Context(), store.ActorFor(reused.OwnerID), reused, store.Quotas{}))
 		if r := f.report(o.ID, store.TrafficScope{}); len(r.Hours) != 0 {
 			t.Fatalf("after teardown and delete Report() = %+v, want nothing", r)
 		}

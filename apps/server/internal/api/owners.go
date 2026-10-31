@@ -35,6 +35,8 @@ type requestInfo struct {
 	clientIP  string
 	userAgent string
 	sessionID string // the dashboard session that authenticated it, if any
+	// creators remembers the createdBy names this request has read.
+	creators map[[2]string]*CreatedBy
 	// tokenID and scopes describe the API token that authenticated it, if
 	// any.
 	tokenID string
@@ -59,7 +61,7 @@ func client(ctx context.Context) owners.Client {
 // when no owner is set.
 func (s *Server) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ri := requestInfo{requestID: rand.Text(), clientIP: remoteIP(r), userAgent: r.UserAgent()}
+		ri := requestInfo{requestID: rand.Text(), clientIP: remoteIP(r), userAgent: r.UserAgent(), creators: map[[2]string]*CreatedBy{}}
 		w.Header().Set("X-Request-Id", ri.requestID)
 		ctx := r.Context()
 		if r.Method != http.MethodPut || !blobUpload.MatchString(r.URL.Path) {
@@ -82,7 +84,13 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				auth, err := s.Tokens.Authenticate(ctx, owners.Client{IP: ri.clientIP, UserAgent: ri.userAgent}, bearer)
 				switch {
 				case err == nil:
-					ctx = WithOwner(ctx, auth.OwnerID)
+					actor, err := s.tokenActor(ctx, auth)
+					if err != nil {
+						logInternal(s.logger(), r.WithContext(context.WithValue(ctx, requestInfoKey{}, ri)), "token middleware", err)
+						writeError(w, http.StatusInternalServerError, "internal", "Internal server error.")
+						return
+					}
+					ctx = WithActor(ctx, actor)
 					ri.tokenID, ri.scopes = auth.TokenID, auth.Scopes
 				case errors.Is(err, owners.ErrUnauthenticated):
 				case errors.Is(err, owners.ErrRateLimited):
@@ -100,7 +108,13 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			sess, err := s.Owners.Authenticate(ctx, c.Value)
 			switch {
 			case err == nil:
-				ctx = WithOwner(ctx, sess.OwnerID)
+				actor, err := s.ownerActor(ctx, sess.OwnerID)
+				if err != nil {
+					logInternal(s.logger(), r.WithContext(context.WithValue(ctx, requestInfoKey{}, ri)), "session middleware", err)
+					writeError(w, http.StatusInternalServerError, "internal", "Internal server error.")
+					return
+				}
+				ctx = WithActor(ctx, actor)
 				ri.sessionID = sess.ID
 				// Sign-out answers with the clearing cookie only.
 				if sess.Refreshed && r.URL.Path != signOutPath {
@@ -116,6 +130,30 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, requestInfoKey{}, ri)))
 	})
+}
+
+// ownerActor builds the actor for a verified owner: their memberships are read
+// on every request, so leaving or being removed takes effect on the next one.
+func (s *Server) ownerActor(ctx context.Context, ownerID string) (store.Actor, error) {
+	actor := store.ActorFor(ownerID)
+	if s.Owners == nil {
+		return actor, nil
+	}
+	ms, err := s.Owners.Memberships(ctx, ownerID)
+	if err != nil {
+		return store.Actor{}, err
+	}
+	actor.Memberships = ms
+	return actor, nil
+}
+
+// tokenActor builds the actor for a verified token. A personal token acts as
+// its owner, role included; a team token acts for its team alone.
+func (s *Server) tokenActor(ctx context.Context, auth owners.TokenAuth) (store.Actor, error) {
+	if auth.Team {
+		return store.TeamTokenActor(auth.OwnerID, auth.TokenID), nil
+	}
+	return s.ownerActor(ctx, auth.OwnerID)
 }
 
 const signOutPath = "/api/v0/auth/sign-out"
@@ -337,11 +375,14 @@ func (s *Server) SignOut(ctx context.Context, _ SignOutRequestObject) (SignOutRe
 
 // GetMe describes the signed-in owner.
 func (s *Server) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeResponseObject, error) {
-	ownerID, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return GetMe401JSONResponse{UnauthenticatedJSONResponse(unauthenticatedError())}, nil
 	}
-	o, err := s.Owners.Me(ctx, ownerID)
+	if actor.IsTeamToken() {
+		return s.teamTokenMe(ctx, actor)
+	}
+	o, err := s.Owners.Me(ctx, actor.OwnerID)
 	if errors.Is(err, owners.ErrUnauthenticated) {
 		return GetMe401JSONResponse{UnauthenticatedJSONResponse(unauthenticatedError())}, nil
 	}

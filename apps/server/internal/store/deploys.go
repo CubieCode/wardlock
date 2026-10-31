@@ -46,7 +46,12 @@ type Deploy struct {
 	// after its activation: 1 to MaxPreviewDays, or 0 for never. nil keeps
 	// the preview's own, or DefaultPreviewDays for a new one.
 	PreviewDays *int
-	CreatedAt   time.Time
+	// CreatedBy is who made it: the owner, or for a team token's work the
+	// team, with CreatedByToken naming the token (T7.1). Read only: the
+	// repository records its actor.
+	CreatedBy      string
+	CreatedByToken string
+	CreatedAt      time.Time
 	// ActivatedAt is the most recent activation on the live site; zero if
 	// never, as for a preview deploy that was not promoted.
 	ActivatedAt time.Time
@@ -128,75 +133,75 @@ func (e *SizeMismatchError) Error() string {
 func (e *SizeMismatchError) Unwrap() error { return ErrSizeMismatch }
 
 // Deploys stores deploys, their manifests and blob records. Methods that
-// take ownerID and siteID match only that owner's deploys on that site;
+// take an Actor and siteID match only deploys on a site the actor can see;
 // anything else is ErrNotFound.
 type Deploys interface {
 	// Create records d and its manifest in one transaction on one of
-	// ownerID's sites, within the owner's quotas: quotas with the owner's
+	// the account's sites, within the owner's quotas: quotas with the owner's
 	// overrides applied (A2.14). The deploy counts towards the daily quota
 	// from d.CreatedAt, and its distinct hashes the owner's deploys do not
 	// already list count towards storage at once, pending or not. A deploy
 	// past either quota is a *QuotaError (ErrQuotaExceeded) and nothing is
 	// written; one that adds no new hashes is never refused for storage. Concurrent creates by one owner are serialised, so they
 	// cannot share the same headroom.
-	Create(ctx context.Context, ownerID string, d Deploy, files []DeployFile, quotas Quotas) error
-	Get(ctx context.Context, ownerID, siteID, id string) (Deploy, error)
+	Create(ctx context.Context, actor Actor, d Deploy, files []DeployFile, quotas Quotas) error
+	Get(ctx context.Context, actor Actor, siteID, id string) (Deploy, error)
 	// List returns up to limit of the site's deploys, newest first, older
 	// than before.
-	List(ctx context.Context, ownerID, siteID string, before DeployCursor, limit int) ([]Deploy, error)
+	List(ctx context.Context, actor Actor, siteID string, before DeployCursor, limit int) ([]Deploy, error)
 	// Files returns a deploy's manifest ordered by path. It is an
 	// instance-wide read for the edge and must never back an owner API
 	// handler.
 	Files(ctx context.Context, deployID string) ([]DeployFile, error)
-	// Manifest returns one of ownerID's deploys' manifest ordered by path.
-	Manifest(ctx context.Context, ownerID, siteID, deployID string) ([]DeployFile, error)
-	// FilesPage returns up to limit of one of ownerID's deploys' files,
+	// Manifest returns a deploy's manifest ordered by path.
+	Manifest(ctx context.Context, actor Actor, siteID, deployID string) ([]DeployFile, error)
+	// FilesPage returns up to limit of a deploy's files,
 	// ordered by path (bytewise), with paths after after ("" for the first
 	// page). A missing deploy, or another owner's, is ErrNotFound.
-	FilesPage(ctx context.Context, ownerID, siteID, deployID, after string, limit int) ([]DeployFile, error)
+	FilesPage(ctx context.Context, actor Actor, siteID, deployID, after string, limit int) ([]DeployFile, error)
 	// Hashes returns the distinct hashes in the deploy's manifest.
-	Hashes(ctx context.Context, ownerID, siteID, deployID string) ([]string, error)
+	Hashes(ctx context.Context, actor Actor, siteID, deployID string) ([]string, error)
 	// MissingBlobs returns the distinct hashes in the deploy's manifest that
-	// ownerID has not recorded with RecordUpload.
-	MissingBlobs(ctx context.Context, ownerID, siteID, deployID string) ([]string, error)
+	// the site's account has not recorded with RecordUpload.
+	MissingBlobs(ctx context.Context, actor Actor, siteID, deployID string) ([]string, error)
 	// ManifestSize returns the size the deploy's manifest gives sha256;
 	// ErrNotFound if the deploy is not found or does not list it.
-	ManifestSize(ctx context.Context, ownerID, siteID, deployID, sha256 string) (int64, error)
-	// HeldSize is ManifestSize for a hash ownerID has also recorded with
+	ManifestSize(ctx context.Context, actor Actor, siteID, deployID, sha256 string) (int64, error)
+	// HeldSize is ManifestSize for a hash the site's account has also recorded with
 	// RecordUpload; ErrNotFound otherwise, as for a hash the deploy does not
 	// list.
-	HeldSize(ctx context.Context, ownerID, siteID, deployID, sha256 string) (int64, error)
-	// HeldBlobSizes returns the stored size of each of hashes that ownerID
+	HeldSize(ctx context.Context, actor Actor, siteID, deployID, sha256 string) (int64, error)
+	// HeldBlobSizes returns the stored size of each of hashes that the site's account
 	// has recorded with RecordUpload. A hash it has not, including one only
 	// other owners hold, is left out.
-	HeldBlobSizes(ctx context.Context, ownerID string, hashes []string) (map[string]int64, error)
-	// CheckHeldSizes is nil unless the deploy lists a hash ownerID has
+	HeldBlobSizes(ctx context.Context, actor Actor, accountID string, hashes []string) (map[string]int64, error)
+	// CheckHeldSizes is nil unless the deploy lists a hash the site's account has
 	// recorded with RecordUpload at a size other than the stored blob's,
 	// when it is a *SizeMismatchError for the first such path.
-	CheckHeldSizes(ctx context.Context, ownerID, siteID, deployID string) error
-	// RecordUpload records that ownerID uploaded b with a verified hash:
+	CheckHeldSizes(ctx context.Context, actor Actor, siteID, deployID string) error
+	// RecordUpload records that the site's account uploaded b with a verified hash:
 	// the blob row and the owner's claim to it, in one transaction.
 	// Recording either again is a no-op.
-	RecordUpload(ctx context.Context, ownerID string, b Blob) error
+	RecordUpload(ctx context.Context, actor Actor, accountID string, b Blob) error
 	// Activate makes a pending deploy the site's active deploy in one
 	// transaction, stamping it with at; a preview deploy becomes its
 	// preview's deploy instead (C1.19), stamped as PreviewActivatedAt, and
 	// the preview's expiry starts again from at (see Previews). It fails with ErrDeployNotPending if
-	// the deploy was activated before, ErrBlobsMissing unless ownerID has
+	// the deploy was activated before, ErrBlobsMissing unless the site's account has
 	// recorded every blob in its manifest, a *SizeMismatchError as
 	// CheckHeldSizes, and ErrStaleBase for a path
 	// deploy whose base is no longer the site's active deploy.
-	Activate(ctx context.Context, ownerID, siteID, deployID string, at time.Time) (Deploy, error)
+	Activate(ctx context.Context, actor Actor, siteID, deployID string, at time.Time) (Deploy, error)
 	// Rollback reactivates an earlier activated deploy in one transaction:
 	// deployID, or with "" the most recently activated deploy other than the
 	// current one. It fails with ErrDeployNotActivated for a deploy never
 	// activated and ErrNoPreviousDeploy when there is none. changed reports
 	// whether the transaction moved the active deploy: rolling back to the
 	// deploy that is active when it runs changes nothing.
-	Rollback(ctx context.Context, ownerID, siteID, deployID string, at time.Time) (d Deploy, changed bool, err error)
+	Rollback(ctx context.Context, actor Actor, siteID, deployID string, at time.Time) (d Deploy, changed bool, err error)
 	// Delete removes an inactive deploy and hands back the storage only it
 	// held; the active one is ErrConstraint.
-	Delete(ctx context.Context, ownerID, id string) error
+	Delete(ctx context.Context, actor Actor, id string) error
 	// PutBlob records a blob; recording one that exists is a no-op.
 	PutBlob(ctx context.Context, b Blob) error
 }
@@ -206,7 +211,11 @@ func (db *DB) Deploys() Deploys { return deploysRepo{db} }
 
 type deploysRepo struct{ db *DB }
 
-func (r deploysRepo) Create(ctx context.Context, ownerID string, d Deploy, files []DeployFile, quotas Quotas) error {
+func (r deploysRepo) Create(ctx context.Context, actor Actor, d Deploy, files []DeployFile, quotas Quotas) error {
+	ownerID, err := r.db.authorizeSite(ctx, actor, d.SiteID, RoleEditor)
+	if err != nil {
+		return err
+	}
 	redirects, err := encodeRules(d.Redirects)
 	if err != nil {
 		return fmt.Errorf("encode redirects: %w", err)
@@ -215,12 +224,15 @@ func (r deploysRepo) Create(ctx context.Context, ownerID string, d Deploy, files
 	if err != nil {
 		return fmt.Errorf("encode headers: %w", err)
 	}
+	d.CreatedBy, d.CreatedByToken = actor.MadeBy()
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
-		if err := requireSite(ctx, q, ownerID, d.SiteID); err != nil {
-			return err
-		}
 		stored, quotas, err := lockOwnerQuotas(ctx, q, ownerID, quotas)
 		if err != nil {
+			return err
+		}
+		// After the lock: a transfer holds it while it counts the site's
+		// deploys, so this one lands on the account the site is in.
+		if err := requireSite(ctx, q, ownerID, d.SiteID); err != nil {
 			return err
 		}
 		if err := logDeploy(ctx, q, ownerID, d, quotas.DeploysPerDay); err != nil {
@@ -242,6 +254,8 @@ func (r deploysRepo) Create(ctx context.Context, ownerID string, d Deploy, files
 			Headers:             headers,
 			Preview:             nullString(d.Preview),
 			PreviewLifetimeDays: previewDays(d.PreviewDays),
+			CreatedBy:           nullString(d.CreatedBy),
+			CreatedByToken:      nullString(d.CreatedByToken),
 		})
 		if err != nil {
 			return mapErr("create deploy", err)
@@ -311,7 +325,11 @@ func addStorage(ctx context.Context, q *sqlcgen.Queries, ownerID string, files [
 	return mapErr("add stored bytes", err)
 }
 
-func (r deploysRepo) Get(ctx context.Context, ownerID, siteID, id string) (Deploy, error) {
+func (r deploysRepo) Get(ctx context.Context, actor Actor, siteID, id string) (Deploy, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if err != nil {
+		return Deploy{}, err
+	}
 	return getDeploy(ctx, r.db.q, ownerID, siteID, id)
 }
 
@@ -372,6 +390,8 @@ func deployFrom(row sqlcgen.GetDeployRow) (Deploy, error) {
 		CreatedAt:          fromMs(row.CreatedAt),
 		ActivatedAt:        fromNullMs(row.ActivatedAt),
 		PreviewActivatedAt: fromNullMs(row.PreviewActivatedAt),
+		CreatedBy:          row.CreatedBy.String,
+		CreatedByToken:     row.CreatedByToken.String,
 	}
 	if row.PreviewLifetimeDays.Valid {
 		days := int(row.PreviewLifetimeDays.Int64)
@@ -388,7 +408,14 @@ func previewDays(days *int) sql.NullInt64 {
 	return sql.NullInt64{Int64: int64(*days), Valid: true}
 }
 
-func (r deploysRepo) List(ctx context.Context, ownerID, siteID string, before DeployCursor, limit int) ([]Deploy, error) {
+func (r deploysRepo) List(ctx context.Context, actor Actor, siteID string, before DeployCursor, limit int) ([]Deploy, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if errors.Is(err, ErrNotFound) {
+		return []Deploy{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	beforeAt := int64(math.MaxInt64)
 	if !before.CreatedAt.IsZero() {
 		beforeAt = ms(before.CreatedAt)
@@ -426,8 +453,12 @@ func (r deploysRepo) Files(ctx context.Context, deployID string) ([]DeployFile, 
 	return files, nil
 }
 
-func (r deploysRepo) Manifest(ctx context.Context, ownerID, siteID, deployID string) ([]DeployFile, error) {
-	if _, err := r.Get(ctx, ownerID, siteID, deployID); err != nil {
+func (r deploysRepo) Manifest(ctx context.Context, actor Actor, siteID, deployID string) ([]DeployFile, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := getDeploy(ctx, r.db.q, ownerID, siteID, deployID); err != nil {
 		return nil, err
 	}
 	rows, err := r.db.q.ListOwnerDeployFiles(ctx, sqlcgen.ListOwnerDeployFilesParams{DeployID: deployID, SiteID: siteID, OwnerID: ownerID})
@@ -441,8 +472,12 @@ func (r deploysRepo) Manifest(ctx context.Context, ownerID, siteID, deployID str
 	return files, nil
 }
 
-func (r deploysRepo) FilesPage(ctx context.Context, ownerID, siteID, deployID, after string, limit int) ([]DeployFile, error) {
-	if _, err := r.Get(ctx, ownerID, siteID, deployID); err != nil {
+func (r deploysRepo) FilesPage(ctx context.Context, actor Actor, siteID, deployID, after string, limit int) ([]DeployFile, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := getDeploy(ctx, r.db.q, ownerID, siteID, deployID); err != nil {
 		return nil, err
 	}
 	rows, err := r.db.q.ListOwnerDeployFilesPage(ctx, sqlcgen.ListOwnerDeployFilesPageParams{
@@ -458,23 +493,35 @@ func (r deploysRepo) FilesPage(ctx context.Context, ownerID, siteID, deployID, a
 	return files, nil
 }
 
-func (r deploysRepo) Hashes(ctx context.Context, ownerID, siteID, deployID string) ([]string, error) {
-	if _, err := r.Get(ctx, ownerID, siteID, deployID); err != nil {
+func (r deploysRepo) Hashes(ctx context.Context, actor Actor, siteID, deployID string) ([]string, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := getDeploy(ctx, r.db.q, ownerID, siteID, deployID); err != nil {
 		return nil, err
 	}
 	hashes, err := r.db.q.ManifestHashes(ctx, deployID)
 	return hashes, mapErr("list manifest hashes", err)
 }
 
-func (r deploysRepo) MissingBlobs(ctx context.Context, ownerID, siteID, deployID string) ([]string, error) {
-	if _, err := r.Get(ctx, ownerID, siteID, deployID); err != nil {
+func (r deploysRepo) MissingBlobs(ctx context.Context, actor Actor, siteID, deployID string) ([]string, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := getDeploy(ctx, r.db.q, ownerID, siteID, deployID); err != nil {
 		return nil, err
 	}
 	missing, err := r.db.q.MissingOwnerBlobs(ctx, sqlcgen.MissingOwnerBlobsParams{DeployID: deployID, OwnerID: ownerID})
 	return missing, mapErr("list missing blobs", err)
 }
 
-func (r deploysRepo) ManifestSize(ctx context.Context, ownerID, siteID, deployID, sha256 string) (int64, error) {
+func (r deploysRepo) ManifestSize(ctx context.Context, actor Actor, siteID, deployID, sha256 string) (int64, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if err != nil {
+		return 0, err
+	}
 	size, err := r.db.q.ManifestBlobSize(ctx, sqlcgen.ManifestBlobSizeParams{
 		DeployID: deployID,
 		Sha256:   sha256,
@@ -484,7 +531,11 @@ func (r deploysRepo) ManifestSize(ctx context.Context, ownerID, siteID, deployID
 	return size, mapErr("find manifest blob", err)
 }
 
-func (r deploysRepo) HeldSize(ctx context.Context, ownerID, siteID, deployID, sha256 string) (int64, error) {
+func (r deploysRepo) HeldSize(ctx context.Context, actor Actor, siteID, deployID, sha256 string) (int64, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if err != nil {
+		return 0, err
+	}
 	size, err := r.db.q.HeldManifestBlobSize(ctx, sqlcgen.HeldManifestBlobSizeParams{
 		DeployID: deployID,
 		Sha256:   sha256,
@@ -494,10 +545,16 @@ func (r deploysRepo) HeldSize(ctx context.Context, ownerID, siteID, deployID, sh
 	return size, mapErr("find held manifest blob", err)
 }
 
-func (r deploysRepo) HeldBlobSizes(ctx context.Context, ownerID string, hashes []string) (map[string]int64, error) {
+func (r deploysRepo) HeldBlobSizes(ctx context.Context, actor Actor, accountID string, hashes []string) (map[string]int64, error) {
+	if err := actor.Require(accountID, RoleViewer); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return map[string]int64{}, nil
+		}
+		return nil, err
+	}
 	sizes := make(map[string]int64)
 	for _, h := range hashes {
-		size, err := r.db.q.OwnerHeldBlobSize(ctx, sqlcgen.OwnerHeldBlobSizeParams{OwnerID: ownerID, Sha256: h})
+		size, err := r.db.q.OwnerHeldBlobSize(ctx, sqlcgen.OwnerHeldBlobSizeParams{OwnerID: accountID, Sha256: h})
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
@@ -509,8 +566,12 @@ func (r deploysRepo) HeldBlobSizes(ctx context.Context, ownerID string, hashes [
 	return sizes, nil
 }
 
-func (r deploysRepo) CheckHeldSizes(ctx context.Context, ownerID, siteID, deployID string) error {
-	if _, err := r.Get(ctx, ownerID, siteID, deployID); err != nil {
+func (r deploysRepo) CheckHeldSizes(ctx context.Context, actor Actor, siteID, deployID string) error {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if err != nil {
+		return err
+	}
+	if _, err := getDeploy(ctx, r.db.q, ownerID, siteID, deployID); err != nil {
 		return err
 	}
 	return checkHeldSizes(ctx, r.db.q, ownerID, siteID, deployID)
@@ -527,20 +588,27 @@ func checkHeldSizes(ctx context.Context, q *sqlcgen.Queries, ownerID, siteID, de
 	return &SizeMismatchError{Path: row.Path, Listed: row.ListedSize, Stored: row.StoredSize}
 }
 
-func (r deploysRepo) RecordUpload(ctx context.Context, ownerID string, b Blob) error {
+func (r deploysRepo) RecordUpload(ctx context.Context, actor Actor, accountID string, b Blob) error {
+	if err := actor.Require(accountID, RoleEditor); err != nil {
+		return err
+	}
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		err := q.PutBlob(ctx, sqlcgen.PutBlobParams{Sha256: b.SHA256, Size: b.Size, CreatedAt: ms(b.CreatedAt)})
 		if err != nil {
 			return mapErr("put blob", err)
 		}
-		err = q.PutOwnerBlob(ctx, sqlcgen.PutOwnerBlobParams{OwnerID: ownerID, Sha256: b.SHA256, CreatedAt: ms(b.CreatedAt)})
+		err = q.PutOwnerBlob(ctx, sqlcgen.PutOwnerBlobParams{OwnerID: accountID, Sha256: b.SHA256, CreatedAt: ms(b.CreatedAt)})
 		return mapErr("put owner blob", err)
 	})
 }
 
-func (r deploysRepo) Activate(ctx context.Context, ownerID, siteID, deployID string, at time.Time) (Deploy, error) {
+func (r deploysRepo) Activate(ctx context.Context, actor Actor, siteID, deployID string, at time.Time) (Deploy, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleEditor)
+	if err != nil {
+		return Deploy{}, err
+	}
 	var d Deploy
-	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
+	err = r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		var err error
 		if d, err = getDeploy(ctx, q, ownerID, siteID, deployID); err != nil {
 			return err
@@ -559,7 +627,7 @@ func (r deploysRepo) Activate(ctx context.Context, ownerID, siteID, deployID str
 			return err
 		}
 		if d.PathPrefix != "" {
-			site, err := q.GetSite(ctx, sqlcgen.GetSiteParams{ID: siteID, OwnerID: ownerID})
+			site, err := q.GetSiteByID(ctx, siteID)
 			if err != nil {
 				return mapErr("get site", err)
 			}
@@ -575,11 +643,15 @@ func (r deploysRepo) Activate(ctx context.Context, ownerID, siteID, deployID str
 	return d, err
 }
 
-func (r deploysRepo) Rollback(ctx context.Context, ownerID, siteID, deployID string, at time.Time) (Deploy, bool, error) {
+func (r deploysRepo) Rollback(ctx context.Context, actor Actor, siteID, deployID string, at time.Time) (Deploy, bool, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleEditor)
+	if err != nil {
+		return Deploy{}, false, err
+	}
 	var d Deploy
 	changed := false
-	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
-		site, err := q.GetSite(ctx, sqlcgen.GetSiteParams{ID: siteID, OwnerID: ownerID})
+	err = r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
+		site, err := q.GetSiteByID(ctx, siteID)
 		if err != nil {
 			return mapErr("get site", err)
 		}
@@ -627,14 +699,14 @@ func setActive(ctx context.Context, q *sqlcgen.Queries, ownerID string, d *Deplo
 	return nil
 }
 
-func (r deploysRepo) Delete(ctx context.Context, ownerID, id string) error {
+func (r deploysRepo) Delete(ctx context.Context, actor Actor, id string) error {
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
-		owner, err := q.DeployOwner(ctx, id)
+		ownerID, err := lockDeployOwner(ctx, q, id)
 		if err != nil {
 			return mapErr("delete deploy", err)
 		}
-		if owner != ownerID {
-			return fmt.Errorf("delete deploy: %w", ErrNotFound)
+		if err := actor.Require(ownerID, RoleEditor); err != nil {
+			return fmt.Errorf("delete deploy: %w", err)
 		}
 		if err := releaseDeploys(ctx, q, ownerID, id); err != nil {
 			return err
@@ -642,6 +714,27 @@ func (r deploysRepo) Delete(ctx context.Context, ownerID, id string) error {
 		n, err := q.DeleteDeploy(ctx, sqlcgen.DeleteDeployParams{ID: id, OwnerID: ownerID})
 		return rowsAffected("delete deploy", n, err)
 	})
+}
+
+// lockDeployOwner locks the account a deploy is on and returns it, reading
+// again under the lock: a transfer moves a deploy's storage while it holds
+// both accounts, so a release must not start from what it read before.
+func lockDeployOwner(ctx context.Context, q *sqlcgen.Queries, id string) (string, error) {
+	owner, err := q.DeployOwner(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if _, err := q.LockOwnerQuotas(ctx, owner); err != nil {
+		return "", err
+	}
+	now, err := q.DeployOwner(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if now != owner {
+		return "", sql.ErrNoRows // it moved: the next pass finds it
+	}
+	return owner, nil
 }
 
 func (r deploysRepo) PutBlob(ctx context.Context, b Blob) error {

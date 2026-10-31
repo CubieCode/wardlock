@@ -21,6 +21,7 @@ import (
 	"wardlock.nz/server/internal/notify"
 	"wardlock.nz/server/internal/owners"
 	"wardlock.nz/server/internal/sites"
+	"wardlock.nz/server/internal/store"
 )
 
 // ErrNotImplemented is returned by operations that are in the contract but
@@ -120,6 +121,15 @@ func responseError(log *slog.Logger) func(http.ResponseWriter, *http.Request, er
 		}
 		if errors.Is(err, errTokenScope) {
 			writeError(w, http.StatusForbidden, "forbidden", "This API token does not have the scope this operation needs.")
+			return
+		}
+		if errors.Is(err, store.ErrForbiddenRole) {
+			writeError(w, http.StatusForbidden, "forbidden_role", "Your role in this team does not allow this.")
+			return
+		}
+		// A team the actor cannot see, named in a query or body.
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "Not found.")
 			return
 		}
 		logInternal(log, r, r.Pattern, err)

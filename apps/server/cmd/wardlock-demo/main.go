@@ -361,7 +361,7 @@ func seedHistory(ctx context.Context, cfg config, links map[string][]createdLink
 		if err := bd.site(ctx, s.ID, created); err != nil {
 			return err
 		}
-		deploys, err := db.Deploys().List(ctx, s.OwnerID, s.ID, store.DeployCursor{}, 10)
+		deploys, err := db.Deploys().List(ctx, store.ActorFor(s.OwnerID), s.ID, store.DeployCursor{}, 10)
 		if err != nil {
 			return fmt.Errorf("deploys of %s: %w", p.name, err)
 		}

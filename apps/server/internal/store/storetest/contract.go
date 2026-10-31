@@ -39,6 +39,8 @@ type Repos struct {
 	Notifications store.Notifications
 	// Webhooks stores webhooks and their deliveries (I6.3).
 	Webhooks store.Webhooks
+	// Teams stores teams, members and invitations (T7.1).
+	Teams store.Teams
 }
 
 // Opener returns repositories over a fresh, empty, migrated database that
@@ -56,6 +58,7 @@ func ReposOf(db *store.DB) Repos {
 		Passkeys:   db.Passkeys(),
 		APITokens:  db.APITokens(),
 		Sites:      db.Sites(),
+		Teams:      db.Teams(),
 		Domains:    db.Domains(),
 		Deploys:    db.Deploys(),
 		Previews:   db.Previews(),
@@ -106,6 +109,8 @@ func suites() []suite {
 		{"Organisation", organisationContract},
 		{"Notifications", notificationsContract},
 		{"Webhooks", webhooksContract},
+		{"Teams", teamsContract},
+		{"Transfer", transferContract},
 	}
 }
 

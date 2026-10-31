@@ -108,10 +108,10 @@ func newEnv(t *testing.T) *env {
 	})
 	e.owner = e.newOwner(t)
 	var err error
-	if e.site, err = e.svc.Create(t.Context(), e.owner.ID, "docs"); err != nil {
+	if e.site, err = e.svc.Create(t.Context(), store.ActorFor(e.owner.ID), e.owner.ID, "docs"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Create(t.Context(), e.newOwner(t).ID, "other"); err != nil {
+	if _, err := e.svc.Create(t.Context(), store.ActorFor(e.newOwner(t).ID), "", "other"); err != nil {
 		t.Fatal(err)
 	}
 	return e
@@ -233,7 +233,7 @@ func TestVerification(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			e := newEnv(t)
-			d, err := e.svc.AddDomain(t.Context(), e.owner.ID, "docs", tt.host)
+			d, err := e.svc.AddDomain(t.Context(), store.ActorFor(e.owner.ID), "docs", tt.host)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -242,7 +242,7 @@ func TestVerification(t *testing.T) {
 			}
 			tt.dns(e.dns, tt.host, d.VerificationToken)
 			e.clock.advance(time.Minute)
-			got, err := e.svc.VerifyDomain(t.Context(), e.owner.ID, "docs", tt.host)
+			got, err := e.svc.VerifyDomain(t.Context(), store.ActorFor(e.owner.ID), "docs", tt.host)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -262,7 +262,7 @@ func TestVerification(t *testing.T) {
 			} else if got.FailingSince != t0 {
 				t.Fatalf("FailingSince = %v, want the first failure, %v", got.FailingSince, t0)
 			}
-			stored, err := e.svc.GetDomain(t.Context(), e.owner.ID, "docs", tt.host)
+			stored, err := e.svc.GetDomain(t.Context(), store.ActorFor(e.owner.ID), "docs", tt.host)
 			if err != nil || stored != got {
 				t.Fatalf("stored %+v, %v; want %+v", stored, err, got)
 			}
@@ -276,7 +276,7 @@ func TestAddDomain(t *testing.T) {
 	ctx := t.Context()
 	e.dns.CNAME("www.example.com", "docs."+base)
 
-	d, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", "WWW.Example.com.")
+	d, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", "WWW.Example.com.")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,25 +295,25 @@ func TestAddDomain(t *testing.T) {
 
 	t.Run("refused hostnames", func(t *testing.T) {
 		for _, h := range []string{"192.0.2.1", "*.example.com", "docs." + base, "auth." + base, base, "wardlock.example.com", "localhost"} {
-			_, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", h)
+			_, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", h)
 			if !errors.Is(err, sites.ErrInvalidHostname) {
 				t.Errorf("AddDomain(%q) = %v, want ErrInvalidHostname", h, err)
 			}
 		}
 	})
 	t.Run("an unknown site", func(t *testing.T) {
-		_, err := e.svc.AddDomain(ctx, e.owner.ID, "missing", "a.example.com")
+		_, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "missing", "a.example.com")
 		if !errors.Is(err, sites.ErrNotFound) {
 			t.Fatalf("got %v, want ErrNotFound", err)
 		}
 	})
 	t.Run("domain_taken reveals no site or owner", func(t *testing.T) {
 		// The same owner's other site, and another owner's site.
-		if _, err := e.svc.Create(ctx, e.owner.ID, "blog"); err != nil {
+		if _, err := e.svc.Create(ctx, store.ActorFor(e.owner.ID), e.owner.ID, "blog"); err != nil {
 			t.Fatal(err)
 		}
 		other := e.newOwner(t)
-		if _, err := e.svc.Create(ctx, other.ID, "mine"); err != nil {
+		if _, err := e.svc.Create(ctx, store.ActorFor(other.ID), other.ID, "mine"); err != nil {
 			t.Fatal(err)
 		}
 		for _, attempt := range []struct{ owner, site, host string }{
@@ -321,7 +321,7 @@ func TestAddDomain(t *testing.T) {
 			{e.owner.ID, "blog", "www.example.com"},
 			{other.ID, "mine", "Www.Example.Com."},
 		} {
-			_, err := e.svc.AddDomain(ctx, attempt.owner, attempt.site, attempt.host)
+			_, err := e.svc.AddDomain(ctx, store.ActorFor(attempt.owner), attempt.site, attempt.host)
 			if !errors.Is(err, sites.ErrDomainTaken) {
 				t.Fatalf("%+v: got %v, want ErrDomainTaken", attempt, err)
 			}
@@ -334,26 +334,26 @@ func TestAddDomain(t *testing.T) {
 	})
 	t.Run("a re-claim after removal needs a new token", func(t *testing.T) {
 		h := "claim.example.com"
-		first, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", h)
+		first, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", h)
 		if err != nil {
 			t.Fatal(err)
 		}
 		e.dns.Addr(h)
 		e.dns.TXT("_wardlock."+h, sites.TXTPrefix+first.VerificationToken)
 		e.clock.advance(time.Minute)
-		if d, err := e.svc.VerifyDomain(ctx, e.owner.ID, "docs", h); err != nil || d.Status != store.DomainActive {
+		if d, err := e.svc.VerifyDomain(ctx, store.ActorFor(e.owner.ID), "docs", h); err != nil || d.Status != store.DomainActive {
 			t.Fatalf("first claim: %+v, %v", d, err)
 		}
-		if err := e.svc.RemoveDomain(ctx, e.owner.ID, "docs", h); err != nil {
+		if err := e.svc.RemoveDomain(ctx, store.ActorFor(e.owner.ID), "docs", h); err != nil {
 			t.Fatal(err)
 		}
 		// Someone else claims it; the old TXT record proves nothing.
 		other := e.newOwner(t)
-		if _, err := e.svc.Create(ctx, other.ID, "claimer"); err != nil {
+		if _, err := e.svc.Create(ctx, store.ActorFor(other.ID), other.ID, "claimer"); err != nil {
 			t.Fatal(err)
 		}
 		e.dns.CNAME("claimer."+base, "docs."+base) // irrelevant to the TXT check
-		second, err := e.svc.AddDomain(ctx, other.ID, "claimer", h)
+		second, err := e.svc.AddDomain(ctx, store.ActorFor(other.ID), "claimer", h)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -370,17 +370,17 @@ func TestAddDomain(t *testing.T) {
 func TestVerifyCooldown(t *testing.T) {
 	e := newEnv(t)
 	ctx := t.Context()
-	if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", "www.example.com"); err != nil {
+	if _, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", "www.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	e.clock.advance(4 * time.Second)
-	_, err := e.svc.VerifyDomain(ctx, e.owner.ID, "docs", "www.example.com")
+	_, err := e.svc.VerifyDomain(ctx, store.ActorFor(e.owner.ID), "docs", "www.example.com")
 	var soon *sites.CheckTooSoonError
 	if !errors.As(err, &soon) || !errors.Is(err, sites.ErrCheckTooSoon) || soon.RetryAfter != 6*time.Second {
 		t.Fatalf("got %v, want CheckTooSoonError after 6s", err)
 	}
 	e.clock.advance(6 * time.Second)
-	if _, err := e.svc.VerifyDomain(ctx, e.owner.ID, "docs", "www.example.com"); err != nil {
+	if _, err := e.svc.VerifyDomain(ctx, store.ActorFor(e.owner.ID), "docs", "www.example.com"); err != nil {
 		t.Fatalf("after the cooldown: %v", err)
 	}
 }
@@ -391,11 +391,11 @@ func TestOwnerIsolation(t *testing.T) {
 	e := newEnv(t)
 	ctx := t.Context()
 	e.dns.CNAME("www.example.com", "docs."+base)
-	if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", "www.example.com"); err != nil {
+	if _, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", "www.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	b := e.newOwner(t)
-	if _, err := e.svc.Create(ctx, b.ID, "bsite"); err != nil {
+	if _, err := e.svc.Create(ctx, store.ActorFor(b.ID), b.ID, "bsite"); err != nil {
 		t.Fatal(err)
 	}
 	e.clock.advance(time.Hour)
@@ -405,26 +405,26 @@ func TestOwnerIsolation(t *testing.T) {
 			t.Fatalf("%s: got %v, want ErrNotFound", what, err)
 		}
 	}
-	_, err := e.svc.ListDomains(ctx, b.ID, "docs", "", 10)
+	_, err := e.svc.ListDomains(ctx, store.ActorFor(b.ID), "docs", "", 10)
 	missing("list A's site", err)
 	for _, site := range []string{"docs", "bsite"} {
-		_, err = e.svc.GetDomain(ctx, b.ID, site, "www.example.com")
+		_, err = e.svc.GetDomain(ctx, store.ActorFor(b.ID), site, "www.example.com")
 		missing("get via "+site, err)
-		_, err = e.svc.VerifyDomain(ctx, b.ID, site, "www.example.com")
+		_, err = e.svc.VerifyDomain(ctx, store.ActorFor(b.ID), site, "www.example.com")
 		missing("verify via "+site, err)
-		missing("remove via "+site, e.svc.RemoveDomain(ctx, b.ID, site, "www.example.com"))
+		missing("remove via "+site, e.svc.RemoveDomain(ctx, store.ActorFor(b.ID), site, "www.example.com"))
 	}
-	list, err := e.svc.ListDomains(ctx, b.ID, "bsite", "", 10)
+	list, err := e.svc.ListDomains(ctx, store.ActorFor(b.ID), "bsite", "", 10)
 	if err != nil || len(list) != 0 {
 		t.Fatalf("B's own list = %v, %v", list, err)
 	}
 	// The same calls for a hostname nobody holds answer the same way.
-	_, err = e.svc.GetDomain(ctx, b.ID, "bsite", "nobody.example.com")
+	_, err = e.svc.GetDomain(ctx, store.ActorFor(b.ID), "bsite", "nobody.example.com")
 	missing("get unknown", err)
-	_, err = e.svc.GetDomain(ctx, e.owner.ID, "docs", "not a hostname")
+	_, err = e.svc.GetDomain(ctx, store.ActorFor(e.owner.ID), "docs", "not a hostname")
 	missing("get malformed", err)
 	// A's domain is untouched.
-	d, err := e.svc.GetDomain(ctx, e.owner.ID, "docs", "WWW.example.com.")
+	d, err := e.svc.GetDomain(ctx, store.ActorFor(e.owner.ID), "docs", "WWW.example.com.")
 	if err != nil || d.Status != store.DomainActive {
 		t.Fatalf("A's domain: %+v, %v", d, err)
 	}
@@ -437,31 +437,31 @@ func TestListAndRemove(t *testing.T) {
 	e := newEnv(t)
 	ctx := t.Context()
 	for _, h := range []string{"c.example.com", "a.example.com", "b.example.com"} {
-		if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", h); err != nil {
+		if _, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", h); err != nil {
 			t.Fatal(err)
 		}
 	}
-	list, err := e.svc.ListDomains(ctx, e.owner.ID, "docs", "a.example.com", 1)
+	list, err := e.svc.ListDomains(ctx, store.ActorFor(e.owner.ID), "docs", "a.example.com", 1)
 	if err != nil || len(list) != 1 || list[0].Hostname != "b.example.com" {
 		t.Fatalf("page after a = %v, %v", list, err)
 	}
 	e.note.take()
-	if err := e.svc.RemoveDomain(ctx, e.owner.ID, "docs", "B.Example.com."); err != nil {
+	if err := e.svc.RemoveDomain(ctx, store.ActorFor(e.owner.ID), "docs", "B.Example.com."); err != nil {
 		t.Fatal(err)
 	}
 	notified, removed := e.note.take()
 	if !slices.Equal(notified, []string{e.site.ID}) || !slices.Equal(removed, []string{"b.example.com"}) {
 		t.Fatalf("notified %v, removed certificates %v", notified, removed)
 	}
-	if _, err := e.svc.GetDomain(ctx, e.owner.ID, "docs", "b.example.com"); !errors.Is(err, sites.ErrNotFound) {
+	if _, err := e.svc.GetDomain(ctx, store.ActorFor(e.owner.ID), "docs", "b.example.com"); !errors.Is(err, sites.ErrNotFound) {
 		t.Fatalf("after removal: %v", err)
 	}
-	if err := e.svc.RemoveDomain(ctx, e.owner.ID, "docs", "b.example.com"); !errors.Is(err, sites.ErrNotFound) {
+	if err := e.svc.RemoveDomain(ctx, store.ActorFor(e.owner.ID), "docs", "b.example.com"); !errors.Is(err, sites.ErrNotFound) {
 		t.Fatalf("second removal: %v", err)
 	}
 
 	// Teardown takes the remaining domains' certificates with it.
-	if err := e.svc.Delete(ctx, e.owner.ID, "docs"); err != nil {
+	if err := e.svc.Delete(ctx, store.ActorFor(e.owner.ID), "docs"); err != nil {
 		t.Fatal(err)
 	}
 	if _, removed := e.note.take(); !slices.Equal(removed, []string{"a.example.com", "c.example.com"}) {
@@ -516,7 +516,7 @@ func TestNextCheck(t *testing.T) {
 func TestWorkerBackoff(t *testing.T) {
 	e := newEnv(t)
 	ctx := t.Context()
-	d, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", "www.example.com")
+	d, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", "www.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +548,7 @@ func TestWorkerBackoff(t *testing.T) {
 			t.Fatalf("at +%v checked %d, want %d", step.at, n, step.want)
 		}
 	}
-	got, _ := e.svc.GetDomain(ctx, e.owner.ID, "docs", d.Hostname)
+	got, _ := e.svc.GetDomain(ctx, store.ActorFor(e.owner.ID), "docs", d.Hostname)
 	if got.LastCheckedAt != t0.Add(8*time.Minute) || got.FailingSince != t0 {
 		t.Fatalf("after the backoff steps %+v", got)
 	}
@@ -561,7 +561,7 @@ func TestWorkerBackoff(t *testing.T) {
 		t.Fatal("NextCheck reported nothing due inside the window")
 	}
 	e.dns.CNAME(d.Hostname, "docs."+base)
-	if v, err := e.svc.VerifyDomain(ctx, e.owner.ID, "docs", d.Hostname); err != nil || v.Status != store.DomainActive {
+	if v, err := e.svc.VerifyDomain(ctx, store.ActorFor(e.owner.ID), "docs", d.Hostname); err != nil || v.Status != store.DomainActive {
 		t.Fatalf("on request after the window: %+v, %v", v, err)
 	}
 }
@@ -574,7 +574,7 @@ func TestLapseAndRecovery(t *testing.T) {
 	ctx := t.Context()
 	h := "www.example.com"
 	e.dns.CNAME(h, "docs."+base)
-	if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", h); err != nil {
+	if _, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", h); err != nil {
 		t.Fatal(err)
 	}
 	e.note.take()
@@ -585,7 +585,7 @@ func TestLapseAndRecovery(t *testing.T) {
 		if err != nil || n != wantChecks {
 			t.Fatalf("at +%v: %d checks, %v; want %d", at, n, err, wantChecks)
 		}
-		d, err := e.svc.GetDomain(ctx, e.owner.ID, "docs", h)
+		d, err := e.svc.GetDomain(ctx, store.ActorFor(e.owner.ID), "docs", h)
 		if err != nil || d.Status != want {
 			t.Fatalf("at +%v: %+v, %v; want %s", at, d, err, want)
 		}
@@ -659,7 +659,7 @@ func TestStaleWorkerCheck(t *testing.T) {
 			ctx := t.Context()
 			h := "www.example.com"
 			e.dns.CNAME(h, "docs."+base)
-			if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", h); err != nil {
+			if _, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", h); err != nil {
 				t.Fatal(err)
 			}
 			e.dns.Remove(h)
@@ -672,15 +672,15 @@ func TestStaleWorkerCheck(t *testing.T) {
 				}
 				e.clock.set(t0.Add(5 * 24 * time.Hour)) // the next daily check is due
 			} else {
-				if err := e.svc.RemoveDomain(ctx, e.owner.ID, "docs", h); err != nil {
+				if err := e.svc.RemoveDomain(ctx, store.ActorFor(e.owner.ID), "docs", h); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", h); err != nil {
+				if _, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", h); err != nil {
 					t.Fatal(err)
 				}
 				e.clock.advance(time.Minute) // the first backoff check is due
 			}
-			if d, _ := e.svc.GetDomain(ctx, e.owner.ID, "docs", h); d.Status != from {
+			if d, _ := e.svc.GetDomain(ctx, store.ActorFor(e.owner.ID), "docs", h); d.Status != from {
 				t.Fatalf("setup: %+v, want %s", d, from)
 			}
 			e.note.take()
@@ -696,7 +696,7 @@ func TestStaleWorkerCheck(t *testing.T) {
 
 			e.dns.CNAME(h, "docs."+base)
 			e.clock.advance(sites.VerifyCooldown)
-			d, err := e.svc.VerifyDomain(ctx, e.owner.ID, "docs", h)
+			d, err := e.svc.VerifyDomain(ctx, store.ActorFor(e.owner.ID), "docs", h)
 			if err != nil || d.Status != store.DomainActive {
 				t.Fatalf("owner check: %+v, %v", d, err)
 			}
@@ -705,7 +705,7 @@ func TestStaleWorkerCheck(t *testing.T) {
 			if err := <-done; err != nil {
 				t.Fatal(err)
 			}
-			got, err := e.svc.GetDomain(ctx, e.owner.ID, "docs", h)
+			got, err := e.svc.GetDomain(ctx, store.ActorFor(e.owner.ID), "docs", h)
 			if err != nil || got != d {
 				t.Fatalf("after the stale worker check: %+v, %v; want the owner's result %+v", got, err, d)
 			}
@@ -722,7 +722,7 @@ func TestConcurrentVerify(t *testing.T) {
 	e := newEnv(t)
 	ctx := t.Context()
 	h := "www.example.com"
-	if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", h); err != nil {
+	if _, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", h); err != nil {
 		t.Fatal(err)
 	}
 	e.clock.advance(time.Minute)
@@ -730,7 +730,7 @@ func TestConcurrentVerify(t *testing.T) {
 	defer release()
 	first := make(chan store.Domain, 1)
 	go func() {
-		d, err := e.svc.VerifyDomain(ctx, e.owner.ID, "docs", h)
+		d, err := e.svc.VerifyDomain(ctx, store.ActorFor(e.owner.ID), "docs", h)
 		if err != nil {
 			t.Error(err)
 		}
@@ -738,7 +738,7 @@ func TestConcurrentVerify(t *testing.T) {
 	}()
 	<-entered
 	e.dns.CNAME(h, "docs."+base)
-	second, err := e.svc.VerifyDomain(ctx, e.owner.ID, "docs", h)
+	second, err := e.svc.VerifyDomain(ctx, store.ActorFor(e.owner.ID), "docs", h)
 	if err != nil || second.Status != store.DomainActive {
 		t.Fatalf("second check: %+v, %v", second, err)
 	}
@@ -746,7 +746,7 @@ func TestConcurrentVerify(t *testing.T) {
 	if got := <-first; got != second {
 		t.Fatalf("first check answered %+v, want the recorded %+v", got, second)
 	}
-	if stored, _ := e.svc.GetDomain(ctx, e.owner.ID, "docs", h); stored != second {
+	if stored, _ := e.svc.GetDomain(ctx, store.ActorFor(e.owner.ID), "docs", h); stored != second {
 		t.Fatalf("stored %+v", stored)
 	}
 }
@@ -757,16 +757,16 @@ func TestConcurrentVerify(t *testing.T) {
 func TestPendingExpiry(t *testing.T) {
 	e := newEnv(t)
 	ctx := t.Context()
-	pending, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", "pending.example.com")
+	pending, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", "pending.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 	e.dns.CNAME("active.example.com", "docs."+base)
-	if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", "active.example.com"); err != nil {
+	if _, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", "active.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	e.dns.CNAME("lapsed.example.com", "docs."+base)
-	if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", "lapsed.example.com"); err != nil {
+	if _, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", "lapsed.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	e.dns.Remove("lapsed.example.com")
@@ -778,7 +778,7 @@ func TestPendingExpiry(t *testing.T) {
 	}
 	e.note.take()
 	status := func(h string) store.DomainStatus {
-		d, err := e.svc.GetDomain(ctx, e.owner.ID, "docs", h)
+		d, err := e.svc.GetDomain(ctx, store.ActorFor(e.owner.ID), "docs", h)
 		if errors.Is(err, sites.ErrNotFound) {
 			return ""
 		}
@@ -824,10 +824,10 @@ func TestPendingExpiry(t *testing.T) {
 
 	// Owner B claims the hostname afterwards, with a new token.
 	b := e.newOwner(t)
-	if _, err := e.svc.Create(ctx, b.ID, "bsite"); err != nil {
+	if _, err := e.svc.Create(ctx, store.ActorFor(b.ID), b.ID, "bsite"); err != nil {
 		t.Fatal(err)
 	}
-	again, err := e.svc.AddDomain(ctx, b.ID, "bsite", "pending.example.com")
+	again, err := e.svc.AddDomain(ctx, store.ActorFor(b.ID), "bsite", "pending.example.com")
 	if err != nil {
 		t.Fatalf("owner B's claim after expiry: %v", err)
 	}
@@ -844,7 +844,7 @@ func TestCheckDueMany(t *testing.T) {
 	ctx := t.Context()
 	const n = 230 // more than one page
 	for i := range n {
-		if _, err := e.svc.AddDomain(ctx, e.owner.ID, "docs", fmt.Sprintf("h%03d.example.com", i)); err != nil {
+		if _, err := e.svc.AddDomain(ctx, store.ActorFor(e.owner.ID), "docs", fmt.Sprintf("h%03d.example.com", i)); err != nil {
 			t.Fatal(err)
 		}
 	}

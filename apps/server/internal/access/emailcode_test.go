@@ -505,7 +505,7 @@ func TestEmailCodePolicyChanges(t *testing.T) {
 	if pub.Allowlist.Len() != 0 {
 		t.Fatalf("public policy kept %+v", pub.Allowlist)
 	}
-	if _, err := h.svc.Set(t.Context(), o, "harbour", access.Rule{PathPrefix: "/", Visibility: store.Protected, Email: true}); !errors.Is(err, access.ErrInvalidPolicy) {
+	if _, err := h.svc.Set(t.Context(), store.ActorFor(o), "harbour", access.Rule{PathPrefix: "/", Visibility: store.Protected, Email: true}); !errors.Is(err, access.ErrInvalidPolicy) {
 		t.Fatalf("email with the cleared allowlist kept: %v", err)
 	}
 }
@@ -548,7 +548,7 @@ func TestEmailCodeSetValidation(t *testing.T) {
 		{"long wildcard", emailRule("/", *list("*." + longDomain)), "allowlist"},
 		{"long domain", emailRule("/", *list("a" + longDomain)), "allowlist"},
 	} {
-		_, err := h.svc.Set(t.Context(), a, "harbour", tc.rule)
+		_, err := h.svc.Set(t.Context(), store.ActorFor(a), "harbour", tc.rule)
 		var te *access.TargetError
 		if !errors.Is(err, access.ErrInvalidPolicy) || !errors.As(err, &te) || te.Target != tc.target {
 			t.Errorf("%s: %v, want invalid_policy on %s", tc.name, err, tc.target)
@@ -558,7 +558,7 @@ func TestEmailCodeSetValidation(t *testing.T) {
 	for i := range access.MaxAllowlistEntries + 1 {
 		tooMany.Emails = append(tooMany.Emails, "v"+strings.Repeat("x", i%7)+string(rune('a'+i%26))+"@example.test")
 	}
-	if _, err := h.svc.Set(t.Context(), a, "harbour", emailRule("/", *tooMany)); !errors.Is(err, access.ErrInvalidPolicy) {
+	if _, err := h.svc.Set(t.Context(), store.ActorFor(a), "harbour", emailRule("/", *tooMany)); !errors.Is(err, access.ErrInvalidPolicy) {
 		t.Errorf("too many entries: %v", err)
 	}
 
@@ -581,15 +581,15 @@ func TestEmailCodeSetValidation(t *testing.T) {
 	// Owner isolation: owner B gets the same not-found for A's site as for
 	// a missing one, and A's allowlist is untouched.
 	for _, site := range []string{"harbour", "missing"} {
-		if _, err := h.svc.Set(t.Context(), b, site, emailRule("/", *list("eve@example.test"))); !errors.Is(err, access.ErrNotFound) {
+		if _, err := h.svc.Set(t.Context(), store.ActorFor(b), site, emailRule("/", *list("eve@example.test"))); !errors.Is(err, access.ErrNotFound) {
 			t.Errorf("owner B on %s: %v, want ErrNotFound", site, err)
 		}
 	}
-	ps, err := h.svc.List(t.Context(), a, "harbour", "", 10)
+	ps, err := h.svc.List(t.Context(), store.ActorFor(a), "harbour", "", 10)
 	if err != nil || len(ps) != 1 || !ps[0].Allowlist.Equal(want) {
 		t.Fatalf("after owner B: %+v, %v", ps, err)
 	}
-	if ps, err := h.svc.List(t.Context(), b, "harbour", "", 10); !errors.Is(err, access.ErrNotFound) {
+	if ps, err := h.svc.List(t.Context(), store.ActorFor(b), "harbour", "", 10); !errors.Is(err, access.ErrNotFound) {
 		t.Fatalf("owner B lists %+v, %v", ps, err)
 	}
 }

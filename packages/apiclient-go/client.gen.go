@@ -116,6 +116,24 @@ func (e CliLoginPendingStatus) Valid() bool {
 	}
 }
 
+// Defines values for CreatedByKind.
+const (
+	CreatedByKindOwner CreatedByKind = "owner"
+	CreatedByKindToken CreatedByKind = "token"
+)
+
+// Valid indicates whether the value is a known member of the CreatedByKind enum.
+func (e CreatedByKind) Valid() bool {
+	switch e {
+	case CreatedByKindOwner:
+		return true
+	case CreatedByKindToken:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DeployStatus.
 const (
 	DeployStatusActive   DeployStatus = "active"
@@ -377,6 +395,24 @@ func (e SignInProviderId) Valid() bool {
 	}
 }
 
+// Defines values for SiteOwnerKind.
+const (
+	SiteOwnerKindOwner SiteOwnerKind = "owner"
+	SiteOwnerKindTeam  SiteOwnerKind = "team"
+)
+
+// Valid indicates whether the value is a known member of the SiteOwnerKind enum.
+func (e SiteOwnerKind) Valid() bool {
+	switch e {
+	case SiteOwnerKindOwner:
+		return true
+	case SiteOwnerKindTeam:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SiteSort.
 const (
 	SiteSortDeploy   SiteSort = "deploy"
@@ -425,6 +461,45 @@ func (e SiteView) Valid() bool {
 	case SiteViewQuiet:
 		return true
 	case SiteViewUntagged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TeamRole.
+const (
+	TeamRoleAdmin  TeamRole = "admin"
+	TeamRoleEditor TeamRole = "editor"
+	TeamRoleViewer TeamRole = "viewer"
+)
+
+// Valid indicates whether the value is a known member of the TeamRole enum.
+func (e TeamRole) Valid() bool {
+	switch e {
+	case TeamRoleAdmin:
+		return true
+	case TeamRoleEditor:
+		return true
+	case TeamRoleViewer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TransferSiteRequestToKind.
+const (
+	TransferSiteRequestToKindOwner TransferSiteRequestToKind = "owner"
+	TransferSiteRequestToKindTeam  TransferSiteRequestToKind = "team"
+)
+
+// Valid indicates whether the value is a known member of the TransferSiteRequestToKind enum.
+func (e TransferSiteRequestToKind) Valid() bool {
+	switch e {
+	case TransferSiteRequestToKindOwner:
+		return true
+	case TransferSiteRequestToKindTeam:
 		return true
 	default:
 		return false
@@ -1013,6 +1088,11 @@ type CreateSiteRequest struct {
 	//
 	// Examples: docs
 	Name SiteName `json:"name"`
+
+	// Team Create the site under this team rather than the caller's own account.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Team *Id `json:"team,omitempty"`
 }
 
 // CreateTagRequest defines model for CreateTagRequest.
@@ -1026,6 +1106,21 @@ type CreateTagRequest struct {
 	//
 	// Examples: preview
 	Name TagName `json:"name"`
+}
+
+// CreateTeamInvitationRequest defines model for CreateTeamInvitationRequest.
+type CreateTeamInvitationRequest struct {
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+
+	// Role `admin`: members, roles, team settings and deleting the team, plus everything an editor can do. `editor`: everything an owner can do to a site. `viewer`: reads only, including analytics and the access log.
+	Role TeamRole `json:"role"`
+}
+
+// CreateTeamRequest defines model for CreateTeamRequest.
+type CreateTeamRequest struct {
+	// Name Examples: Web team
+	Name TeamName `json:"name"`
 }
 
 // CreateWebhookRequest defines model for CreateWebhookRequest.
@@ -1043,6 +1138,21 @@ type CreatedApiToken struct {
 	// Token The secret token. Shown only in this response.
 	Token string `json:"token"`
 }
+
+// CreatedBy Who made this: the member, kept after they leave, or the team token that did. Absent where nothing was recorded.
+type CreatedBy struct {
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id   Id            `json:"id"`
+	Kind CreatedByKind `json:"kind"`
+
+	// Name The owner's address, or the token's name.
+	Name string `json:"name"`
+}
+
+// CreatedByKind defines model for CreatedBy.Kind.
+type CreatedByKind string
 
 // CreatedDeploy defines model for CreatedDeploy.
 type CreatedDeploy struct {
@@ -1094,7 +1204,10 @@ type Deploy struct {
 	//
 	// Examples: 1767225600000
 	CreatedAt Timestamp `json:"createdAt"`
-	FileCount int32     `json:"fileCount"`
+
+	// CreatedBy Who made this: the member, kept after they leave, or the team token that did. Absent where nothing was recorded.
+	CreatedBy *CreatedBy `json:"createdBy,omitempty"`
+	FileCount int32      `json:"fileCount"`
 
 	// Headers The deploy's header rules in order, with canonical header names. Absent when it has none.
 	Headers *[]HeaderRule `json:"headers,omitempty"`
@@ -1196,6 +1309,9 @@ type Domain struct {
 	//
 	// Examples: 1767225600000
 	CreatedAt Timestamp `json:"createdAt"`
+
+	// CreatedBy Who made this: the member, kept after they leave, or the team token that did. Absent where nothing was recorded.
+	CreatedBy *CreatedBy `json:"createdBy,omitempty"`
 
 	// FailingSince Start of the current run of failed checks. Absent after a pass.
 	//
@@ -1475,6 +1591,17 @@ type Me struct {
 	//
 	// Examples: ["deploy","manage"]
 	Scopes Scopes `json:"scopes"`
+
+	// Team Set for a team token, which belongs to this team and to no person. `owner` then names the team's own account.
+	Team *struct {
+		// Id A lowercase, hyphenated UUIDv7.
+		//
+		// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+		Id Id `json:"id"`
+
+		// Name Examples: Web team
+		Name TeamName `json:"name"`
+	} `json:"team,omitempty"`
 }
 
 // MeCredential How this request was authenticated.
@@ -1652,6 +1779,9 @@ type Policy struct {
 	//
 	// Examples: 1767225600000
 	CreatedAt Timestamp `json:"createdAt"`
+
+	// CreatedBy Who made this: the member, kept after they leave, or the team token that did. Absent where nothing was recorded.
+	CreatedBy *CreatedBy `json:"createdBy,omitempty"`
 
 	// Id A lowercase, hyphenated UUIDv7.
 	//
@@ -1871,6 +2001,12 @@ type SetSiteOrganisationRequest struct {
 	TagIds []Id `json:"tagIds"`
 }
 
+// SetTeamMemberRoleRequest defines model for SetTeamMemberRoleRequest.
+type SetTeamMemberRoleRequest struct {
+	// Role `admin`: members, roles, team settings and deleting the team, plus everything an editor can do. `editor`: everything an owner can do to a site. `viewer`: reads only, including analytics and the access log.
+	Role TeamRole `json:"role"`
+}
+
 // SetupRequest defines model for SetupRequest.
 type SetupRequest struct {
 	// Code The `code` query parameter of the setup URL.
@@ -1891,6 +2027,9 @@ type ShareLink struct {
 	//
 	// Examples: 1767225600000
 	CreatedAt Timestamp `json:"createdAt"`
+
+	// CreatedBy Who made this: the member, kept after they leave, or the team token that did. Absent where nothing was recorded.
+	CreatedBy *CreatedBy `json:"createdBy,omitempty"`
 
 	// ExpiresAt Absent when the link never expires.
 	//
@@ -2010,6 +2149,9 @@ type Site struct {
 	// Examples: docs
 	Name SiteName `json:"name"`
 
+	// Owner Whose a site is. `name` is an owner's address or a team's name.
+	Owner SiteOwner `json:"owner"`
+
 	// Pinned True while the owner has the site pinned. Read only: set with pinSite, unpinSite or organiseSites.
 	Pinned bool `json:"pinned"`
 
@@ -2075,6 +2217,19 @@ type SiteOrganisation struct {
 	// TagIds In tag-name order.
 	TagIds []Id `json:"tagIds"`
 }
+
+// SiteOwner Whose a site is. `name` is an owner's address or a team's name.
+type SiteOwner struct {
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id   Id            `json:"id"`
+	Kind SiteOwnerKind `json:"kind"`
+	Name string        `json:"name"`
+}
+
+// SiteOwnerKind defines model for SiteOwner.Kind.
+type SiteOwnerKind string
 
 // SitePage defines model for SitePage.
 type SitePage struct {
@@ -2237,10 +2392,125 @@ type TagSiteCount struct {
 	TagId Id `json:"tagId"`
 }
 
+// Team defines model for Team.
+type Team struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Name Examples: Web team
+	Name TeamName `json:"name"`
+
+	// Role `admin`: members, roles, team settings and deleting the team, plus everything an editor can do. `editor`: everything an owner can do to a site. `viewer`: reads only, including analytics and the access log.
+	Role TeamRole `json:"role"`
+}
+
+// TeamInvitation defines model for TeamInvitation.
+type TeamInvitation struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+
+	// ExpiresAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	ExpiresAt Timestamp `json:"expiresAt"`
+
+	// Id A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	Id Id `json:"id"`
+
+	// Role `admin`: members, roles, team settings and deleting the team, plus everything an editor can do. `editor`: everything an owner can do to a site. `viewer`: reads only, including analytics and the access log.
+	Role TeamRole `json:"role"`
+
+	// TeamId A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	TeamId Id `json:"teamId"`
+
+	// TeamName Examples: Web team
+	TeamName TeamName `json:"teamName"`
+}
+
+// TeamInvitationList defines model for TeamInvitationList.
+type TeamInvitationList struct {
+	Items []TeamInvitation `json:"items"`
+}
+
+// TeamList defines model for TeamList.
+type TeamList struct {
+	Items []Team `json:"items"`
+}
+
+// TeamMember defines model for TeamMember.
+type TeamMember struct {
+	// CreatedAt UTC milliseconds since the Unix epoch.
+	//
+	// Examples: 1767225600000
+	CreatedAt Timestamp `json:"createdAt"`
+
+	// Email Examples: owner@example.com
+	Email Email `json:"email"`
+
+	// OwnerId A lowercase, hyphenated UUIDv7.
+	//
+	// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+	OwnerId Id `json:"ownerId"`
+
+	// Role `admin`: members, roles, team settings and deleting the team, plus everything an editor can do. `editor`: everything an owner can do to a site. `viewer`: reads only, including analytics and the access log.
+	Role TeamRole `json:"role"`
+
+	// Suspended True while the operator has suspended them, which ends their access.
+	Suspended bool `json:"suspended"`
+}
+
+// TeamMemberPage defines model for TeamMemberPage.
+type TeamMemberPage struct {
+	Items []TeamMember `json:"items"`
+
+	// NextCursor Opaque pagination cursor.
+	//
+	// Examples: c2l0ZTpkb2Nz
+	NextCursor *Cursor `json:"nextCursor,omitempty"`
+}
+
+// TeamName Examples: Web team
+type TeamName = string
+
+// TeamRole `admin`: members, roles, team settings and deleting the team, plus everything an editor can do. `editor`: everything an owner can do to a site. `viewer`: reads only, including analytics and the access log.
+type TeamRole string
+
 // Timestamp UTC milliseconds since the Unix epoch.
 //
 // Examples: 1767225600000
 type Timestamp = int64
+
+// TransferSiteRequest defines model for TransferSiteRequest.
+type TransferSiteRequest struct {
+	To struct {
+		// Id The team, for `team`; refused with `owner`.
+		//
+		// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+		Id *Id `json:"id,omitempty"`
+
+		// Kind `owner` is the caller's own account.
+		Kind TransferSiteRequestToKind `json:"kind"`
+	} `json:"to"`
+}
+
+// TransferSiteRequestToKind `owner` is the caller's own account.
+type TransferSiteRequestToKind string
 
 // UpdateGroupRequest defines model for UpdateGroupRequest.
 type UpdateGroupRequest struct {
@@ -2266,6 +2536,12 @@ type UpdateTagRequest struct {
 	//
 	// Examples: preview
 	Name *TagName `json:"name,omitempty"`
+}
+
+// UpdateTeamRequest defines model for UpdateTeamRequest.
+type UpdateTeamRequest struct {
+	// Name Examples: Web team
+	Name TeamName `json:"name"`
 }
 
 // UpdateWebhookRequest defines model for UpdateWebhookRequest.
@@ -2408,6 +2684,11 @@ type DomainHostname = Hostname
 // Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
 type GroupId = Id
 
+// InvitationId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type InvitationId = Id
+
 // Limit defines model for Limit.
 type Limit = int32
 
@@ -2415,6 +2696,11 @@ type Limit = int32
 //
 // Examples: q4v7m2xkpa
 type LinkId = LinkPublicId
+
+// OwnerId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type OwnerId = Id
 
 // PasskeyId A lowercase, hyphenated UUIDv7.
 //
@@ -2435,6 +2721,16 @@ type SessionId = Id
 //
 // Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
 type TagId = Id
+
+// TeamFilter A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type TeamFilter = Id
+
+// TeamId A lowercase, hyphenated UUIDv7.
+//
+// Examples: 01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e01
+type TeamId = Id
 
 // TokenId A lowercase, hyphenated UUIDv7.
 //
@@ -2495,12 +2791,36 @@ type GetAnalyticsParams struct {
 
 	// Tag Only the sites that now have this tag, by ID.
 	Tag *Id `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// Team A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+	Team *TeamFilter `form:"team,omitempty" json:"team,omitempty"`
 }
 
 // ListExpiringLinksParams defines parameters for ListExpiringLinks.
 type ListExpiringLinksParams struct {
 	// Limit Page size.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Team A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+	Team *TeamFilter `form:"team,omitempty" json:"team,omitempty"`
+}
+
+// ListGroupsParams defines parameters for ListGroups.
+type ListGroupsParams struct {
+	// Team A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+	Team *TeamFilter `form:"team,omitempty" json:"team,omitempty"`
+}
+
+// CreateGroupParams defines parameters for CreateGroup.
+type CreateGroupParams struct {
+	// Team A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+	Team *TeamFilter `form:"team,omitempty" json:"team,omitempty"`
+}
+
+// OrganiseSitesParams defines parameters for OrganiseSites.
+type OrganiseSitesParams struct {
+	// Team A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+	Team *TeamFilter `form:"team,omitempty" json:"team,omitempty"`
 }
 
 // ListSessionsParams defines parameters for ListSessions.
@@ -2510,6 +2830,12 @@ type ListSessionsParams struct {
 
 	// Cursor The `nextCursor` of the previous page.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// GetSiteCountsParams defines parameters for GetSiteCounts.
+type GetSiteCountsParams struct {
+	// Team A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+	Team *TeamFilter `form:"team,omitempty" json:"team,omitempty"`
 }
 
 // ListSiteSummariesParams defines parameters for ListSiteSummaries.
@@ -2534,6 +2860,9 @@ type ListSiteSummariesParams struct {
 
 	// Sort `deploy`: the live deploy's activation, newest first, sites with nothing live last. `name`: by name. `requests`: requests over the last 7 UTC days, most first. `links`: working share links, most first. Ties are broken by name.
 	Sort *SiteSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Team A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+	Team *TeamFilter `form:"team,omitempty" json:"team,omitempty"`
 }
 
 // ListSitesParams defines parameters for ListSites.
@@ -2546,6 +2875,9 @@ type ListSitesParams struct {
 
 	// Hostname Only the site served at this hostname.
 	Hostname *Hostname `form:"hostname,omitempty" json:"hostname,omitempty"`
+
+	// Team A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+	Team *TeamFilter `form:"team,omitempty" json:"team,omitempty"`
 }
 
 // ListSiteAccessLogParams defines parameters for ListSiteAccessLog.
@@ -2619,6 +2951,36 @@ type ListPoliciesParams struct {
 
 // ListPreviewsParams defines parameters for ListPreviews.
 type ListPreviewsParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListTagsParams defines parameters for ListTags.
+type ListTagsParams struct {
+	// Team A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+	Team *TeamFilter `form:"team,omitempty" json:"team,omitempty"`
+}
+
+// CreateTagParams defines parameters for CreateTag.
+type CreateTagParams struct {
+	// Team A team the caller is in, to use its sites, groups and tags rather than the caller's own. A team they are not in answers the same `404` as a missing one.
+	Team *TeamFilter `form:"team,omitempty" json:"team,omitempty"`
+}
+
+// ListTeamMembersParams defines parameters for ListTeamMembers.
+type ListTeamMembersParams struct {
+	// Limit Page size.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListTeamTokensParams defines parameters for ListTeamTokens.
+type ListTeamTokensParams struct {
 	// Limit Page size.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 
@@ -2704,11 +3066,29 @@ type SetPrimaryHostJSONRequestBody = SetPrimaryHostRequest
 // RollbackSiteJSONRequestBody defines body for RollbackSite for application/json ContentType.
 type RollbackSiteJSONRequestBody = RollbackRequest
 
+// TransferSiteJSONRequestBody defines body for TransferSite for application/json ContentType.
+type TransferSiteJSONRequestBody = TransferSiteRequest
+
 // CreateTagJSONRequestBody defines body for CreateTag for application/json ContentType.
 type CreateTagJSONRequestBody = CreateTagRequest
 
 // UpdateTagJSONRequestBody defines body for UpdateTag for application/json ContentType.
 type UpdateTagJSONRequestBody = UpdateTagRequest
+
+// CreateTeamJSONRequestBody defines body for CreateTeam for application/json ContentType.
+type CreateTeamJSONRequestBody = CreateTeamRequest
+
+// UpdateTeamJSONRequestBody defines body for UpdateTeam for application/json ContentType.
+type UpdateTeamJSONRequestBody = UpdateTeamRequest
+
+// InviteTeamMemberJSONRequestBody defines body for InviteTeamMember for application/json ContentType.
+type InviteTeamMemberJSONRequestBody = CreateTeamInvitationRequest
+
+// SetTeamMemberRoleJSONRequestBody defines body for SetTeamMemberRole for application/json ContentType.
+type SetTeamMemberRoleJSONRequestBody = SetTeamMemberRoleRequest
+
+// CreateTeamTokenJSONRequestBody defines body for CreateTeamToken for application/json ContentType.
+type CreateTeamTokenJSONRequestBody = CreateApiTokenRequest
 
 // CreateApiTokenJSONRequestBody defines body for CreateApiToken for application/json ContentType.
 type CreateApiTokenJSONRequestBody = CreateApiTokenRequest
@@ -3077,7 +3457,7 @@ type ClientInterface interface {
 	// Every group, by name ignoring case. Not paged: an owner has at most 100.
 	//
 	// Corresponds with GET /api/v0/groups (the `ListGroups` operationId).
-	ListGroups(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListGroups(ctx context.Context, params *ListGroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateGroupWithBody Create a group.
 	//
@@ -3086,7 +3466,7 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
-	CreateGroupWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	CreateGroupWithBody(ctx context.Context, params *CreateGroupParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateGroup Create a group.
 	//
@@ -3095,7 +3475,7 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
-	CreateGroup(ctx context.Context, body CreateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	CreateGroup(ctx context.Context, params *CreateGroupParams, body CreateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteGroup Delete a group.
 	//
@@ -3166,7 +3546,7 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
-	OrganiseSitesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	OrganiseSitesWithBody(ctx context.Context, params *OrganiseSitesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// OrganiseSites Change the group, tags or pin of many sites at once.
 	//
@@ -3175,7 +3555,7 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
-	OrganiseSites(ctx context.Context, body OrganiseSitesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	OrganiseSites(ctx context.Context, params *OrganiseSitesParams, body OrganiseSitesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// InviteOwnerWithBody Invite another owner by email.
 	//
@@ -3278,7 +3658,7 @@ type ClientInterface interface {
 	// How many sites listSiteSummaries would answer for all sites, each saved view, each group, no group and each tag, as the navigator shows them. Every group and tag is listed, with `0` when it has no sites, in the order listGroups and listTags answer them.
 	//
 	// Corresponds with GET /api/v0/site-counts (the `GetSiteCounts` operationId).
-	GetSiteCounts(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetSiteCounts(ctx context.Context, params *GetSiteCountsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSiteSummaries List the owner's sites with what lists and maps show of each.
 	//
@@ -3289,14 +3669,14 @@ type ClientInterface interface {
 
 	// ListSites List the owner's sites.
 	//
-	// Ordered by name. With `hostname`, answers the owner's site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
+	// Every site the caller can see: their own and their teams', ordered by name; `team` narrows it to one team. With `hostname`, answers the site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
 	//
 	// Corresponds with GET /api/v0/sites (the `ListSites` operationId).
 	ListSites(ctx context.Context, params *ListSitesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateSiteWithBody Create an empty site.
 	//
-	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -3305,7 +3685,7 @@ type ClientInterface interface {
 
 	// CreateSite Create an empty site.
 	//
-	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -3610,12 +3990,30 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
 	RollbackSite(ctx context.Context, site SiteName, body RollbackSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// TransferSiteWithBody Move a site to or from a team.
+	//
+	// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/transfer (the `TransferSite` operationId).
+	TransferSiteWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// TransferSite Move a site to or from a team.
+	//
+	// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/sites/{site}/transfer (the `TransferSite` operationId).
+	TransferSite(ctx context.Context, site SiteName, body TransferSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListTags List the owner's tags.
 	//
 	// Every tag, by name. Not paged: an owner has at most 200.
 	//
 	// Corresponds with GET /api/v0/tags (the `ListTags` operationId).
-	ListTags(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListTags(ctx context.Context, params *ListTagsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateTagWithBody Create a tag.
 	//
@@ -3624,7 +4022,7 @@ type ClientInterface interface {
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
-	CreateTagWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	CreateTagWithBody(ctx context.Context, params *CreateTagParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateTag Create a tag.
 	//
@@ -3633,7 +4031,7 @@ type ClientInterface interface {
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
-	CreateTag(ctx context.Context, body CreateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	CreateTag(ctx context.Context, params *CreateTagParams, body CreateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteTag Delete a tag.
 	//
@@ -3659,6 +4057,180 @@ type ClientInterface interface {
 	//
 	// Corresponds with PATCH /api/v0/tags/{tagId} (the `UpdateTag` operationId).
 	UpdateTag(ctx context.Context, tagId TagId, body UpdateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListMyTeamInvitations List invitations to the signed-in owner.
+	//
+	// Open invitations to the owner's own verified address, newest first.
+	//
+	// Corresponds with GET /api/v0/team-invitations (the `ListMyTeamInvitations` operationId).
+	ListMyTeamInvitations(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AcceptTeamInvitation Accept an invitation.
+	//
+	// Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one and an expired one answer the same `404`. Accepting twice changes nothing, while still a member.
+	//
+	// Corresponds with POST /api/v0/team-invitations/{invitationId}/accept (the `AcceptTeamInvitation` operationId).
+	AcceptTeamInvitation(ctx context.Context, invitationId InvitationId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeclineTeamInvitation Decline an invitation.
+	//
+	// As `acceptTeamInvitation`, the invitation must be to the owner's own address.
+	//
+	// Corresponds with POST /api/v0/team-invitations/{invitationId}/decline (the `DeclineTeamInvitation` operationId).
+	DeclineTeamInvitation(ctx context.Context, invitationId InvitationId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListTeams List the teams the caller is in.
+	//
+	// Every team the owner belongs to, by name, with their role in each. A team token sees its own team. Not paged.
+	//
+	// Corresponds with GET /api/v0/teams (the `ListTeams` operationId).
+	ListTeams(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateTeamWithBody Create a team.
+	//
+	// The signed-in owner becomes its first admin. An owner who has already started as many teams as the instance allows gets `413 limit_exceeded` with target `name`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/teams (the `CreateTeam` operationId).
+	CreateTeamWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateTeam Create a team.
+	//
+	// The signed-in owner becomes its first admin. An owner who has already started as many teams as the instance allows gets `413 limit_exceeded` with target `name`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/teams (the `CreateTeam` operationId).
+	CreateTeam(ctx context.Context, body CreateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteTeam Delete a team.
+	//
+	// Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. Its tokens, groups, tags, members and invitations go with it.
+	//
+	// Corresponds with DELETE /api/v0/teams/{teamId} (the `DeleteTeam` operationId).
+	DeleteTeam(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetTeam Get a team.
+	//
+	// A team the caller is not in answers the same `404` as a missing one.
+	//
+	// Corresponds with GET /api/v0/teams/{teamId} (the `GetTeam` operationId).
+	GetTeam(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateTeamWithBody Rename a team.
+	//
+	// Admins only (`403 forbidden_role`).
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /api/v0/teams/{teamId} (the `UpdateTeam` operationId).
+	UpdateTeamWithBody(ctx context.Context, teamId TeamId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateTeam Rename a team.
+	//
+	// Admins only (`403 forbidden_role`).
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /api/v0/teams/{teamId} (the `UpdateTeam` operationId).
+	UpdateTeam(ctx context.Context, teamId TeamId, body UpdateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListTeamInvitations List a team's open invitations.
+	//
+	// Admins only, newest first. Not paged: expired invitations are left out.
+	//
+	// Corresponds with GET /api/v0/teams/{teamId}/invitations (the `ListTeamInvitations` operationId).
+	ListTeamInvitations(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// InviteTeamMemberWithBody Invite an address to a team.
+	//
+	// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/teams/{teamId}/invitations (the `InviteTeamMember` operationId).
+	InviteTeamMemberWithBody(ctx context.Context, teamId TeamId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// InviteTeamMember Invite an address to a team.
+	//
+	// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/teams/{teamId}/invitations (the `InviteTeamMember` operationId).
+	InviteTeamMember(ctx context.Context, teamId TeamId, body InviteTeamMemberJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteTeamInvitation Cancel an invitation.
+	//
+	// Admins only.
+	//
+	// Corresponds with DELETE /api/v0/teams/{teamId}/invitations/{invitationId} (the `DeleteTeamInvitation` operationId).
+	DeleteTeamInvitation(ctx context.Context, teamId TeamId, invitationId InvitationId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListTeamMembers List a team's members.
+	//
+	// Any member, by address.
+	//
+	// Corresponds with GET /api/v0/teams/{teamId}/members (the `ListTeamMembers` operationId).
+	ListTeamMembers(ctx context.Context, teamId TeamId, params *ListTeamMembersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveTeamMember Remove a member, or leave a team.
+	//
+	// An admin may remove anyone; any member may remove themselves. It ends their access on their next request, and what they made stays with the team. Removing the last admin answers `409 team_needs_admin`.
+	//
+	// Corresponds with DELETE /api/v0/teams/{teamId}/members/{ownerId} (the `RemoveTeamMember` operationId).
+	RemoveTeamMember(ctx context.Context, teamId TeamId, ownerId OwnerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetTeamMemberRoleWithBody Change a member's role.
+	//
+	// Admins only. Taking the role of the last working admin answers `409 team_needs_admin`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /api/v0/teams/{teamId}/members/{ownerId} (the `SetTeamMemberRole` operationId).
+	SetTeamMemberRoleWithBody(ctx context.Context, teamId TeamId, ownerId OwnerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetTeamMemberRole Change a member's role.
+	//
+	// Admins only. Taking the role of the last working admin answers `409 team_needs_admin`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /api/v0/teams/{teamId}/members/{ownerId} (the `SetTeamMemberRole` operationId).
+	SetTeamMemberRole(ctx context.Context, teamId TeamId, ownerId OwnerId, body SetTeamMemberRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListTeamTokens List a team's tokens.
+	//
+	// Admins only, newest first. Team tokens belong to the team, so they outlive whoever made them.
+	//
+	// Corresponds with GET /api/v0/teams/{teamId}/tokens (the `ListTeamTokens` operationId).
+	ListTeamTokens(ctx context.Context, teamId TeamId, params *ListTeamTokensParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateTeamTokenWithBody Create a team token.
+	//
+	// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v0/teams/{teamId}/tokens (the `CreateTeamToken` operationId).
+	CreateTeamTokenWithBody(ctx context.Context, teamId TeamId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateTeamToken Create a team token.
+	//
+	// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v0/teams/{teamId}/tokens (the `CreateTeamToken` operationId).
+	CreateTeamToken(ctx context.Context, teamId TeamId, body CreateTeamTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevokeTeamToken Revoke a team token.
+	//
+	// Admins only. Takes effect on the token's next request.
+	//
+	// Corresponds with DELETE /api/v0/teams/{teamId}/tokens/{tokenId} (the `RevokeTeamToken` operationId).
+	RevokeTeamToken(ctx context.Context, teamId TeamId, tokenId TokenId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListApiTokens List the signed-in owner's API tokens.
 	//
@@ -4146,8 +4718,8 @@ func (c *Client) ListExpiringLinks(ctx context.Context, params *ListExpiringLink
 // Every group, by name ignoring case. Not paged: an owner has at most 100.
 //
 // Corresponds with GET /api/v0/groups (the `ListGroups` operationId).
-func (c *Client) ListGroups(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListGroupsRequest(c.Server)
+func (c *Client) ListGroups(ctx context.Context, params *ListGroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListGroupsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -4165,8 +4737,8 @@ func (c *Client) ListGroups(ctx context.Context, reqEditors ...RequestEditorFn) 
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
-func (c *Client) CreateGroupWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateGroupRequestWithBody(c.Server, contentType, body)
+func (c *Client) CreateGroupWithBody(ctx context.Context, params *CreateGroupParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateGroupRequestWithBody(c.Server, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4184,8 +4756,8 @@ func (c *Client) CreateGroupWithBody(ctx context.Context, contentType string, bo
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
-func (c *Client) CreateGroup(ctx context.Context, body CreateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateGroupRequest(c.Server, body)
+func (c *Client) CreateGroup(ctx context.Context, params *CreateGroupParams, body CreateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateGroupRequest(c.Server, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4345,8 +4917,8 @@ func (c *Client) SetNotificationSettings(ctx context.Context, body SetNotificati
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
-func (c *Client) OrganiseSitesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewOrganiseSitesRequestWithBody(c.Server, contentType, body)
+func (c *Client) OrganiseSitesWithBody(ctx context.Context, params *OrganiseSitesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOrganiseSitesRequestWithBody(c.Server, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4364,8 +4936,8 @@ func (c *Client) OrganiseSitesWithBody(ctx context.Context, contentType string, 
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
-func (c *Client) OrganiseSites(ctx context.Context, body OrganiseSitesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewOrganiseSitesRequest(c.Server, body)
+func (c *Client) OrganiseSites(ctx context.Context, params *OrganiseSitesParams, body OrganiseSitesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOrganiseSitesRequest(c.Server, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4597,8 +5169,8 @@ func (c *Client) ListSignInProviders(ctx context.Context, reqEditors ...RequestE
 // How many sites listSiteSummaries would answer for all sites, each saved view, each group, no group and each tag, as the navigator shows them. Every group and tag is listed, with `0` when it has no sites, in the order listGroups and listTags answer them.
 //
 // Corresponds with GET /api/v0/site-counts (the `GetSiteCounts` operationId).
-func (c *Client) GetSiteCounts(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSiteCountsRequest(c.Server)
+func (c *Client) GetSiteCounts(ctx context.Context, params *GetSiteCountsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSiteCountsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -4628,7 +5200,7 @@ func (c *Client) ListSiteSummaries(ctx context.Context, params *ListSiteSummarie
 
 // ListSites List the owner's sites.
 //
-// Ordered by name. With `hostname`, answers the owner's site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
+// Every site the caller can see: their own and their teams', ordered by name; `team` narrows it to one team. With `hostname`, answers the site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
 //
 // Corresponds with GET /api/v0/sites (the `ListSites` operationId).
 func (c *Client) ListSites(ctx context.Context, params *ListSitesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4645,7 +5217,7 @@ func (c *Client) ListSites(ctx context.Context, params *ListSitesParams, reqEdit
 
 // CreateSiteWithBody Create an empty site.
 //
-// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
 //
 // Takes any type of body and a specified content type.
 //
@@ -4664,7 +5236,7 @@ func (c *Client) CreateSiteWithBody(ctx context.Context, contentType string, bod
 
 // CreateSite Create an empty site.
 //
-// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -5359,13 +5931,51 @@ func (c *Client) RollbackSite(ctx context.Context, site SiteName, body RollbackS
 	return c.Client.Do(req)
 }
 
+// TransferSiteWithBody Move a site to or from a team.
+//
+// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/sites/{site}/transfer (the `TransferSite` operationId).
+func (c *Client) TransferSiteWithBody(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTransferSiteRequestWithBody(c.Server, site, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// TransferSite Move a site to or from a team.
+//
+// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/sites/{site}/transfer (the `TransferSite` operationId).
+func (c *Client) TransferSite(ctx context.Context, site SiteName, body TransferSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTransferSiteRequest(c.Server, site, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListTags List the owner's tags.
 //
 // Every tag, by name. Not paged: an owner has at most 200.
 //
 // Corresponds with GET /api/v0/tags (the `ListTags` operationId).
-func (c *Client) ListTags(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListTagsRequest(c.Server)
+func (c *Client) ListTags(ctx context.Context, params *ListTagsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListTagsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -5383,8 +5993,8 @@ func (c *Client) ListTags(ctx context.Context, reqEditors ...RequestEditorFn) (*
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
-func (c *Client) CreateTagWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateTagRequestWithBody(c.Server, contentType, body)
+func (c *Client) CreateTagWithBody(ctx context.Context, params *CreateTagParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTagRequestWithBody(c.Server, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5402,8 +6012,8 @@ func (c *Client) CreateTagWithBody(ctx context.Context, contentType string, body
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
-func (c *Client) CreateTag(ctx context.Context, body CreateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateTagRequest(c.Server, body)
+func (c *Client) CreateTag(ctx context.Context, params *CreateTagParams, body CreateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTagRequest(c.Server, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5459,6 +6069,400 @@ func (c *Client) UpdateTagWithBody(ctx context.Context, tagId TagId, contentType
 // Corresponds with PATCH /api/v0/tags/{tagId} (the `UpdateTag` operationId).
 func (c *Client) UpdateTag(ctx context.Context, tagId TagId, body UpdateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateTagRequest(c.Server, tagId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListMyTeamInvitations List invitations to the signed-in owner.
+//
+// Open invitations to the owner's own verified address, newest first.
+//
+// Corresponds with GET /api/v0/team-invitations (the `ListMyTeamInvitations` operationId).
+func (c *Client) ListMyTeamInvitations(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListMyTeamInvitationsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AcceptTeamInvitation Accept an invitation.
+//
+// Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one and an expired one answer the same `404`. Accepting twice changes nothing, while still a member.
+//
+// Corresponds with POST /api/v0/team-invitations/{invitationId}/accept (the `AcceptTeamInvitation` operationId).
+func (c *Client) AcceptTeamInvitation(ctx context.Context, invitationId InvitationId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAcceptTeamInvitationRequest(c.Server, invitationId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeclineTeamInvitation Decline an invitation.
+//
+// As `acceptTeamInvitation`, the invitation must be to the owner's own address.
+//
+// Corresponds with POST /api/v0/team-invitations/{invitationId}/decline (the `DeclineTeamInvitation` operationId).
+func (c *Client) DeclineTeamInvitation(ctx context.Context, invitationId InvitationId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeclineTeamInvitationRequest(c.Server, invitationId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListTeams List the teams the caller is in.
+//
+// Every team the owner belongs to, by name, with their role in each. A team token sees its own team. Not paged.
+//
+// Corresponds with GET /api/v0/teams (the `ListTeams` operationId).
+func (c *Client) ListTeams(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListTeamsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateTeamWithBody Create a team.
+//
+// The signed-in owner becomes its first admin. An owner who has already started as many teams as the instance allows gets `413 limit_exceeded` with target `name`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/teams (the `CreateTeam` operationId).
+func (c *Client) CreateTeamWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTeamRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateTeam Create a team.
+//
+// The signed-in owner becomes its first admin. An owner who has already started as many teams as the instance allows gets `413 limit_exceeded` with target `name`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/teams (the `CreateTeam` operationId).
+func (c *Client) CreateTeam(ctx context.Context, body CreateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTeamRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteTeam Delete a team.
+//
+// Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. Its tokens, groups, tags, members and invitations go with it.
+//
+// Corresponds with DELETE /api/v0/teams/{teamId} (the `DeleteTeam` operationId).
+func (c *Client) DeleteTeam(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteTeamRequest(c.Server, teamId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetTeam Get a team.
+//
+// A team the caller is not in answers the same `404` as a missing one.
+//
+// Corresponds with GET /api/v0/teams/{teamId} (the `GetTeam` operationId).
+func (c *Client) GetTeam(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetTeamRequest(c.Server, teamId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateTeamWithBody Rename a team.
+//
+// Admins only (`403 forbidden_role`).
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /api/v0/teams/{teamId} (the `UpdateTeam` operationId).
+func (c *Client) UpdateTeamWithBody(ctx context.Context, teamId TeamId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateTeamRequestWithBody(c.Server, teamId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateTeam Rename a team.
+//
+// Admins only (`403 forbidden_role`).
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /api/v0/teams/{teamId} (the `UpdateTeam` operationId).
+func (c *Client) UpdateTeam(ctx context.Context, teamId TeamId, body UpdateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateTeamRequest(c.Server, teamId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListTeamInvitations List a team's open invitations.
+//
+// Admins only, newest first. Not paged: expired invitations are left out.
+//
+// Corresponds with GET /api/v0/teams/{teamId}/invitations (the `ListTeamInvitations` operationId).
+func (c *Client) ListTeamInvitations(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListTeamInvitationsRequest(c.Server, teamId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// InviteTeamMemberWithBody Invite an address to a team.
+//
+// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/teams/{teamId}/invitations (the `InviteTeamMember` operationId).
+func (c *Client) InviteTeamMemberWithBody(ctx context.Context, teamId TeamId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInviteTeamMemberRequestWithBody(c.Server, teamId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// InviteTeamMember Invite an address to a team.
+//
+// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/teams/{teamId}/invitations (the `InviteTeamMember` operationId).
+func (c *Client) InviteTeamMember(ctx context.Context, teamId TeamId, body InviteTeamMemberJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewInviteTeamMemberRequest(c.Server, teamId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteTeamInvitation Cancel an invitation.
+//
+// Admins only.
+//
+// Corresponds with DELETE /api/v0/teams/{teamId}/invitations/{invitationId} (the `DeleteTeamInvitation` operationId).
+func (c *Client) DeleteTeamInvitation(ctx context.Context, teamId TeamId, invitationId InvitationId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteTeamInvitationRequest(c.Server, teamId, invitationId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListTeamMembers List a team's members.
+//
+// Any member, by address.
+//
+// Corresponds with GET /api/v0/teams/{teamId}/members (the `ListTeamMembers` operationId).
+func (c *Client) ListTeamMembers(ctx context.Context, teamId TeamId, params *ListTeamMembersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListTeamMembersRequest(c.Server, teamId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RemoveTeamMember Remove a member, or leave a team.
+//
+// An admin may remove anyone; any member may remove themselves. It ends their access on their next request, and what they made stays with the team. Removing the last admin answers `409 team_needs_admin`.
+//
+// Corresponds with DELETE /api/v0/teams/{teamId}/members/{ownerId} (the `RemoveTeamMember` operationId).
+func (c *Client) RemoveTeamMember(ctx context.Context, teamId TeamId, ownerId OwnerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveTeamMemberRequest(c.Server, teamId, ownerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetTeamMemberRoleWithBody Change a member's role.
+//
+// Admins only. Taking the role of the last working admin answers `409 team_needs_admin`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /api/v0/teams/{teamId}/members/{ownerId} (the `SetTeamMemberRole` operationId).
+func (c *Client) SetTeamMemberRoleWithBody(ctx context.Context, teamId TeamId, ownerId OwnerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetTeamMemberRoleRequestWithBody(c.Server, teamId, ownerId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetTeamMemberRole Change a member's role.
+//
+// Admins only. Taking the role of the last working admin answers `409 team_needs_admin`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /api/v0/teams/{teamId}/members/{ownerId} (the `SetTeamMemberRole` operationId).
+func (c *Client) SetTeamMemberRole(ctx context.Context, teamId TeamId, ownerId OwnerId, body SetTeamMemberRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetTeamMemberRoleRequest(c.Server, teamId, ownerId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListTeamTokens List a team's tokens.
+//
+// Admins only, newest first. Team tokens belong to the team, so they outlive whoever made them.
+//
+// Corresponds with GET /api/v0/teams/{teamId}/tokens (the `ListTeamTokens` operationId).
+func (c *Client) ListTeamTokens(ctx context.Context, teamId TeamId, params *ListTeamTokensParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListTeamTokensRequest(c.Server, teamId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateTeamTokenWithBody Create a team token.
+//
+// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v0/teams/{teamId}/tokens (the `CreateTeamToken` operationId).
+func (c *Client) CreateTeamTokenWithBody(ctx context.Context, teamId TeamId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTeamTokenRequestWithBody(c.Server, teamId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateTeamToken Create a team token.
+//
+// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v0/teams/{teamId}/tokens (the `CreateTeamToken` operationId).
+func (c *Client) CreateTeamToken(ctx context.Context, teamId TeamId, body CreateTeamTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTeamTokenRequest(c.Server, teamId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RevokeTeamToken Revoke a team token.
+//
+// Admins only. Takes effect on the token's next request.
+//
+// Corresponds with DELETE /api/v0/teams/{teamId}/tokens/{tokenId} (the `RevokeTeamToken` operationId).
+func (c *Client) RevokeTeamToken(ctx context.Context, teamId TeamId, tokenId TokenId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeTeamTokenRequest(c.Server, teamId, tokenId)
 	if err != nil {
 		return nil, err
 	}
@@ -5784,6 +6788,18 @@ func NewGetAnalyticsRequest(server string, params *GetAnalyticsParams) (*http.Re
 		if params.Tag != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "tag", *params.Tag, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Team != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "team", *params.Team, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -6221,6 +7237,18 @@ func NewListExpiringLinksRequest(server string, params *ListExpiringLinksParams)
 
 		}
 
+		if params.Team != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "team", *params.Team, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -6236,7 +7264,7 @@ func NewListExpiringLinksRequest(server string, params *ListExpiringLinksParams)
 }
 
 // NewListGroupsRequest constructs an http.Request for the ListGroups method
-func NewListGroupsRequest(server string) (*http.Request, error) {
+func NewListGroupsRequest(server string, params *ListGroupsParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -6252,6 +7280,33 @@ func NewListGroupsRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Team != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "team", *params.Team, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -6263,18 +7318,18 @@ func NewListGroupsRequest(server string) (*http.Request, error) {
 }
 
 // NewCreateGroupRequest calls the generic CreateGroup builder with application/json body
-func NewCreateGroupRequest(server string, body CreateGroupJSONRequestBody) (*http.Request, error) {
+func NewCreateGroupRequest(server string, params *CreateGroupParams, body CreateGroupJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewCreateGroupRequestWithBody(server, "application/json", bodyReader)
+	return NewCreateGroupRequestWithBody(server, params, "application/json", bodyReader)
 }
 
 // NewCreateGroupRequestWithBody constructs an http.Request for the CreateGroup method, with any body, and a specified content type
-func NewCreateGroupRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+func NewCreateGroupRequestWithBody(server string, params *CreateGroupParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -6290,6 +7345,33 @@ func NewCreateGroupRequestWithBody(server string, contentType string, body io.Re
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Team != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "team", *params.Team, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
@@ -6505,18 +7587,18 @@ func NewSetNotificationSettingsRequestWithBody(server string, contentType string
 }
 
 // NewOrganiseSitesRequest calls the generic OrganiseSites builder with application/json body
-func NewOrganiseSitesRequest(server string, body OrganiseSitesJSONRequestBody) (*http.Request, error) {
+func NewOrganiseSitesRequest(server string, params *OrganiseSitesParams, body OrganiseSitesJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewOrganiseSitesRequestWithBody(server, "application/json", bodyReader)
+	return NewOrganiseSitesRequestWithBody(server, params, "application/json", bodyReader)
 }
 
 // NewOrganiseSitesRequestWithBody constructs an http.Request for the OrganiseSites method, with any body, and a specified content type
-func NewOrganiseSitesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+func NewOrganiseSitesRequestWithBody(server string, params *OrganiseSitesParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -6532,6 +7614,33 @@ func NewOrganiseSitesRequestWithBody(server string, contentType string, body io.
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Team != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "team", *params.Team, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
@@ -6880,7 +7989,7 @@ func NewListSignInProvidersRequest(server string) (*http.Request, error) {
 }
 
 // NewGetSiteCountsRequest constructs an http.Request for the GetSiteCounts method
-func NewGetSiteCountsRequest(server string) (*http.Request, error) {
+func NewGetSiteCountsRequest(server string, params *GetSiteCountsParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -6896,6 +8005,33 @@ func NewGetSiteCountsRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Team != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "team", *params.Team, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -7018,6 +8154,18 @@ func NewListSiteSummariesRequest(server string, params *ListSiteSummariesParams)
 
 		}
 
+		if params.Team != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "team", *params.Team, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -7087,6 +8235,18 @@ func NewListSitesRequest(server string, params *ListSitesParams) (*http.Request,
 		if params.Hostname != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "hostname", *params.Hostname, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Team != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "team", *params.Team, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -8729,8 +9889,55 @@ func NewRollbackSiteRequestWithBody(server string, site SiteName, contentType st
 	return req, nil
 }
 
+// NewTransferSiteRequest calls the generic TransferSite builder with application/json body
+func NewTransferSiteRequest(server string, site SiteName, body TransferSiteJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewTransferSiteRequestWithBody(server, site, "application/json", bodyReader)
+}
+
+// NewTransferSiteRequestWithBody constructs an http.Request for the TransferSite method, with any body, and a specified content type
+func NewTransferSiteRequestWithBody(server string, site SiteName, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "site", site, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/sites/%s/transfer", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListTagsRequest constructs an http.Request for the ListTags method
-func NewListTagsRequest(server string) (*http.Request, error) {
+func NewListTagsRequest(server string, params *ListTagsParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -8746,6 +9953,33 @@ func NewListTagsRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Team != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "team", *params.Team, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -8757,18 +9991,18 @@ func NewListTagsRequest(server string) (*http.Request, error) {
 }
 
 // NewCreateTagRequest calls the generic CreateTag builder with application/json body
-func NewCreateTagRequest(server string, body CreateTagJSONRequestBody) (*http.Request, error) {
+func NewCreateTagRequest(server string, params *CreateTagParams, body CreateTagJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewCreateTagRequestWithBody(server, "application/json", bodyReader)
+	return NewCreateTagRequestWithBody(server, params, "application/json", bodyReader)
 }
 
 // NewCreateTagRequestWithBody constructs an http.Request for the CreateTag method, with any body, and a specified content type
-func NewCreateTagRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+func NewCreateTagRequestWithBody(server string, params *CreateTagParams, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -8784,6 +10018,33 @@ func NewCreateTagRequestWithBody(server string, contentType string, body io.Read
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Team != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "team", *params.Team, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
@@ -8873,6 +10134,734 @@ func NewUpdateTagRequestWithBody(server string, tagId TagId, contentType string,
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListMyTeamInvitationsRequest constructs an http.Request for the ListMyTeamInvitations method
+func NewListMyTeamInvitationsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/team-invitations")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAcceptTeamInvitationRequest constructs an http.Request for the AcceptTeamInvitation method
+func NewAcceptTeamInvitationRequest(server string, invitationId InvitationId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "invitationId", invitationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/team-invitations/%s/accept", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeclineTeamInvitationRequest constructs an http.Request for the DeclineTeamInvitation method
+func NewDeclineTeamInvitationRequest(server string, invitationId InvitationId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "invitationId", invitationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/team-invitations/%s/decline", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListTeamsRequest constructs an http.Request for the ListTeams method
+func NewListTeamsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateTeamRequest calls the generic CreateTeam builder with application/json body
+func NewCreateTeamRequest(server string, body CreateTeamJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateTeamRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateTeamRequestWithBody constructs an http.Request for the CreateTeam method, with any body, and a specified content type
+func NewCreateTeamRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteTeamRequest constructs an http.Request for the DeleteTeam method
+func NewDeleteTeamRequest(server string, teamId TeamId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetTeamRequest constructs an http.Request for the GetTeam method
+func NewGetTeamRequest(server string, teamId TeamId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateTeamRequest calls the generic UpdateTeam builder with application/json body
+func NewUpdateTeamRequest(server string, teamId TeamId, body UpdateTeamJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateTeamRequestWithBody(server, teamId, "application/json", bodyReader)
+}
+
+// NewUpdateTeamRequestWithBody constructs an http.Request for the UpdateTeam method, with any body, and a specified content type
+func NewUpdateTeamRequestWithBody(server string, teamId TeamId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListTeamInvitationsRequest constructs an http.Request for the ListTeamInvitations method
+func NewListTeamInvitationsRequest(server string, teamId TeamId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams/%s/invitations", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewInviteTeamMemberRequest calls the generic InviteTeamMember builder with application/json body
+func NewInviteTeamMemberRequest(server string, teamId TeamId, body InviteTeamMemberJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewInviteTeamMemberRequestWithBody(server, teamId, "application/json", bodyReader)
+}
+
+// NewInviteTeamMemberRequestWithBody constructs an http.Request for the InviteTeamMember method, with any body, and a specified content type
+func NewInviteTeamMemberRequestWithBody(server string, teamId TeamId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams/%s/invitations", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteTeamInvitationRequest constructs an http.Request for the DeleteTeamInvitation method
+func NewDeleteTeamInvitationRequest(server string, teamId TeamId, invitationId InvitationId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "invitationId", invitationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams/%s/invitations/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListTeamMembersRequest constructs an http.Request for the ListTeamMembers method
+func NewListTeamMembersRequest(server string, teamId TeamId, params *ListTeamMembersParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams/%s/members", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRemoveTeamMemberRequest constructs an http.Request for the RemoveTeamMember method
+func NewRemoveTeamMemberRequest(server string, teamId TeamId, ownerId OwnerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "ownerId", ownerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams/%s/members/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetTeamMemberRoleRequest calls the generic SetTeamMemberRole builder with application/json body
+func NewSetTeamMemberRoleRequest(server string, teamId TeamId, ownerId OwnerId, body SetTeamMemberRoleJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetTeamMemberRoleRequestWithBody(server, teamId, ownerId, "application/json", bodyReader)
+}
+
+// NewSetTeamMemberRoleRequestWithBody constructs an http.Request for the SetTeamMemberRole method, with any body, and a specified content type
+func NewSetTeamMemberRoleRequestWithBody(server string, teamId TeamId, ownerId OwnerId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "ownerId", ownerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams/%s/members/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListTeamTokensRequest constructs an http.Request for the ListTeamTokens method
+func NewListTeamTokensRequest(server string, teamId TeamId, params *ListTeamTokensParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams/%s/tokens", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateTeamTokenRequest calls the generic CreateTeamToken builder with application/json body
+func NewCreateTeamTokenRequest(server string, teamId TeamId, body CreateTeamTokenJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateTeamTokenRequestWithBody(server, teamId, "application/json", bodyReader)
+}
+
+// NewCreateTeamTokenRequestWithBody constructs an http.Request for the CreateTeamToken method, with any body, and a specified content type
+func NewCreateTeamTokenRequestWithBody(server string, teamId TeamId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams/%s/tokens", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRevokeTeamTokenRequest constructs an http.Request for the RevokeTeamToken method
+func NewRevokeTeamTokenRequest(server string, teamId TeamId, tokenId TokenId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "teamId", teamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "tokenId", tokenId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v0/teams/%s/tokens/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -9539,7 +11528,7 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /api/v0/groups (the `ListGroups` operationId).
-	ListGroupsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListGroupsResponse, error)
+	ListGroupsWithResponse(ctx context.Context, params *ListGroupsParams, reqEditors ...RequestEditorFn) (*ListGroupsResponse, error)
 
 	// CreateGroupWithBodyWithResponse Create a group.
 	//
@@ -9548,7 +11537,7 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
-	CreateGroupWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateGroupResponse, error)
+	CreateGroupWithBodyWithResponse(ctx context.Context, params *CreateGroupParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateGroupResponse, error)
 
 	// CreateGroupWithResponse Create a group.
 	//
@@ -9557,7 +11546,7 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
-	CreateGroupWithResponse(ctx context.Context, body CreateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateGroupResponse, error)
+	CreateGroupWithResponse(ctx context.Context, params *CreateGroupParams, body CreateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateGroupResponse, error)
 
 	// DeleteGroupWithResponse Delete a group.
 	//
@@ -9636,7 +11625,7 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
-	OrganiseSitesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*OrganiseSitesResponse, error)
+	OrganiseSitesWithBodyWithResponse(ctx context.Context, params *OrganiseSitesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*OrganiseSitesResponse, error)
 
 	// OrganiseSitesWithResponse Change the group, tags or pin of many sites at once.
 	//
@@ -9645,7 +11634,7 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
-	OrganiseSitesWithResponse(ctx context.Context, body OrganiseSitesJSONRequestBody, reqEditors ...RequestEditorFn) (*OrganiseSitesResponse, error)
+	OrganiseSitesWithResponse(ctx context.Context, params *OrganiseSitesParams, body OrganiseSitesJSONRequestBody, reqEditors ...RequestEditorFn) (*OrganiseSitesResponse, error)
 
 	// InviteOwnerWithBodyWithResponse Invite another owner by email.
 	//
@@ -9762,7 +11751,7 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /api/v0/site-counts (the `GetSiteCounts` operationId).
-	GetSiteCountsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSiteCountsResponse, error)
+	GetSiteCountsWithResponse(ctx context.Context, params *GetSiteCountsParams, reqEditors ...RequestEditorFn) (*GetSiteCountsResponse, error)
 
 	// ListSiteSummariesWithResponse List the owner's sites with what lists and maps show of each.
 	//
@@ -9775,7 +11764,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListSitesWithResponse List the owner's sites.
 	//
-	// Ordered by name. With `hostname`, answers the owner's site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
+	// Every site the caller can see: their own and their teams', ordered by name; `team` narrows it to one team. With `hostname`, answers the site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -9784,7 +11773,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateSiteWithBodyWithResponse Create an empty site.
 	//
-	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -9793,7 +11782,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateSiteWithResponse Create an empty site.
 	//
-	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -10144,6 +12133,24 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v0/sites/{site}/rollback (the `RollbackSite` operationId).
 	RollbackSiteWithResponse(ctx context.Context, site SiteName, body RollbackSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*RollbackSiteResponse, error)
 
+	// TransferSiteWithBodyWithResponse Move a site to or from a team.
+	//
+	// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/transfer (the `TransferSite` operationId).
+	TransferSiteWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TransferSiteResponse, error)
+
+	// TransferSiteWithResponse Move a site to or from a team.
+	//
+	// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/sites/{site}/transfer (the `TransferSite` operationId).
+	TransferSiteWithResponse(ctx context.Context, site SiteName, body TransferSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*TransferSiteResponse, error)
+
 	// ListTagsWithResponse List the owner's tags.
 	//
 	// Every tag, by name. Not paged: an owner has at most 200.
@@ -10151,7 +12158,7 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /api/v0/tags (the `ListTags` operationId).
-	ListTagsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListTagsResponse, error)
+	ListTagsWithResponse(ctx context.Context, params *ListTagsParams, reqEditors ...RequestEditorFn) (*ListTagsResponse, error)
 
 	// CreateTagWithBodyWithResponse Create a tag.
 	//
@@ -10160,7 +12167,7 @@ type ClientWithResponsesInterface interface {
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
-	CreateTagWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTagResponse, error)
+	CreateTagWithBodyWithResponse(ctx context.Context, params *CreateTagParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTagResponse, error)
 
 	// CreateTagWithResponse Create a tag.
 	//
@@ -10169,7 +12176,7 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
-	CreateTagWithResponse(ctx context.Context, body CreateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTagResponse, error)
+	CreateTagWithResponse(ctx context.Context, params *CreateTagParams, body CreateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTagResponse, error)
 
 	// DeleteTagWithResponse Delete a tag.
 	//
@@ -10197,6 +12204,204 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PATCH /api/v0/tags/{tagId} (the `UpdateTag` operationId).
 	UpdateTagWithResponse(ctx context.Context, tagId TagId, body UpdateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTagResponse, error)
+
+	// ListMyTeamInvitationsWithResponse List invitations to the signed-in owner.
+	//
+	// Open invitations to the owner's own verified address, newest first.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/team-invitations (the `ListMyTeamInvitations` operationId).
+	ListMyTeamInvitationsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMyTeamInvitationsResponse, error)
+
+	// AcceptTeamInvitationWithResponse Accept an invitation.
+	//
+	// Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one and an expired one answer the same `404`. Accepting twice changes nothing, while still a member.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/team-invitations/{invitationId}/accept (the `AcceptTeamInvitation` operationId).
+	AcceptTeamInvitationWithResponse(ctx context.Context, invitationId InvitationId, reqEditors ...RequestEditorFn) (*AcceptTeamInvitationResponse, error)
+
+	// DeclineTeamInvitationWithResponse Decline an invitation.
+	//
+	// As `acceptTeamInvitation`, the invitation must be to the owner's own address.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/team-invitations/{invitationId}/decline (the `DeclineTeamInvitation` operationId).
+	DeclineTeamInvitationWithResponse(ctx context.Context, invitationId InvitationId, reqEditors ...RequestEditorFn) (*DeclineTeamInvitationResponse, error)
+
+	// ListTeamsWithResponse List the teams the caller is in.
+	//
+	// Every team the owner belongs to, by name, with their role in each. A team token sees its own team. Not paged.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/teams (the `ListTeams` operationId).
+	ListTeamsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListTeamsResponse, error)
+
+	// CreateTeamWithBodyWithResponse Create a team.
+	//
+	// The signed-in owner becomes its first admin. An owner who has already started as many teams as the instance allows gets `413 limit_exceeded` with target `name`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/teams (the `CreateTeam` operationId).
+	CreateTeamWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTeamResponse, error)
+
+	// CreateTeamWithResponse Create a team.
+	//
+	// The signed-in owner becomes its first admin. An owner who has already started as many teams as the instance allows gets `413 limit_exceeded` with target `name`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/teams (the `CreateTeam` operationId).
+	CreateTeamWithResponse(ctx context.Context, body CreateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTeamResponse, error)
+
+	// DeleteTeamWithResponse Delete a team.
+	//
+	// Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. Its tokens, groups, tags, members and invitations go with it.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/teams/{teamId} (the `DeleteTeam` operationId).
+	DeleteTeamWithResponse(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*DeleteTeamResponse, error)
+
+	// GetTeamWithResponse Get a team.
+	//
+	// A team the caller is not in answers the same `404` as a missing one.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/teams/{teamId} (the `GetTeam` operationId).
+	GetTeamWithResponse(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*GetTeamResponse, error)
+
+	// UpdateTeamWithBodyWithResponse Rename a team.
+	//
+	// Admins only (`403 forbidden_role`).
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v0/teams/{teamId} (the `UpdateTeam` operationId).
+	UpdateTeamWithBodyWithResponse(ctx context.Context, teamId TeamId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateTeamResponse, error)
+
+	// UpdateTeamWithResponse Rename a team.
+	//
+	// Admins only (`403 forbidden_role`).
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v0/teams/{teamId} (the `UpdateTeam` operationId).
+	UpdateTeamWithResponse(ctx context.Context, teamId TeamId, body UpdateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTeamResponse, error)
+
+	// ListTeamInvitationsWithResponse List a team's open invitations.
+	//
+	// Admins only, newest first. Not paged: expired invitations are left out.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/teams/{teamId}/invitations (the `ListTeamInvitations` operationId).
+	ListTeamInvitationsWithResponse(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*ListTeamInvitationsResponse, error)
+
+	// InviteTeamMemberWithBodyWithResponse Invite an address to a team.
+	//
+	// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/teams/{teamId}/invitations (the `InviteTeamMember` operationId).
+	InviteTeamMemberWithBodyWithResponse(ctx context.Context, teamId TeamId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InviteTeamMemberResponse, error)
+
+	// InviteTeamMemberWithResponse Invite an address to a team.
+	//
+	// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/teams/{teamId}/invitations (the `InviteTeamMember` operationId).
+	InviteTeamMemberWithResponse(ctx context.Context, teamId TeamId, body InviteTeamMemberJSONRequestBody, reqEditors ...RequestEditorFn) (*InviteTeamMemberResponse, error)
+
+	// DeleteTeamInvitationWithResponse Cancel an invitation.
+	//
+	// Admins only.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/teams/{teamId}/invitations/{invitationId} (the `DeleteTeamInvitation` operationId).
+	DeleteTeamInvitationWithResponse(ctx context.Context, teamId TeamId, invitationId InvitationId, reqEditors ...RequestEditorFn) (*DeleteTeamInvitationResponse, error)
+
+	// ListTeamMembersWithResponse List a team's members.
+	//
+	// Any member, by address.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/teams/{teamId}/members (the `ListTeamMembers` operationId).
+	ListTeamMembersWithResponse(ctx context.Context, teamId TeamId, params *ListTeamMembersParams, reqEditors ...RequestEditorFn) (*ListTeamMembersResponse, error)
+
+	// RemoveTeamMemberWithResponse Remove a member, or leave a team.
+	//
+	// An admin may remove anyone; any member may remove themselves. It ends their access on their next request, and what they made stays with the team. Removing the last admin answers `409 team_needs_admin`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/teams/{teamId}/members/{ownerId} (the `RemoveTeamMember` operationId).
+	RemoveTeamMemberWithResponse(ctx context.Context, teamId TeamId, ownerId OwnerId, reqEditors ...RequestEditorFn) (*RemoveTeamMemberResponse, error)
+
+	// SetTeamMemberRoleWithBodyWithResponse Change a member's role.
+	//
+	// Admins only. Taking the role of the last working admin answers `409 team_needs_admin`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v0/teams/{teamId}/members/{ownerId} (the `SetTeamMemberRole` operationId).
+	SetTeamMemberRoleWithBodyWithResponse(ctx context.Context, teamId TeamId, ownerId OwnerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetTeamMemberRoleResponse, error)
+
+	// SetTeamMemberRoleWithResponse Change a member's role.
+	//
+	// Admins only. Taking the role of the last working admin answers `409 team_needs_admin`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v0/teams/{teamId}/members/{ownerId} (the `SetTeamMemberRole` operationId).
+	SetTeamMemberRoleWithResponse(ctx context.Context, teamId TeamId, ownerId OwnerId, body SetTeamMemberRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*SetTeamMemberRoleResponse, error)
+
+	// ListTeamTokensWithResponse List a team's tokens.
+	//
+	// Admins only, newest first. Team tokens belong to the team, so they outlive whoever made them.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v0/teams/{teamId}/tokens (the `ListTeamTokens` operationId).
+	ListTeamTokensWithResponse(ctx context.Context, teamId TeamId, params *ListTeamTokensParams, reqEditors ...RequestEditorFn) (*ListTeamTokensResponse, error)
+
+	// CreateTeamTokenWithBodyWithResponse Create a team token.
+	//
+	// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/teams/{teamId}/tokens (the `CreateTeamToken` operationId).
+	CreateTeamTokenWithBodyWithResponse(ctx context.Context, teamId TeamId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTeamTokenResponse, error)
+
+	// CreateTeamTokenWithResponse Create a team token.
+	//
+	// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v0/teams/{teamId}/tokens (the `CreateTeamToken` operationId).
+	CreateTeamTokenWithResponse(ctx context.Context, teamId TeamId, body CreateTeamTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTeamTokenResponse, error)
+
+	// RevokeTeamTokenWithResponse Revoke a team token.
+	//
+	// Admins only. Takes effect on the token's next request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v0/teams/{teamId}/tokens/{tokenId} (the `RevokeTeamToken` operationId).
+	RevokeTeamTokenWithResponse(ctx context.Context, teamId TeamId, tokenId TokenId, reqEditors ...RequestEditorFn) (*RevokeTeamTokenResponse, error)
 
 	// ListApiTokensWithResponse List the signed-in owner's API tokens.
 	//
@@ -15069,6 +17274,96 @@ func (r RollbackSiteResponse) ContentType() string {
 	return ""
 }
 
+type TransferSiteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Site
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON413 the response for an HTTP 413 `application/json` response
+	JSON413 *TooLarge
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r TransferSiteResponse) GetJSON200() *Site {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r TransferSiteResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r TransferSiteResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r TransferSiteResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r TransferSiteResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r TransferSiteResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON413 returns the response for an HTTP 413 `application/json` response
+func (r TransferSiteResponse) GetJSON413() *TooLarge {
+	return r.JSON413
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r TransferSiteResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r TransferSiteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r TransferSiteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r TransferSiteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r TransferSiteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListTagsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -15353,6 +17648,1214 @@ func (r UpdateTagResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r UpdateTagResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListMyTeamInvitationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TeamInvitationList
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListMyTeamInvitationsResponse) GetJSON200() *TeamInvitationList {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListMyTeamInvitationsResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListMyTeamInvitationsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListMyTeamInvitationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListMyTeamInvitationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListMyTeamInvitationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListMyTeamInvitationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AcceptTeamInvitationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Team
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r AcceptTeamInvitationResponse) GetJSON200() *Team {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r AcceptTeamInvitationResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r AcceptTeamInvitationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r AcceptTeamInvitationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r AcceptTeamInvitationResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AcceptTeamInvitationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AcceptTeamInvitationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AcceptTeamInvitationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AcceptTeamInvitationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeclineTeamInvitationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeclineTeamInvitationResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeclineTeamInvitationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeclineTeamInvitationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeclineTeamInvitationResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeclineTeamInvitationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeclineTeamInvitationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeclineTeamInvitationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeclineTeamInvitationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListTeamsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TeamList
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListTeamsResponse) GetJSON200() *TeamList {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListTeamsResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListTeamsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListTeamsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListTeamsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListTeamsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListTeamsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListTeamsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateTeamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Team
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON413 the response for an HTTP 413 `application/json` response
+	JSON413 *TooLarge
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateTeamResponse) GetJSON201() *Team {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateTeamResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateTeamResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateTeamResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON413 returns the response for an HTTP 413 `application/json` response
+func (r CreateTeamResponse) GetJSON413() *TooLarge {
+	return r.JSON413
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateTeamResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateTeamResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateTeamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateTeamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateTeamResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteTeamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteTeamResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteTeamResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteTeamResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r DeleteTeamResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteTeamResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteTeamResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteTeamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteTeamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteTeamResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetTeamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Team
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetTeamResponse) GetJSON200() *Team {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetTeamResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetTeamResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetTeamResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetTeamResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetTeamResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetTeamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetTeamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetTeamResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateTeamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Team
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateTeamResponse) GetJSON200() *Team {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r UpdateTeamResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r UpdateTeamResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r UpdateTeamResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UpdateTeamResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r UpdateTeamResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateTeamResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateTeamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateTeamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateTeamResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListTeamInvitationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TeamInvitationList
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListTeamInvitationsResponse) GetJSON200() *TeamInvitationList {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListTeamInvitationsResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListTeamInvitationsResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListTeamInvitationsResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListTeamInvitationsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListTeamInvitationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListTeamInvitationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListTeamInvitationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListTeamInvitationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// InviteTeamMemberResponse429Headers the declared response headers of an HTTP 429 response for InviteTeamMember
+type InviteTeamMemberResponse429Headers struct {
+	RetryAfter *int32
+}
+
+type InviteTeamMemberResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *TeamInvitation
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *InviteTeamMemberResponse429Headers
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r InviteTeamMemberResponse) GetJSON201() *TeamInvitation {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r InviteTeamMemberResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r InviteTeamMemberResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r InviteTeamMemberResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r InviteTeamMemberResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r InviteTeamMemberResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r InviteTeamMemberResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r InviteTeamMemberResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r InviteTeamMemberResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r InviteTeamMemberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r InviteTeamMemberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r InviteTeamMemberResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteTeamInvitationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r DeleteTeamInvitationResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteTeamInvitationResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r DeleteTeamInvitationResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteTeamInvitationResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteTeamInvitationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteTeamInvitationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteTeamInvitationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteTeamInvitationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListTeamMembersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TeamMemberPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListTeamMembersResponse) GetJSON200() *TeamMemberPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListTeamMembersResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListTeamMembersResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListTeamMembersResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListTeamMembersResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListTeamMembersResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListTeamMembersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListTeamMembersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListTeamMembersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListTeamMembersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RemoveTeamMemberResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RemoveTeamMemberResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RemoveTeamMemberResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RemoveTeamMemberResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RemoveTeamMemberResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RemoveTeamMemberResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RemoveTeamMemberResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveTeamMemberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveTeamMemberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RemoveTeamMemberResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetTeamMemberRoleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TeamMember
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Conflict
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SetTeamMemberRoleResponse) GetJSON200() *TeamMember {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SetTeamMemberRoleResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r SetTeamMemberRoleResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r SetTeamMemberRoleResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r SetTeamMemberRoleResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r SetTeamMemberRoleResponse) GetJSON409() *Conflict {
+	return r.JSON409
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SetTeamMemberRoleResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SetTeamMemberRoleResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SetTeamMemberRoleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetTeamMemberRoleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetTeamMemberRoleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListTeamTokensResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ApiTokenPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListTeamTokensResponse) GetJSON200() *ApiTokenPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListTeamTokensResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListTeamTokensResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListTeamTokensResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListTeamTokensResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListTeamTokensResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListTeamTokensResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListTeamTokensResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListTeamTokensResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListTeamTokensResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateTeamTokenResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *CreatedApiToken
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateTeamTokenResponse) GetJSON201() *CreatedApiToken {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r CreateTeamTokenResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r CreateTeamTokenResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r CreateTeamTokenResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r CreateTeamTokenResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateTeamTokenResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateTeamTokenResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateTeamTokenResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateTeamTokenResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateTeamTokenResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RevokeTeamTokenResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Forbidden
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *NotFound
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RevokeTeamTokenResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RevokeTeamTokenResponse) GetJSON403() *Forbidden {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RevokeTeamTokenResponse) GetJSON404() *NotFound {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RevokeTeamTokenResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RevokeTeamTokenResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeTeamTokenResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeTeamTokenResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RevokeTeamTokenResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -16432,8 +19935,8 @@ func (c *ClientWithResponses) ListExpiringLinksWithResponse(ctx context.Context,
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /api/v0/groups (the `ListGroups` operationId).
-func (c *ClientWithResponses) ListGroupsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListGroupsResponse, error) {
-	rsp, err := c.ListGroups(ctx, reqEditors...)
+func (c *ClientWithResponses) ListGroupsWithResponse(ctx context.Context, params *ListGroupsParams, reqEditors ...RequestEditorFn) (*ListGroupsResponse, error) {
+	rsp, err := c.ListGroups(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -16447,8 +19950,8 @@ func (c *ClientWithResponses) ListGroupsWithResponse(ctx context.Context, reqEdi
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
-func (c *ClientWithResponses) CreateGroupWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateGroupResponse, error) {
-	rsp, err := c.CreateGroupWithBody(ctx, contentType, body, reqEditors...)
+func (c *ClientWithResponses) CreateGroupWithBodyWithResponse(ctx context.Context, params *CreateGroupParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateGroupResponse, error) {
+	rsp, err := c.CreateGroupWithBody(ctx, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -16462,8 +19965,8 @@ func (c *ClientWithResponses) CreateGroupWithBodyWithResponse(ctx context.Contex
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v0/groups (the `CreateGroup` operationId).
-func (c *ClientWithResponses) CreateGroupWithResponse(ctx context.Context, body CreateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateGroupResponse, error) {
-	rsp, err := c.CreateGroup(ctx, body, reqEditors...)
+func (c *ClientWithResponses) CreateGroupWithResponse(ctx context.Context, params *CreateGroupParams, body CreateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateGroupResponse, error) {
+	rsp, err := c.CreateGroup(ctx, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -16595,8 +20098,8 @@ func (c *ClientWithResponses) SetNotificationSettingsWithResponse(ctx context.Co
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
-func (c *ClientWithResponses) OrganiseSitesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*OrganiseSitesResponse, error) {
-	rsp, err := c.OrganiseSitesWithBody(ctx, contentType, body, reqEditors...)
+func (c *ClientWithResponses) OrganiseSitesWithBodyWithResponse(ctx context.Context, params *OrganiseSitesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*OrganiseSitesResponse, error) {
+	rsp, err := c.OrganiseSitesWithBody(ctx, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -16610,8 +20113,8 @@ func (c *ClientWithResponses) OrganiseSitesWithBodyWithResponse(ctx context.Cont
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v0/organise (the `OrganiseSites` operationId).
-func (c *ClientWithResponses) OrganiseSitesWithResponse(ctx context.Context, body OrganiseSitesJSONRequestBody, reqEditors ...RequestEditorFn) (*OrganiseSitesResponse, error) {
-	rsp, err := c.OrganiseSites(ctx, body, reqEditors...)
+func (c *ClientWithResponses) OrganiseSitesWithResponse(ctx context.Context, params *OrganiseSitesParams, body OrganiseSitesJSONRequestBody, reqEditors ...RequestEditorFn) (*OrganiseSitesResponse, error) {
+	rsp, err := c.OrganiseSites(ctx, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -16805,8 +20308,8 @@ func (c *ClientWithResponses) ListSignInProvidersWithResponse(ctx context.Contex
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /api/v0/site-counts (the `GetSiteCounts` operationId).
-func (c *ClientWithResponses) GetSiteCountsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSiteCountsResponse, error) {
-	rsp, err := c.GetSiteCounts(ctx, reqEditors...)
+func (c *ClientWithResponses) GetSiteCountsWithResponse(ctx context.Context, params *GetSiteCountsParams, reqEditors ...RequestEditorFn) (*GetSiteCountsResponse, error) {
+	rsp, err := c.GetSiteCounts(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -16830,7 +20333,7 @@ func (c *ClientWithResponses) ListSiteSummariesWithResponse(ctx context.Context,
 
 // ListSitesWithResponse List the owner's sites.
 //
-// Ordered by name. With `hostname`, answers the owner's site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
+// Every site the caller can see: their own and their teams', ordered by name; `team` narrows it to one team. With `hostname`, answers the site served at that hostname (`<name>.<base domain>` or one of its custom domains, whatever the domain's status), or an empty page; the CLI uses it to resolve the DOMAIN argument.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -16845,7 +20348,7 @@ func (c *ClientWithResponses) ListSitesWithResponse(ctx context.Context, params 
 
 // CreateSiteWithBodyWithResponse Create an empty site.
 //
-// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -16860,7 +20363,7 @@ func (c *ClientWithResponses) CreateSiteWithBodyWithResponse(ctx context.Context
 
 // CreateSiteWithResponse Create an empty site.
 //
-// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. The CLI calls this before the first deploy to a new name.
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -17445,6 +20948,36 @@ func (c *ClientWithResponses) RollbackSiteWithResponse(ctx context.Context, site
 	return ParseRollbackSiteResponse(rsp)
 }
 
+// TransferSiteWithBodyWithResponse Move a site to or from a team.
+//
+// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/transfer (the `TransferSite` operationId).
+func (c *ClientWithResponses) TransferSiteWithBodyWithResponse(ctx context.Context, site SiteName, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TransferSiteResponse, error) {
+	rsp, err := c.TransferSiteWithBody(ctx, site, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTransferSiteResponse(rsp)
+}
+
+// TransferSiteWithResponse Move a site to or from a team.
+//
+// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/sites/{site}/transfer (the `TransferSite` operationId).
+func (c *ClientWithResponses) TransferSiteWithResponse(ctx context.Context, site SiteName, body TransferSiteJSONRequestBody, reqEditors ...RequestEditorFn) (*TransferSiteResponse, error) {
+	rsp, err := c.TransferSite(ctx, site, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTransferSiteResponse(rsp)
+}
+
 // ListTagsWithResponse List the owner's tags.
 //
 // Every tag, by name. Not paged: an owner has at most 200.
@@ -17452,8 +20985,8 @@ func (c *ClientWithResponses) RollbackSiteWithResponse(ctx context.Context, site
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /api/v0/tags (the `ListTags` operationId).
-func (c *ClientWithResponses) ListTagsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListTagsResponse, error) {
-	rsp, err := c.ListTags(ctx, reqEditors...)
+func (c *ClientWithResponses) ListTagsWithResponse(ctx context.Context, params *ListTagsParams, reqEditors ...RequestEditorFn) (*ListTagsResponse, error) {
+	rsp, err := c.ListTags(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -17467,8 +21000,8 @@ func (c *ClientWithResponses) ListTagsWithResponse(ctx context.Context, reqEdito
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
-func (c *ClientWithResponses) CreateTagWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTagResponse, error) {
-	rsp, err := c.CreateTagWithBody(ctx, contentType, body, reqEditors...)
+func (c *ClientWithResponses) CreateTagWithBodyWithResponse(ctx context.Context, params *CreateTagParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTagResponse, error) {
+	rsp, err := c.CreateTagWithBody(ctx, params, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -17482,8 +21015,8 @@ func (c *ClientWithResponses) CreateTagWithBodyWithResponse(ctx context.Context,
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v0/tags (the `CreateTag` operationId).
-func (c *ClientWithResponses) CreateTagWithResponse(ctx context.Context, body CreateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTagResponse, error) {
-	rsp, err := c.CreateTag(ctx, body, reqEditors...)
+func (c *ClientWithResponses) CreateTagWithResponse(ctx context.Context, params *CreateTagParams, body CreateTagJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTagResponse, error) {
+	rsp, err := c.CreateTag(ctx, params, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -17533,6 +21066,336 @@ func (c *ClientWithResponses) UpdateTagWithResponse(ctx context.Context, tagId T
 		return nil, err
 	}
 	return ParseUpdateTagResponse(rsp)
+}
+
+// ListMyTeamInvitationsWithResponse List invitations to the signed-in owner.
+//
+// Open invitations to the owner's own verified address, newest first.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/team-invitations (the `ListMyTeamInvitations` operationId).
+func (c *ClientWithResponses) ListMyTeamInvitationsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMyTeamInvitationsResponse, error) {
+	rsp, err := c.ListMyTeamInvitations(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListMyTeamInvitationsResponse(rsp)
+}
+
+// AcceptTeamInvitationWithResponse Accept an invitation.
+//
+// Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one and an expired one answer the same `404`. Accepting twice changes nothing, while still a member.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/team-invitations/{invitationId}/accept (the `AcceptTeamInvitation` operationId).
+func (c *ClientWithResponses) AcceptTeamInvitationWithResponse(ctx context.Context, invitationId InvitationId, reqEditors ...RequestEditorFn) (*AcceptTeamInvitationResponse, error) {
+	rsp, err := c.AcceptTeamInvitation(ctx, invitationId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAcceptTeamInvitationResponse(rsp)
+}
+
+// DeclineTeamInvitationWithResponse Decline an invitation.
+//
+// As `acceptTeamInvitation`, the invitation must be to the owner's own address.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/team-invitations/{invitationId}/decline (the `DeclineTeamInvitation` operationId).
+func (c *ClientWithResponses) DeclineTeamInvitationWithResponse(ctx context.Context, invitationId InvitationId, reqEditors ...RequestEditorFn) (*DeclineTeamInvitationResponse, error) {
+	rsp, err := c.DeclineTeamInvitation(ctx, invitationId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeclineTeamInvitationResponse(rsp)
+}
+
+// ListTeamsWithResponse List the teams the caller is in.
+//
+// Every team the owner belongs to, by name, with their role in each. A team token sees its own team. Not paged.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/teams (the `ListTeams` operationId).
+func (c *ClientWithResponses) ListTeamsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListTeamsResponse, error) {
+	rsp, err := c.ListTeams(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListTeamsResponse(rsp)
+}
+
+// CreateTeamWithBodyWithResponse Create a team.
+//
+// The signed-in owner becomes its first admin. An owner who has already started as many teams as the instance allows gets `413 limit_exceeded` with target `name`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/teams (the `CreateTeam` operationId).
+func (c *ClientWithResponses) CreateTeamWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTeamResponse, error) {
+	rsp, err := c.CreateTeamWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateTeamResponse(rsp)
+}
+
+// CreateTeamWithResponse Create a team.
+//
+// The signed-in owner becomes its first admin. An owner who has already started as many teams as the instance allows gets `413 limit_exceeded` with target `name`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/teams (the `CreateTeam` operationId).
+func (c *ClientWithResponses) CreateTeamWithResponse(ctx context.Context, body CreateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTeamResponse, error) {
+	rsp, err := c.CreateTeam(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateTeamResponse(rsp)
+}
+
+// DeleteTeamWithResponse Delete a team.
+//
+// Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. Its tokens, groups, tags, members and invitations go with it.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/teams/{teamId} (the `DeleteTeam` operationId).
+func (c *ClientWithResponses) DeleteTeamWithResponse(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*DeleteTeamResponse, error) {
+	rsp, err := c.DeleteTeam(ctx, teamId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteTeamResponse(rsp)
+}
+
+// GetTeamWithResponse Get a team.
+//
+// A team the caller is not in answers the same `404` as a missing one.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/teams/{teamId} (the `GetTeam` operationId).
+func (c *ClientWithResponses) GetTeamWithResponse(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*GetTeamResponse, error) {
+	rsp, err := c.GetTeam(ctx, teamId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetTeamResponse(rsp)
+}
+
+// UpdateTeamWithBodyWithResponse Rename a team.
+//
+// Admins only (`403 forbidden_role`).
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v0/teams/{teamId} (the `UpdateTeam` operationId).
+func (c *ClientWithResponses) UpdateTeamWithBodyWithResponse(ctx context.Context, teamId TeamId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateTeamResponse, error) {
+	rsp, err := c.UpdateTeamWithBody(ctx, teamId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateTeamResponse(rsp)
+}
+
+// UpdateTeamWithResponse Rename a team.
+//
+// Admins only (`403 forbidden_role`).
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v0/teams/{teamId} (the `UpdateTeam` operationId).
+func (c *ClientWithResponses) UpdateTeamWithResponse(ctx context.Context, teamId TeamId, body UpdateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTeamResponse, error) {
+	rsp, err := c.UpdateTeam(ctx, teamId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateTeamResponse(rsp)
+}
+
+// ListTeamInvitationsWithResponse List a team's open invitations.
+//
+// Admins only, newest first. Not paged: expired invitations are left out.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/teams/{teamId}/invitations (the `ListTeamInvitations` operationId).
+func (c *ClientWithResponses) ListTeamInvitationsWithResponse(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*ListTeamInvitationsResponse, error) {
+	rsp, err := c.ListTeamInvitations(ctx, teamId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListTeamInvitationsResponse(rsp)
+}
+
+// InviteTeamMemberWithBodyWithResponse Invite an address to a team.
+//
+// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/teams/{teamId}/invitations (the `InviteTeamMember` operationId).
+func (c *ClientWithResponses) InviteTeamMemberWithBodyWithResponse(ctx context.Context, teamId TeamId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*InviteTeamMemberResponse, error) {
+	rsp, err := c.InviteTeamMemberWithBody(ctx, teamId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseInviteTeamMemberResponse(rsp)
+}
+
+// InviteTeamMemberWithResponse Invite an address to a team.
+//
+// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/teams/{teamId}/invitations (the `InviteTeamMember` operationId).
+func (c *ClientWithResponses) InviteTeamMemberWithResponse(ctx context.Context, teamId TeamId, body InviteTeamMemberJSONRequestBody, reqEditors ...RequestEditorFn) (*InviteTeamMemberResponse, error) {
+	rsp, err := c.InviteTeamMember(ctx, teamId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseInviteTeamMemberResponse(rsp)
+}
+
+// DeleteTeamInvitationWithResponse Cancel an invitation.
+//
+// Admins only.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/teams/{teamId}/invitations/{invitationId} (the `DeleteTeamInvitation` operationId).
+func (c *ClientWithResponses) DeleteTeamInvitationWithResponse(ctx context.Context, teamId TeamId, invitationId InvitationId, reqEditors ...RequestEditorFn) (*DeleteTeamInvitationResponse, error) {
+	rsp, err := c.DeleteTeamInvitation(ctx, teamId, invitationId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteTeamInvitationResponse(rsp)
+}
+
+// ListTeamMembersWithResponse List a team's members.
+//
+// Any member, by address.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/teams/{teamId}/members (the `ListTeamMembers` operationId).
+func (c *ClientWithResponses) ListTeamMembersWithResponse(ctx context.Context, teamId TeamId, params *ListTeamMembersParams, reqEditors ...RequestEditorFn) (*ListTeamMembersResponse, error) {
+	rsp, err := c.ListTeamMembers(ctx, teamId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListTeamMembersResponse(rsp)
+}
+
+// RemoveTeamMemberWithResponse Remove a member, or leave a team.
+//
+// An admin may remove anyone; any member may remove themselves. It ends their access on their next request, and what they made stays with the team. Removing the last admin answers `409 team_needs_admin`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/teams/{teamId}/members/{ownerId} (the `RemoveTeamMember` operationId).
+func (c *ClientWithResponses) RemoveTeamMemberWithResponse(ctx context.Context, teamId TeamId, ownerId OwnerId, reqEditors ...RequestEditorFn) (*RemoveTeamMemberResponse, error) {
+	rsp, err := c.RemoveTeamMember(ctx, teamId, ownerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveTeamMemberResponse(rsp)
+}
+
+// SetTeamMemberRoleWithBodyWithResponse Change a member's role.
+//
+// Admins only. Taking the role of the last working admin answers `409 team_needs_admin`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v0/teams/{teamId}/members/{ownerId} (the `SetTeamMemberRole` operationId).
+func (c *ClientWithResponses) SetTeamMemberRoleWithBodyWithResponse(ctx context.Context, teamId TeamId, ownerId OwnerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetTeamMemberRoleResponse, error) {
+	rsp, err := c.SetTeamMemberRoleWithBody(ctx, teamId, ownerId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetTeamMemberRoleResponse(rsp)
+}
+
+// SetTeamMemberRoleWithResponse Change a member's role.
+//
+// Admins only. Taking the role of the last working admin answers `409 team_needs_admin`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v0/teams/{teamId}/members/{ownerId} (the `SetTeamMemberRole` operationId).
+func (c *ClientWithResponses) SetTeamMemberRoleWithResponse(ctx context.Context, teamId TeamId, ownerId OwnerId, body SetTeamMemberRoleJSONRequestBody, reqEditors ...RequestEditorFn) (*SetTeamMemberRoleResponse, error) {
+	rsp, err := c.SetTeamMemberRole(ctx, teamId, ownerId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetTeamMemberRoleResponse(rsp)
+}
+
+// ListTeamTokensWithResponse List a team's tokens.
+//
+// Admins only, newest first. Team tokens belong to the team, so they outlive whoever made them.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v0/teams/{teamId}/tokens (the `ListTeamTokens` operationId).
+func (c *ClientWithResponses) ListTeamTokensWithResponse(ctx context.Context, teamId TeamId, params *ListTeamTokensParams, reqEditors ...RequestEditorFn) (*ListTeamTokensResponse, error) {
+	rsp, err := c.ListTeamTokens(ctx, teamId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListTeamTokensResponse(rsp)
+}
+
+// CreateTeamTokenWithBodyWithResponse Create a team token.
+//
+// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/teams/{teamId}/tokens (the `CreateTeamToken` operationId).
+func (c *ClientWithResponses) CreateTeamTokenWithBodyWithResponse(ctx context.Context, teamId TeamId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTeamTokenResponse, error) {
+	rsp, err := c.CreateTeamTokenWithBody(ctx, teamId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateTeamTokenResponse(rsp)
+}
+
+// CreateTeamTokenWithResponse Create a team token.
+//
+// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v0/teams/{teamId}/tokens (the `CreateTeamToken` operationId).
+func (c *ClientWithResponses) CreateTeamTokenWithResponse(ctx context.Context, teamId TeamId, body CreateTeamTokenJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTeamTokenResponse, error) {
+	rsp, err := c.CreateTeamToken(ctx, teamId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateTeamTokenResponse(rsp)
+}
+
+// RevokeTeamTokenWithResponse Revoke a team token.
+//
+// Admins only. Takes effect on the token's next request.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v0/teams/{teamId}/tokens/{tokenId} (the `RevokeTeamToken` operationId).
+func (c *ClientWithResponses) RevokeTeamTokenWithResponse(ctx context.Context, teamId TeamId, tokenId TokenId, reqEditors ...RequestEditorFn) (*RevokeTeamTokenResponse, error) {
+	rsp, err := c.RevokeTeamToken(ctx, teamId, tokenId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeTeamTokenResponse(rsp)
 }
 
 // ListApiTokensWithResponse List the signed-in owner's API tokens.
@@ -21676,6 +25539,81 @@ func ParseRollbackSiteResponse(rsp *http.Response) (*RollbackSiteResponse, error
 	return response, nil
 }
 
+// ParseTransferSiteResponse parses an HTTP response from a TransferSiteWithResponse call
+func ParseTransferSiteResponse(rsp *http.Response) (*TransferSiteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &TransferSiteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Site
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest TooLarge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON413 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListTagsResponse parses an HTTP response from a ListTagsWithResponse call
 func ParseListTagsResponse(rsp *http.Response) (*ListTagsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -21896,6 +25834,980 @@ func ParseUpdateTagResponse(rsp *http.Response) (*UpdateTagResponse, error) {
 			return nil, err
 		}
 		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListMyTeamInvitationsResponse parses an HTTP response from a ListMyTeamInvitationsWithResponse call
+func ParseListMyTeamInvitationsResponse(rsp *http.Response) (*ListMyTeamInvitationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListMyTeamInvitationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TeamInvitationList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAcceptTeamInvitationResponse parses an HTTP response from a AcceptTeamInvitationWithResponse call
+func ParseAcceptTeamInvitationResponse(rsp *http.Response) (*AcceptTeamInvitationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AcceptTeamInvitationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Team
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeclineTeamInvitationResponse parses an HTTP response from a DeclineTeamInvitationWithResponse call
+func ParseDeclineTeamInvitationResponse(rsp *http.Response) (*DeclineTeamInvitationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeclineTeamInvitationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListTeamsResponse parses an HTTP response from a ListTeamsWithResponse call
+func ParseListTeamsResponse(rsp *http.Response) (*ListTeamsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListTeamsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TeamList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateTeamResponse parses an HTTP response from a CreateTeamWithResponse call
+func ParseCreateTeamResponse(rsp *http.Response) (*CreateTeamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateTeamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Team
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest TooLarge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON413 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteTeamResponse parses an HTTP response from a DeleteTeamWithResponse call
+func ParseDeleteTeamResponse(rsp *http.Response) (*DeleteTeamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteTeamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetTeamResponse parses an HTTP response from a GetTeamWithResponse call
+func ParseGetTeamResponse(rsp *http.Response) (*GetTeamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetTeamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Team
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateTeamResponse parses an HTTP response from a UpdateTeamWithResponse call
+func ParseUpdateTeamResponse(rsp *http.Response) (*UpdateTeamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateTeamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Team
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListTeamInvitationsResponse parses an HTTP response from a ListTeamInvitationsWithResponse call
+func ParseListTeamInvitationsResponse(rsp *http.Response) (*ListTeamInvitationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListTeamInvitationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TeamInvitationList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseInviteTeamMemberResponse parses an HTTP response from a InviteTeamMemberWithResponse call
+func ParseInviteTeamMemberResponse(rsp *http.Response) (*InviteTeamMemberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &InviteTeamMemberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest TeamInvitation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers InviteTeamMemberResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int32
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: "int32"}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseDeleteTeamInvitationResponse parses an HTTP response from a DeleteTeamInvitationWithResponse call
+func ParseDeleteTeamInvitationResponse(rsp *http.Response) (*DeleteTeamInvitationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteTeamInvitationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListTeamMembersResponse parses an HTTP response from a ListTeamMembersWithResponse call
+func ParseListTeamMembersResponse(rsp *http.Response) (*ListTeamMembersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListTeamMembersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TeamMemberPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRemoveTeamMemberResponse parses an HTTP response from a RemoveTeamMemberWithResponse call
+func ParseRemoveTeamMemberResponse(rsp *http.Response) (*RemoveTeamMemberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveTeamMemberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetTeamMemberRoleResponse parses an HTTP response from a SetTeamMemberRoleWithResponse call
+func ParseSetTeamMemberRoleResponse(rsp *http.Response) (*SetTeamMemberRoleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetTeamMemberRoleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TeamMember
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Conflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListTeamTokensResponse parses an HTTP response from a ListTeamTokensWithResponse call
+func ParseListTeamTokensResponse(rsp *http.Response) (*ListTeamTokensResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListTeamTokensResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ApiTokenPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateTeamTokenResponse parses an HTTP response from a CreateTeamTokenWithResponse call
+func ParseCreateTeamTokenResponse(rsp *http.Response) (*CreateTeamTokenResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateTeamTokenResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest CreatedApiToken
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRevokeTeamTokenResponse parses an HTTP response from a RevokeTeamTokenWithResponse call
+func ParseRevokeTeamTokenResponse(rsp *http.Response) (*RevokeTeamTokenResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeTeamTokenResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

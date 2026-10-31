@@ -19,13 +19,13 @@ func gcContract(t *testing.T, open Opener) {
 		f.t.Helper()
 		d := f.validDeploy(siteID)
 		d.CreatedAt = now.Add(at)
-		f.must(f.r.Deploys.Create(f.t.Context(), ownerID, d, []store.DeployFile{{Path: "index.html", SHA256: h, Size: 5}}, store.Quotas{}))
+		f.must(f.r.Deploys.Create(f.t.Context(), store.ActorFor(ownerID), d, []store.DeployFile{{Path: "index.html", SHA256: h, Size: 5}}, store.Quotas{}))
 		return d
 	}
 	activate := func(f *fixture, ownerID, siteID string, d store.Deploy) {
 		f.t.Helper()
 		f.uploadAll(ownerID, siteID, d.ID)
-		_, err := f.r.Deploys.Activate(f.t.Context(), ownerID, siteID, d.ID, d.CreatedAt)
+		_, err := f.r.Deploys.Activate(f.t.Context(), store.ActorFor(ownerID), siteID, d.ID, d.CreatedAt)
 		f.must(err)
 	}
 	ids := func(ds []store.PrunableDeploy) []string {
@@ -113,7 +113,7 @@ func gcContract(t *testing.T, open Opener) {
 				t.Fatalf("%s: deleted = %v, want %v", tc.name, deleted, tc.want)
 			}
 		}
-		_, err := f.r.Deploys.Get(t.Context(), o.ID, s.ID, replaced.ID)
+		_, err := f.r.Deploys.Get(t.Context(), store.ActorFor(o.ID), s.ID, replaced.ID)
 		wantErr(t, err, store.ErrNotFound)
 		files, err := f.r.Deploys.Files(t.Context(), replaced.ID)
 		wantErr(t, err, nil)
@@ -133,9 +133,9 @@ func gcContract(t *testing.T, open Opener) {
 		f.t.Helper()
 		d := f.validDeploy(siteID)
 		d.CreatedAt, d.Preview, d.PreviewDays = now.Add(at), name, &days
-		f.must(f.r.Deploys.Create(f.t.Context(), ownerID, d, []store.DeployFile{{Path: "index.html", SHA256: sha('d'), Size: 5}}, store.Quotas{}))
+		f.must(f.r.Deploys.Create(f.t.Context(), store.ActorFor(ownerID), d, []store.DeployFile{{Path: "index.html", SHA256: sha('d'), Size: 5}}, store.Quotas{}))
 		f.uploadAll(ownerID, siteID, d.ID)
-		d, err := f.r.Deploys.Activate(f.t.Context(), ownerID, siteID, d.ID, d.CreatedAt)
+		d, err := f.r.Deploys.Activate(f.t.Context(), store.ActorFor(ownerID), siteID, d.ID, d.CreatedAt)
 		f.must(err)
 		return d
 	}
@@ -154,7 +154,7 @@ func gcContract(t *testing.T, open Opener) {
 		// A pending preview deploy inside the grace period is kept too.
 		young := f.validDeploy(s.ID)
 		young.CreatedAt, young.Preview = now.Add(4*time.Second), "pr-2"
-		f.must(f.r.Deploys.Create(t.Context(), o.ID, young, []store.DeployFile{{Path: "index.html", SHA256: sha('e'), Size: 5}}, store.Quotas{}))
+		f.must(f.r.Deploys.Create(t.Context(), store.ActorFor(o.ID), young, []store.DeployFile{{Path: "index.html", SHA256: sha('e'), Size: 5}}, store.Quotas{}))
 
 		got, err := f.r.GC.PrunableDeploys(t.Context(), 1, young.CreatedAt, store.DeployCursor{}, 10)
 		wantErr(t, err, nil)
@@ -172,7 +172,7 @@ func gcContract(t *testing.T, open Opener) {
 		// deploys exist.
 		older := deployAt(f, o.ID, s.ID, -time.Second, sha('f'))
 		activate(f, o.ID, s.ID, older)
-		_, _, err = f.r.Deploys.Rollback(t.Context(), o.ID, s.ID, live.ID, now.Add(5*time.Second))
+		_, _, err = f.r.Deploys.Rollback(t.Context(), store.ActorFor(o.ID), s.ID, live.ID, now.Add(5*time.Second))
 		wantErr(t, err, nil)
 		got, err = f.r.GC.PrunableDeploys(t.Context(), 1, young.CreatedAt, store.DeployCursor{}, 10)
 		wantErr(t, err, nil)
@@ -181,12 +181,12 @@ func gcContract(t *testing.T, open Opener) {
 		}
 		// Promoted, a preview deploy is history like any other, and the
 		// preview still serves it.
-		_, _, err = f.r.Previews.Promote(t.Context(), o.ID, s.ID, "pr-1", now.Add(5*time.Second))
+		_, _, err = f.r.Previews.Promote(t.Context(), store.ActorFor(o.ID), s.ID, "pr-1", now.Add(5*time.Second))
 		wantErr(t, err, nil)
 		if deleted, err := f.r.GC.DeletePrunableDeploy(t.Context(), serving.ID, young.CreatedAt); err != nil || deleted {
 			t.Fatalf("DeletePrunableDeploy(promoted) = %t, %v; want kept", deleted, err)
 		}
-		wantErr(t, f.r.Previews.Delete(t.Context(), o.ID, s.ID, "pr-1", now), nil)
+		wantErr(t, f.r.Previews.Delete(t.Context(), store.ActorFor(o.ID), s.ID, "pr-1", now), nil)
 		activate(f, o.ID, s.ID, deployAt(f, o.ID, s.ID, 6*time.Second, sha('1')))
 		got, err = f.r.GC.PrunableDeploys(t.Context(), 1, young.CreatedAt, store.DeployCursor{}, 10)
 		wantErr(t, err, nil)
@@ -220,13 +220,13 @@ func gcContract(t *testing.T, open Opener) {
 		if err != nil || n != 1 {
 			t.Fatalf("DeleteExpiredPreviews() = %d, %v; want 1", n, err)
 		}
-		left, err := f.r.Previews.List(t.Context(), o.ID, s.ID, "", 10, now)
+		left, err := f.r.Previews.List(t.Context(), store.ActorFor(o.ID), s.ID, "", 10, now)
 		wantErr(t, err, nil)
 		if want := []string{"long", "never"}; !slices.Equal(previewNames(left), want) {
 			t.Fatalf("previews left = %v, want %v", previewNames(left), want)
 		}
 		for _, k := range []struct{ owner, site string }{{o.ID, down.ID}, {suspended.ID, theirs.ID}} {
-			if _, err := f.r.Previews.Get(t.Context(), k.owner, k.site, "short", now); err != nil {
+			if _, err := f.r.Previews.Get(t.Context(), store.ActorFor(k.owner), k.site, "short", now); err != nil {
 				t.Fatalf("kept preview of %s: %v", k.site, err)
 			}
 		}
@@ -244,7 +244,7 @@ func gcContract(t *testing.T, open Opener) {
 		s := f.site(a.ID)
 		cutoff := now.Add(time.Hour)
 		record := func(ownerID, h string, at time.Time) {
-			f.must(f.r.Deploys.RecordUpload(t.Context(), ownerID, store.Blob{SHA256: h, Size: 7, CreatedAt: at}))
+			f.must(f.r.Deploys.RecordUpload(t.Context(), store.ActorFor(ownerID), ownerID, store.Blob{SHA256: h, Size: 7, CreatedAt: at}))
 		}
 		deployAt(f, a.ID, s.ID, 0, sha('a'))
 		record(a.ID, sha('a'), now)    // referenced
@@ -277,7 +277,7 @@ func gcContract(t *testing.T, open Opener) {
 		cutoff := now.Add(time.Hour)
 		d := deployAt(f, o.ID, s.ID, 0, sha('a'))
 		rs := []store.Rendition{{Path: "index.html", Format: "md", SHA256: sha('b'), Size: 4}}
-		f.must(f.r.Renditions.Put(t.Context(), o.ID, s.ID, d.ID, rs, now))
+		f.must(f.r.Renditions.Put(t.Context(), store.ActorFor(o.ID), s.ID, d.ID, rs, now))
 		got, err := f.r.GC.UnreferencedBlobs(t.Context(), cutoff, "", 10)
 		wantErr(t, err, nil)
 		if len(got) != 0 {
@@ -289,7 +289,7 @@ func gcContract(t *testing.T, open Opener) {
 			t.Fatal("a rendition's blob was deleted")
 		}
 		// Once the deploy goes, so does the reference.
-		wantErr(t, f.r.Deploys.Delete(t.Context(), o.ID, d.ID), nil)
+		wantErr(t, f.r.Deploys.Delete(t.Context(), store.ActorFor(o.ID), d.ID), nil)
 		got, err = f.r.GC.UnreferencedBlobs(t.Context(), cutoff, "", 10)
 		wantErr(t, err, nil)
 		if !slices.Equal(hashes(got), []string{sha('b')}) {
@@ -304,7 +304,7 @@ func gcContract(t *testing.T, open Opener) {
 		cutoff := now.Add(time.Hour)
 		for _, o := range []string{a.ID, b.ID} {
 			for _, h := range []string{sha('a'), sha('b'), sha('c')} {
-				f.must(f.r.Deploys.RecordUpload(t.Context(), o, store.Blob{SHA256: h, Size: 9, CreatedAt: now}))
+				f.must(f.r.Deploys.RecordUpload(t.Context(), store.ActorFor(o), o, store.Blob{SHA256: h, Size: 9, CreatedAt: now}))
 			}
 		}
 		deployAt(f, a.ID, s.ID, 0, sha('a'))
@@ -348,7 +348,7 @@ func gcContract(t *testing.T, open Opener) {
 				store.DeployFile{Path: "a", SHA256: sha('a'), Size: 9},
 				store.DeployFile{Path: "b", SHA256: sha('b'), Size: 9},
 				store.DeployFile{Path: "c", SHA256: sha('c'), Size: 9})
-			missing, err := f.r.Deploys.MissingBlobs(t.Context(), o, site.ID, d.ID)
+			missing, err := f.r.Deploys.MissingBlobs(t.Context(), store.ActorFor(o), site.ID, d.ID)
 			wantErr(t, err, nil)
 			if !slices.Equal(missing, []string{sha('b')}) {
 				t.Fatalf("missing for owner = %v, want only b", missing)
@@ -359,7 +359,7 @@ func gcContract(t *testing.T, open Opener) {
 		t.Parallel()
 		f := newFixture(t, open)
 		o := f.owner()
-		f.must(f.r.Deploys.RecordUpload(t.Context(), o.ID, store.Blob{SHA256: sha('a'), Size: 1, CreatedAt: now}))
+		f.must(f.r.Deploys.RecordUpload(t.Context(), store.ActorFor(o.ID), o.ID, store.Blob{SHA256: sha('a'), Size: 1, CreatedAt: now}))
 		for _, tc := range []struct {
 			name      string
 			h         string

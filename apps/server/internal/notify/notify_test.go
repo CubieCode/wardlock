@@ -112,7 +112,7 @@ func (w *world) owner(name string) store.Owner {
 func (w *world) site(ownerID, name string) store.Site {
 	w.t.Helper()
 	s := store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: w.clock.Add(-90 * day)}
-	w.must(w.db.Sites().Create(w.t.Context(), s, store.Quotas{}))
+	w.must(w.db.Sites().Create(w.t.Context(), store.ActorFor(s.OwnerID), s, store.Quotas{}))
 	return s
 }
 
@@ -124,7 +124,7 @@ func (w *world) link(ownerID, siteID string, change func(*store.ShareLink)) stor
 		PathPrefix: "/", CreatedAt: w.clock.Add(-30 * day),
 	}
 	change(&l)
-	w.must(w.db.Links().Create(w.t.Context(), ownerID, l))
+	w.must(w.db.Links().Create(w.t.Context(), store.ActorFor(ownerID), l))
 	return l
 }
 
@@ -141,7 +141,7 @@ func (w *world) domain(ownerID, siteID, hostname string, change func(*store.Doma
 		ID: store.NewID(), SiteID: siteID, Hostname: hostname, Status: store.DomainPending,
 		VerificationToken: "verify-" + hostname, CreatedAt: w.clock.Add(-30 * day),
 	}
-	w.must(w.db.Domains().Create(w.t.Context(), ownerID, d))
+	w.must(w.db.Domains().Create(w.t.Context(), store.ActorFor(ownerID), d))
 	next := d
 	next.Status, next.LastCheckedAt, next.VerifiedAt = store.DomainActive, w.clock, w.clock.Add(-20*day)
 	change(&next)
@@ -172,9 +172,9 @@ func (w *world) preview(ownerID, siteID, name string, days int, at time.Time) {
 		ID: store.NewID(), SiteID: siteID, FileCount: 1, TotalSize: 5,
 		Preview: name, PreviewDays: &days, CreatedAt: at,
 	}
-	w.must(w.db.Deploys().Create(ctx, ownerID, d, []store.DeployFile{{Path: "index.html", SHA256: sha, Size: 5}}, store.Quotas{}))
-	w.must(w.db.Deploys().RecordUpload(ctx, ownerID, store.Blob{SHA256: sha, Size: 5, CreatedAt: at}))
-	_, err := w.db.Deploys().Activate(ctx, ownerID, siteID, d.ID, at)
+	w.must(w.db.Deploys().Create(ctx, store.ActorFor(ownerID), d, []store.DeployFile{{Path: "index.html", SHA256: sha, Size: 5}}, store.Quotas{}))
+	w.must(w.db.Deploys().RecordUpload(ctx, store.ActorFor(ownerID), ownerID, store.Blob{SHA256: sha, Size: 5, CreatedAt: at}))
+	_, err := w.db.Deploys().Activate(ctx, store.ActorFor(ownerID), siteID, d.ID, at)
 	w.must(err)
 }
 
@@ -360,7 +360,7 @@ func TestEventsThatDoNotFire(t *testing.T) {
 		happen func(w *world, o store.Owner, s store.Site)
 	}{
 		{"pending domain", func(w *world, o store.Owner, s store.Site) {
-			w.must(w.db.Domains().Create(w.t.Context(), o.ID, store.Domain{
+			w.must(w.db.Domains().Create(w.t.Context(), store.ActorFor(o.ID), store.Domain{
 				ID: store.NewID(), SiteID: s.ID, Hostname: "new.example.test", Status: store.DomainPending,
 				VerificationToken: "a-verification-token", CreatedAt: w.clock,
 			}))

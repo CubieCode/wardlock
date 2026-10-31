@@ -75,14 +75,14 @@ func accessLogContract(t *testing.T, open Opener) {
 		f.must(f.r.AccessLog.Append(t.Context(), append(slices.Clone(want), noise)))
 		slices.SortFunc(want, newestFirst)
 
-		all, err := f.r.AccessLog.ListBySite(t.Context(), o.ID, s.ID, store.AccessCursor{}, 10)
+		all, err := f.r.AccessLog.ListBySite(t.Context(), store.ActorFor(o.ID), s.ID, store.AccessCursor{}, 10)
 		f.must(err)
 		if !slices.EqualFunc(all, want, sameEntry) {
 			t.Fatalf("ListBySite() = %+v, want %+v", all, want)
 		}
 		var paged []store.AccessEntry
 		for cursor := (store.AccessCursor{}); ; {
-			page, err := f.r.AccessLog.ListBySite(t.Context(), o.ID, s.ID, cursor, 3)
+			page, err := f.r.AccessLog.ListBySite(t.Context(), store.ActorFor(o.ID), s.ID, cursor, 3)
 			f.must(err)
 			paged = append(paged, page...)
 			if len(page) < 3 {
@@ -97,10 +97,10 @@ func accessLogContract(t *testing.T, open Opener) {
 		// Another owner and a deleted site see nothing, as for a missing site.
 		for name, list := range map[string]func() ([]store.AccessEntry, error){
 			"other owner": func() ([]store.AccessEntry, error) {
-				return f.r.AccessLog.ListBySite(t.Context(), f.owner().ID, s.ID, store.AccessCursor{}, 10)
+				return f.r.AccessLog.ListBySite(t.Context(), store.ActorFor(f.owner().ID), s.ID, store.AccessCursor{}, 10)
 			},
 			"missing site": func() ([]store.AccessEntry, error) {
-				return f.r.AccessLog.ListBySite(t.Context(), o.ID, store.NewID(), store.AccessCursor{}, 10)
+				return f.r.AccessLog.ListBySite(t.Context(), store.ActorFor(o.ID), store.NewID(), store.AccessCursor{}, 10)
 			},
 		} {
 			if got, err := list(); err != nil || len(got) != 0 {
@@ -125,19 +125,19 @@ func accessLogContract(t *testing.T, open Opener) {
 			entry(other.ID, link, 3*time.Second),     // the same public ID on another site
 		)))
 		slices.SortFunc(want, newestFirst)
-		got, err := f.r.AccessLog.ListByLink(t.Context(), o.ID, s.ID, link, store.AccessCursor{}, 10)
+		got, err := f.r.AccessLog.ListByLink(t.Context(), store.ActorFor(o.ID), s.ID, link, store.AccessCursor{}, 10)
 		f.must(err)
 		if !slices.EqualFunc(got, want, sameEntry) {
 			t.Fatalf("ListByLink() = %+v, want %+v", got, want)
 		}
-		first, err := f.r.AccessLog.ListByLink(t.Context(), o.ID, s.ID, link, store.AccessCursor{}, 1)
+		first, err := f.r.AccessLog.ListByLink(t.Context(), store.ActorFor(o.ID), s.ID, link, store.AccessCursor{}, 1)
 		f.must(err)
-		rest, err := f.r.AccessLog.ListByLink(t.Context(), o.ID, s.ID, link, store.AccessCursor{OccurredAt: first[0].OccurredAt, ID: first[0].ID}, 10)
+		rest, err := f.r.AccessLog.ListByLink(t.Context(), store.ActorFor(o.ID), s.ID, link, store.AccessCursor{OccurredAt: first[0].OccurredAt, ID: first[0].ID}, 10)
 		f.must(err)
 		if !slices.EqualFunc(append(first, rest...), want, sameEntry) {
 			t.Fatalf("paged ListByLink() = %+v then %+v, want %+v", first, rest, want)
 		}
-		if got, err := f.r.AccessLog.ListByLink(t.Context(), f.owner().ID, s.ID, link, store.AccessCursor{}, 10); err != nil || len(got) != 0 {
+		if got, err := f.r.AccessLog.ListByLink(t.Context(), store.ActorFor(f.owner().ID), s.ID, link, store.AccessCursor{}, 10); err != nil || len(got) != 0 {
 			t.Fatalf("ListByLink(other owner) = %v, %v; want none", got, err)
 		}
 	})
@@ -163,7 +163,7 @@ func accessLogContract(t *testing.T, open Opener) {
 		if n != 3 {
 			t.Fatalf("Prune() = %d, want 3", n)
 		}
-		got, err := f.r.AccessLog.ListBySite(t.Context(), o.ID, s.ID, store.AccessCursor{}, 10)
+		got, err := f.r.AccessLog.ListBySite(t.Context(), store.ActorFor(o.ID), s.ID, store.AccessCursor{}, 10)
 		f.must(err)
 		if !slices.EqualFunc(got, kept, sameEntry) {
 			t.Fatalf("after Prune() = %+v, want %+v", got, kept)
@@ -191,7 +191,7 @@ func accessLogContract(t *testing.T, open Opener) {
 			t.Fatalf("Prune() = %d, %v; want only the free site's entry", n, err)
 		}
 		for owner, site := range map[string]string{o.ID: down.ID, suspended.ID: held.ID} {
-			got, err := f.r.AccessLog.ListBySite(t.Context(), owner, site, store.AccessCursor{}, 10)
+			got, err := f.r.AccessLog.ListBySite(t.Context(), store.ActorFor(owner), site, store.AccessCursor{}, 10)
 			if err != nil || len(got) != 1 {
 				t.Fatalf("held site %s entries = %v, %v", site, got, err)
 			}
@@ -247,12 +247,12 @@ func accessLogContract(t *testing.T, open Opener) {
 		for _, tc := range []struct{ limit, want int }{
 			{0, 1}, {-1, 1}, {3, 3}, {store.MaxAccessListLimit + 1, store.MaxAccessListLimit}, {1 << 40, store.MaxAccessListLimit},
 		} {
-			got, err := f.r.AccessLog.ListBySite(t.Context(), o.ID, s.ID, store.AccessCursor{}, tc.limit)
+			got, err := f.r.AccessLog.ListBySite(t.Context(), store.ActorFor(o.ID), s.ID, store.AccessCursor{}, tc.limit)
 			f.must(err)
 			if len(got) != tc.want {
 				t.Errorf("ListBySite(limit %d) returned %d, want %d", tc.limit, len(got), tc.want)
 			}
-			got, err = f.r.AccessLog.ListByLink(t.Context(), o.ID, s.ID, batch[0].LinkPublicID, store.AccessCursor{}, tc.limit)
+			got, err = f.r.AccessLog.ListByLink(t.Context(), store.ActorFor(o.ID), s.ID, batch[0].LinkPublicID, store.AccessCursor{}, tc.limit)
 			f.must(err)
 			if len(got) != tc.want {
 				t.Errorf("ListByLink(limit %d) returned %d, want %d", tc.limit, len(got), tc.want)

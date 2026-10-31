@@ -151,7 +151,7 @@ func (h *harness) owner() string {
 func (h *harness) site(ownerID, name string) store.Site {
 	h.t.Helper()
 	s := store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: start}
-	if err := h.db.Sites().Create(h.t.Context(), s, store.Quotas{}); err != nil {
+	if err := h.db.Sites().Create(h.t.Context(), store.ActorFor(s.OwnerID), s, store.Quotas{}); err != nil {
 		h.t.Fatal(err)
 	}
 	return s
@@ -159,7 +159,7 @@ func (h *harness) site(ownerID, name string) store.Site {
 
 func (h *harness) set(ownerID, site string, r access.Rule) store.Policy {
 	h.t.Helper()
-	p, err := h.svc.Set(h.t.Context(), ownerID, site, r)
+	p, err := h.svc.Set(h.t.Context(), store.ActorFor(ownerID), site, r)
 	if err != nil {
 		h.t.Fatalf("Set(%+v): %v", r, err)
 	}
@@ -191,7 +191,7 @@ func (h *harness) session(siteID string, p store.Policy, m store.SessionMethod) 
 		var ownerID string
 		ps, _ := h.db.Sites().GetByID(h.t.Context(), siteID)
 		ownerID = ps.OwnerID
-		if err := h.db.Links().Create(h.t.Context(), ownerID, l); err != nil {
+		if err := h.db.Links().Create(h.t.Context(), store.ActorFor(ownerID), l); err != nil {
 			h.t.Fatal(err)
 		}
 		n.ShareLinkID, n.LinkTokenHash = l.ID, l.TokenHash
@@ -307,7 +307,7 @@ func TestNewSiteDefaultsToPublic(t *testing.T) {
 			t.Fatalf("default policy %+v", p)
 		}
 	}
-	list, err := h.svc.List(t.Context(), o, "docs", "", 10)
+	list, err := h.svc.List(t.Context(), store.ActorFor(o), "docs", "", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +380,7 @@ func TestMethodAlternatives(t *testing.T) {
 		if password {
 			p.PasswordHash = "$argon2id$stand-in"
 		}
-		if err := h.db.Policies().Create(ctx, o, p); err != nil {
+		if err := h.db.Policies().Create(ctx, store.ActorFor(o), p); err != nil {
 			t.Fatal(err)
 		}
 		return p
@@ -464,7 +464,7 @@ func TestVersionBumpEndsSessions(t *testing.T) {
 
 	// Deleting the path policy ends its sessions; /docs/ falls back to the
 	// default, which the old cookie does not satisfy.
-	if err := h.svc.Delete(t.Context(), o, "docs", docs.ID); err != nil {
+	if err := h.svc.Delete(t.Context(), store.ActorFor(o), "docs", docs.ID); err != nil {
 		t.Fatal(err)
 	}
 	if d := allowed(docsCookie, "/docs/a"); d.Outcome == access.Allow || !d.ClearCookie || d.Policy.ID != def.ID {
@@ -609,21 +609,21 @@ func TestOwnerOperations(t *testing.T) {
 		{"bad prefix", access.Rule{PathPrefix: "/docs", Visibility: store.Public}, access.ErrInvalidPath},
 		{"reserved prefix", access.Rule{PathPrefix: "/.wardlock/", Visibility: store.Public}, access.ErrInvalidPath},
 	} {
-		if _, err := h.svc.Set(ctx, a, "alpha", tc.rule); !errors.Is(err, tc.want) {
+		if _, err := h.svc.Set(ctx, store.ActorFor(a), "alpha", tc.rule); !errors.Is(err, tc.want) {
 			t.Errorf("%s: %v, want %v", tc.name, err, tc.want)
 		}
 	}
 
-	page, err := h.svc.List(ctx, a, "alpha", "", 1)
+	page, err := h.svc.List(ctx, store.ActorFor(a), "alpha", "", 1)
 	if err != nil || len(page) != 1 || page[0].ID != def.ID {
 		t.Fatalf("first page %+v, %v", page, err)
 	}
-	page, err = h.svc.List(ctx, a, "alpha", "/", 1)
+	page, err = h.svc.List(ctx, store.ActorFor(a), "alpha", "/", 1)
 	if err != nil || len(page) != 1 || page[0].ID != docs.ID {
 		t.Fatalf("second page %+v, %v", page, err)
 	}
 
-	if err := h.svc.Delete(ctx, a, "alpha", def.ID); !errors.Is(err, access.ErrDefaultPolicy) {
+	if err := h.svc.Delete(ctx, store.ActorFor(a), "alpha", def.ID); !errors.Is(err, access.ErrDefaultPolicy) {
 		t.Fatalf("delete default: %v", err)
 	}
 
@@ -635,20 +635,20 @@ func TestOwnerOperations(t *testing.T) {
 			t.Errorf("%s: %v, want ErrNotFound", name, err)
 		}
 	}
-	_, err = h.svc.List(ctx, b, "alpha", "", 10)
+	_, err = h.svc.List(ctx, store.ActorFor(b), "alpha", "", 10)
 	notFound("B lists A's site", err)
-	_, err = h.svc.Set(ctx, b, "alpha", access.Rule{PathPrefix: "/", Visibility: store.Public})
+	_, err = h.svc.Set(ctx, store.ActorFor(b), "alpha", access.Rule{PathPrefix: "/", Visibility: store.Public})
 	notFound("B sets A's site", err)
-	notFound("B deletes on A's site", h.svc.Delete(ctx, b, "alpha", docs.ID))
-	notFound("B deletes A's policy through B's site", h.svc.Delete(ctx, b, "beta", docs.ID))
-	notFound("A deletes a missing policy", h.svc.Delete(ctx, a, "alpha", store.NewID()))
-	_, err = h.svc.List(ctx, a, "missing", "", 10)
+	notFound("B deletes on A's site", h.svc.Delete(ctx, store.ActorFor(b), "alpha", docs.ID))
+	notFound("B deletes A's policy through B's site", h.svc.Delete(ctx, store.ActorFor(b), "beta", docs.ID))
+	notFound("A deletes a missing policy", h.svc.Delete(ctx, store.ActorFor(a), "alpha", store.NewID()))
+	_, err = h.svc.List(ctx, store.ActorFor(a), "missing", "", 10)
 	notFound("A lists a missing site", err)
 
 	if got := h.policyFor(h.mustSite(a, "alpha").ID, "/docs/x"); got.ID != docs.ID {
 		t.Fatalf("B's attempts changed A's policy: %+v", got)
 	}
-	if err := h.svc.Delete(ctx, a, "alpha", docs.ID); err != nil {
+	if err := h.svc.Delete(ctx, store.ActorFor(a), "alpha", docs.ID); err != nil {
 		t.Fatal(err)
 	}
 	if got := h.policyFor(h.mustSite(a, "alpha").ID, "/docs/x"); got.ID != def.ID {
@@ -658,7 +658,7 @@ func TestOwnerOperations(t *testing.T) {
 
 func (h *harness) mustSite(ownerID, name string) store.Site {
 	h.t.Helper()
-	s, err := h.db.Sites().GetByOwnerName(h.t.Context(), ownerID, name)
+	s, err := h.db.Sites().GetByOwnerName(h.t.Context(), store.ActorFor(ownerID), name)
 	if err != nil {
 		h.t.Fatal(err)
 	}

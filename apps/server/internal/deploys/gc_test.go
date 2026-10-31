@@ -129,7 +129,7 @@ func (w *gcWorld) owner() string {
 
 func (w *gcWorld) site(ownerID, name string) {
 	w.t.Helper()
-	err := w.db.Sites().Create(w.t.Context(), store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: gcEpoch}, store.Quotas{})
+	err := w.db.Sites().Create(w.t.Context(), store.ActorFor(store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: gcEpoch}.OwnerID), store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: gcEpoch}, store.Quotas{})
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -146,17 +146,17 @@ func (w *gcWorld) deploy(ctx context.Context, ownerID, site string, contents ...
 		body[h] = c
 		m.Files = append(m.Files, store.DeployFile{Path: fmt.Sprintf("f%d.txt", i), SHA256: h, Size: int64(len(c))})
 	}
-	d, missing, err := w.svc.Create(ctx, ownerID, site, m)
+	d, missing, err := w.svc.Create(ctx, store.ActorFor(ownerID), site, m)
 	if err != nil {
 		return "", fmt.Errorf("create: %w", err)
 	}
 	for range 5 {
 		for _, h := range missing {
-			if err := w.svc.Upload(ctx, ownerID, site, d.ID, h, strings.NewReader(body[h])); err != nil {
+			if err := w.svc.Upload(ctx, store.ActorFor(ownerID), site, d.ID, h, strings.NewReader(body[h])); err != nil {
 				return "", fmt.Errorf("upload: %w", err)
 			}
 		}
-		_, _, err = w.svc.Activate(ctx, ownerID, site, d.ID)
+		_, _, err = w.svc.Activate(ctx, store.ActorFor(ownerID), site, d.ID)
 		var te *deploys.TargetError
 		if !errors.As(err, &te) || !errors.Is(err, deploys.ErrBlobsMissing) {
 			break
@@ -192,7 +192,7 @@ func (w *gcWorld) stored(content string) bool {
 // serves checks every file of the site's active deploy can be read with
 // the right content.
 func (w *gcWorld) serves(ctx context.Context, ownerID, site string) error {
-	s, err := w.db.Sites().GetByOwnerName(ctx, ownerID, site)
+	s, err := w.db.Sites().GetByOwnerName(ctx, store.ActorFor(ownerID), site)
 	if err != nil {
 		return err
 	}
@@ -226,13 +226,13 @@ func TestGCKeepsReferencedAndYoungBlobs(t *testing.T) {
 	// A pending deploy, and a blob recorded for it, an hour before GC.
 	gcAt := gcEpoch.Add(25 * time.Hour)
 	w.advance(24 * time.Hour)
-	d, missing, err := w.svc.Create(t.Context(), o, "docs", deploys.Manifest{Files: []store.DeployFile{
+	d, missing, err := w.svc.Create(t.Context(), store.ActorFor(o), "docs", deploys.Manifest{Files: []store.DeployFile{
 		{Path: "a.txt", SHA256: hashOf("in flight"), Size: int64(len("in flight"))},
 	}})
 	if err != nil || len(missing) != 1 {
 		t.Fatalf("create pending: %v, missing %v", err, missing)
 	}
-	if err := w.svc.Upload(t.Context(), o, "docs", d.ID, missing[0], strings.NewReader("in flight")); err != nil {
+	if err := w.svc.Upload(t.Context(), store.ActorFor(o), "docs", d.ID, missing[0], strings.NewReader("in flight")); err != nil {
 		t.Fatal(err)
 	}
 	// History 1 prunes the first deploy (older than the pending one by
@@ -254,7 +254,7 @@ func TestGCKeepsReferencedAndYoungBlobs(t *testing.T) {
 		t.Fatalf("second run = %+v", res)
 	}
 	// The pending deploy is still there and activates without re-upload.
-	if _, _, err := w.svc.Activate(t.Context(), o, "docs", d.ID); err != nil {
+	if _, _, err := w.svc.Activate(t.Context(), store.ActorFor(o), "docs", d.ID); err != nil {
 		t.Fatalf("activate pending after gc: %v", err)
 	}
 	log := w.logged()
@@ -296,14 +296,14 @@ func TestGCHistoryKeepsActiveDeploy(t *testing.T) {
 		ids = append(ids, w.mustDeploy(o, "docs", fmt.Sprintf("v%d", i)))
 	}
 	// Roll back to the oldest: it is beyond the limit but active.
-	if _, _, err := w.svc.Rollback(t.Context(), o, "docs", ids[0]); err != nil {
+	if _, _, err := w.svc.Rollback(t.Context(), store.ActorFor(o), "docs", ids[0]); err != nil {
 		t.Fatal(err)
 	}
 	res := w.run(gcEpoch.Add(48*time.Hour), 2)
 	if res.DeploysPruned != 2 || res.BlobsDeleted != 2 {
 		t.Fatalf("result = %+v", res)
 	}
-	_, kept, err := w.svc.List(t.Context(), o, "docs", store.DeployCursor{}, 10)
+	_, kept, err := w.svc.List(t.Context(), store.ActorFor(o), "docs", store.DeployCursor{}, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,7 +323,7 @@ func TestGCHistoryKeepsActiveDeploy(t *testing.T) {
 		}
 	}
 	// The kept history still rolls back.
-	if _, _, err := w.svc.Rollback(t.Context(), o, "docs", ids[3]); err != nil {
+	if _, _, err := w.svc.Rollback(t.Context(), store.ActorFor(o), "docs", ids[3]); err != nil {
 		t.Fatalf("rollback to kept deploy: %v", err)
 	}
 	if err := w.serves(t.Context(), o, "docs"); err != nil {
@@ -350,7 +350,7 @@ func TestGCOwnerIsolation(t *testing.T) {
 	if err := w.serves(t.Context(), a, "alpha"); err != nil {
 		t.Fatal(err)
 	}
-	_, missing, err := w.svc.Create(t.Context(), a, "alpha", deploys.Manifest{Files: []store.DeployFile{
+	_, missing, err := w.svc.Create(t.Context(), store.ActorFor(a), "alpha", deploys.Manifest{Files: []store.DeployFile{
 		{Path: "s.txt", SHA256: hashOf("shared"), Size: int64(len("shared"))},
 	}})
 	if err != nil || len(missing) != 0 {
@@ -366,7 +366,7 @@ func TestGCOwnerIsolation(t *testing.T) {
 		t.Fatalf("result = %+v", res)
 	}
 	for _, o := range []struct{ id, site string }{{a, "alpha"}, {b, "beta"}} {
-		_, missing, err := w.svc.Create(t.Context(), o.id, o.site, deploys.Manifest{Files: []store.DeployFile{
+		_, missing, err := w.svc.Create(t.Context(), store.ActorFor(o.id), o.site, deploys.Manifest{Files: []store.DeployFile{
 			{Path: "s.txt", SHA256: hashOf("shared"), Size: int64(len("shared"))},
 		}})
 		if err != nil || !slices.Equal(missing, []string{hashOf("shared")}) {

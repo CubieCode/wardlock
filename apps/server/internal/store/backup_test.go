@@ -61,7 +61,7 @@ func TestBackupDuringWrites(t *testing.T) {
 					time.Sleep(time.Millisecond)
 				}
 				s := store.Site{ID: store.NewID(), OwnerID: owner.ID, Name: fmt.Sprintf("w%d-%06d", w, i), CreatedAt: time.Now()}
-				if err := h.Sites().Create(writeCtx, s, store.Quotas{}); err != nil {
+				if err := h.Sites().Create(writeCtx, store.ActorFor(s.OwnerID), s, store.Quotas{}); err != nil {
 					// A slow machine can still run out one busy_timeout.
 					// Lock fairness is not what this test checks, so try
 					// the same site again.
@@ -121,7 +121,7 @@ func TestBackupDuringWrites(t *testing.T) {
 	var got int64
 	seen := map[string]bool{}
 	for after := ""; ; {
-		page, err := rdb.Sites().List(ctx, owner.ID, after, 500)
+		page, err := rdb.Sites().List(ctx, store.ActorFor(owner.ID), "", after, 500)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -150,7 +150,7 @@ func TestBackupDuringWrites(t *testing.T) {
 		}
 	}
 	// The restored database takes writes.
-	if err := rdb.Sites().Create(ctx, store.Site{ID: store.NewID(), OwnerID: owner.ID, Name: "after-restore", CreatedAt: time.Now()}, store.Quotas{}); err != nil {
+	if err := rdb.Sites().Create(ctx, store.ActorFor(store.Site{ID: store.NewID(), OwnerID: owner.ID, Name: "after-restore", CreatedAt: time.Now()}.OwnerID), store.Site{ID: store.NewID(), OwnerID: owner.ID, Name: "after-restore", CreatedAt: time.Now()}, store.Quotas{}); err != nil {
 		t.Fatalf("write to restored database: %v", err)
 	}
 }

@@ -57,17 +57,21 @@ func (s siteSource) SiteForHost(ctx context.Context, host string) (edge.ServedSi
 	}
 	if !served.Unavailable {
 		// A suspended owner's sites are unavailable too (A2.13).
-		o, err := s.owners.Get(ctx, site.OwnerID)
-		if err != nil {
-			return edge.ServedSite{}, fmt.Errorf("get owner: %w", err)
+		// A team has no suspension: a suspended member ends only their own
+		// access (T7.1).
+		if site.OwnerKind == store.AccountOwner {
+			o, err := s.owners.Get(ctx, site.OwnerID)
+			if err != nil {
+				return edge.ServedSite{}, fmt.Errorf("get owner: %w", err)
+			}
+			served.Unavailable = !o.SuspendedAt.IsZero()
 		}
-		served.Unavailable = !o.SuspendedAt.IsZero()
 	}
 	if served.Unavailable || served.ActiveDeployID == "" {
 		return served, nil
 	}
 	// The owner comes from the site row: this is routing, not an owner request.
-	d, err := s.deploys.Get(ctx, site.OwnerID, site.ID, served.ActiveDeployID)
+	d, err := s.deploys.Get(ctx, store.ActorFor(site.OwnerID), site.ID, served.ActiveDeployID)
 	if err != nil {
 		return edge.ServedSite{}, fmt.Errorf("get active deploy: %w", err)
 	}

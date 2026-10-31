@@ -63,10 +63,10 @@ func TestCreateChecksHeldSizes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := heldWorld(t)
-			_, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", listing("copy.html", heldBody, int64(tc.size)))
+			_, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", listing("copy.html", heldBody, int64(tc.size)))
 			wantSizeRefused(t, err, "copy.html", tc.size, n)
 			// Nothing was recorded: the site's only deploy is the live one.
-			_, list, err := w.svc.List(t.Context(), w.owner.ID, "docs", store.DeployCursor{}, 10)
+			_, list, err := w.svc.List(t.Context(), store.ActorFor(w.owner.ID), "docs", store.DeployCursor{}, 10)
 			if err != nil || len(list) != 1 {
 				t.Errorf("deploys after refusal = %d, %v; want 1", len(list), err)
 			}
@@ -74,7 +74,7 @@ func TestCreateChecksHeldSizes(t *testing.T) {
 	}
 	t.Run("correct size", func(t *testing.T) {
 		w := heldWorld(t)
-		_, missing, err := w.svc.Create(t.Context(), w.owner.ID, "docs", listing("copy.html", heldBody, int64(n)))
+		_, missing, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", listing("copy.html", heldBody, int64(n)))
 		if err != nil || len(missing) != 0 {
 			t.Fatalf("Create = missing %v, %v; want nothing to upload", missing, err)
 		}
@@ -82,7 +82,7 @@ func TestCreateChecksHeldSizes(t *testing.T) {
 	t.Run("another site of the same owner", func(t *testing.T) {
 		w := heldWorld(t)
 		w.site(w.owner.ID, "blog")
-		_, _, err := w.svc.Create(t.Context(), w.owner.ID, "blog", listing("index.html", heldBody, int64(n+1)))
+		_, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "blog", listing("index.html", heldBody, int64(n+1)))
 		wantSizeRefused(t, err, "index.html", n+1, n)
 	})
 	t.Run("held only by another owner", func(t *testing.T) {
@@ -91,7 +91,7 @@ func TestCreateChecksHeldSizes(t *testing.T) {
 		w.site(other.ID, "theirs")
 		// Not compared: the other owner has to upload it, and the upload
 		// is checked against the listed size, as before C1.16.
-		_, missing, err := w.svc.Create(t.Context(), other.ID, "theirs", listing("index.html", heldBody, int64(n+1)))
+		_, missing, err := w.svc.Create(t.Context(), store.ActorFor(other.ID), "theirs", listing("index.html", heldBody, int64(n+1)))
 		if err != nil || !slices.Equal(missing, []string{hashOf(heldBody)}) {
 			t.Fatalf("Create = missing %v, %v; want the hash to upload", missing, err)
 		}
@@ -114,14 +114,14 @@ func TestCreateHeldSizesPathDeploy(t *testing.T) {
 		w := notesWorld(t)
 		m := listing("copy.html", heldBody, int64(n-1))
 		m.Path = "/mockup/"
-		_, _, err := w.svc.Create(t.Context(), w.owner.ID, "notes", m)
+		_, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "notes", m)
 		wantSizeRefused(t, err, "mockup/copy.html", n-1, n)
 	})
 	t.Run("uploaded part at the right size", func(t *testing.T) {
 		w := notesWorld(t)
 		m := listing("copy.html", heldBody, int64(n))
 		m.Path = "/mockup/"
-		_, missing, err := w.svc.Create(t.Context(), w.owner.ID, "notes", m)
+		_, missing, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "notes", m)
 		if err != nil || len(missing) != 0 {
 			t.Fatalf("Create = missing %v, %v; want nothing to upload", missing, err)
 		}
@@ -135,7 +135,7 @@ func TestCreateHeldSizesOwnerIsolation(t *testing.T) {
 	n := len(heldBody)
 	refuse := func() deploys.TargetError {
 		t.Helper()
-		_, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", listing("copy.html", heldBody, int64(n+2)))
+		_, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", listing("copy.html", heldBody, int64(n+2)))
 		return wantSizeRefused(t, err, "copy.html", n+2, n)
 	}
 	alone := refuse()
@@ -146,7 +146,7 @@ func TestCreateHeldSizesOwnerIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := w.svc.Activate(t.Context(), other.ID, "theirs", d.ID); err != nil {
+	if _, _, err := w.svc.Activate(t.Context(), store.ActorFor(other.ID), "theirs", d.ID); err != nil {
 		t.Fatal(err)
 	}
 	shared := refuse()
@@ -167,7 +167,7 @@ func TestActivateChecksHeldSizes(t *testing.T) {
 		t.Helper()
 		m := listing(p, lateBody, int64(size))
 		m.Path = prefix
-		d, missing, err := w.svc.Create(t.Context(), w.owner.ID, "docs", m)
+		d, missing, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", m)
 		if err != nil || !slices.Equal(missing, []string{hashOf(lateBody)}) {
 			t.Fatalf("Create = missing %v, %v; want lateBody to upload", missing, err)
 		}
@@ -178,7 +178,7 @@ func TestActivateChecksHeldSizes(t *testing.T) {
 	uploadElsewhere := func(w *pathWorld) {
 		t.Helper()
 		b := pending(w, "", "b.html", n)
-		if err := w.svc.Upload(t.Context(), w.owner.ID, "docs", b.ID, hashOf(lateBody), strings.NewReader(lateBody)); err != nil {
+		if err := w.svc.Upload(t.Context(), store.ActorFor(w.owner.ID), "docs", b.ID, hashOf(lateBody), strings.NewReader(lateBody)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -193,16 +193,16 @@ func TestActivateChecksHeldSizes(t *testing.T) {
 			a := pending(w, tc.prefix, "a.html", n+4)
 			uploadElsewhere(w)
 			// A needs nothing uploaded now, but its listed size is wrong.
-			_, _, err := w.svc.Activate(t.Context(), w.owner.ID, "docs", a.ID)
+			_, _, err := w.svc.Activate(t.Context(), store.ActorFor(w.owner.ID), "docs", a.ID)
 			wantSizeRefused(t, err, tc.target, n+4, n)
 			// Uploading the true body to A does not help: it is checked
 			// against A's listed size.
-			err = w.svc.Upload(t.Context(), w.owner.ID, "docs", a.ID, hashOf(lateBody), strings.NewReader(lateBody))
+			err = w.svc.Upload(t.Context(), store.ActorFor(w.owner.ID), "docs", a.ID, hashOf(lateBody), strings.NewReader(lateBody))
 			if !errors.Is(err, deploys.ErrHashMismatch) {
 				t.Errorf("Upload to A = %v, want ErrHashMismatch", err)
 			}
 			// A can never activate; the site still serves its first deploy.
-			_, _, err = w.svc.Activate(t.Context(), w.owner.ID, "docs", a.ID)
+			_, _, err = w.svc.Activate(t.Context(), store.ActorFor(w.owner.ID), "docs", a.ID)
 			wantSizeRefused(t, err, tc.target, n+4, n)
 			if _, served := w.served("docs"); len(served) != 1 || served["index.html"] != heldBody {
 				t.Errorf("served = %v, want the first deploy", served)
@@ -213,7 +213,7 @@ func TestActivateChecksHeldSizes(t *testing.T) {
 		w := heldWorld(t)
 		a := pending(w, "", "a.html", n)
 		uploadElsewhere(w)
-		if _, _, err := w.svc.Activate(t.Context(), w.owner.ID, "docs", a.ID); err != nil {
+		if _, _, err := w.svc.Activate(t.Context(), store.ActorFor(w.owner.ID), "docs", a.ID); err != nil {
 			t.Fatalf("Activate = %v, want activated", err)
 		}
 	})
