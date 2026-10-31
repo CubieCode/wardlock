@@ -71,6 +71,15 @@ export const notificationsIcon = (
   </Icon>
 );
 
+export const webhooksIcon = (
+  <Icon>
+    <circle cx="6" cy="17" r="2.5" />
+    <circle cx="18" cy="17" r="2.5" />
+    <circle cx="12" cy="6" r="2.5" />
+    <path d="M10.8 8.2 7.2 14.8M8.5 17h7M13.2 8.2l3.6 6.6" />
+  </Icon>
+);
+
 export const accountIcon = (
   <Icon>
     <circle cx="12" cy="8" r="4" />

@@ -349,6 +349,9 @@ func TestWebhookIsDisabledAfterThreeDays(t *testing.T) {
 	if !strings.Contains(body, "127.0.0.1") || strings.Contains(body, "secret-path") {
 		t.Fatalf("email body:\n%s", body)
 	}
+	if !strings.Contains(body, "/webhooks") {
+		t.Fatalf("email does not link to the webhooks page:\n%s", body)
+	}
 	if len(r.received()) != before {
 		t.Fatal("a disabled webhook was sent to")
 	}

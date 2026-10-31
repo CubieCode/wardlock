@@ -40,6 +40,7 @@ const (
 const (
 	settingsPath = "/notifications"
 	tokensPath   = "/tokens"
+	webhooksPath = "/webhooks"
 	overviewPath = "/"
 	// maxSummaryItems bounds a summary; the rest are counted.
 	maxSummaryItems = 50
