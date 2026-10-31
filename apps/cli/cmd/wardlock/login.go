@@ -48,23 +48,9 @@ func runLogin(ctx context.Context, a *app, args []string) error {
 		fs.Usage()
 		return errUsage
 	}
-	server := *serverFlag
-	if server == "" {
-		server = a.getenv("WARDLOCK_SERVER")
-	}
-	if server == "" {
-		if rec, err := a.creds.read(); err == nil {
-			server = rec.Server
-		}
-	}
-	if server == "" {
-		fmt.Fprintln(a.stderr, "wardlock login: which server? Pass --server URL or set WARDLOCK_SERVER.")
-		return errUsage
-	}
-	server, err := checkServer(server)
+	server, err := loginServer(a, "login", *serverFlag)
 	if err != nil {
-		fmt.Fprintln(a.stderr, "wardlock login:", err)
-		return errUsage
+		return err
 	}
 	warnPlainHTTP(a.stderr, server)
 	// Instructions go to stderr with --json, so stdout stays one JSON value.
@@ -77,11 +63,7 @@ func runLogin(ctx context.Context, a *app, args []string) error {
 	if err != nil {
 		return fmt.Errorf("server %s: %w", server, err)
 	}
-	host, _ := a.hostname()
-	clientName := "wardlock " + version
-	if host != "" {
-		clientName += " on " + host
-	}
+	clientName := defaultClientName(a)
 	start, err := c.StartCliLoginWithResponse(ctx, apiclient.StartCliLoginJSONRequestBody{ClientName: &clientName})
 	if err != nil {
 		return fmt.Errorf("could not reach %s: %w", server, err)
@@ -102,7 +84,7 @@ func runLogin(ctx context.Context, a *app, args []string) error {
 	}
 	fmt.Fprintln(info, "Waiting for approval (Ctrl+C to cancel)...")
 
-	created, err := a.pollLogin(ctx, c, server, l)
+	created, err := a.pollLogin(ctx, c, server, l, "wardlock login")
 	if err != nil {
 		return err
 	}
@@ -147,8 +129,45 @@ func runLogin(ctx context.Context, a *app, args []string) error {
 	return nil
 }
 
-// pollLogin waits until the login is approved, then returns the token.
-func (a *app) pollLogin(ctx context.Context, c *apiclient.ClientWithResponses, server string, l *apiclient.CliLogin) (*apiclient.CreatedApiToken, error) {
+// loginServer finds the server for a command that starts a CLI login: the
+// flag, then WARDLOCK_SERVER, then the last server logged in to. command
+// names it in the message when there is none.
+func loginServer(a *app, command, flagValue string) (string, error) {
+	server := flagValue
+	if server == "" {
+		server = a.getenv("WARDLOCK_SERVER")
+	}
+	if server == "" {
+		if rec, err := a.creds.read(); err == nil {
+			server = rec.Server
+		}
+	}
+	if server == "" {
+		fmt.Fprintf(a.stderr, "wardlock %s: which server? Pass --server URL or set WARDLOCK_SERVER.\n", command)
+		return "", errUsage
+	}
+	server, err := checkServer(server)
+	if err != nil {
+		fmt.Fprintf(a.stderr, "wardlock %s: %v\n", command, err)
+		return "", errUsage
+	}
+	return server, nil
+}
+
+// defaultClientName is how the CLI describes itself to the server, which
+// also makes it the new token's name.
+func defaultClientName(a *app) string {
+	host, _ := a.hostname()
+	name := "wardlock " + version
+	if host != "" {
+		name += " on " + host
+	}
+	return name
+}
+
+// pollLogin waits until the login is approved, then returns the token. again
+// is the command to run when the login expires or is denied.
+func (a *app) pollLogin(ctx context.Context, c *apiclient.ClientWithResponses, server string, l *apiclient.CliLogin, again string) (*apiclient.CreatedApiToken, error) {
 	interval := time.Duration(max(l.Interval, 1)) * time.Second
 	expires := time.UnixMilli(l.ExpiresAt)
 	for {
@@ -156,7 +175,7 @@ func (a *app) pollLogin(ctx context.Context, c *apiclient.ClientWithResponses, s
 			return nil, errors.New("login cancelled")
 		}
 		if !a.now().Before(expires) {
-			return nil, errors.New("the login expired before it was approved: run wardlock login again")
+			return nil, fmt.Errorf("the login expired before it was approved: run %s again", again)
 		}
 		res, err := c.PollCliLoginWithResponse(ctx, apiclient.PollCliLoginJSONRequestBody{DeviceCode: l.DeviceCode})
 		if err != nil {
@@ -170,7 +189,7 @@ func (a *app) pollLogin(ctx context.Context, c *apiclient.ClientWithResponses, s
 			return res.JSON200, nil
 		case res.JSON202 != nil:
 		case res.JSON410 != nil:
-			return nil, errors.New("the login was denied or has expired: run wardlock login again")
+			return nil, fmt.Errorf("the login was denied or has expired: run %s again", again)
 		case res.JSON429 != nil && res.JSON429.Code == "slow_down":
 			interval += slowDownStep
 		case res.JSON429 != nil:

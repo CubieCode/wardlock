@@ -177,6 +177,7 @@ describe('rail', () => {
       'Analytics',
       'Groups and tags',
       'Passkeys',
+      'API tokens',
     ]);
     expect(
       within(rail)
@@ -491,7 +492,7 @@ describe('jump to', () => {
     expect(selected()).toMatch(/^drafts/);
     fireEvent.keyDown(input, { key: 'ArrowUp' });
     fireEvent.keyDown(input, { key: 'ArrowUp' });
-    expect(selected()).toBe('Passkeys');
+    expect(selected()).toBe('API tokens');
 
     act(() => {
       screen
@@ -659,7 +660,13 @@ describe('below 48rem', () => {
         within(more)
           .getAllByRole('link')
           .map((link) => link.textContent),
-      ).toEqual(['Groups and tags', 'Passkeys', '/extra-one', '/extra-two']);
+      ).toEqual([
+        'Groups and tags',
+        'Passkeys',
+        'API tokens',
+        '/extra-one',
+        '/extra-two',
+      ]);
     } finally {
       shellRoutes.splice(shellRoutes.indexOf(extra[0]!), extra.length);
     }
@@ -681,6 +688,7 @@ describe('below 48rem', () => {
     ).toEqual([
       ['Groups and tags', '/organise'],
       ['Passkeys', '/passkeys'],
+      ['API tokens', '/tokens'],
     ]);
     // Theme and Sign out stay in the sheet.
     expect(within(sheet).getByRole('radio', { name: 'System' })).toBeTruthy();

@@ -57,6 +57,13 @@ export const passkeysIcon = (
   </Icon>
 );
 
+export const tokensIcon = (
+  <Icon>
+    <circle cx="8" cy="16" r="4" />
+    <path d="M11 13l9-9M16 8l3 3M13 11l2 2" />
+  </Icon>
+);
+
 export const accountIcon = (
   <Icon>
     <circle cx="12" cy="8" r="4" />

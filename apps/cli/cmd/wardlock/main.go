@@ -50,6 +50,7 @@ var commands = []command{
 	{"mcp", "Serve the Model Context Protocol to AI tools on stdio", runMCP},
 	{"login", "Log in to a Wardlock server in your browser", runLogin},
 	{"logout", "Revoke and forget the stored token", runLogout},
+	{"token", "Create an API token and print it once", runToken},
 	{"version", "Print the CLI version, and the server's with --server", runVersion},
 }
 
@@ -87,8 +88,8 @@ type app struct {
 	getwd          func() (string, error)
 	stdin          io.Reader
 	stdout, stderr io.Writer
-	// interactive is true when stdout is a terminal: only then may the
-	// CLI open a browser.
+	// interactive is true when stdout is a terminal: only then may login
+	// open a browser. token create goes by stderr, so stdout can be piped.
 	interactive bool
 	// canPrompt is true when stdin and stderr are terminals: only then
 	// may a command ask a question (and never with --json).
@@ -97,7 +98,7 @@ type app struct {
 	// must then be read without echo, even with --json.
 	stdinTerminal bool
 	// liveProgress is true when stderr is a terminal, so progress can
-	// redraw one line.
+	// redraw one line and token create may open a browser.
 	liveProgress bool
 	http         *http.Client
 	creds        credentialStore

@@ -69,7 +69,7 @@ func TestHelpListsExactlyTheBuiltCommands(t *testing.T) {
 	for _, m := range listed {
 		got = append(got, m[1])
 	}
-	want := []string{"deploy", "list", "preview", "rollback", "pull", "teardown", "policy", "share", "domain", "group", "tag", "site", "pin", "unpin", "mcp", "login", "logout", "version", "help"}
+	want := []string{"deploy", "list", "preview", "rollback", "pull", "teardown", "policy", "share", "domain", "group", "tag", "site", "pin", "unpin", "mcp", "login", "logout", "token", "version", "help"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("help lists %q, want %q\n%s", got, want, out)
 	}

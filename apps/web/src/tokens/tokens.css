@@ -1,0 +1,54 @@
+/* SPDX-FileCopyrightText: 2026 CubieCode */
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* API tokens. Visual language comes from @wardlock/ui. */
+
+.token-intro {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.token-error,
+.token-form {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: stretch;
+}
+
+.token-error {
+  justify-items: start;
+}
+
+.token-name {
+  display: grid;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
+  font-weight: var(--font-weight-medium);
+}
+
+.token-id {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: normal;
+}
+
+.token-expiry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.token-details {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 48rem) {
+  .token-intro {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+}
