@@ -80,7 +80,10 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 		"served at <site>--NAME on the server's base domain, and the live site\n"+
 		"is left as it is. Deploying to the same NAME again replaces it. A\n"+
 		"preview lasts 14 days after its last deploy unless --expires says\n"+
-		"otherwise; wardlock preview promote puts it live.")
+		"otherwise; wardlock preview promote puts it live.\n\n"+
+		"--team chooses the team a new site is created under. An existing site\n"+
+		"is found by its name, which is unique on the server, wherever it is;\n"+
+		"wardlock site move moves one.")
 	g := addGlobalFlags(fs)
 	message := fs.String("message", "", "describe this deploy in its history")
 	spa := fs.Bool("spa", false, "serve /index.html for missing paths without a file extension (default \"spa\" from wardlock.json)")
@@ -89,6 +92,7 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 	yes := fs.Bool("yes", false, "with --path and an empty DIR, remove the path without asking")
 	previewFlag := fs.String("preview", "", "deploy to this preview of the site, such as pr-42, instead of the live site")
 	expires := fs.String("expires", "", "with --preview, how long the preview lasts after this deploy: 1d to 90d, or never (default 14d, or what the preview had)")
+	teamFlag := fs.String("team", "", "create a new site under this team, by name or ID (default \"team\" from wardlock.json; '' for your own account); an existing site stays where it is")
 	groupFlag := fs.String("group", "", "after the deploy goes live, put the site in this existing group (default \"group\" from wardlock.json; '' to leave the site's group as it is: a deploy never removes a site's group or tags)")
 	tagFlags := stringsFlag(fs, "tag", "after the deploy goes live, add this existing tag to the site, keeping its other tags (repeatable; default \"tags\" from wardlock.json)")
 	pos, err := parseArgs(fs, args)
@@ -135,8 +139,11 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 	useSPA, useImmutable := cfg.Spa, cfg.ImmutableAssets
 	prefix := cfg.Path
 	group, tags := cfg.Group, cfg.Tags
+	team := cfg.Team
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
+		case "team":
+			team = *teamFlag
 		case "group":
 			group = *groupFlag
 		case "tag":
@@ -200,16 +207,36 @@ func runDeploy(ctx context.Context, a *app, args []string) error {
 		return err
 	}
 
-	// Groups and tags are resolved before anything is uploaded, so an
-	// unknown name changes nothing.
-	file, err := c.resolveFiling(ctx, group, tags)
+	// The team, groups and tags are resolved before anything is uploaded,
+	// so an unknown name changes nothing.
+	teamID := ""
+	if team != "" {
+		found, err := c.findTeam(ctx, team)
+		if err != nil {
+			return err
+		}
+		teamID = found.Id
+	}
+	// Groups and tags are the account's: the site's if it exists, else the
+	// account it is about to be created in.
+	account := c.inTeam(teamID)
+	if group != "" || len(tags) > 0 {
+		site, err := c.findSite(ctx, t)
+		switch {
+		case err == nil:
+			account = c.inTeam(siteTeam(site))
+		case !errors.Is(err, errNoSite):
+			return err
+		}
+	}
+	file, err := account.resolveFiling(ctx, group, tags)
 	if err != nil {
 		return err
 	}
 
 	d := &deployer{a: a, c: c, root: root, prog: &progress{w: a.stderr, live: a.liveProgress, now: a.now}}
 	return d.run(ctx, deployRequest{path: path, shown: shown, target: t, message: *message, spa: useSPA, immutableAssets: useImmutable,
-		redirects: cfg.Redirects, headers: cfg.Headers, prefix: prefix, preview: *previewFlag, expires: *expires, yes: *yes, json: g.json, file: file})
+		redirects: cfg.Redirects, headers: cfg.Headers, prefix: prefix, preview: *previewFlag, expires: *expires, yes: *yes, json: g.json, file: file, team: teamID})
 }
 
 // filing is the group and tags a deploy files its site under, by ID.
@@ -317,6 +344,9 @@ type deployRequest struct {
 	yes, json        bool
 	// file is the group and tags to file the site under once live.
 	file filing
+	// team is the ID of the team to create a new site under; "" for the
+	// caller's own account.
+	team string
 }
 
 type deployer struct {
@@ -385,7 +415,7 @@ func (d *deployer) run(ctx context.Context, r deployRequest) error {
 				return errors.New("not confirmed: nothing was removed")
 			}
 		}
-	} else if site, created, err = d.site(ctx, r.target); err != nil {
+	} else if site, created, err = d.site(ctx, r.target, r.team); err != nil {
 		return err
 	}
 	manifest := make([]apiclient.ManifestFile, len(files))
@@ -566,11 +596,14 @@ func refusedFile(err error, body []byte, prefix string, manifest []apiclient.Man
 	return err
 }
 
-// site finds the deploy's site, creating it when DOMAIN is a new name or
-// <new name>.<base domain>.
-func (d *deployer) site(ctx context.Context, t target) (apiclient.Site, bool, error) {
+// site finds the deploy's site, creating it under team ("" for the caller's
+// own account) when DOMAIN is a new name or <new name>.<base domain>.
+func (d *deployer) site(ctx context.Context, t target, team string) (apiclient.Site, bool, error) {
 	c := d.c
 	site, err := c.findSite(ctx, t)
+	if err == nil && team != "" && siteTeam(site) != team {
+		fmt.Fprintf(d.a.stderr, "%s already exists in %s, so it stays there: the team only applies to a new site. wardlock site move moves it.\n", site.Name, accountName(site))
+	}
 	if err == nil || !errors.Is(err, errNoSite) {
 		return site, false, err
 	}
@@ -580,7 +613,11 @@ func (d *deployer) site(ctx context.Context, t target) (apiclient.Site, bool, er
 			return site, false, err
 		}
 	}
-	res, err := c.api.CreateSiteWithResponse(ctx, apiclient.CreateSiteJSONRequestBody{Name: name}, c.auth)
+	body := apiclient.CreateSiteJSONRequestBody{Name: name}
+	if team != "" {
+		body.Team = &team
+	}
+	res, err := c.api.CreateSiteWithResponse(ctx, body, c.auth)
 	if err != nil {
 		return site, false, c.unreachable(ctx, err)
 	}

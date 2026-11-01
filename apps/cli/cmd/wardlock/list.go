@@ -40,12 +40,14 @@ type deployList struct {
 }
 
 func runList(ctx context.Context, a *app, args []string) error {
-	fs := newFlagSet(a, "list", "Usage: wardlock list [DOMAIN] [--group NAME] [--tag NAME]... [flags]\n\n"+
-		"Without DOMAIN, lists your sites with their default policy, group,\n"+
-		"tags and when they were last deployed; --group and --tag list only\n"+
-		"the sites in that group and with every tag given. With DOMAIN, lists\n"+
-		"that site's deploys, newest first.")
+	fs := newFlagSet(a, "list", "Usage: wardlock list [DOMAIN] [--team NAME] [--group NAME] [--tag NAME]... [flags]\n\n"+
+		"Without DOMAIN, lists your sites and your teams' with their team,\n"+
+		"default policy, group, tags and when they were last deployed; --team\n"+
+		"lists only that team's. --group and --tag list only the sites in that\n"+
+		"group and with every tag given: yours, or with --team that team's.\n"+
+		"With DOMAIN, lists that site's deploys, newest first.")
 	g := addGlobalFlags(fs)
+	team := fs.String("team", "", "list only this team's sites, by name or ID")
 	group := fs.String("group", "", "list only the sites in this group")
 	tags := stringsFlag(fs, "tag", "list only the sites with this tag (repeatable)")
 	pos, err := parseArgs(fs, args)
@@ -74,8 +76,8 @@ func runList(ctx context.Context, a *app, args []string) error {
 	f.tags = uniq(*tags)
 	var t target
 	if len(pos) == 1 {
-		if f.byGroup || len(f.tags) > 0 {
-			return usageErrorf("--group and --tag filter the list of sites: leave out DOMAIN to use them")
+		if f.byGroup || len(f.tags) > 0 || *team != "" {
+			return usageErrorf("--team, --group and --tag filter the list of sites: leave out DOMAIN to use them")
 		}
 		if t, err = parseTarget(pos[0]); err != nil {
 			return err
@@ -91,6 +93,13 @@ func runList(ctx context.Context, a *app, args []string) error {
 	}
 	if len(pos) == 1 {
 		return listDeploys(ctx, a, c, t, g.json)
+	}
+	if *team != "" {
+		found, err := c.findTeam(ctx, *team)
+		if err != nil {
+			return err
+		}
+		c = c.inTeam(found.Id)
 	}
 	return listSites(ctx, a, c, f, g.json)
 }
@@ -129,7 +138,7 @@ func listSites(ctx context.Context, a *app, c *conn, f siteFilter, asJSON bool) 
 	if err != nil {
 		return err
 	}
-	filtered := f.byGroup || len(f.tags) > 0
+	filtered := f.byGroup || len(f.tags) > 0 || c.team != nil
 	if sites, err = f.apply(ctx, c, sites); err != nil {
 		return err
 	}
@@ -157,24 +166,41 @@ func listSites(ctx context.Context, a *app, c *conn, f siteFilter, asJSON bool) 
 		}
 		return nil
 	}
+	// The TEAM column appears only once there is a team to show: an owner
+	// in no team sees nothing change.
+	withTeam := slices.ContainsFunc(sites, func(s apiclient.Site) bool { return siteTeam(s) != "" })
 	tw := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "SITE\tPOLICY\tGROUP\tTAGS\tLAST DEPLOYED\tURL")
+	if withTeam {
+		fmt.Fprint(tw, "SITE\tTEAM\t")
+	} else {
+		fmt.Fprint(tw, "SITE\t")
+	}
+	fmt.Fprintln(tw, "POLICY\tGROUP\tTAGS\tLAST DEPLOYED\tURL")
 	for _, s := range out.Sites {
 		last := "not deployed yet"
 		if s.ActivatedAt != nil {
 			last = formatTime(*s.ActivatedAt)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, s.Policy, orDash(s.Group), orDash(strings.Join(s.Tags, ", ")), last, s.Url)
+		fmt.Fprintf(tw, "%s\t", s.Name)
+		if withTeam {
+			team := ""
+			if siteTeam(s.Site) != "" {
+				team = s.Owner.Name
+			}
+			fmt.Fprintf(tw, "%s\t", orDash(team))
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s.Policy, orDash(s.Group), orDash(strings.Join(s.Tags, ", ")), last, s.Url)
 	}
 	return tw.Flush()
 }
 
-// sites lists all of the owner's sites, by name.
+// sites lists every site the caller can see, by name, or with c.team only
+// that team's.
 func (c *conn) sites(ctx context.Context) ([]apiclient.Site, error) {
 	var all []apiclient.Site
 	var cursor *string
 	for {
-		res, err := c.api.ListSitesWithResponse(ctx, &apiclient.ListSitesParams{Limit: ptr(pageSize), Cursor: cursor}, c.auth)
+		res, err := c.api.ListSitesWithResponse(ctx, &apiclient.ListSitesParams{Limit: ptr(pageSize), Cursor: cursor, Team: c.team}, c.auth)
 		if err != nil {
 			return nil, c.unreachable(ctx, err)
 		}

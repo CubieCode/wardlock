@@ -75,6 +75,10 @@ type conn struct {
 	server string
 	api    *apiclient.ClientWithResponses
 	auth   apiclient.RequestEditorFn
+	// team is the team whose sites, groups and tags to use, by ID; nil for
+	// the caller's own account (listSites then answers everything they can
+	// see). See inTeam.
+	team *string
 }
 
 // connect picks the server and token (resolveCredential) and returns a
@@ -130,6 +134,10 @@ func (c *conn) failed(res *http.Response, body []byte) error {
 	case http.StatusUnauthorized:
 		return fmt.Errorf("%w: run wardlock login again, or check WARDLOCK_TOKEN", err)
 	case http.StatusForbidden:
+		// The token has the scope, but the caller's role does not allow it.
+		if errorCode(body) == "forbidden_role" {
+			return err
+		}
 		return fmt.Errorf("%w: the token may lack the scope this needs (deploy, or manage to tear down, change access or organise sites); log in again and approve it", err)
 	}
 	return err

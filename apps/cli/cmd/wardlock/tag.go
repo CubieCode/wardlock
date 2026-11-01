@@ -23,8 +23,9 @@ const tagUsage = "Usage: wardlock tag <list|create|rename|delete> [NAME] [NEW_NA
 	"  rename NAME NEW_NAME       Rename a tag; --colour changes its colour\n" +
 	"  delete NAME                Delete a tag and remove it from its sites\n\n" +
 	"Tag names are 1-30 lowercase letters, digits and hyphens. Colours are\n" +
-	"0 (neutral) to 8. Listing works with any token; the others need a\n" +
-	"token with the manage scope.\n"
+	"0 (neutral) to 8. --team uses that team's tags instead of yours.\n" +
+	"Listing works with any token; the others need a token with the manage\n" +
+	"scope.\n"
 
 func runTag(ctx context.Context, a *app, args []string) error {
 	global, rest, err := leadingGlobalFlags(args)
@@ -81,8 +82,8 @@ func colourFlag(fs *flag.FlagSet, usage string) func() (*int32, error) {
 
 func tagList(ctx context.Context, a *app, args []string) error {
 	fs := newFlagSet(a, "tag list", "Usage: wardlock tag list [flags]\n\nLists your tags by name, with their colour slots.")
-	g := addGlobalFlags(fs)
-	c, _, err := orgConn(a, fs, g, args, 0, 0, nil)
+	g := addOrgFlags(fs)
+	c, _, err := teamConn(ctx, a, fs, g, args, 0, 0, nil)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}
@@ -114,10 +115,10 @@ func tagCreate(ctx context.Context, a *app, args []string) error {
 		"--colour it takes the first colour from 1 to 8 none of your tags has,\n"+
 		"or 0 (neutral) when all are taken. Needs a token with the manage\n"+
 		"scope.")
-	g := addGlobalFlags(fs)
+	g := addOrgFlags(fs)
 	colour := colourFlag(fs, "the tag's colour, 0 (neutral) to 8")
 	body := apiclient.CreateTagJSONRequestBody{}
-	c, _, err := orgConn(a, fs, g, args, 1, 1, func(pos []string) (err error) {
+	c, _, err := teamConn(ctx, a, fs, g, args, 1, 1, func(pos []string) (err error) {
 		body.Name = pos[0]
 		if err := checkTagName(body.Name); err != nil {
 			return err
@@ -131,7 +132,7 @@ func tagCreate(ctx context.Context, a *app, args []string) error {
 	if err != nil {
 		return err
 	}
-	res, err := c.api.CreateTagWithResponse(ctx, nil, body, c.auth)
+	res, err := c.api.CreateTagWithResponse(ctx, &apiclient.CreateTagParams{Team: c.team}, body, c.auth)
 	if err != nil {
 		return c.unreachable(ctx, err)
 	}
@@ -149,11 +150,11 @@ func tagRename(ctx context.Context, a *app, args []string) error {
 	fs := newFlagSet(a, "tag rename", "Usage: wardlock tag rename NAME [NEW_NAME] [--colour N] [flags]\n\n"+
 		"Renames the tag NAME to NEW_NAME, or changes its colour with --colour.\n"+
 		"Its sites keep it. Needs a token with the manage scope.")
-	g := addGlobalFlags(fs)
+	g := addOrgFlags(fs)
 	colour := colourFlag(fs, "the tag's new colour, 0 (neutral) to 8")
 	var name string
 	body := apiclient.UpdateTagJSONRequestBody{}
-	c, _, err := orgConn(a, fs, g, args, 1, 2, func(pos []string) (err error) {
+	c, _, err := teamConn(ctx, a, fs, g, args, 1, 2, func(pos []string) (err error) {
 		name = pos[0]
 		if err := checkTagName(name); err != nil {
 			return err
@@ -205,10 +206,10 @@ func tagDelete(ctx context.Context, a *app, args []string) error {
 		"Deletes the tag and removes it from every site that has it. Asks you\n"+
 		"to type the tag's name first; without a terminal, or with --json, pass\n"+
 		"--yes instead. Needs a token with the manage scope.")
-	g := addGlobalFlags(fs)
+	g := addOrgFlags(fs)
 	yes := fs.Bool("yes", false, "delete without asking")
 	var name string
-	c, _, err := orgConn(a, fs, g, args, 1, 1, func(pos []string) error {
+	c, _, err := teamConn(ctx, a, fs, g, args, 1, 1, func(pos []string) error {
 		name = pos[0]
 		if err := checkTagName(name); err != nil {
 			return err
