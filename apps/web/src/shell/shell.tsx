@@ -204,8 +204,12 @@ function Frame({
         navigator={withNavigator && wide ? navigatorContent : undefined}
         navigatorLabel="Sites navigator"
       >
-        {/* Another team starts from fresh pages, never showing the last one's. */}
-        <Fragment key={team ?? 'personal'}>
+        {/*
+          Another team starts from fresh pages, never showing the last one's.
+          A site's page is the site's, whichever team the address names, and
+          corrects the address itself without being read again.
+        */}
+        <Fragment key={/^\/sites\/./.test(pathname) ? 'site' : (team ?? '')}>
           {missing ? <TeamMissing /> : children}
         </Fragment>
       </RailLayout>

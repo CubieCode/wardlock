@@ -24,12 +24,15 @@ type State =
   | { kind: 'ready'; members: Member[]; nextCursor: string | undefined };
 
 type Asking =
-  { kind: 'remove'; member: Member } | { kind: 'step-down'; role: TeamRole };
+  | { kind: 'remove'; member: Member }
+  | { kind: 'promote'; member: Member }
+  | { kind: 'step-down'; member: Member; role: TeamRole };
 
 /**
  * The team's members. Everyone sees who is in the team and with what role;
- * admins change roles and remove people. Stepping down is confirmed, since
- * nobody here can undo it for themselves; so is removing someone.
+ * admins change roles and remove people. A new role takes effect on Save, so
+ * arrowing through the list changes nothing. Making someone an admin, stepping
+ * down and removing someone are each confirmed first.
  */
 export function MembersCard({
   api,
@@ -112,19 +115,15 @@ export function MembersCard({
     );
   };
 
+  /** Answers null, or why it was refused for whoever asked to show. */
   const setRole = async (member: Member, role: TeamRole) => {
-    setProblem(null);
     const result = await api
       .PATCH('/api/v0/teams/{teamId}/members/{ownerId}', {
         params: { path: { ...path, ownerId: member.ownerId } },
         body: { role },
       })
       .catch(() => null);
-    if (!result?.data) {
-      const refusal = teamRefusal(result);
-      setProblem(refusal);
-      return refusal;
-    }
+    if (!result?.data) return teamRefusal(result);
     const changed = result.data;
     update((members) =>
       members.map((m) => (m.ownerId === changed.ownerId ? changed : m)),
@@ -168,11 +167,14 @@ export function MembersCard({
       cell: (member) =>
         admin ? (
           <RoleSelect
+            key={member.role}
             member={member}
-            onChange={(role) => {
-              if (member.ownerId === ownerId && role !== 'admin')
-                setAsking({ kind: 'step-down', role });
-              else void setRole(member, role);
+            onSave={(role) => {
+              setProblem(null);
+              if (role === 'admin') setAsking({ kind: 'promote', member });
+              else if (member.ownerId === ownerId)
+                setAsking({ kind: 'step-down', member, role });
+              else void setRole(member, role).then(setProblem);
             }}
           />
         ) : (
@@ -205,11 +207,6 @@ export function MembersCard({
         ]
       : []),
   ];
-
-  const me =
-    state.kind === 'ready'
-      ? state.members.find((m) => m.ownerId === ownerId)
-      : undefined;
 
   return (
     <Card title="Members">
@@ -270,13 +267,27 @@ export function MembersCard({
           </p>
         </ConfirmDialog>
       ) : null}
-      {asking?.kind === 'step-down' && me ? (
+      {asking?.kind === 'promote' ? (
+        <ConfirmDialog
+          title={`Make ${asking.member.email} an admin of ${team.name}?`}
+          action="Make admin"
+          busyLabel="Changing…"
+          onClose={() => setAsking(null)}
+          onConfirm={() => setRole(asking.member, 'admin')}
+        >
+          <p>
+            They can manage members, tokens and the team itself, and delete the
+            team once it has no sites.
+          </p>
+        </ConfirmDialog>
+      ) : null}
+      {asking?.kind === 'step-down' ? (
         <ConfirmDialog
           title={`Stop being an admin of ${team.name}?`}
           action={`Become ${asking.role === 'editor' ? 'an editor' : 'a viewer'}`}
           busyLabel="Changing…"
           onClose={() => setAsking(null)}
-          onConfirm={() => setRole(me, asking.role)}
+          onConfirm={() => setRole(asking.member, asking.role)}
         >
           <p>
             You lose members, tokens and team settings straight away, and any
@@ -289,26 +300,42 @@ export function MembersCard({
   );
 }
 
+/**
+ * A member's role with Save beside it once another is chosen. Keyed on the
+ * saved role, so a saved change starts it afresh.
+ */
 function RoleSelect({
   member,
-  onChange,
+  onSave,
 }: {
   member: Member;
-  onChange: (role: TeamRole) => void;
+  onSave: (role: TeamRole) => void;
 }) {
+  const [role, setRole] = useState(member.role);
   return (
-    <select
-      className="wl-input team-role"
-      aria-label={`Role of ${member.email}`}
-      value={member.role}
-      onChange={(event) => onChange(event.target.value as TeamRole)}
-    >
-      {roles.map(({ role }) => (
-        <option key={role} value={role}>
-          {roleNames[role]}
-        </option>
-      ))}
-    </select>
+    <span className="team-role-row">
+      <select
+        className="wl-input team-role"
+        aria-label={`Role of ${member.email}`}
+        value={role}
+        onChange={(event) => setRole(event.target.value as TeamRole)}
+      >
+        {roles.map((r) => (
+          <option key={r.role} value={r.role}>
+            {roleNames[r.role]}
+          </option>
+        ))}
+      </select>
+      {role === member.role ? null : (
+        <Button
+          type="button"
+          aria-label={`Save the role of ${member.email}`}
+          onClick={() => onSave(role)}
+        >
+          Save
+        </Button>
+      )}
+    </span>
   );
 }
 

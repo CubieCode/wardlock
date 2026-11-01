@@ -105,23 +105,36 @@ export function matchPath(
 /** A team's settings page, which names its team in the path. */
 export const teamPath = (id: string) => `/teams/${encodeURIComponent(id)}`;
 
-/** The team a location is scoped to, undefined for the personal account. */
-export function teamOf(pathname: string, params: URLSearchParams) {
-  return (
-    matchPath('/teams/:teamId', pathname)?.teamId ??
-    (params.get('team') || undefined)
-  );
+/** The pages that show one account's sites; the rest are the owner's own. */
+const scopedPages = ['/', '/sites', '/analytics', '/organise'];
+
+/** Whether a page shows the chosen account, as a site's page does too. */
+export function isScoped(pathname: string) {
+  const path = pathname.replace(/\/+$/, '') || '/';
+  return scopedPages.includes(path) || path.startsWith('/sites/');
 }
 
 /**
- * Keeps the team chosen in the switcher on a path inside the dashboard, so
- * the address always says whose sites are showing and can be shared.
+ * The team a location is scoped to, undefined for the personal account. A
+ * page of the owner's own, such as `/tokens`, is personal whatever its query
+ * says.
+ */
+export function teamOf(pathname: string, params: URLSearchParams) {
+  const page = matchPath('/teams/:teamId', pathname)?.teamId;
+  if (page) return page;
+  return isScoped(pathname) ? params.get('team') || undefined : undefined;
+}
+
+/**
+ * Keeps the team chosen in the switcher on a link to a page that shows one
+ * account, so the address always says whose sites are showing and can be
+ * shared. Pages of the owner's own never carry it.
  */
 export function withTeam(path: string) {
   const here = new URL(window.location.href);
   const team = teamOf(here.pathname, here.searchParams);
-  if (!team) return path;
   const url = new URL(path, here.origin);
+  if (!team || !isScoped(url.pathname)) return path;
   if (!url.searchParams.has('team')) url.searchParams.set('team', team);
   return url.pathname + url.search + url.hash;
 }

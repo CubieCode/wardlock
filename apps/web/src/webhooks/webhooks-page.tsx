@@ -13,7 +13,7 @@ import {
   type TableColumn,
 } from '@wardlock/ui';
 import { useEffect, useState } from 'react';
-import { navigate, withTeam } from '../shell/router.js';
+import { navigate } from '../shell/router.js';
 import { useTitle } from '../shell/page.js';
 import { ShownOnceSecretDialog } from '../tokens/shown-once-secret.js';
 import {
@@ -44,7 +44,7 @@ const columns: TableColumn<Webhook>[] = [
     header: 'Endpoint',
     cell: (webhook) => (
       <span className="webhook-endpoint">
-        <a href={withTeam(`/webhooks/${webhook.id}`)}>{webhookName(webhook)}</a>
+        <a href={`/webhooks/${webhook.id}`}>{webhookName(webhook)}</a>
         <code className="webhook-url">{webhook.url}</code>
       </span>
     ),
@@ -177,7 +177,7 @@ export function WebhooksPage({ api }: { api: ApiClient }) {
           onDone={() => {
             const { id } = open.created.webhook;
             setOpen({ kind: 'none' });
-            navigate(withTeam(`/webhooks/${id}`));
+            navigate(`/webhooks/${id}`);
           }}
         >
           <p className="webhook-details">

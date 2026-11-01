@@ -27,6 +27,7 @@ export type MapState =
 export function useMapSites(
   api: ApiClient,
   query: Pick<ListQuery, 'g' | 't' | 'v' | 'q'>,
+  team?: string,
 ) {
   const [state, setState] = useState<MapState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -39,8 +40,8 @@ export function useMapSites(
     const request = ++latest.current;
     const narrowed = Boolean(g || t || v || q.trim());
     Promise.all([
-      loadSites(api, { q: '', sort: 'name' }),
-      narrowed ? loadSites(api, { g, t, v, q, sort: 'name' }) : undefined,
+      loadSites(api, { q: '', sort: 'name' }, team),
+      narrowed ? loadSites(api, { g, t, v, q, sort: 'name' }, team) : undefined,
     ]).then(
       ([sites, matching]) => {
         if (request !== latest.current) return;
@@ -62,7 +63,7 @@ export function useMapSites(
         setAnswered(asked);
       },
     );
-  }, [api, g, t, v, q, attempt, asked]);
+  }, [api, g, t, v, q, team, attempt, asked]);
 
   const retry = useCallback(() => {
     setState({ kind: 'loading' });

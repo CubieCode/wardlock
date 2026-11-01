@@ -5,7 +5,6 @@ import type { ApiClient } from '@wardlock/apiclient-ts';
 import { Button, Card, Notice, SelectField } from '@wardlock/ui';
 import { useState } from 'react';
 import { useSiteAccess } from '../teams/scope.js';
-import { useFlash } from './flash.js';
 import type { Site } from './format.js';
 import { MoveSiteCard } from './move-site.js';
 import {
@@ -34,12 +33,12 @@ export function SettingsTab({
   const [tearingDown, setTearingDown] = useState(false);
   const { state } = organise;
   const { edit } = useSiteAccess(site);
-  const flash = useFlash();
+  const [moved, setMoved] = useState<string | null>(null);
   const team = site.owner.kind === 'team';
 
   return (
     <div className="site-settings">
-      {flash ? <Notice>{flash}</Notice> : null}
+      {moved ? <Notice>{moved}</Notice> : null}
       <Card title="Group and tags">
         <p className="site-card-lead">
           {team ? 'Everyone in the team sees' : 'Only you see'} groups and tags.
@@ -106,7 +105,14 @@ export function SettingsTab({
         )}
       </Card>
 
-      <MoveSiteCard api={api} site={site} onMoved={onMoved} />
+      <MoveSiteCard
+        api={api}
+        site={site}
+        onMoved={(now, to) => {
+          setMoved(`Moved ${now.name} to ${to}.`);
+          onMoved(now);
+        }}
+      />
 
       {edit ? (
         <Card title="Tear down this site">

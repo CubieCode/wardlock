@@ -877,22 +877,24 @@ function SitesList({ api }: { api: ApiClient }) {
           )}
         </div>
       )}
-      {phone && !choosing && edit ? (
+      {phone && !choosing ? (
         <div className="sites-applied">
           <span>
             {groupingWords[query.by]} · {sortChoices[query.sort].words}
           </span>
-          <button
-            ref={selectButton}
-            type="button"
-            className="sites-text-button"
-            onClick={() => {
-              setSelecting(true);
-              focusNext.current = cancelButton;
-            }}
-          >
-            Select
-          </button>
+          {edit ? (
+            <button
+              ref={selectButton}
+              type="button"
+              className="sites-text-button"
+              onClick={() => {
+                setSelecting(true);
+                focusNext.current = cancelButton;
+              }}
+            >
+              Select
+            </button>
+          ) : null}
         </div>
       ) : null}
       {phone ? (

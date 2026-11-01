@@ -24,6 +24,7 @@ import {
 } from 'react';
 import { useTitle } from '../shell/page.js';
 import { navigate, useLocation, withTeam } from '../shell/router.js';
+import { useScope } from '../teams/scope.js';
 import { AccessWord } from './format.js';
 import { useMapSites } from './map-data.js';
 import {
@@ -577,8 +578,9 @@ function useWidth(element: HTMLElement | null) {
 export function MapPage({ api }: { api: ApiClient }) {
   const { params } = useLocation();
   const query = useMemo(() => readQuery(params), [params]);
-  const data = useMapSites(api, query);
-  const meta = useMeta(api);
+  const { team } = useScope();
+  const data = useMapSites(api, query, team);
+  const meta = useMeta(api, team);
   useTitle('Sites map');
 
   const go = useCallback(

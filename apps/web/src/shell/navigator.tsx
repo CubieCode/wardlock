@@ -117,6 +117,12 @@ export function useNavigatorData(
 ) {
   const [state, setState] = useState<NavigatorState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  // Another team's counts are never shown while this one's load.
+  const [loadedFor, setLoadedFor] = useState(team);
+  if (team !== loadedFor) {
+    setLoadedFor(team);
+    setState({ kind: 'loading' });
+  }
   useEffect(() => {
     if (!enabled) return;
     let live = true;

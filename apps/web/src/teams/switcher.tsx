@@ -14,20 +14,22 @@ import {
   TextField,
 } from '@wardlock/ui';
 import { useId, useState, type FormEvent } from 'react';
-import { navigate, teamPath, useLocation } from '../shell/router.js';
+import { isScoped, navigate, teamPath, useLocation } from '../shell/router.js';
 import { roleNames, teamRefusal } from './messages.js';
 import { useScope } from './scope.js';
 import './teams.css';
 
-/** Pages that show one account's sites keep their place across a switch. */
-const scoped = ['/', '/sites', '/analytics', '/organise'];
-
-/** Where choosing a team (undefined for personal) goes from here. */
+/**
+ * Where choosing a team (undefined for personal) goes from here. A page that
+ * shows one account keeps its place, and a site's goes to the list. A page of
+ * the owner's own stays personal, so a team starts at its overview.
+ */
 export function switchHref(pathname: string, team: string | undefined) {
   if (pathname.startsWith('/teams/')) return team ? teamPath(team) : '/';
+  if (!team && !isScoped(pathname)) return pathname;
   const place = pathname.startsWith('/sites/')
     ? '/sites'
-    : scoped.includes(pathname)
+    : isScoped(pathname)
       ? pathname
       : '/';
   return team ? `${place}?team=${encodeURIComponent(team)}` : place;

@@ -11,6 +11,7 @@ import {
   schemes,
   teamAdminState,
 } from './mail.js';
+import { goToPlace, isMobile } from './places.js';
 import { publish } from './publish.js';
 import { siteTab } from './site-page.js';
 
@@ -171,12 +172,25 @@ for (const scheme of schemes) {
 
       await test.step('the admin makes them a viewer', async () => {
         await admin.reload();
-        await admin
-          .getByRole('combobox', { name: `Role of ${email}` })
-          .selectOption('viewer');
+        const role = admin.getByRole('combobox', { name: `Role of ${email}` });
+        const save = admin.getByRole('button', {
+          name: `Save the role of ${email}`,
+        });
+        // Choosing changes nothing until Save.
+        await role.selectOption('admin');
+        await shot(admin, 'role-save');
+        await save.click();
         await expect(
-          admin.getByRole('combobox', { name: `Role of ${email}` }),
-        ).toHaveValue('viewer');
+          admin.getByRole('dialog', {
+            name: `Make ${email} an admin of ${teamName}?`,
+          }),
+        ).toBeVisible();
+        await shot(admin, 'role-confirm');
+        await admin.getByRole('button', { name: 'Cancel' }).click();
+        await role.selectOption('viewer');
+        await save.click();
+        await expect(save).toHaveCount(0);
+        await expect(role).toHaveValue('viewer');
       });
 
       await test.step('the same controls are missing as a viewer', async () => {
@@ -243,6 +257,64 @@ for (const scheme of schemes) {
           member.getByRole('button', { name: 'Delete team' }),
         ).toHaveCount(0);
         await shot(member, 'viewer-settings-page');
+      });
+
+      await test.step('a page of the owner’s own is personal', async () => {
+        await admin.goto(`${origin}/sites?team=${teamId}`);
+        await goToPlace(admin, info, 'API tokens');
+        await expect(admin).toHaveURL(`${origin}/tokens`);
+        await expect(
+          admin.getByRole('button', { name: 'Switch team: Personal' }),
+        ).toBeVisible();
+        await shot(admin, 'personal-page');
+      });
+
+      await test.step('the bars’ popovers open over everything', async () => {
+        const items = async () => {
+          await switcher(admin).click();
+          for (const item of await admin
+            .getByRole('menu', { name: 'Teams' })
+            .getByRole('menuitemcheckbox')
+            .all())
+            await item.click({ trial: true });
+          await shot(
+            admin,
+            `switcher-${new URL(admin.url()).searchParams.get('view') ?? 'list'}`,
+          );
+          await admin.keyboard.press('Escape');
+        };
+        await admin.goto(`${origin}/sites?team=${teamId}`);
+        await expect(
+          admin.getByRole('link', { name: site, exact: true }).first(),
+        ).toBeVisible();
+        await items();
+        await admin.goto(`${origin}/sites?view=map&team=${teamId}`);
+        await expect(
+          admin.getByRole('heading', { level: 1, name: /map/i }),
+        ).toBeVisible();
+        await items();
+
+        // Narrow enough that the bulk bar reaches under the account menu.
+        const size = admin.viewportSize()!;
+        if (!isMobile(info))
+          await admin.setViewportSize({ width: 800, height: 600 });
+        await admin.goto(`${origin}/sites?team=${teamId}`);
+        if (isMobile(info))
+          await admin.getByRole('button', { name: 'Select' }).click();
+        await admin.getByRole('checkbox', { name: `Select ${site}` }).check();
+        await expect(
+          admin.getByRole('toolbar', { name: 'Bulk actions' }),
+        ).toBeVisible();
+        await admin
+          .getByRole('navigation', { name: 'Main' })
+          .getByRole('button', { name: 'Account' })
+          .click();
+        await admin
+          .getByRole('button', { name: 'Sign out' })
+          .click({ trial: true });
+        await shot(admin, 'account-over-bulk');
+        await admin.keyboard.press('Escape');
+        await admin.setViewportSize(size);
       });
 
       await test.step('a site moves to the team and back', async () => {

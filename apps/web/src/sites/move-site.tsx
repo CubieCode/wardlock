@@ -6,7 +6,6 @@ import { Button, Card, Dialog, Notice, SelectField } from '@wardlock/ui';
 import { useState } from 'react';
 import { teamRefusal } from '../teams/messages.js';
 import { useScope, useSiteAccess } from '../teams/scope.js';
-import { setFlash } from './flash.js';
 import type { Site } from './format.js';
 
 /** Where a site can go: `personal`, or a team's ID. */
@@ -25,7 +24,8 @@ export function MoveSiteCard({
 }: {
   api: ApiClient;
   site: Site;
-  onMoved: (site: Site) => void;
+  /** The site as it is now, and the name of where it went. */
+  onMoved: (site: Site, to: string) => void;
 }) {
   const { teams } = useScope();
   const { admin } = useSiteAccess(site);
@@ -85,7 +85,7 @@ function MoveSiteDialog({
   site: Site;
   targets: { value: string; name: string }[];
   onClose: () => void;
-  onMoved: (site: Site) => void;
+  onMoved: (site: Site, to: string) => void;
 }) {
   const [target, setTarget] = useState(targets[0]!.value);
   const [busy, setBusy] = useState(false);
@@ -108,9 +108,8 @@ function MoveSiteDialog({
       .catch(() => null);
     setBusy(false);
     if (result?.data) {
-      setFlash(`Moved ${site.name} to ${destination.name}.`);
       onClose();
-      return onMoved(result.data);
+      return onMoved(result.data, destination.name);
     }
     setProblem(teamRefusal(result));
   };

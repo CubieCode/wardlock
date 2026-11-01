@@ -6,6 +6,7 @@ import {
   cleanup,
   fireEvent,
   render,
+  renderHook,
   screen,
   waitFor,
   within,
@@ -13,13 +14,14 @@ import {
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AnalyticsPage } from '../analytics/analytics-page.js';
+import { App } from '../app.js';
 import { SessionProvider } from '../auth/session.js';
 import { DomainsCard } from '../domains/domains.js';
 import { ShareLinksCard } from '../links/share-links.js';
 import { OrganisePage } from '../organise/organise-page.js';
 import { OverviewPage } from '../overview/overview.js';
 import { PoliciesCard } from '../policies/policies.js';
-import { sitesHref } from '../shell/navigator.js';
+import { sitesHref, useNavigatorData } from '../shell/navigator.js';
 import { teamOf, withTeam } from '../shell/router.js';
 import { Shell } from '../shell/shell.js';
 import { MoveSiteCard } from '../sites/move-site.js';
@@ -206,6 +208,26 @@ describe('the team in the address', () => {
     expect(teamOf('/sites', new URLSearchParams())).toBeUndefined();
   });
 
+  it('never scopes a page of the owner’s own, whatever its query says', () => {
+    const query = new URLSearchParams(`team=${teamId}`);
+    for (const path of [
+      '/tokens',
+      '/passkeys',
+      '/notifications',
+      '/webhooks',
+      '/webhooks/x',
+      '/team-invitations',
+    ])
+      expect(teamOf(path, query)).toBeUndefined();
+    window.history.replaceState(null, '', `/sites?team=${teamId}`);
+    expect(withTeam('/tokens')).toBe('/tokens');
+    expect(withTeam('/sites/docs/links')).toBe(
+      `/sites/docs/links?team=${teamId}`,
+    );
+    window.history.replaceState(null, '', `/tokens?team=${teamId}`);
+    expect(withTeam('/sites')).toBe('/sites');
+  });
+
   it('keeps the chosen team on links, and leaves personal ones alone', () => {
     expect(withTeam('/sites')).toBe('/sites');
     window.history.replaceState(null, '', `/sites?team=${teamId}`);
@@ -222,6 +244,7 @@ describe('the team in the address', () => {
       `/sites?team=${teamId}`,
     );
     expect(switchHref('/tokens', teamId)).toBe(`/?team=${teamId}`);
+    expect(switchHref('/tokens', undefined)).toBe('/tokens');
     expect(switchHref(`/teams/${teamId}`, otherTeam)).toBe(
       `/teams/${otherTeam}`,
     );
@@ -379,6 +402,28 @@ describe('shell', () => {
     expect(screen.queryByText('A page')).toBeNull();
   });
 
+  it('shows Personal on a page of the owner’s own, whatever its query says', async () => {
+    window.history.replaceState(null, '', `/tokens?team=${teamId}`);
+    const { api } = fakeServer({
+      'GET /api/v0/teams': list(team('admin')),
+      'GET /api/v0/team-invitations': list(),
+    });
+    render(
+      <SessionProvider api={api}>
+        <Shell api={api} me={me} pathname="/tokens" route={undefined}>
+          <p>A page</p>
+        </Shell>
+      </SessionProvider>,
+    );
+    expect(
+      await screen.findByRole('button', { name: 'Switch team: Personal' }),
+    ).toBeTruthy();
+    const main = screen.getAllByRole('navigation', { name: 'Main' })[0]!;
+    expect(
+      within(main).getByRole('link', { name: 'Sites' }).getAttribute('href'),
+    ).toBe('/sites');
+  });
+
   it('carries the team on its places', async () => {
     window.history.replaceState(null, '', `/?team=${teamId}`);
     const { api } = fakeServer({
@@ -397,6 +442,44 @@ describe('shell', () => {
     expect(
       within(main).getByRole('link', { name: 'Sites' }).getAttribute('href'),
     ).toBe(`/sites?team=${teamId}`);
+    expect(
+      within(main)
+        .getByRole('link', { name: 'API tokens' })
+        .getAttribute('href'),
+    ).toBe('/tokens');
+  });
+
+  it('never shows one team’s counts under another', async () => {
+    let answer: (response: Response) => void = () => {};
+    const { api } = fakeServer({
+      'GET /api/v0/site-counts': (url) =>
+        url.searchParams.get('team') === otherTeam
+          ? new Promise((resolve) => (answer = resolve))
+          : ok({
+              all: 7,
+              views: {
+                pinned: 0,
+                expiring: 0,
+                public: 0,
+                quiet: 0,
+                untagged: 0,
+                down: 0,
+              },
+              groups: [],
+              noGroup: 0,
+              tags: [],
+            })(url, undefined),
+      'GET /api/v0/groups': list(),
+      'GET /api/v0/tags': list(),
+    });
+    const { result, rerender } = renderHook(
+      ({ team: chosen }) => useNavigatorData(api, true, true, chosen),
+      { initialProps: { team: teamId } },
+    );
+    await waitFor(() => expect(result.current.state.kind).toBe('ready'));
+    rerender({ team: otherTeam });
+    expect(result.current.state.kind).toBe('loading');
+    answer(Response.json({ code: 'internal', message: 'x' }, { status: 500 }));
   });
 });
 
@@ -510,9 +593,14 @@ describe('members', () => {
     expect(screen.getByText('You')).toBeTruthy();
   });
 
-  it('changes a role', async () => {
+  const choose = async (email: string, role: TeamRole) =>
+    fireEvent.change(await screen.findByLabelText(`Role of ${email}`), {
+      target: { value: role },
+    });
+
+  it('changes a role only on Save, not while choosing', async () => {
     const route = `PATCH ${base}/members/${otherOwner}`;
-    const { api, bodyOf } = fakeServer(
+    const { api, bodyOf, called } = fakeServer(
       teamRoutes('admin', {
         [route]: ok(
           member({
@@ -524,33 +612,93 @@ describe('members', () => {
       }),
     );
     inScope(scope('admin'), <TeamPage api={api} teamId={teamId} />);
-    fireEvent.change(await screen.findByLabelText('Role of pat@example.test'), {
-      target: { value: 'viewer' },
-    });
+    await choose('pat@example.test', 'admin');
+    await choose('pat@example.test', 'viewer');
+    expect(called(route)).toBe(false);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Save the role of pat@example.test' }),
+    );
     await waitFor(() => expect(bodyOf(route)).toEqual({ role: 'viewer' }));
     await waitFor(() =>
       expect(
-        (screen.getByLabelText('Role of pat@example.test') as HTMLSelectElement)
-          .value,
-      ).toBe('viewer'),
+        screen.queryByRole('button', {
+          name: 'Save the role of pat@example.test',
+        }),
+      ).toBeNull(),
     );
+    expect(
+      (screen.getByLabelText('Role of pat@example.test') as HTMLSelectElement)
+        .value,
+    ).toBe('viewer');
   });
 
-  it('confirms stepping down and explains the last admin', async () => {
-    const route = `PATCH ${base}/members/${ownerId}`;
+  it('offers no Save once the role is back as it was', async () => {
+    const { api } = fakeServer(teamRoutes('admin'));
+    inScope(scope('admin'), <TeamPage api={api} teamId={teamId} />);
+    await choose('pat@example.test', 'viewer');
+    await choose('pat@example.test', 'editor');
+    expect(screen.queryByRole('button', { name: /^Save the role/ })).toBeNull();
+  });
+
+  it('shows a refused change once, on the card', async () => {
     const { api } = fakeServer(
+      teamRoutes('admin', {
+        [`PATCH ${base}/members/${otherOwner}`]: refuse(403, 'forbidden_role'),
+      }),
+    );
+    inScope(scope('admin'), <TeamPage api={api} teamId={teamId} />);
+    await choose('pat@example.test', 'viewer');
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Save the role of pat@example.test' }),
+    );
+    expect(await screen.findAllByText(/no longer allows/)).toHaveLength(1);
+  });
+
+  it('confirms making someone an admin, naming them', async () => {
+    const route = `PATCH ${base}/members/${otherOwner}`;
+    const { api, bodyOf, called } = fakeServer(
+      teamRoutes('admin', {
+        [route]: ok(
+          member({
+            ownerId: otherOwner,
+            email: 'pat@example.test',
+            role: 'admin',
+          }),
+        ),
+      }),
+    );
+    inScope(scope('admin'), <TeamPage api={api} teamId={teamId} />);
+    await choose('pat@example.test', 'admin');
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Save the role of pat@example.test' }),
+    );
+    const dialog = screen.getByRole('dialog', {
+      name: 'Make pat@example.test an admin of Web team?',
+    });
+    expect(called(route)).toBe(false);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Make admin' }));
+    await waitFor(() => expect(bodyOf(route)).toEqual({ role: 'admin' }));
+  });
+
+  it('confirms stepping down and shows a refusal once, in the dialog', async () => {
+    const route = `PATCH ${base}/members/${ownerId}`;
+    const { api, called } = fakeServer(
       teamRoutes('admin', { [route]: refuse(409, 'team_needs_admin') }),
     );
     inScope(scope('admin'), <TeamPage api={api} teamId={teamId} />);
-    fireEvent.change(await screen.findByLabelText('Role of me@example.test'), {
-      target: { value: 'editor' },
-    });
+    await choose('me@example.test', 'editor');
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Become an editor' }),
+      screen.getByRole('button', { name: 'Save the role of me@example.test' }),
     );
-    expect(
-      await screen.findAllByText(/A team must keep an admin/),
-    ).not.toHaveLength(0);
+    const dialog = screen.getByRole('dialog', {
+      name: 'Stop being an admin of Web team?',
+    });
+    expect(called(route)).toBe(false);
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Become an editor' }),
+    );
+    expect(await within(dialog).findByText(/must keep an admin/)).toBeTruthy();
+    expect(screen.getAllByText(/must keep an admin/)).toHaveLength(1);
   });
 
   it('confirms removing someone, naming them', async () => {
@@ -936,12 +1084,16 @@ describe('moving a site', () => {
     const moved = teamSite();
     const { api, bodyOf } = fakeServer({ [transfer]: ok(moved) });
     let after: Site | undefined;
+    let where = '';
     inScope(
       scope('admin'),
       <MoveSiteCard
         api={api}
         site={ownSite()}
-        onMoved={(site) => (after = site)}
+        onMoved={(site, to) => {
+          after = site;
+          where = to;
+        }}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Move site' }));
@@ -949,6 +1101,7 @@ describe('moving a site', () => {
     expect(within(dialog).getByText(/group and tags are cleared/)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Move site' }));
     await waitFor(() => expect(after).toEqual(moved));
+    expect(where).toBe('Web team');
     expect(bodyOf(transfer)).toEqual({ to: { kind: 'team', id: teamId } });
   });
 
@@ -1267,6 +1420,53 @@ describe('the site page', () => {
   });
 });
 
+describe('the whole app on a site’s page', () => {
+  const me = {
+    owner: { id: ownerId, email: 'me@example.test', createdAt: now },
+    credential: 'session',
+    scopes: ['deploy', 'manage'],
+  };
+  const routes = (site: Site) => ({
+    'GET /api/v0/me': ok(me),
+    'GET /api/v0/teams': list(team('admin')),
+    'GET /api/v0/team-invitations': list(),
+    'GET /api/v0/sites/docs': ok(site),
+    'GET /api/v0/sites/docs/policies': list(),
+    'GET /api/v0/sites/docs/deploys': list(),
+    'GET /api/v0/groups': list(),
+    'GET /api/v0/tags': list(),
+  });
+  const reads = (calls: { route: string }[]) =>
+    calls.filter((c) => c.route === 'GET /api/v0/sites/docs').length;
+
+  it('corrects the address without reading the site again', async () => {
+    window.history.replaceState(null, '', '/sites/docs/settings');
+    const { api, calls } = fakeServer(routes(teamSite()));
+    render(<App api={api} />);
+    await waitFor(() => expect(window.location.search).toBe(`?team=${teamId}`));
+    expect(
+      await screen.findByRole('button', { name: 'Switch team: Web team' }),
+    ).toBeTruthy();
+    expect(reads(calls)).toBe(1);
+  });
+
+  it('says a site moved, and reads it once, as the address follows it', async () => {
+    window.history.replaceState(null, '', '/sites/docs/settings');
+    const { api, calls } = fakeServer({
+      ...routes(ownSite()),
+      'POST /api/v0/sites/docs/transfer': ok(teamSite()),
+    });
+    render(<App api={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Move site' }));
+    const dialog = screen.getByRole('dialog', { name: 'Move docs?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Move site' }));
+    expect(await screen.findByText('Moved docs to Web team.')).toBeTruthy();
+    await waitFor(() => expect(window.location.search).toBe(`?team=${teamId}`));
+    expect(screen.getByText('Moved docs to Web team.')).toBeTruthy();
+    expect(reads(calls)).toBe(1);
+  });
+});
+
 describe('groups and tags', () => {
   const routes = {
     'GET /api/v0/groups': list({
@@ -1444,6 +1644,64 @@ describe('the screens that show one account', () => {
     expect(
       screen.queryByRole('menuitem', { name: /Move to group/ }),
     ).toBeNull();
+  });
+
+  it('reads the map of the chosen team', async () => {
+    window.history.replaceState(null, '', `/sites?view=map&team=${teamId}`);
+    const { api, calls } = fakeServer(routes);
+    inScope(scope('viewer'), <SitesPage api={api} />);
+    expect(
+      await screen.findByRole('heading', { level: 1, name: /map/i }),
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(calls.some((c) => c.route === 'GET /api/v0/site-counts')).toBe(
+        true,
+      ),
+    );
+    await waitFor(() =>
+      expect(calls.some((c) => c.route === 'GET /api/v0/site-summaries')).toBe(
+        true,
+      ),
+    );
+    scopedOnly(calls);
+  });
+
+  it('scopes every read of a filtered map', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      `/sites?view=map&q=do&team=${teamId}`,
+    );
+    const { api, calls } = fakeServer(routes);
+    inScope(scope('viewer'), <SitesPage api={api} />);
+    await waitFor(() =>
+      expect(
+        calls.filter((c) => c.route === 'GET /api/v0/site-summaries'),
+      ).toHaveLength(2),
+    );
+    scopedOnly(calls);
+  });
+
+  it('keeps a viewer’s grouping and sort on a phone, without Select', async () => {
+    const wide = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      window.history.replaceState(null, '', `/sites?team=${teamId}`);
+      const { api } = fakeServer(routes);
+      inScope(scope('viewer'), <SitesPage api={api} />);
+      expect(await screen.findByRole('link', { name: 'docs' })).toBeTruthy();
+      expect(document.querySelector('.sites-applied')?.textContent).toContain(
+        '·',
+      );
+      expect(screen.queryByRole('button', { name: 'Select' })).toBeNull();
+    } finally {
+      window.matchMedia = wide;
+    }
   });
 
   it('reads the analytics of the chosen team', async () => {
