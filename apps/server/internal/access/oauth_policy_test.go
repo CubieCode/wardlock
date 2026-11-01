@@ -16,11 +16,11 @@ func TestOAuthPolicyNeedsProviders(t *testing.T) {
 	o := h.owner()
 	h.site(o, "harbour")
 	list := &store.Allowlist{Emails: []string{"visitor@example.test"}}
-	_, err := h.svc.Set(t.Context(), o, "harbour", access.Rule{PathPrefix: "/", Visibility: store.Protected, OAuth: true, Allowlist: list})
+	_, err := h.svc.Set(t.Context(), store.ActorFor(o), "harbour", access.Rule{PathPrefix: "/", Visibility: store.Protected, OAuth: true, Allowlist: list})
 	if !errors.Is(err, access.ErrInvalidPolicy) {
 		t.Fatalf("OAuth without providers: %v", err)
 	}
-	_, err = h.svc.Set(t.Context(), o, "harbour", access.Rule{PathPrefix: "/", Visibility: store.Public, OAuth: true})
+	_, err = h.svc.Set(t.Context(), store.ActorFor(o), "harbour", access.Rule{PathPrefix: "/", Visibility: store.Public, OAuth: true})
 	if !errors.Is(err, access.ErrInvalidPolicy) {
 		t.Fatalf("public policy with OAuth: %v", err)
 	}

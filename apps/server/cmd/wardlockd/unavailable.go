@@ -110,7 +110,7 @@ func (w *unavailableWatch) remember(ctx context.Context, siteID string) {
 	}
 	var hosts []string
 	for after := ""; ; {
-		page, err := w.domains.List(ctx, site.OwnerID, site.ID, after, 200)
+		page, err := w.domains.List(ctx, store.ActorFor(site.OwnerID), site.ID, after, 200)
 		if err != nil {
 			w.log.Error("list domains of an unavailable site", slog.String("site_id", siteID), slog.Any("error", err))
 			return

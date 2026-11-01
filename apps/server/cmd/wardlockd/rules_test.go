@@ -172,7 +172,7 @@ func TestRulesWithAccessThroughTheEdge(t *testing.T) {
 
 		cookie := e.p.visit(visit{target: withT("/", e.token), header: html}).sessionCookie()
 		reached(t, "session", e.p.visit(visit{target: "/old", cookie: cookie}), 302, "/internal/")
-		_, fresh, err := e.p.acc.RotateLink(t.Context(), e.p.owner.ID, "docs", e.l.PublicID)
+		_, fresh, err := e.p.acc.RotateLink(t.Context(), store.ActorFor(e.p.owner.ID), "docs", e.l.PublicID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -186,7 +186,7 @@ func TestRulesWithAccessThroughTheEdge(t *testing.T) {
 			r.noRules(t, name)
 		}
 		reached(t, "rotated", e.p.visit(visit{target: "/old", header: bearer(fresh)}), 302, "/internal/")
-		if err := e.p.acc.RevokeLink(t.Context(), e.p.owner.ID, "docs", e.l.PublicID); err != nil {
+		if err := e.p.acc.RevokeLink(t.Context(), store.ActorFor(e.p.owner.ID), "docs", e.l.PublicID); err != nil {
 			t.Fatal(err)
 		}
 		r = e.p.visit(visit{target: "/old", header: bearer(fresh)})
@@ -278,7 +278,7 @@ func TestRulesWithAccessThroughTheEdge(t *testing.T) {
 			{Headers: &[]store.HeaderRule{{Path: "/.Wardlock/*", Set: map[string]string{"X-Frame-Options": "DENY"}}}},
 		} {
 			m.Files = []store.DeployFile{{Path: "index.html", SHA256: hashOf("x"), Size: 1}}
-			if _, _, err := e.p.deploys.Create(t.Context(), e.p.owner.ID, "docs", m); err == nil {
+			if _, _, err := e.p.deploys.Create(t.Context(), store.ActorFor(e.p.owner.ID), "docs", m); err == nil {
 				t.Fatalf("rules under /.wardlock/ accepted: %+v", m)
 			}
 		}
@@ -336,16 +336,16 @@ func TestRulesFollowTheActiveDeploy(t *testing.T) {
 		for path, body := range files {
 			m.Files = append(m.Files, store.DeployFile{Path: path, SHA256: hashOf(body), Size: int64(len(body))})
 		}
-		d, _, err := p.deploys.Create(ctx, p.owner.ID, "docs", m)
+		d, _, err := p.deploys.Create(ctx, store.ActorFor(p.owner.ID), "docs", m)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, f := range m.Files {
-			if err := p.deploys.Upload(ctx, p.owner.ID, "docs", d.ID, f.SHA256, strings.NewReader(files[f.Path])); err != nil {
+			if err := p.deploys.Upload(ctx, store.ActorFor(p.owner.ID), "docs", d.ID, f.SHA256, strings.NewReader(files[f.Path])); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if _, _, err := p.deploys.Activate(ctx, p.owner.ID, "docs", d.ID); err != nil {
+		if _, _, err := p.deploys.Activate(ctx, store.ActorFor(p.owner.ID), "docs", d.ID); err != nil {
 			t.Fatal(err)
 		}
 		return d.ID
@@ -381,7 +381,7 @@ func TestRulesFollowTheActiveDeploy(t *testing.T) {
 		location string
 		owned    bool
 	}{{"", 404, "", false}, {withY, 307, "/mockup-y/", true}} {
-		if _, _, err := p.deploys.Rollback(ctx, p.owner.ID, "docs", step.to); err != nil {
+		if _, _, err := p.deploys.Rollback(ctx, store.ActorFor(p.owner.ID), "docs", step.to); err != nil {
 			t.Fatal(err)
 		}
 		check("rollback to "+step.to, step.code, step.location, step.owned)

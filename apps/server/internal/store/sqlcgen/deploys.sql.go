@@ -14,8 +14,8 @@ import (
 )
 
 const createDeploy = `-- name: CreateDeploy :exec
-INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, immutable_assets, created_at, activated_at, path_prefix, base_deploy_id, redirects, headers, preview, preview_lifetime_days)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+INSERT INTO deploys (id, site_id, message, file_count, total_size, spa, immutable_assets, created_at, activated_at, path_prefix, base_deploy_id, redirects, headers, preview, preview_lifetime_days, created_by, created_by_token)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
 `
 
 type CreateDeployParams struct {
@@ -34,6 +34,8 @@ type CreateDeployParams struct {
 	Headers             sql.NullString
 	Preview             sql.NullString
 	PreviewLifetimeDays sql.NullInt64
+	CreatedBy           sql.NullString
+	CreatedByToken      sql.NullString
 }
 
 func (q *Queries) CreateDeploy(ctx context.Context, arg CreateDeployParams) error {
@@ -53,6 +55,8 @@ func (q *Queries) CreateDeploy(ctx context.Context, arg CreateDeployParams) erro
 		arg.Headers,
 		arg.Preview,
 		arg.PreviewLifetimeDays,
+		arg.CreatedBy,
+		arg.CreatedByToken,
 	)
 	return err
 }
@@ -98,7 +102,7 @@ func (q *Queries) DeleteDeploy(ctx context.Context, arg DeleteDeployParams) (int
 }
 
 const getDeploy = `-- name: GetDeploy :one
-SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers, deploys.preview, deploys.preview_lifetime_days, deploys.preview_activated_at
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers, deploys.preview, deploys.preview_lifetime_days, deploys.preview_activated_at, deploys.created_by, deploys.created_by_token
 FROM deploys JOIN sites ON sites.id = deploys.site_id
 WHERE deploys.id = ?1 AND deploys.site_id = ?2 AND sites.owner_id = ?3
 `
@@ -126,6 +130,8 @@ type GetDeployRow struct {
 	Preview             sql.NullString
 	PreviewLifetimeDays sql.NullInt64
 	PreviewActivatedAt  sql.NullInt64
+	CreatedBy           sql.NullString
+	CreatedByToken      sql.NullString
 }
 
 func (q *Queries) GetDeploy(ctx context.Context, arg GetDeployParams) (GetDeployRow, error) {
@@ -148,6 +154,8 @@ func (q *Queries) GetDeploy(ctx context.Context, arg GetDeployParams) (GetDeploy
 		&i.Preview,
 		&i.PreviewLifetimeDays,
 		&i.PreviewActivatedAt,
+		&i.CreatedBy,
+		&i.CreatedByToken,
 	)
 	return i, err
 }
@@ -252,7 +260,7 @@ func (q *Queries) ListDeployFiles(ctx context.Context, deployID string) ([]ListD
 }
 
 const listDeploys = `-- name: ListDeploys :many
-SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers, deploys.preview, deploys.preview_lifetime_days, deploys.preview_activated_at
+SELECT deploys.id, deploys.site_id, deploys.message, deploys.file_count, deploys.total_size, deploys.spa, deploys.immutable_assets, deploys.created_at, deploys.activated_at, deploys.path_prefix, deploys.base_deploy_id, deploys.redirects, deploys.headers, deploys.preview, deploys.preview_lifetime_days, deploys.preview_activated_at, deploys.created_by, deploys.created_by_token
 FROM deploys JOIN sites ON sites.id = deploys.site_id
 WHERE deploys.site_id = ?1 AND sites.owner_id = ?2
   AND (deploys.created_at < ?3
@@ -286,6 +294,8 @@ type ListDeploysRow struct {
 	Preview             sql.NullString
 	PreviewLifetimeDays sql.NullInt64
 	PreviewActivatedAt  sql.NullInt64
+	CreatedBy           sql.NullString
+	CreatedByToken      sql.NullString
 }
 
 // Newest first, strictly before the cursor (created_at, id); the first page
@@ -322,6 +332,8 @@ func (q *Queries) ListDeploys(ctx context.Context, arg ListDeploysParams) ([]Lis
 			&i.Preview,
 			&i.PreviewLifetimeDays,
 			&i.PreviewActivatedAt,
+			&i.CreatedBy,
+			&i.CreatedByToken,
 		); err != nil {
 			return nil, err
 		}

@@ -33,8 +33,8 @@ func tagBody(t store.Tag) Tag {
 }
 
 // siteBodyWithTags is siteBody with the site's tags looked up.
-func (s *Server) siteBodyWithTags(ctx context.Context, owner string, site store.Site) (Site, error) {
-	tags, err := s.Sites.TagIDs(ctx, owner, site)
+func (s *Server) siteBodyWithTags(ctx context.Context, actor store.Actor, site store.Site) (Site, error) {
+	tags, err := s.Sites.TagIDs(ctx, actor, site)
 	if err != nil {
 		return Site{}, err
 	}
@@ -44,12 +44,12 @@ func (s *Server) siteBodyWithTags(ctx context.Context, owner string, site store.
 var missingBody = fail(http.StatusBadRequest, "invalid_request", "The request body is required.", "")
 
 // ListGroups lists the owner's groups by name.
-func (s *Server) ListGroups(ctx context.Context, _ ListGroupsRequestObject) (ListGroupsResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+func (s *Server) ListGroups(ctx context.Context, req ListGroupsRequestObject) (ListGroupsResponseObject, error) {
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListGroupsdefaultJSONResponse(*unauthenticated), nil
 	}
-	groups, err := s.Sites.ListGroups(ctx, owner)
+	groups, err := s.Sites.ListGroups(ctx, actor, deref(req.Params.Team))
 	if err != nil {
 		return nil, err
 	}
@@ -62,14 +62,14 @@ func (s *Server) ListGroups(ctx context.Context, _ ListGroupsRequestObject) (Lis
 
 // CreateGroup creates a group.
 func (s *Server) CreateGroup(ctx context.Context, req CreateGroupRequestObject) (CreateGroupResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return CreateGroupdefaultJSONResponse(*unauthenticated), nil
 	}
 	if req.Body == nil {
 		return CreateGroupdefaultJSONResponse(*missingBody), nil
 	}
-	g, err := s.Sites.CreateGroup(ctx, owner, req.Body.Name, deref(req.Body.Note))
+	g, err := s.Sites.CreateGroup(ctx, actor, deref(req.Params.Team), req.Body.Name, deref(req.Body.Note))
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -82,14 +82,14 @@ func (s *Server) CreateGroup(ctx context.Context, req CreateGroupRequestObject) 
 
 // UpdateGroup renames a group or changes its note.
 func (s *Server) UpdateGroup(ctx context.Context, req UpdateGroupRequestObject) (UpdateGroupResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return UpdateGroupdefaultJSONResponse(*unauthenticated), nil
 	}
 	if req.Body == nil {
 		return UpdateGroupdefaultJSONResponse(*missingBody), nil
 	}
-	g, err := s.Sites.UpdateGroup(ctx, owner, req.GroupId, req.Body.Name, req.Body.Note)
+	g, err := s.Sites.UpdateGroup(ctx, actor, req.GroupId, req.Body.Name, req.Body.Note)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -102,11 +102,11 @@ func (s *Server) UpdateGroup(ctx context.Context, req UpdateGroupRequestObject) 
 
 // DeleteGroup deletes a group; its sites become ungrouped.
 func (s *Server) DeleteGroup(ctx context.Context, req DeleteGroupRequestObject) (DeleteGroupResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return DeleteGroupdefaultJSONResponse(*unauthenticated), nil
 	}
-	if err := s.Sites.DeleteGroup(ctx, owner, req.GroupId); err != nil {
+	if err := s.Sites.DeleteGroup(ctx, actor, req.GroupId); err != nil {
 		f, err := failed(err)
 		if f == nil {
 			return nil, err
@@ -117,12 +117,12 @@ func (s *Server) DeleteGroup(ctx context.Context, req DeleteGroupRequestObject) 
 }
 
 // ListTags lists the owner's tags by name.
-func (s *Server) ListTags(ctx context.Context, _ ListTagsRequestObject) (ListTagsResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+func (s *Server) ListTags(ctx context.Context, req ListTagsRequestObject) (ListTagsResponseObject, error) {
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListTagsdefaultJSONResponse(*unauthenticated), nil
 	}
-	tags, err := s.Sites.ListTags(ctx, owner)
+	tags, err := s.Sites.ListTags(ctx, actor, deref(req.Params.Team))
 	if err != nil {
 		return nil, err
 	}
@@ -135,14 +135,14 @@ func (s *Server) ListTags(ctx context.Context, _ ListTagsRequestObject) (ListTag
 
 // CreateTag creates a tag.
 func (s *Server) CreateTag(ctx context.Context, req CreateTagRequestObject) (CreateTagResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return CreateTagdefaultJSONResponse(*unauthenticated), nil
 	}
 	if req.Body == nil {
 		return CreateTagdefaultJSONResponse(*missingBody), nil
 	}
-	t, err := s.Sites.CreateTag(ctx, owner, req.Body.Name, colour(req.Body.Colour))
+	t, err := s.Sites.CreateTag(ctx, actor, deref(req.Params.Team), req.Body.Name, colour(req.Body.Colour))
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -155,14 +155,14 @@ func (s *Server) CreateTag(ctx context.Context, req CreateTagRequestObject) (Cre
 
 // UpdateTag renames a tag or changes its colour.
 func (s *Server) UpdateTag(ctx context.Context, req UpdateTagRequestObject) (UpdateTagResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return UpdateTagdefaultJSONResponse(*unauthenticated), nil
 	}
 	if req.Body == nil {
 		return UpdateTagdefaultJSONResponse(*missingBody), nil
 	}
-	t, err := s.Sites.UpdateTag(ctx, owner, req.TagId, req.Body.Name, colour(req.Body.Colour))
+	t, err := s.Sites.UpdateTag(ctx, actor, req.TagId, req.Body.Name, colour(req.Body.Colour))
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -175,11 +175,11 @@ func (s *Server) UpdateTag(ctx context.Context, req UpdateTagRequestObject) (Upd
 
 // DeleteTag deletes a tag and removes it from its sites.
 func (s *Server) DeleteTag(ctx context.Context, req DeleteTagRequestObject) (DeleteTagResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return DeleteTagdefaultJSONResponse(*unauthenticated), nil
 	}
-	if err := s.Sites.DeleteTag(ctx, owner, req.TagId); err != nil {
+	if err := s.Sites.DeleteTag(ctx, actor, req.TagId); err != nil {
 		f, err := failed(err)
 		if f == nil {
 			return nil, err
@@ -192,7 +192,7 @@ func (s *Server) DeleteTag(ctx context.Context, req DeleteTagRequestObject) (Del
 // SetSiteOrganisation sets one site's group and tags. A deploy-scoped
 // token may call it (V5.15); it never creates a group or tag.
 func (s *Server) SetSiteOrganisation(ctx context.Context, req SetSiteOrganisationRequestObject) (SetSiteOrganisationResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return SetSiteOrganisationdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -202,7 +202,7 @@ func (s *Server) SetSiteOrganisation(ctx context.Context, req SetSiteOrganisatio
 	if req.Body.TagIds == nil {
 		return SetSiteOrganisationdefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_request", "tagIds is required; send [] for no tags.", "tagIds")), nil
 	}
-	site, err := s.Sites.SetOrganisation(ctx, owner, req.Site, deref(req.Body.GroupId), req.Body.TagIds)
+	site, err := s.Sites.SetOrganisation(ctx, actor, req.Site, deref(req.Body.GroupId), req.Body.TagIds)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -210,7 +210,7 @@ func (s *Server) SetSiteOrganisation(ctx context.Context, req SetSiteOrganisatio
 		}
 		return SetSiteOrganisationdefaultJSONResponse(*f), nil
 	}
-	body, err := s.siteBodyWithTags(ctx, owner, site)
+	body, err := s.siteBodyWithTags(ctx, actor, site)
 	if err != nil {
 		return nil, err
 	}
@@ -219,11 +219,11 @@ func (s *Server) SetSiteOrganisation(ctx context.Context, req SetSiteOrganisatio
 
 // PinSite pins a site.
 func (s *Server) PinSite(ctx context.Context, req PinSiteRequestObject) (PinSiteResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return PinSitedefaultJSONResponse(*unauthenticated), nil
 	}
-	body, f, err := s.setPinned(ctx, owner, req.Site, true)
+	body, f, err := s.setPinned(ctx, actor, req.Site, true)
 	if f != nil || err != nil {
 		if f == nil {
 			return nil, err
@@ -235,11 +235,11 @@ func (s *Server) PinSite(ctx context.Context, req PinSiteRequestObject) (PinSite
 
 // UnpinSite unpins a site.
 func (s *Server) UnpinSite(ctx context.Context, req UnpinSiteRequestObject) (UnpinSiteResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return UnpinSitedefaultJSONResponse(*unauthenticated), nil
 	}
-	body, f, err := s.setPinned(ctx, owner, req.Site, false)
+	body, f, err := s.setPinned(ctx, actor, req.Site, false)
 	if f != nil || err != nil {
 		if f == nil {
 			return nil, err
@@ -249,20 +249,20 @@ func (s *Server) UnpinSite(ctx context.Context, req UnpinSiteRequestObject) (Unp
 	return UnpinSite200JSONResponse(body), nil
 }
 
-func (s *Server) setPinned(ctx context.Context, owner, name string, pinned bool) (Site, *failure, error) {
-	site, err := s.Sites.SetPinned(ctx, owner, name, pinned)
+func (s *Server) setPinned(ctx context.Context, actor store.Actor, name string, pinned bool) (Site, *failure, error) {
+	site, err := s.Sites.SetPinned(ctx, actor, name, pinned)
 	if err != nil {
 		f, err := failed(err)
 		return Site{}, f, err
 	}
-	body, err := s.siteBodyWithTags(ctx, owner, site)
+	body, err := s.siteBodyWithTags(ctx, actor, site)
 	return body, nil, err
 }
 
 // OrganiseSites changes many sites at once, all or nothing, and answers
 // their organisation from before.
 func (s *Server) OrganiseSites(ctx context.Context, req OrganiseSitesRequestObject) (OrganiseSitesResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return OrganiseSitesdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -274,7 +274,7 @@ func (s *Server) OrganiseSites(ctx context.Context, req OrganiseSitesRequestObje
 		return OrganiseSitesdefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_request", "Send groupId or ungroup, not both.", "ungroup")), nil
 	}
 	b := sitesBulk(body)
-	prior, err := s.Sites.Organise(ctx, owner, body.Sites, b)
+	prior, err := s.Sites.Organise(ctx, actor, deref(req.Params.Team), body.Sites, b)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {

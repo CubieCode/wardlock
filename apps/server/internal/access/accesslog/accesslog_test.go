@@ -453,7 +453,7 @@ func TestMalformedEntriesDoNotLoseTheBatch(t *testing.T) {
 	if err := db.Owners().Create(t.Context(), owner); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Sites().Create(t.Context(), site, store.Quotas{}); err != nil {
+	if err := db.Sites().Create(t.Context(), store.ActorFor(site.OwnerID), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	w := accesslog.Start(accesslog.Config{Repo: db.AccessLog(), FlushInterval: time.Hour})
@@ -472,7 +472,7 @@ func TestMalformedEntriesDoNotLoseTheBatch(t *testing.T) {
 		w.Record(e)
 	}
 	closeWriter(t, w)
-	got, err := db.AccessLog().ListBySite(t.Context(), owner.ID, site.ID, store.AccessCursor{}, 100)
+	got, err := db.AccessLog().ListBySite(t.Context(), store.ActorFor(owner.ID), site.ID, store.AccessCursor{}, 100)
 	if err != nil || len(got) != 5 {
 		t.Fatalf("ListBySite() = %d entries, %v; want 5", len(got), err)
 	}
@@ -491,7 +491,7 @@ func TestWithSQLite(t *testing.T) {
 	if err := db.Owners().Create(ctx, owner); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
+	if err := db.Sites().Create(ctx, store.ActorFor(site.OwnerID), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Millisecond)
@@ -504,11 +504,11 @@ func TestWithSQLite(t *testing.T) {
 	w.Record(viaLink)
 	closeWriter(t, w)
 
-	all, err := db.AccessLog().ListBySite(ctx, owner.ID, site.ID, store.AccessCursor{}, 10)
+	all, err := db.AccessLog().ListBySite(ctx, store.ActorFor(owner.ID), site.ID, store.AccessCursor{}, 10)
 	if err != nil || len(all) != 2 {
 		t.Fatalf("ListBySite() = %v, %v; want 2 entries", all, err)
 	}
-	byLink, err := db.AccessLog().ListByLink(ctx, owner.ID, site.ID, "abcdefgh23", store.AccessCursor{}, 10)
+	byLink, err := db.AccessLog().ListByLink(ctx, store.ActorFor(owner.ID), site.ID, "abcdefgh23", store.AccessCursor{}, 10)
 	if err != nil || len(byLink) != 1 {
 		t.Fatalf("ListByLink() = %v, %v; want 1 entry", byLink, err)
 	}
@@ -519,7 +519,7 @@ func TestWithSQLite(t *testing.T) {
 	// A writer with 90-day retention prunes the old entry when it starts.
 	w = accesslog.Start(accesslog.Config{Repo: db.AccessLog(), Retention: 90 * 24 * time.Hour})
 	closeWriter(t, w)
-	all, err = db.AccessLog().ListBySite(ctx, owner.ID, site.ID, store.AccessCursor{}, 10)
+	all, err = db.AccessLog().ListBySite(ctx, store.ActorFor(owner.ID), site.ID, store.AccessCursor{}, 10)
 	if err != nil || len(all) != 1 || all[0].Path != "/guide" {
 		t.Fatalf("after retention ListBySite() = %v, %v; want only /guide", all, err)
 	}

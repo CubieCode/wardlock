@@ -38,23 +38,23 @@ type Preview struct {
 
 // Previews stores sites' previews. Their deploys are made with
 // Deploys.Create and go live as the preview with Deploys.Activate. Methods
-// that take ownerID match only that owner's sites; another owner's preview
+// that take an Actor match only sites the actor can see; another site's preview
 // is ErrNotFound, and so is one that has expired at now.
 type Previews interface {
-	// Get returns one of ownerID's site's previews by name.
-	Get(ctx context.Context, ownerID, siteID, name string, now time.Time) (Preview, error)
+	// Get returns one of the site's previews by name.
+	Get(ctx context.Context, actor Actor, siteID, name string, now time.Time) (Preview, error)
 	// List returns up to limit of the site's previews ordered by name,
 	// after afterName ("" for the first page).
-	List(ctx context.Context, ownerID, siteID, afterName string, limit int, now time.Time) ([]Preview, error)
-	// Delete removes one of ownerID's previews; its deploy is left for
+	List(ctx context.Context, actor Actor, siteID, afterName string, limit int, now time.Time) ([]Preview, error)
+	// Delete removes one of the site's previews; its deploy is left for
 	// garbage collection. A taken-down site's preview is ErrNotFound.
-	Delete(ctx context.Context, ownerID, siteID, name string, now time.Time) error
+	Delete(ctx context.Context, actor Actor, siteID, name string, now time.Time) error
 	// Promote makes the preview's deploy the site's active deploy in one
 	// transaction, stamping it with at as Deploys.Activate does; the
 	// preview keeps serving it. A path deploy whose base is no longer the
 	// site's active deploy is ErrStaleBase. changed is false when the
 	// deploy was already active.
-	Promote(ctx context.Context, ownerID, siteID, name string, at time.Time) (d Deploy, changed bool, err error)
+	Promote(ctx context.Context, actor Actor, siteID, name string, at time.Time) (d Deploy, changed bool, err error)
 	// SiteNameExists reports whether any site on the instance holds name,
 	// so a preview whose hostname label would be that site's is refused.
 	// Site names are public through DNS, so the answer reveals nothing.
@@ -82,7 +82,11 @@ func previewFrom(row sqlcgen.Preview) Preview {
 	}
 }
 
-func (r previewsRepo) Get(ctx context.Context, ownerID, siteID, name string, now time.Time) (Preview, error) {
+func (r previewsRepo) Get(ctx context.Context, actor Actor, siteID, name string, now time.Time) (Preview, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if err != nil {
+		return Preview{}, err
+	}
 	return getPreview(ctx, r.db.q, ownerID, siteID, name, now)
 }
 
@@ -94,7 +98,14 @@ func getPreview(ctx context.Context, q *sqlcgen.Queries, ownerID, siteID, name s
 	return previewFrom(row), nil
 }
 
-func (r previewsRepo) List(ctx context.Context, ownerID, siteID, afterName string, limit int, now time.Time) ([]Preview, error) {
+func (r previewsRepo) List(ctx context.Context, actor Actor, siteID, afterName string, limit int, now time.Time) ([]Preview, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
+	if errors.Is(err, ErrNotFound) {
+		return []Preview{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	rows, err := r.db.q.ListPreviews(ctx, sqlcgen.ListPreviewsParams{
 		SiteID: siteID, OwnerID: ownerID, Now: ms(now), AfterName: afterName, RowLimit: int64(limit),
 	})
@@ -108,20 +119,28 @@ func (r previewsRepo) List(ctx context.Context, ownerID, siteID, afterName strin
 	return out, nil
 }
 
-func (r previewsRepo) Delete(ctx context.Context, ownerID, siteID, name string, now time.Time) error {
+func (r previewsRepo) Delete(ctx context.Context, actor Actor, siteID, name string, now time.Time) error {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleEditor)
+	if err != nil {
+		return err
+	}
 	n, err := r.db.q.DeletePreview(ctx, sqlcgen.DeletePreviewParams{SiteID: siteID, Name: name, Now: ms(now), OwnerID: ownerID})
 	return rowsAffected("delete preview", n, err)
 }
 
-func (r previewsRepo) Promote(ctx context.Context, ownerID, siteID, name string, at time.Time) (Deploy, bool, error) {
+func (r previewsRepo) Promote(ctx context.Context, actor Actor, siteID, name string, at time.Time) (Deploy, bool, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleEditor)
+	if err != nil {
+		return Deploy{}, false, err
+	}
 	var d Deploy
 	changed := false
-	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
+	err = r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		p, err := getPreview(ctx, q, ownerID, siteID, name, at)
 		if err != nil {
 			return err
 		}
-		site, err := q.GetSite(ctx, sqlcgen.GetSiteParams{ID: siteID, OwnerID: ownerID})
+		site, err := q.GetSiteByID(ctx, siteID)
 		if err != nil {
 			return mapErr("get site", err)
 		}

@@ -135,13 +135,13 @@ func (s *Service) checkNewLink(n *NewLink) error {
 	return nil
 }
 
-// CreateLink creates a share link on ownerID's site called siteName and
+// CreateLink creates a share link on the actor's site called siteName and
 // returns it with its token, which is never available again.
-func (s *Service) CreateLink(ctx context.Context, ownerID, siteName string, n NewLink) (store.ShareLink, string, error) {
+func (s *Service) CreateLink(ctx context.Context, actor store.Actor, siteName string, n NewLink) (store.ShareLink, string, error) {
 	if err := s.checkNewLink(&n); err != nil {
 		return store.ShareLink{}, "", err
 	}
-	site, err := s.ownedSite(ctx, ownerID, siteName)
+	site, err := s.editableSite(ctx, actor, siteName)
 	if err != nil {
 		return store.ShareLink{}, "", err
 	}
@@ -150,10 +150,11 @@ func (s *Service) CreateLink(ctx context.Context, ownerID, siteName string, n Ne
 		ID: store.NewID(), SiteID: site.ID, PublicID: publicID, TokenHash: s.key.linkTokenHash(token),
 		Label: n.Label, PathPrefix: n.PathPrefix, CreatedAt: s.now(), MaxUses: n.MaxUses,
 	}
+	l.CreatedBy, l.CreatedByToken = actor.MadeBy()
 	if !n.ExpiresAt.IsZero() {
 		l.ExpiresAt = n.ExpiresAt.UTC().Truncate(time.Millisecond)
 	}
-	err = s.c.Links.Create(ctx, ownerID, l)
+	err = s.c.Links.Create(ctx, actor, l)
 	if errors.Is(err, store.ErrNotFound) {
 		return store.ShareLink{}, "", fmt.Errorf("create share link: %w", ErrNotFound)
 	}
@@ -168,16 +169,16 @@ func (s *Service) CreateLink(ctx context.Context, ownerID, siteName string, n Ne
 	return l, token, nil
 }
 
-// ListLinks returns up to limit of the unrevoked links of ownerID's site
+// ListLinks returns up to limit of the unrevoked links of the actor's site
 // called siteName, newest first, after the link (beforeCreated, beforeID);
 // a zero beforeID starts at the newest.
-func (s *Service) ListLinks(ctx context.Context, ownerID, siteName string, beforeCreated time.Time, beforeID string, limit int) ([]store.ShareLink, error) {
-	site, err := s.ownedSite(ctx, ownerID, siteName)
+func (s *Service) ListLinks(ctx context.Context, actor store.Actor, siteName string, beforeCreated time.Time, beforeID string, limit int) ([]store.ShareLink, error) {
+	site, err := s.ownedSite(ctx, actor, siteName)
 	if err != nil {
 		return nil, err
 	}
 	ls, err := s.c.Links.List(ctx, store.ShareLinkQuery{
-		OwnerID: ownerID, SiteID: site.ID, BeforeCreated: beforeCreated, BeforeID: beforeID, Limit: limit,
+		Actor: actor, SiteID: site.ID, BeforeCreated: beforeCreated, BeforeID: beforeID, Limit: limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list share links: %w", err)
@@ -185,19 +186,19 @@ func (s *Service) ListLinks(ctx context.Context, ownerID, siteName string, befor
 	return ls, nil
 }
 
-// RevokeLink revokes the link publicID on ownerID's site called siteName.
+// RevokeLink revokes the link publicID on the actor's site called siteName.
 // The token and every session it created stop working on their next
 // request. A missing, already revoked or another owner's link is
 // ErrNotFound.
-func (s *Service) RevokeLink(ctx context.Context, ownerID, siteName, publicID string) error {
-	site, err := s.ownedSite(ctx, ownerID, siteName)
+func (s *Service) RevokeLink(ctx context.Context, actor store.Actor, siteName, publicID string) error {
+	site, err := s.ownedSite(ctx, actor, siteName)
 	if err != nil {
 		return err
 	}
 	if !validPublicID(publicID) {
 		return fmt.Errorf("revoke share link: %w", ErrNotFound)
 	}
-	err = s.c.Links.Revoke(ctx, ownerID, site.ID, publicID, s.now())
+	err = s.c.Links.Revoke(ctx, actor, site.ID, publicID, s.now())
 	if errors.Is(err, store.ErrNotFound) {
 		return fmt.Errorf("revoke share link: %w", ErrNotFound)
 	}
@@ -216,12 +217,12 @@ func (s *Service) RevokeLink(ctx context.Context, ownerID, siteName, publicID st
 	return nil
 }
 
-// RotateLink gives the link publicID on ownerID's site called siteName a new
+// RotateLink gives the link publicID on the actor's site called siteName a new
 // secret, keeping its public ID, label, scope, expiry and use count, and
 // returns the new token. The old token and every session it created stop
 // working on their next request.
-func (s *Service) RotateLink(ctx context.Context, ownerID, siteName, publicID string) (store.ShareLink, string, error) {
-	site, err := s.ownedSite(ctx, ownerID, siteName)
+func (s *Service) RotateLink(ctx context.Context, actor store.Actor, siteName, publicID string) (store.ShareLink, string, error) {
+	site, err := s.ownedSite(ctx, actor, siteName)
 	if err != nil {
 		return store.ShareLink{}, "", err
 	}
@@ -229,7 +230,7 @@ func (s *Service) RotateLink(ctx context.Context, ownerID, siteName, publicID st
 		return store.ShareLink{}, "", fmt.Errorf("rotate share link: %w", ErrNotFound)
 	}
 	token := withSecret(publicID)
-	l, err := s.c.Links.Rotate(ctx, ownerID, site.ID, publicID, s.key.linkTokenHash(token), s.now())
+	l, err := s.c.Links.Rotate(ctx, actor, site.ID, publicID, s.key.linkTokenHash(token), s.now())
 	if errors.Is(err, store.ErrNotFound) {
 		return store.ShareLink{}, "", fmt.Errorf("rotate share link: %w", ErrNotFound)
 	}
@@ -248,14 +249,14 @@ type LoggedAccess struct {
 }
 
 // LinkAccessLog returns up to limit of the access-log entries of the link
-// publicID on ownerID's site called siteName, newest first, before the
+// publicID on the actor's site called siteName, newest first, before the
 // cursor. A revoked link's entries are still listed; a missing link, or one
 // on another site or of another owner, is ErrNotFound.
-func (s *Service) LinkAccessLog(ctx context.Context, ownerID, siteName, publicID string, before store.AccessCursor, limit int) ([]LoggedAccess, error) {
+func (s *Service) LinkAccessLog(ctx context.Context, actor store.Actor, siteName, publicID string, before store.AccessCursor, limit int) ([]LoggedAccess, error) {
 	if s.c.AccessLog == nil {
 		return nil, errors.New("link access log: no access log configured")
 	}
-	site, err := s.ownedSite(ctx, ownerID, siteName)
+	site, err := s.ownedSite(ctx, actor, siteName)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +270,7 @@ func (s *Service) LinkAccessLog(ctx context.Context, ownerID, siteName, publicID
 	if err != nil {
 		return nil, fmt.Errorf("link access log: %w", err)
 	}
-	entries, err := s.c.AccessLog.ListByLink(ctx, ownerID, site.ID, publicID, before, limit)
+	entries, err := s.c.AccessLog.ListByLink(ctx, actor, site.ID, publicID, before, limit)
 	if err != nil {
 		return nil, fmt.Errorf("link access log: %w", err)
 	}
@@ -280,20 +281,20 @@ func (s *Service) LinkAccessLog(ctx context.Context, ownerID, siteName, publicID
 	return out, nil
 }
 
-// SiteAccessLog returns up to limit of the access-log entries of ownerID's
+// SiteAccessLog returns up to limit of the access-log entries of the actor's
 // site called siteName, newest first, before the cursor, each labelled with
 // its share link's label (revoked links included). Only the site that has
 // the name now is read, so a torn-down site's entries stay out of reach even
 // after its name is reused. A missing or foreign site is ErrNotFound.
-func (s *Service) SiteAccessLog(ctx context.Context, ownerID, siteName string, before store.AccessCursor, limit int) ([]LoggedAccess, error) {
+func (s *Service) SiteAccessLog(ctx context.Context, actor store.Actor, siteName string, before store.AccessCursor, limit int) ([]LoggedAccess, error) {
 	if s.c.AccessLog == nil {
 		return nil, errors.New("site access log: no access log configured")
 	}
-	site, err := s.ownedSite(ctx, ownerID, siteName)
+	site, err := s.ownedSite(ctx, actor, siteName)
 	if err != nil {
 		return nil, err
 	}
-	entries, err := s.c.AccessLog.ListBySite(ctx, ownerID, site.ID, before, limit)
+	entries, err := s.c.AccessLog.ListBySite(ctx, actor, site.ID, before, limit)
 	if err != nil {
 		return nil, fmt.Errorf("site access log: %w", err)
 	}

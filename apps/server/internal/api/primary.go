@@ -14,14 +14,14 @@ import (
 
 // SetPrimaryHost makes one of the site's served hostnames its primary.
 func (s *Server) SetPrimaryHost(ctx context.Context, req SetPrimaryHostRequestObject) (SetPrimaryHostResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return SetPrimaryHostdefaultJSONResponse(*unauthenticated), nil
 	}
 	if req.Body == nil || req.Body.Host == "" {
 		return SetPrimaryHostdefaultJSONResponse(*fail(http.StatusBadRequest, "invalid_request", "host is required.", "host")), nil
 	}
-	site, err := s.Sites.SetPrimaryHost(ctx, owner, req.Site, req.Body.Host)
+	site, err := s.Sites.SetPrimaryHost(ctx, actor, req.Site, req.Body.Host)
 	if err != nil {
 		f, err := domainFailed(err)
 		if f == nil {
@@ -29,7 +29,7 @@ func (s *Server) SetPrimaryHost(ctx context.Context, req SetPrimaryHostRequestOb
 		}
 		return SetPrimaryHostdefaultJSONResponse(*f), nil
 	}
-	body, err := s.siteBodyWithTags(ctx, owner, site)
+	body, err := s.siteBodyWithTags(ctx, actor, site)
 	if err != nil {
 		return nil, err
 	}
@@ -38,11 +38,11 @@ func (s *Server) SetPrimaryHost(ctx context.Context, req SetPrimaryHostRequestOb
 
 // ClearPrimaryHost leaves the site with no primary hostname.
 func (s *Server) ClearPrimaryHost(ctx context.Context, req ClearPrimaryHostRequestObject) (ClearPrimaryHostResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ClearPrimaryHostdefaultJSONResponse(*unauthenticated), nil
 	}
-	site, err := s.Sites.ClearPrimaryHost(ctx, owner, req.Site)
+	site, err := s.Sites.ClearPrimaryHost(ctx, actor, req.Site)
 	if err != nil {
 		f, err := domainFailed(err)
 		if f == nil {
@@ -50,7 +50,7 @@ func (s *Server) ClearPrimaryHost(ctx context.Context, req ClearPrimaryHostReque
 		}
 		return ClearPrimaryHostdefaultJSONResponse(*f), nil
 	}
-	body, err := s.siteBodyWithTags(ctx, owner, site)
+	body, err := s.siteBodyWithTags(ctx, actor, site)
 	if err != nil {
 		return nil, err
 	}

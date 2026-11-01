@@ -54,7 +54,7 @@ func groupKey(name string) string {
 
 // groups lists all of the owner's groups, by name.
 func (c *conn) groups(ctx context.Context) ([]apiclient.Group, error) {
-	res, err := c.api.ListGroupsWithResponse(ctx, c.auth)
+	res, err := c.api.ListGroupsWithResponse(ctx, nil, c.auth)
 	if err != nil {
 		return nil, c.unreachable(ctx, err)
 	}
@@ -66,7 +66,7 @@ func (c *conn) groups(ctx context.Context) ([]apiclient.Group, error) {
 
 // tags lists all of the owner's tags, by name.
 func (c *conn) tags(ctx context.Context) ([]apiclient.Tag, error) {
-	res, err := c.api.ListTagsWithResponse(ctx, c.auth)
+	res, err := c.api.ListTagsWithResponse(ctx, nil, c.auth)
 	if err != nil {
 		return nil, c.unreachable(ctx, err)
 	}
@@ -333,7 +333,7 @@ func siteOrganise(ctx context.Context, a *app, args []string) error {
 			body.RemoveTagIds = ptr(tagIDs(found))
 		}
 	}
-	res, err := c.api.OrganiseSitesWithResponse(ctx, body, c.auth)
+	res, err := c.api.OrganiseSitesWithResponse(ctx, nil, body, c.auth)
 	if err != nil {
 		return c.unreachable(ctx, err)
 	}
@@ -485,7 +485,7 @@ func pinSites(ctx context.Context, a *app, args []string, pin bool) error {
 	if err != nil {
 		return err
 	}
-	res, err := c.api.OrganiseSitesWithResponse(ctx, apiclient.OrganiseSitesRequest{Sites: names, Pinned: &pin}, c.auth)
+	res, err := c.api.OrganiseSitesWithResponse(ctx, nil, apiclient.OrganiseSitesRequest{Sites: names, Pinned: &pin}, c.auth)
 	if err != nil {
 		return c.unreachable(ctx, err)
 	}

@@ -26,7 +26,7 @@ func policiesContract(t *testing.T, open Opener) {
 		s, other := f.site(o).ID, f.site(o).ID
 		docs := f.validPolicy(s)
 		docs.PathPrefix = "/docs/"
-		f.must(f.r.Policies.Create(t.Context(), o, docs))
+		f.must(f.r.Policies.Create(t.Context(), store.ActorFor(o), docs))
 		def := f.policy(o, s)
 		f.policy(o, other)
 		got, err := f.r.Policies.ForSite(t.Context(), s)
@@ -48,6 +48,7 @@ func policiesContract(t *testing.T, open Opener) {
 		s := f.site(o).ID
 		p := f.validPolicy(s)
 		f.must(f.r.Policies.EnsureDefault(t.Context(), p))
+		p.CreatedBy = "" // nobody chose the default a site starts with
 		again := f.validPolicy(s)
 		again.Visibility, again.LinksEnabled = store.Public, false
 		f.must(f.r.Policies.EnsureDefault(t.Context(), again))
@@ -69,14 +70,14 @@ func policiesContract(t *testing.T, open Opener) {
 		for _, prefix := range []string{"/", "/a/", "/b/", "/c/", "/d/"} {
 			p := f.validPolicy(s)
 			p.PathPrefix = prefix
-			f.must(f.r.Policies.Create(t.Context(), a, p))
+			f.must(f.r.Policies.Create(t.Context(), store.ActorFor(a), p))
 			want = append(want, p.ID)
 		}
 		f.policy(a, f.site(a).ID)
 		var got []string
 		after := ""
 		for range 4 {
-			page, err := f.r.Policies.List(t.Context(), a, s, after, 2)
+			page, err := f.r.Policies.List(t.Context(), store.ActorFor(a), s, after, 2)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -91,7 +92,7 @@ func policiesContract(t *testing.T, open Opener) {
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("List pages = %v, want %v", got, want)
 		}
-		page, err := f.r.Policies.List(t.Context(), b, s, "", 10)
+		page, err := f.r.Policies.List(t.Context(), store.ActorFor(b), s, "", 10)
 		if err != nil || len(page) != 0 {
 			t.Fatalf("owner B lists %+v, %v", page, err)
 		}
@@ -103,7 +104,7 @@ func policiesContract(t *testing.T, open Opener) {
 		s := f.site(a).ID
 		p := f.validPolicy(s)
 		p.PathPrefix, p.Version, p.CreatedAt = "/docs/", 7, time.Time{}
-		created, err := f.r.Policies.Set(t.Context(), a, p)
+		created, err := f.r.Policies.Set(t.Context(), store.ActorFor(a), p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -113,7 +114,7 @@ func policiesContract(t *testing.T, open Opener) {
 
 		same := p
 		same.ID, same.UpdatedAt = store.NewID(), now.Add(time.Hour)
-		got, err := f.r.Policies.Set(t.Context(), a, same)
+		got, err := f.r.Policies.Set(t.Context(), store.ActorFor(a), same)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +124,7 @@ func policiesContract(t *testing.T, open Opener) {
 
 		changed := same
 		changed.Visibility, changed.LinksEnabled = store.Public, false
-		got, err = f.r.Policies.Set(t.Context(), a, changed)
+		got, err = f.r.Policies.Set(t.Context(), store.ActorFor(a), changed)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -140,12 +141,12 @@ func policiesContract(t *testing.T, open Opener) {
 			t.Fatalf("stored %+v, want %+v", stored, want)
 		}
 
-		_, err = f.r.Policies.Set(t.Context(), b, changed)
+		_, err = f.r.Policies.Set(t.Context(), store.ActorFor(b), changed)
 		wantErr(t, err, store.ErrNotFound)
 		bad := changed
 		bad.Visibility = store.Public
 		bad.LinksEnabled = true
-		_, err = f.r.Policies.Set(t.Context(), a, bad)
+		_, err = f.r.Policies.Set(t.Context(), store.ActorFor(a), bad)
 		wantErr(t, err, store.ErrConstraint)
 	})
 	t.Run("SetOAuthAllowlist", func(t *testing.T) {
@@ -160,7 +161,7 @@ func policiesContract(t *testing.T, open Opener) {
 			q := f.validPolicy(s)
 			q.LinksEnabled, q.OAuthEnabled, q.UpdatedAt = false, true, at
 			mutate(&q)
-			return f.r.Policies.Set(ctx, a, q)
+			return f.r.Policies.Set(ctx, store.ActorFor(a), q)
 		}
 		// The OAuth method needs an entry of some kind; nothing is stored.
 		for name, mutate := range map[string]func(*store.Policy){
@@ -205,10 +206,10 @@ func policiesContract(t *testing.T, open Opener) {
 		p := f.policy(a, s)
 		sess := f.validSiteSession(s, p)
 		f.must(f.r.Sessions.CreateSite(t.Context(), sess))
-		wantErr(t, f.r.Policies.Delete(t.Context(), b, s, p.ID), store.ErrNotFound)
-		wantErr(t, f.r.Policies.Delete(t.Context(), a, f.site(a).ID, p.ID), store.ErrNotFound)
-		f.must(f.r.Policies.Delete(t.Context(), a, s, p.ID))
-		wantErr(t, f.r.Policies.Delete(t.Context(), a, s, p.ID), store.ErrNotFound)
+		wantErr(t, f.r.Policies.Delete(t.Context(), store.ActorFor(b), s, p.ID), store.ErrNotFound)
+		wantErr(t, f.r.Policies.Delete(t.Context(), store.ActorFor(a), f.site(a).ID, p.ID), store.ErrNotFound)
+		f.must(f.r.Policies.Delete(t.Context(), store.ActorFor(a), s, p.ID))
+		wantErr(t, f.r.Policies.Delete(t.Context(), store.ActorFor(a), s, p.ID), store.ErrNotFound)
 		_, err := f.r.Sessions.GetSiteByTokenHash(t.Context(), sess.TokenHash)
 		wantErr(t, err, store.ErrNotFound)
 	})
@@ -224,7 +225,9 @@ func policiesCreate(t *testing.T, open Opener) {
 			o := f.owner()
 			return owned{o.ID, f.validPolicy(f.site(o.ID).ID)}
 		},
-		func(f *fixture, v owned) error { return f.r.Policies.Create(f.t.Context(), v.ownerID, v.p) },
+		func(f *fixture, v owned) error {
+			return f.r.Policies.Create(f.t.Context(), store.ActorFor(v.ownerID), v.p)
+		},
 		[]insertCase[owned]{
 			{name: "valid"},
 			{name: "public", mutate: func(_ *fixture, v *owned) { v.p.Visibility, v.p.LinksEnabled = store.Public, false }},

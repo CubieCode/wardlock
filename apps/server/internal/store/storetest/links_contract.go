@@ -24,7 +24,7 @@ func linksContract(t *testing.T, open Opener) {
 		s := f.site(o.ID)
 		l := f.validLink(s.ID)
 		l.MaxUses, l.ExpiresAt, l.PathPrefix = 3, now.Add(time.Hour), "/docs/"
-		f.must(f.r.Links.Create(t.Context(), o.ID, l))
+		f.must(f.r.Links.Create(t.Context(), store.ActorFor(o.ID), l))
 		for name, get := range map[string]func() (store.ShareLink, error){
 			"by public ID": func() (store.ShareLink, error) { return f.r.Links.GetByPublicID(t.Context(), l.PublicID) },
 			"by ID":        func() (store.ShareLink, error) { return f.r.Links.Get(t.Context(), s.ID, l.ID) },
@@ -48,11 +48,11 @@ func linksContract(t *testing.T, open Opener) {
 		for i := range 5 {
 			l := f.validLink(s.ID)
 			l.CreatedAt = now.Add(time.Duration(i%3) * time.Minute)
-			f.must(f.r.Links.Create(t.Context(), o.ID, l))
+			f.must(f.r.Links.Create(t.Context(), store.ActorFor(o.ID), l))
 			want = append(want, l)
 		}
 		revoked := f.link(o.ID, s.ID)
-		f.must(f.r.Links.Revoke(t.Context(), o.ID, s.ID, revoked.PublicID, now))
+		f.must(f.r.Links.Revoke(t.Context(), store.ActorFor(o.ID), s.ID, revoked.PublicID, now))
 		f.link(o.ID, f.site(o.ID).ID) // another site's
 		slices.SortFunc(want, func(a, b store.ShareLink) int {
 			if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
@@ -61,7 +61,7 @@ func linksContract(t *testing.T, open Opener) {
 			return strings.Compare(b.ID, a.ID)
 		})
 		var got []store.ShareLink
-		q := store.ShareLinkQuery{OwnerID: o.ID, SiteID: s.ID, Limit: 2}
+		q := store.ShareLinkQuery{Actor: store.ActorFor(o.ID), SiteID: s.ID, Limit: 2}
 		for {
 			page, err := f.r.Links.List(t.Context(), q)
 			f.must(err)
@@ -74,7 +74,7 @@ func linksContract(t *testing.T, open Opener) {
 		if !slices.Equal(got, want) {
 			t.Fatalf("listed %v, want %v", got, want)
 		}
-		other, err := f.r.Links.List(t.Context(), store.ShareLinkQuery{OwnerID: f.owner().ID, SiteID: s.ID, Limit: 10})
+		other, err := f.r.Links.List(t.Context(), store.ShareLinkQuery{Actor: store.ActorFor(f.owner().ID), SiteID: s.ID, Limit: 10})
 		if err != nil || len(other) != 0 {
 			t.Fatalf("another owner listed %v, %v", other, err)
 		}
@@ -87,9 +87,9 @@ func linksContract(t *testing.T, open Opener) {
 		p := f.policy(o.ID, s.ID)
 		l := f.link(o.ID, s.ID)
 		sess := f.linkSession(s.ID, p, l)
-		wantErr(t, f.r.Links.Revoke(t.Context(), f.owner().ID, s.ID, l.PublicID, now), store.ErrNotFound)
-		wantErr(t, f.r.Links.Revoke(t.Context(), o.ID, f.site(o.ID).ID, l.PublicID, now), store.ErrNotFound)
-		f.must(f.r.Links.Revoke(t.Context(), o.ID, s.ID, l.PublicID, now.Add(time.Minute)))
+		wantErr(t, f.r.Links.Revoke(t.Context(), store.ActorFor(f.owner().ID), s.ID, l.PublicID, now), store.ErrNotFound)
+		wantErr(t, f.r.Links.Revoke(t.Context(), store.ActorFor(o.ID), f.site(o.ID).ID, l.PublicID, now), store.ErrNotFound)
+		f.must(f.r.Links.Revoke(t.Context(), store.ActorFor(o.ID), s.ID, l.PublicID, now.Add(time.Minute)))
 		got, err := f.r.Links.Get(t.Context(), s.ID, l.ID)
 		if err != nil || !got.RevokedAt.Equal(now.Add(time.Minute)) {
 			t.Fatalf("after revoke: %+v, %v", got, err)
@@ -98,7 +98,7 @@ func linksContract(t *testing.T, open Opener) {
 		if err != nil || !gotSess.RevokedAt.Equal(now.Add(time.Minute)) {
 			t.Fatalf("session after revoke: %+v, %v", gotSess, err)
 		}
-		wantErr(t, f.r.Links.Revoke(t.Context(), o.ID, s.ID, l.PublicID, now.Add(time.Hour)), store.ErrNotFound)
+		wantErr(t, f.r.Links.Revoke(t.Context(), store.ActorFor(o.ID), s.ID, l.PublicID, now.Add(time.Hour)), store.ErrNotFound)
 	})
 	t.Run("Rotate", func(t *testing.T) {
 		t.Parallel()
@@ -108,13 +108,13 @@ func linksContract(t *testing.T, open Opener) {
 		p := f.policy(o.ID, s.ID)
 		l := f.validLink(s.ID)
 		l.MaxUses, l.UseCount = 5, 2
-		f.must(f.r.Links.Create(t.Context(), o.ID, l))
+		f.must(f.r.Links.Create(t.Context(), store.ActorFor(o.ID), l))
 		sess := f.linkSession(s.ID, p, l)
 		hash := f.hash()
-		_, err := f.r.Links.Rotate(t.Context(), f.owner().ID, s.ID, l.PublicID, hash, now)
+		_, err := f.r.Links.Rotate(t.Context(), store.ActorFor(f.owner().ID), s.ID, l.PublicID, hash, now)
 		wantErr(t, err, store.ErrNotFound)
 		at := now.Add(time.Minute)
-		got, err := f.r.Links.Rotate(t.Context(), o.ID, s.ID, l.PublicID, hash, at)
+		got, err := f.r.Links.Rotate(t.Context(), store.ActorFor(o.ID), s.ID, l.PublicID, hash, at)
 		want := l
 		want.TokenHash, want.RotatedAt = hash, at
 		if err != nil || got != want {
@@ -124,8 +124,8 @@ func linksContract(t *testing.T, open Opener) {
 		if err != nil || !gotSess.RevokedAt.Equal(at) {
 			t.Fatalf("session after rotate: %+v, %v", gotSess, err)
 		}
-		f.must(f.r.Links.Revoke(t.Context(), o.ID, s.ID, l.PublicID, at))
-		_, err = f.r.Links.Rotate(t.Context(), o.ID, s.ID, l.PublicID, f.hash(), at)
+		f.must(f.r.Links.Revoke(t.Context(), store.ActorFor(o.ID), s.ID, l.PublicID, at))
+		_, err = f.r.Links.Rotate(t.Context(), store.ActorFor(o.ID), s.ID, l.PublicID, f.hash(), at)
 		wantErr(t, err, store.ErrNotFound)
 	})
 	t.Run("Use", func(t *testing.T) {
@@ -135,7 +135,7 @@ func linksContract(t *testing.T, open Opener) {
 		s := f.site(o.ID)
 		l := f.validLink(s.ID)
 		l.MaxUses, l.ExpiresAt = 2, now.Add(time.Hour)
-		f.must(f.r.Links.Create(t.Context(), o.ID, l))
+		f.must(f.r.Links.Create(t.Context(), store.ActorFor(o.ID), l))
 		wantErr(t, f.r.Links.Use(t.Context(), l.ID, f.hash(), now), store.ErrNotFound)
 		wantErr(t, f.r.Links.Use(t.Context(), l.ID, l.TokenHash, now.Add(time.Hour)), store.ErrNotFound)
 		f.must(f.r.Links.Use(t.Context(), l.ID, l.TokenHash, now))
@@ -149,7 +149,7 @@ func linksContract(t *testing.T, open Opener) {
 		for range 3 {
 			f.must(f.r.Links.Use(t.Context(), unlimited.ID, unlimited.TokenHash, now))
 		}
-		f.must(f.r.Links.Revoke(t.Context(), o.ID, s.ID, unlimited.PublicID, now))
+		f.must(f.r.Links.Revoke(t.Context(), store.ActorFor(o.ID), s.ID, unlimited.PublicID, now))
 		wantErr(t, f.r.Links.Use(t.Context(), unlimited.ID, unlimited.TokenHash, now), store.ErrNotFound)
 	})
 	t.Run("CreateSession", func(t *testing.T) {
@@ -160,7 +160,7 @@ func linksContract(t *testing.T, open Opener) {
 		p := f.policy(o.ID, s.ID)
 		l := f.validLink(s.ID)
 		l.ExpiresAt = now.Add(time.Hour)
-		f.must(f.r.Links.Create(t.Context(), o.ID, l))
+		f.must(f.r.Links.Create(t.Context(), store.ActorFor(o.ID), l))
 		sess := func() store.SiteSession {
 			v := f.validSiteSession(s.ID, p)
 			v.Method, v.ShareLinkID = store.SessionLink, l.ID
@@ -181,7 +181,7 @@ func linksContract(t *testing.T, open Opener) {
 		foreign.Method, foreign.ShareLinkID = store.SessionLink, l.ID
 		wantErr(t, f.r.Links.CreateSession(t.Context(), foreign, l.TokenHash), store.ErrNotFound)
 		// After a rotation the old hash creates nothing; the new one does.
-		rotated, err := f.r.Links.Rotate(t.Context(), o.ID, s.ID, l.PublicID, f.hash(), now)
+		rotated, err := f.r.Links.Rotate(t.Context(), store.ActorFor(o.ID), s.ID, l.PublicID, f.hash(), now)
 		f.must(err)
 		raced := sess()
 		wantErr(t, f.r.Links.CreateSession(t.Context(), raced, l.TokenHash), store.ErrNotFound)
@@ -189,7 +189,7 @@ func linksContract(t *testing.T, open Opener) {
 			t.Fatal("a refused session was stored")
 		}
 		f.must(f.r.Links.CreateSession(t.Context(), sess(), rotated.TokenHash))
-		f.must(f.r.Links.Revoke(t.Context(), o.ID, s.ID, l.PublicID, now))
+		f.must(f.r.Links.Revoke(t.Context(), store.ActorFor(o.ID), s.ID, l.PublicID, now))
 		wantErr(t, f.r.Links.CreateSession(t.Context(), sess(), rotated.TokenHash), store.ErrNotFound)
 	})
 	t.Run("Touch", func(t *testing.T) {
@@ -226,7 +226,9 @@ func linksCreate(t *testing.T, open Opener) {
 			o := f.owner()
 			return owned{o.ID, f.validLink(f.site(o.ID).ID)}
 		},
-		func(f *fixture, v owned) error { return f.r.Links.Create(f.t.Context(), v.ownerID, v.l) },
+		func(f *fixture, v owned) error {
+			return f.r.Links.Create(f.t.Context(), store.ActorFor(v.ownerID), v.l)
+		},
 		[]insertCase[owned]{
 			{name: "never expires"},
 			{name: "one-time, scoped, expiring", mutate: func(_ *fixture, v *owned) {
@@ -238,7 +240,7 @@ func linksCreate(t *testing.T, open Opener) {
 				o := f.owner()
 				other := f.validLink(f.site(o.ID).ID)
 				other.PublicID = v.l.PublicID
-				f.must(f.r.Links.Create(f.t.Context(), o.ID, other))
+				f.must(f.r.Links.Create(f.t.Context(), store.ActorFor(o.ID), other))
 			}, want: store.ErrConflict},
 			{name: "another owner's site", mutate: func(f *fixture, v *owned) { v.ownerID = f.owner().ID }, want: store.ErrNotFound},
 			{name: "short public ID", mutate: func(_ *fixture, v *owned) { v.l.PublicID = "abc" }, want: store.ErrConstraint},

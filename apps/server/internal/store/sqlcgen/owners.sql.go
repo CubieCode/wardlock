@@ -32,7 +32,7 @@ func (q *Queries) AddOwnerLoginCodeAttempt(ctx context.Context, arg AddOwnerLogi
 }
 
 const countOwners = `-- name: CountOwners :one
-SELECT COUNT(*) FROM owners
+SELECT COUNT(*) FROM owners WHERE kind = 'owner'
 `
 
 func (q *Queries) CountOwners(ctx context.Context) (int64, error) {
@@ -55,6 +55,8 @@ type CreateOwnerParams struct {
 	AcceptedAt sql.NullInt64
 }
 
+// Every query here that means a person reads kind = 'owner': a team's row
+// in owners is an account, never a principal (T7.1).
 func (q *Queries) CreateOwner(ctx context.Context, arg CreateOwnerParams) error {
 	_, err := q.db.ExecContext(ctx, createOwner,
 		arg.ID,
@@ -66,9 +68,11 @@ func (q *Queries) CreateOwner(ctx context.Context, arg CreateOwnerParams) error 
 	return err
 }
 
-const createOwnerLoginCode = `-- name: CreateOwnerLoginCode :exec
+const createOwnerLoginCode = `-- name: CreateOwnerLoginCode :execrows
 INSERT INTO owner_login_codes (id, owner_id, purpose, code_hash, attempts, created_at, expires_at, used_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+SELECT CAST(?1 AS TEXT), CAST(?2 AS TEXT), CAST(?3 AS TEXT), CAST(?4 AS TEXT),
+  CAST(?5 AS INTEGER), CAST(?6 AS INTEGER), CAST(?7 AS INTEGER), CAST(?8 AS INTEGER)
+WHERE NOT EXISTS (SELECT 1 FROM owners WHERE owners.id = ?2 AND owners.kind = 'team')
 `
 
 type CreateOwnerLoginCodeParams struct {
@@ -82,8 +86,10 @@ type CreateOwnerLoginCodeParams struct {
 	UsedAt    sql.NullInt64
 }
 
-func (q *Queries) CreateOwnerLoginCode(ctx context.Context, arg CreateOwnerLoginCodeParams) error {
-	_, err := q.db.ExecContext(ctx, createOwnerLoginCode,
+// Inserts nothing for a team: only a person holds a sign-in code. owner_id is
+// NULL for a setup code.
+func (q *Queries) CreateOwnerLoginCode(ctx context.Context, arg CreateOwnerLoginCodeParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, createOwnerLoginCode,
 		arg.ID,
 		arg.OwnerID,
 		arg.Purpose,
@@ -93,11 +99,14 @@ func (q *Queries) CreateOwnerLoginCode(ctx context.Context, arg CreateOwnerLogin
 		arg.ExpiresAt,
 		arg.UsedAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const getOwner = `-- name: GetOwner :one
-SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners WHERE id = ?1
+SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners WHERE id = ?1 AND kind = 'owner'
 `
 
 type GetOwnerRow struct {
@@ -124,7 +133,7 @@ func (q *Queries) GetOwner(ctx context.Context, id string) (GetOwnerRow, error) 
 }
 
 const getOwnerByEmail = `-- name: GetOwnerByEmail :one
-SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners WHERE email = ?1
+SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners WHERE email = ?1 AND kind = 'owner'
 `
 
 type GetOwnerByEmailRow struct {
@@ -208,7 +217,7 @@ func (q *Queries) LatestOwnerLoginCode(ctx context.Context, arg LatestOwnerLogin
 
 const listAllOwners = `-- name: ListAllOwners :many
 SELECT id, email, invited_by, created_at, accepted_at, suspended_at FROM owners
-WHERE email > ?1
+WHERE email > ?1 AND kind = 'owner'
 ORDER BY email
 LIMIT ?2
 `
@@ -260,7 +269,7 @@ func (q *Queries) ListAllOwners(ctx context.Context, arg ListAllOwnersParams) ([
 }
 
 const markOwnerAccepted = `-- name: MarkOwnerAccepted :exec
-UPDATE owners SET accepted_at = COALESCE(accepted_at, ?1) WHERE id = ?2
+UPDATE owners SET accepted_at = COALESCE(accepted_at, ?1) WHERE id = ?2 AND kind = 'owner'
 `
 
 type MarkOwnerAcceptedParams struct {
@@ -274,7 +283,7 @@ func (q *Queries) MarkOwnerAccepted(ctx context.Context, arg MarkOwnerAcceptedPa
 }
 
 const reinstateOwner = `-- name: ReinstateOwner :execrows
-UPDATE owners SET suspended_at = NULL WHERE id = ?1
+UPDATE owners SET suspended_at = NULL WHERE id = ?1 AND kind = 'owner'
 `
 
 func (q *Queries) ReinstateOwner(ctx context.Context, id string) (int64, error) {
@@ -312,7 +321,7 @@ func (q *Queries) RetireSetupCodes(ctx context.Context, usedAt sql.NullInt64) er
 }
 
 const suspendOwner = `-- name: SuspendOwner :execrows
-UPDATE owners SET suspended_at = COALESCE(suspended_at, ?1) WHERE id = ?2
+UPDATE owners SET suspended_at = COALESCE(suspended_at, ?1) WHERE id = ?2 AND kind = 'owner'
 `
 
 type SuspendOwnerParams struct {

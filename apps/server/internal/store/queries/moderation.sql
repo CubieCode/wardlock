@@ -66,6 +66,7 @@ FROM deploy_files
 JOIN sites ON (sites.active_deploy_id = deploy_files.deploy_id
   OR EXISTS (SELECT 1 FROM previews WHERE previews.site_id = sites.id AND previews.deploy_id = deploy_files.deploy_id))
 JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
 WHERE deploy_files.sha256 = sqlc.arg(sha256)
   AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
 LIMIT 1;
@@ -76,6 +77,7 @@ SELECT COUNT(*) FROM deploy_files
 JOIN sites ON (sites.active_deploy_id = deploy_files.deploy_id
   OR EXISTS (SELECT 1 FROM previews WHERE previews.site_id = sites.id AND previews.deploy_id = deploy_files.deploy_id))
 JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
 WHERE deploy_files.sha256 = sqlc.arg(sha256)
   AND owners.moderation_exempt = 0 AND owners.suspended_at IS NULL AND sites.taken_down_at IS NULL
   AND (lower(deploy_files.path) LIKE '%.html' OR lower(deploy_files.path) LIKE '%.htm'
@@ -135,12 +137,14 @@ ORDER BY checked_at, sha256;
 -- exempt or not, taken down or not: who is affected when the hash is
 -- withheld.
 -- name: ListModerationUses :many
-SELECT DISTINCT sites.id AS site_id, sites.name AS site_name, owners.id AS owner_id, owners.email AS owner_email, deploy_files.path,
+SELECT DISTINCT sites.id AS site_id, sites.name AS site_name, owners.id AS owner_id,
+  CAST(COALESCE('team ' || teams.name, owners.email) AS TEXT) AS owner_email, deploy_files.path,
   sites.taken_down_at, owners.suspended_at
 FROM deploy_files
 JOIN sites ON (sites.active_deploy_id = deploy_files.deploy_id
   OR EXISTS (SELECT 1 FROM previews WHERE previews.site_id = sites.id AND previews.deploy_id = deploy_files.deploy_id))
 JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
 WHERE deploy_files.sha256 = sqlc.arg(sha256)
 ORDER BY sites.name, deploy_files.path;
 
@@ -176,7 +180,7 @@ WHERE deploy_files.deploy_id = sqlc.arg(deploy_id);
 SELECT COUNT(*) FROM moderation_results WHERE next_attempt_at IS NOT NULL;
 
 -- name: SetOwnerModerationExempt :execrows
-UPDATE owners SET moderation_exempt = sqlc.arg(moderation_exempt) WHERE id = sqlc.arg(id);
+UPDATE owners SET moderation_exempt = sqlc.arg(moderation_exempt) WHERE id = sqlc.arg(id) AND kind = 'owner';
 
 -- name: GetOwnerModerationExempt :one
 SELECT moderation_exempt FROM owners WHERE id = sqlc.arg(id);

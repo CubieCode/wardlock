@@ -112,7 +112,7 @@ func (w *world) owner(name string) store.Owner {
 func (w *world) site(ownerID, name string) store.Site {
 	w.t.Helper()
 	s := store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: w.clock.Add(-90 * day)}
-	w.must(w.db.Sites().Create(w.t.Context(), s, store.Quotas{}))
+	w.must(w.db.Sites().Create(w.t.Context(), store.ActorFor(s.OwnerID), s, store.Quotas{}))
 	return s
 }
 
@@ -124,7 +124,7 @@ func (w *world) link(ownerID, siteID string, change func(*store.ShareLink)) stor
 		PathPrefix: "/", CreatedAt: w.clock.Add(-30 * day),
 	}
 	change(&l)
-	w.must(w.db.Links().Create(w.t.Context(), ownerID, l))
+	w.must(w.db.Links().Create(w.t.Context(), store.ActorFor(ownerID), l))
 	return l
 }
 
@@ -141,7 +141,7 @@ func (w *world) domain(ownerID, siteID, hostname string, change func(*store.Doma
 		ID: store.NewID(), SiteID: siteID, Hostname: hostname, Status: store.DomainPending,
 		VerificationToken: "verify-" + hostname, CreatedAt: w.clock.Add(-30 * day),
 	}
-	w.must(w.db.Domains().Create(w.t.Context(), ownerID, d))
+	w.must(w.db.Domains().Create(w.t.Context(), store.ActorFor(ownerID), d))
 	next := d
 	next.Status, next.LastCheckedAt, next.VerifiedAt = store.DomainActive, w.clock, w.clock.Add(-20*day)
 	change(&next)
@@ -172,9 +172,9 @@ func (w *world) preview(ownerID, siteID, name string, days int, at time.Time) {
 		ID: store.NewID(), SiteID: siteID, FileCount: 1, TotalSize: 5,
 		Preview: name, PreviewDays: &days, CreatedAt: at,
 	}
-	w.must(w.db.Deploys().Create(ctx, ownerID, d, []store.DeployFile{{Path: "index.html", SHA256: sha, Size: 5}}, store.Quotas{}))
-	w.must(w.db.Deploys().RecordUpload(ctx, ownerID, store.Blob{SHA256: sha, Size: 5, CreatedAt: at}))
-	_, err := w.db.Deploys().Activate(ctx, ownerID, siteID, d.ID, at)
+	w.must(w.db.Deploys().Create(ctx, store.ActorFor(ownerID), d, []store.DeployFile{{Path: "index.html", SHA256: sha, Size: 5}}, store.Quotas{}))
+	w.must(w.db.Deploys().RecordUpload(ctx, store.ActorFor(ownerID), ownerID, store.Blob{SHA256: sha, Size: 5, CreatedAt: at}))
+	_, err := w.db.Deploys().Activate(ctx, store.ActorFor(ownerID), siteID, d.ID, at)
 	w.must(err)
 }
 
@@ -360,7 +360,7 @@ func TestEventsThatDoNotFire(t *testing.T) {
 		happen func(w *world, o store.Owner, s store.Site)
 	}{
 		{"pending domain", func(w *world, o store.Owner, s store.Site) {
-			w.must(w.db.Domains().Create(w.t.Context(), o.ID, store.Domain{
+			w.must(w.db.Domains().Create(w.t.Context(), store.ActorFor(o.ID), store.Domain{
 				ID: store.NewID(), SiteID: s.ID, Hostname: "new.example.test", Status: store.DomainPending,
 				VerificationToken: "a-verification-token", CreatedAt: w.clock,
 			}))
@@ -587,6 +587,105 @@ func TestHeldForSuspendedOwnerIsDropped(t *testing.T) {
 	w.pass()
 	if got := w.box.subjects(); len(got) != 1 {
 		t.Fatalf("sent %q", got)
+	}
+}
+
+// teamSite is a team with admin as its admin and another admin, and a site with
+// two used-up links on it, so one pass queues a copy for each.
+func (w *world) teamSite(admin, second store.Owner) (store.Team, store.Site) {
+	w.t.Helper()
+	ctx := w.t.Context()
+	tm := store.Team{ID: store.NewID(), Name: "Web team", CreatedAt: w.clock.Add(-90 * day)}
+	w.must(w.db.Teams().Create(ctx, store.ActorFor(admin.ID), tm, 0))
+	w.must(w.db.Teams().ForceRole(ctx, tm.ID, second.ID, store.RoleAdmin, w.clock))
+	s := store.Site{ID: store.NewID(), OwnerID: tm.ID, Name: "docs", CreatedAt: w.clock.Add(-90 * day)}
+	w.must(w.db.Sites().Create(ctx, store.ActorFor(tm.ID), s, store.Quotas{}))
+	return tm, s
+}
+
+// queue finds the team's events and queues them without sending any: mail is
+// failing for this pass, as it would be for a row waiting on a retry.
+func (w *world) queue() {
+	w.t.Helper()
+	w.service().Detect(w.t.Context())
+}
+
+// Admins are chosen when a row is queued, so a row waiting to go is read again.
+func TestTeamEmailFollowsRolesAtSendTime(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		change func(w *world, tm store.Team, leaving store.Owner, actor store.Actor)
+	}{
+		{"demoted", func(w *world, tm store.Team, leaving store.Owner, actor store.Actor) {
+			w.must(w.db.Teams().SetRole(t.Context(), actor, tm.ID, leaving.ID, store.RoleViewer))
+		}},
+		{"removed", func(w *world, tm store.Team, leaving store.Owner, actor store.Actor) {
+			w.must(w.db.Teams().RemoveMember(t.Context(), actor, tm.ID, leaving.ID))
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			w := newWorld(t)
+			stays, leaving := w.owner("stays"), w.owner("leaving")
+			tm, s := w.teamSite(stays, leaving)
+			w.usedUpLink(tm.ID, s.ID, "First")
+			w.queue()
+			actor := store.Actor{OwnerID: stays.ID, Memberships: []store.Membership{{TeamID: tm.ID, Role: store.RoleAdmin}}}
+			c.change(w, tm, leaving, actor)
+			w.service().Deliver(t.Context())
+			got := w.box.subjects()
+			if len(got) != 1 || !strings.HasPrefix(got[0], stays.Email) {
+				t.Fatalf("sent %q, want only %s's", got, stays.Email)
+			}
+		})
+	}
+}
+
+func TestTeamEmailIsNotSentWhileSuspended(t *testing.T) {
+	w := newWorld(t)
+	a, b := w.owner("a"), w.owner("b")
+	tm, s := w.teamSite(a, b)
+	w.usedUpLink(tm.ID, s.ID, "First")
+	w.queue()
+	w.must(w.db.Teams().Suspend(t.Context(), tm.ID, w.clock))
+	w.service().Deliver(t.Context())
+	w.usedUpLink(tm.ID, s.ID, "Second")
+	w.queue()
+	w.service().Deliver(t.Context())
+	w.must(w.db.Teams().Reinstate(t.Context(), tm.ID))
+	w.service().Deliver(t.Context())
+	if got := w.box.subjects(); len(got) != 0 {
+		t.Fatalf("sent %q", got)
+	}
+}
+
+// A summary is built from what is held, and only what they may still hear.
+func TestTeamHeldEmailLeavesTheSummaryOnceTheyGo(t *testing.T) {
+	w := newWorld(t)
+	w.cap = 1
+	stays, leaving := w.owner("stays"), w.owner("leaving")
+	tm, s := w.teamSite(stays, leaving)
+	for _, label := range []string{"First", "Second", "Third"} {
+		w.usedUpLink(tm.ID, s.ID, label)
+	}
+	w.pass()
+	count := func(o store.Owner) (n int) {
+		for _, got := range w.box.subjects() {
+			if strings.HasPrefix(got, o.Email) {
+				n++
+			}
+		}
+		return n
+	}
+	if count(stays) != 1 || count(leaving) != 1 {
+		t.Fatalf("sent %q, want one each with the rest held", w.box.subjects())
+	}
+	actor := store.Actor{OwnerID: stays.ID, Memberships: []store.Membership{{TeamID: tm.ID, Role: store.RoleAdmin}}}
+	w.must(w.db.Teams().RemoveMember(t.Context(), actor, tm.ID, leaving.ID))
+	w.clock = w.clock.Add(2 * hour)
+	w.pass()
+	w.pass()
+	if count(stays) != 2 || count(leaving) != 1 {
+		t.Fatalf("sent %q, want a summary for the one who stayed only", w.box.subjects())
 	}
 }
 

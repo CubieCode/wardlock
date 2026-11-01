@@ -34,7 +34,7 @@ func (p *policyEdge) addDomain(site, hostname string, status store.DomainStatus)
 	if status != store.DomainPending {
 		d.LastCheckedAt, d.VerifiedAt = p.now(), p.now()
 	}
-	if err := p.db.Domains().Create(p.t.Context(), p.owner.ID, d); err != nil {
+	if err := p.db.Domains().Create(p.t.Context(), store.ActorFor(p.owner.ID), d); err != nil {
 		p.t.Fatal(err)
 	}
 	return d
@@ -66,9 +66,9 @@ func (p *policyEdge) setPrimary(site, primary string) {
 	svc := p.operatorSites(nil)
 	var err error
 	if primary == "" {
-		_, err = svc.ClearPrimaryHost(p.t.Context(), p.owner.ID, site)
+		_, err = svc.ClearPrimaryHost(p.t.Context(), store.ActorFor(p.owner.ID), site)
 	} else {
-		_, err = svc.SetPrimaryHost(p.t.Context(), p.owner.ID, site, primary)
+		_, err = svc.SetPrimaryHost(p.t.Context(), store.ActorFor(p.owner.ID), site, primary)
 	}
 	if err != nil {
 		p.t.Fatalf("primary %q: %v", primary, err)
@@ -183,7 +183,7 @@ func TestPrimaryHostThroughTheEdge(t *testing.T) {
 	serves(custom)
 
 	// Removed: no primary, for good.
-	if err := p.operatorSites(nil).RemoveDomain(t.Context(), p.owner.ID, "docs", recovered.Hostname); err != nil {
+	if err := p.operatorSites(nil).RemoveDomain(t.Context(), store.ActorFor(p.owner.ID), "docs", recovered.Hostname); err != nil {
 		t.Fatal(err)
 	}
 	serves(host)
@@ -301,7 +301,7 @@ func TestPrimaryHostUnavailableAndUnpublished(t *testing.T) {
 
 	unknown := p.visit(visit{host: "unknown.example.org", target: "/"})
 	empty := store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: "empty", CreatedAt: p.now()}
-	if err := p.db.Sites().Create(t.Context(), empty, store.Quotas{}); err != nil {
+	if err := p.db.Sites().Create(t.Context(), store.ActorFor(empty.OwnerID), empty, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	p.addDomain("empty", "empty.example.com", store.DomainActive)

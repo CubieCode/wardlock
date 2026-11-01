@@ -185,8 +185,27 @@ func (q *Queries) GetGroup(ctx context.Context, arg GetGroupParams) (SiteGroup, 
 	return i, err
 }
 
+const getGroupByID = `-- name: GetGroupByID :one
+SELECT id, owner_id, name, name_key, note, created_at FROM site_groups WHERE id = ?1
+`
+
+// By ID alone: the repository checks the group's account against the actor.
+func (q *Queries) GetGroupByID(ctx context.Context, id string) (SiteGroup, error) {
+	row := q.db.QueryRowContext(ctx, getGroupByID, id)
+	var i SiteGroup
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.NameKey,
+		&i.Note,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getSiteOrganisation = `-- name: GetSiteOrganisation :one
-SELECT id, group_id, pinned_at FROM sites
+SELECT id, group_id FROM sites
 WHERE name = ?1 AND owner_id = ?2
 `
 
@@ -196,16 +215,31 @@ type GetSiteOrganisationParams struct {
 }
 
 type GetSiteOrganisationRow struct {
-	ID       string
-	GroupID  sql.NullString
-	PinnedAt sql.NullInt64
+	ID      string
+	GroupID sql.NullString
 }
 
 func (q *Queries) GetSiteOrganisation(ctx context.Context, arg GetSiteOrganisationParams) (GetSiteOrganisationRow, error) {
 	row := q.db.QueryRowContext(ctx, getSiteOrganisation, arg.Name, arg.OwnerID)
 	var i GetSiteOrganisationRow
-	err := row.Scan(&i.ID, &i.GroupID, &i.PinnedAt)
+	err := row.Scan(&i.ID, &i.GroupID)
 	return i, err
+}
+
+const getSitePin = `-- name: GetSitePin :one
+SELECT pinned_at FROM site_pins WHERE owner_id = ?1 AND site_id = ?2
+`
+
+type GetSitePinParams struct {
+	OwnerID string
+	SiteID  string
+}
+
+func (q *Queries) GetSitePin(ctx context.Context, arg GetSitePinParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getSitePin, arg.OwnerID, arg.SiteID)
+	var pinned_at int64
+	err := row.Scan(&pinned_at)
+	return pinned_at, err
 }
 
 const getTag = `-- name: GetTag :one
@@ -220,6 +254,24 @@ type GetTagParams struct {
 
 func (q *Queries) GetTag(ctx context.Context, arg GetTagParams) (Tag, error) {
 	row := q.db.QueryRowContext(ctx, getTag, arg.ID, arg.OwnerID)
+	var i Tag
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.Colour,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getTagByID = `-- name: GetTagByID :one
+SELECT id, owner_id, name, colour, created_at FROM tags WHERE id = ?1
+`
+
+// By ID alone: the repository checks the tag's account against the actor.
+func (q *Queries) GetTagByID(ctx context.Context, id string) (Tag, error) {
+	row := q.db.QueryRowContext(ctx, getTagByID, id)
 	var i Tag
 	err := row.Scan(
 		&i.ID,
@@ -254,6 +306,38 @@ func (q *Queries) ListGroups(ctx context.Context, ownerID string) ([]SiteGroup, 
 			&i.Note,
 			&i.CreatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOwnerPins = `-- name: ListOwnerPins :many
+SELECT site_id, pinned_at FROM site_pins WHERE owner_id = ?1
+`
+
+type ListOwnerPinsRow struct {
+	SiteID   string
+	PinnedAt int64
+}
+
+func (q *Queries) ListOwnerPins(ctx context.Context, ownerID string) ([]ListOwnerPinsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOwnerPins, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOwnerPinsRow
+	for rows.Next() {
+		var i ListOwnerPinsRow
+		if err := rows.Scan(&i.SiteID, &i.PinnedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -340,24 +424,23 @@ func (q *Queries) ListTags(ctx context.Context, ownerID string) ([]Tag, error) {
 	return items, nil
 }
 
-const pinSite = `-- name: PinSite :execrows
-UPDATE sites SET pinned_at = COALESCE(pinned_at, ?1)
-WHERE id = ?2 AND owner_id = ?3
+const pinSite = `-- name: PinSite :exec
+INSERT INTO site_pins (owner_id, site_id, pinned_at)
+VALUES (?1, ?2, ?3)
+ON CONFLICT (owner_id, site_id) DO NOTHING
 `
 
 type PinSiteParams struct {
-	PinnedAt sql.NullInt64
-	SiteID   string
 	OwnerID  string
+	SiteID   string
+	PinnedAt int64
 }
 
+// Pins are personal (T7.1): owner_id is who pinned, not the site's account.
 // Pinning a pinned site keeps the first time.
-func (q *Queries) PinSite(ctx context.Context, arg PinSiteParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, pinSite, arg.PinnedAt, arg.SiteID, arg.OwnerID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+func (q *Queries) PinSite(ctx context.Context, arg PinSiteParams) error {
+	_, err := q.db.ExecContext(ctx, pinSite, arg.OwnerID, arg.SiteID, arg.PinnedAt)
+	return err
 }
 
 const removeSiteTag = `-- name: RemoveSiteTag :exec
@@ -424,21 +507,18 @@ func (q *Queries) TagColours(ctx context.Context, ownerID string) ([]int64, erro
 	return items, nil
 }
 
-const unpinSite = `-- name: UnpinSite :execrows
-UPDATE sites SET pinned_at = NULL WHERE id = ?1 AND owner_id = ?2
+const unpinSite = `-- name: UnpinSite :exec
+DELETE FROM site_pins WHERE owner_id = ?1 AND site_id = ?2
 `
 
 type UnpinSiteParams struct {
-	SiteID  string
 	OwnerID string
+	SiteID  string
 }
 
-func (q *Queries) UnpinSite(ctx context.Context, arg UnpinSiteParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, unpinSite, arg.SiteID, arg.OwnerID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+func (q *Queries) UnpinSite(ctx context.Context, arg UnpinSiteParams) error {
+	_, err := q.db.ExecContext(ctx, unpinSite, arg.OwnerID, arg.SiteID)
+	return err
 }
 
 const updateGroup = `-- name: UpdateGroup :execrows

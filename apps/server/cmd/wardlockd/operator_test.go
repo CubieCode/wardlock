@@ -72,12 +72,12 @@ func TestTakedownThroughTheEdge(t *testing.T) {
 	const custom = "www.example.com"
 	dns := sitestest.NewResolver(host)
 	svc := p.operatorSites(dns)
-	if _, err := svc.AddDomain(ctx, p.owner.ID, "docs", custom); err != nil {
+	if _, err := svc.AddDomain(ctx, store.ActorFor(p.owner.ID), "docs", custom); err != nil {
 		t.Fatal(err)
 	}
 	dns.CNAME(custom, host)
 	p.advance(time.Minute)
-	if d, err := svc.VerifyDomain(ctx, p.owner.ID, "docs", custom); err != nil || d.Status != store.DomainActive {
+	if d, err := svc.VerifyDomain(ctx, store.ActorFor(p.owner.ID), "docs", custom); err != nil || d.Status != store.DomainActive {
 		t.Fatalf("verify: %+v, %v", d, err)
 	}
 	pol := p.set("docs", "/", store.Protected, true)
@@ -131,13 +131,13 @@ func TestTakedownThroughTheEdge(t *testing.T) {
 		}
 		_ = rc.Close()
 	}
-	if _, _, err := p.deploys.Create(ctx, p.owner.ID, "docs", deploys.Manifest{}); !errors.Is(err, deploys.ErrSiteUnavailable) {
+	if _, _, err := p.deploys.Create(ctx, store.ActorFor(p.owner.ID), "docs", deploys.Manifest{}); !errors.Is(err, deploys.ErrSiteUnavailable) {
 		t.Fatalf("deploy to a taken-down site: %v", err)
 	}
-	if _, _, err := p.deploys.Rollback(ctx, p.owner.ID, "docs", ""); !errors.Is(err, deploys.ErrSiteUnavailable) {
+	if _, _, err := p.deploys.Rollback(ctx, store.ActorFor(p.owner.ID), "docs", ""); !errors.Is(err, deploys.ErrSiteUnavailable) {
 		t.Fatalf("rollback of a taken-down site: %v", err)
 	}
-	if err := svc.Delete(ctx, p.owner.ID, "docs"); !errors.Is(err, sites.ErrUnavailable) {
+	if err := svc.Delete(ctx, store.ActorFor(p.owner.ID), "docs"); !errors.Is(err, sites.ErrUnavailable) {
 		t.Fatalf("owner delete of a taken-down site: %v", err)
 	}
 	if _, err := svc.TearDown(ctx, "other"); !errors.Is(err, sites.ErrNotTakenDown) {
@@ -335,7 +335,7 @@ func TestAbuseReports(t *testing.T) {
 	site := p.publish("docs")
 	p.publish("other")
 	unpublished := store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: "drafts", CreatedAt: p.now()}
-	if err := p.db.Sites().Create(ctx, unpublished, store.Quotas{}); err != nil {
+	if err := p.db.Sites().Create(ctx, store.ActorFor(unpublished.OwnerID), unpublished, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	p.set("docs", "/internal/", store.Protected, true)
@@ -543,7 +543,7 @@ func TestAdminOperatorCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	site := store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "docs", CreatedAt: time.Now()}
-	if err := db.Sites().Create(t.Context(), site, store.Quotas{}); err != nil {
+	if err := db.Sites().Create(t.Context(), store.ActorFor(site.OwnerID), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -629,7 +629,7 @@ func TestUnpublishedTakenDownSiteLooksMissing(t *testing.T) {
 	p := newPolicyEdge(t)
 	ctx := t.Context()
 	drafts := store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: "drafts", CreatedAt: p.now()}
-	if err := p.db.Sites().Create(ctx, drafts, store.Quotas{}); err != nil {
+	if err := p.db.Sites().Create(ctx, store.ActorFor(drafts.OwnerID), drafts, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.operatorSites(sitestest.NewResolver()).TakeDown(ctx, "drafts"); err != nil {
@@ -675,7 +675,7 @@ func TestWatchRemovesTornDownCertificates(t *testing.T) {
 	dns := sitestest.NewResolver(host, "other.wardlock.localhost")
 	svc := p.operatorSites(dns)
 	for site, h := range map[string]string{"docs": "www.example.com", "other": "other.example.com"} {
-		if _, err := svc.AddDomain(ctx, p.owner.ID, site, h); err != nil {
+		if _, err := svc.AddDomain(ctx, store.ActorFor(p.owner.ID), site, h); err != nil {
 			t.Fatal(err)
 		}
 	}

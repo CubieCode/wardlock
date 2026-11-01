@@ -6,6 +6,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"math"
 	"time"
 
@@ -15,12 +16,17 @@ import (
 // ShareLink is a site's share link (wl_<public id>_<secret>). Only the HMAC of
 // the whole token is stored.
 type ShareLink struct {
-	ID             string
-	SiteID         string
-	PublicID       string
-	TokenHash      string
-	Label          string
-	PathPrefix     string
+	ID         string
+	SiteID     string
+	PublicID   string
+	TokenHash  string
+	Label      string
+	PathPrefix string
+	// CreatedBy is who made it: the owner, or for a team token's work the
+	// team, with CreatedByToken naming the token (T7.1). Read only: the
+	// repository records its actor.
+	CreatedBy      string
+	CreatedByToken string
 	CreatedAt      time.Time
 	ExpiresAt      time.Time // zero: never
 	MaxUses        int       // zero: unlimited
@@ -32,8 +38,8 @@ type ShareLink struct {
 
 // ShareLinkQuery selects one page of a site's unrevoked links, newest first.
 type ShareLinkQuery struct {
-	OwnerID string
-	SiteID  string
+	Actor  Actor
+	SiteID string
 	// BeforeCreated and BeforeID are the last row of the previous page;
 	// zero values start at the first page.
 	BeforeCreated time.Time
@@ -43,8 +49,8 @@ type ShareLinkQuery struct {
 
 // Links stores share links.
 type Links interface {
-	// Create adds l to one of ownerID's sites.
-	Create(ctx context.Context, ownerID string, l ShareLink) error
+	// Create adds l to a site the actor can edit.
+	Create(ctx context.Context, actor Actor, l ShareLink) error
 	// GetByPublicID finds a link by its public ID, whatever its state;
 	// callers compare the hash and check scope, expiry, uses and
 	// revocation. Instance-wide: the edge calls it for every site.
@@ -55,15 +61,15 @@ type Links interface {
 	// List returns one page of a site's unrevoked links. Another owner's
 	// site lists nothing.
 	List(ctx context.Context, q ShareLinkQuery) ([]ShareLink, error)
-	// Revoke revokes the link publicID on ownerID's site siteID and every
+	// Revoke revokes the link publicID on site siteID and every
 	// session it created. A missing, revoked or another owner's link is
 	// ErrNotFound.
-	Revoke(ctx context.Context, ownerID, siteID, publicID string, at time.Time) error
+	Revoke(ctx context.Context, actor Actor, siteID, publicID string, at time.Time) error
 	// Rotate replaces the token hash of the unrevoked link publicID on
-	// ownerID's site siteID, records at as its rotation time and revokes
+	// site siteID, records at as its rotation time and revokes
 	// every session it created, in one transaction. A missing, revoked or
 	// another owner's link is ErrNotFound.
-	Rotate(ctx context.Context, ownerID, siteID, publicID, tokenHash string, at time.Time) (ShareLink, error)
+	Rotate(ctx context.Context, actor Actor, siteID, publicID, tokenHash string, at time.Time) (ShareLink, error)
 	// Use spends one use of link id and records the access, provided its
 	// hash is still tokenHash and it is unrevoked, unexpired at at and has
 	// a use left. Otherwise it is ErrNotFound and nothing changes.
@@ -84,7 +90,12 @@ func (db *DB) Links() Links { return linksRepo{db} }
 
 type linksRepo struct{ db *DB }
 
-func (r linksRepo) Create(ctx context.Context, ownerID string, l ShareLink) error {
+func (r linksRepo) Create(ctx context.Context, actor Actor, l ShareLink) error {
+	ownerID, err := r.db.authorizeSite(ctx, actor, l.SiteID, RoleEditor)
+	if err != nil {
+		return err
+	}
+	by, token := actor.MadeBy()
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		if err := requireSite(ctx, q, ownerID, l.SiteID); err != nil {
 			return err
@@ -103,6 +114,8 @@ func (r linksRepo) Create(ctx context.Context, ownerID string, l ShareLink) erro
 			LastAccessedAt: nullMs(l.LastAccessedAt),
 			RotatedAt:      nullMs(l.RotatedAt),
 			RevokedAt:      nullMs(l.RevokedAt),
+			CreatedBy:      nullString(by),
+			CreatedByToken: nullString(token),
 		}))
 	})
 }
@@ -122,6 +135,8 @@ func shareLinkFromRow(row sqlcgen.ShareLink) ShareLink {
 		LastAccessedAt: fromNullMs(row.LastAccessedAt),
 		RotatedAt:      fromNullMs(row.RotatedAt),
 		RevokedAt:      fromNullMs(row.RevokedAt),
+		CreatedBy:      row.CreatedBy.String,
+		CreatedByToken: row.CreatedByToken.String,
 	}
 }
 
@@ -142,13 +157,20 @@ func (r linksRepo) Get(ctx context.Context, siteID, id string) (ShareLink, error
 }
 
 func (r linksRepo) List(ctx context.Context, q ShareLinkQuery) ([]ShareLink, error) {
+	ownerID, err := r.db.authorizeSite(ctx, q.Actor, q.SiteID, RoleViewer)
+	if errors.Is(err, ErrNotFound) {
+		return []ShareLink{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	before := int64(math.MaxInt64)
 	if q.BeforeID != "" {
 		before = ms(q.BeforeCreated)
 	}
 	rows, err := r.db.q.ListShareLinks(ctx, sqlcgen.ListShareLinksParams{
 		SiteID:        q.SiteID,
-		OwnerID:       q.OwnerID,
+		OwnerID:       ownerID,
 		BeforeCreated: before,
 		BeforeID:      q.BeforeID,
 		RowLimit:      int64(q.Limit),
@@ -163,7 +185,11 @@ func (r linksRepo) List(ctx context.Context, q ShareLinkQuery) ([]ShareLink, err
 	return out, nil
 }
 
-func (r linksRepo) Revoke(ctx context.Context, ownerID, siteID, publicID string, at time.Time) error {
+func (r linksRepo) Revoke(ctx context.Context, actor Actor, siteID, publicID string, at time.Time) error {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleEditor)
+	if err != nil {
+		return err
+	}
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		id, err := q.RevokeShareLink(ctx, sqlcgen.RevokeShareLinkParams{
 			RevokedAt: nullMs(at), SiteID: siteID, PublicID: publicID, OwnerID: ownerID,
@@ -177,9 +203,13 @@ func (r linksRepo) Revoke(ctx context.Context, ownerID, siteID, publicID string,
 	})
 }
 
-func (r linksRepo) Rotate(ctx context.Context, ownerID, siteID, publicID, tokenHash string, at time.Time) (ShareLink, error) {
+func (r linksRepo) Rotate(ctx context.Context, actor Actor, siteID, publicID, tokenHash string, at time.Time) (ShareLink, error) {
+	ownerID, err := r.db.authorizeSite(ctx, actor, siteID, RoleEditor)
+	if err != nil {
+		return ShareLink{}, err
+	}
 	var l ShareLink
-	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
+	err = r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		row, err := q.RotateShareLink(ctx, sqlcgen.RotateShareLinkParams{
 			TokenHash: tokenHash, RotatedAt: nullMs(at), SiteID: siteID, PublicID: publicID, OwnerID: ownerID,
 		})

@@ -152,7 +152,8 @@ func (q *Queries) ListOwnerSiteTags(ctx context.Context, ownerID string) ([]Site
 
 const listSiteSummaries = `-- name: ListSiteSummaries :many
 
-SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id, sites.pinned_at,
+SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name, owners.suspended_at AS owner_suspended_at,
   deploys.message AS deploy_message,
   policies.visibility, policies.links_enabled, policies.password_enabled, policies.email_enabled, policies.oauth_enabled,
   CAST((
@@ -172,6 +173,8 @@ SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.creat
     SELECT 1 FROM traffic_hours WHERE traffic_hours.site_id = sites.id AND traffic_hours.hour >= ?4
   ) THEN 1 ELSE 0 END AS BIGINT) AS active
 FROM sites
+JOIN owners ON owners.id = sites.owner_id
+LEFT JOIN teams ON teams.id = sites.owner_id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
 LEFT JOIN policies ON policies.site_id = sites.id AND policies.path_prefix = '/'
 WHERE sites.owner_id = ?5
@@ -187,24 +190,27 @@ type ListSiteSummariesParams struct {
 }
 
 type ListSiteSummariesRow struct {
-	ID              string
-	OwnerID         string
-	Name            string
-	ActiveDeployID  sql.NullString
-	CreatedAt       int64
-	ActivatedAt     sql.NullInt64
-	TakenDownAt     sql.NullInt64
-	GroupID         sql.NullString
-	PinnedAt        sql.NullInt64
-	DeployMessage   sql.NullString
-	Visibility      sql.NullString
-	LinksEnabled    sql.NullInt64
-	PasswordEnabled sql.NullInt64
-	EmailEnabled    sql.NullInt64
-	OauthEnabled    sql.NullInt64
-	WorkingLinks    int64
-	ExpiringLinks   int64
-	Active          int64
+	ID               string
+	OwnerID          string
+	Name             string
+	ActiveDeployID   sql.NullString
+	CreatedAt        int64
+	ActivatedAt      sql.NullInt64
+	TakenDownAt      sql.NullInt64
+	GroupID          sql.NullString
+	OwnerKind        string
+	OwnerEmail       string
+	TeamName         sql.NullString
+	OwnerSuspendedAt sql.NullInt64
+	DeployMessage    sql.NullString
+	Visibility       sql.NullString
+	LinksEnabled     sql.NullInt64
+	PasswordEnabled  sql.NullInt64
+	EmailEnabled     sql.NullInt64
+	OauthEnabled     sql.NullInt64
+	WorkingLinks     int64
+	ExpiringLinks    int64
+	Active           int64
 }
 
 // Site summaries (V5.5): one owner's sites with what the dashboard's lists,
@@ -241,7 +247,10 @@ func (q *Queries) ListSiteSummaries(ctx context.Context, arg ListSiteSummariesPa
 			&i.ActivatedAt,
 			&i.TakenDownAt,
 			&i.GroupID,
-			&i.PinnedAt,
+			&i.OwnerKind,
+			&i.OwnerEmail,
+			&i.TeamName,
+			&i.OwnerSuspendedAt,
 			&i.DeployMessage,
 			&i.Visibility,
 			&i.LinksEnabled,

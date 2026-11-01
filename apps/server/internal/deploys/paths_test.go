@@ -83,7 +83,7 @@ func (w *pathWorld) newOwner(email string) store.Owner {
 
 func (w *pathWorld) site(ownerID, name string) {
 	w.t.Helper()
-	if err := w.db.Sites().Create(w.t.Context(), store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: gcEpoch}, store.Quotas{}); err != nil {
+	if err := w.db.Sites().Create(w.t.Context(), store.ActorFor(store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: gcEpoch}.OwnerID), store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: gcEpoch}, store.Quotas{}); err != nil {
 		w.t.Fatal(err)
 	}
 }
@@ -103,12 +103,12 @@ func (w *pathWorld) manifest(files map[string]string) deploys.Manifest {
 // deploy and the hashes that were missing.
 func (w *pathWorld) create(ownerID, site string, m deploys.Manifest) (store.Deploy, []string, error) {
 	w.t.Helper()
-	d, missing, err := w.svc.Create(w.t.Context(), ownerID, site, m)
+	d, missing, err := w.svc.Create(w.t.Context(), store.ActorFor(ownerID), site, m)
 	if err != nil {
 		return d, nil, err
 	}
 	for _, h := range missing {
-		if err := w.svc.Upload(w.t.Context(), ownerID, site, d.ID, h, strings.NewReader(w.bodies[h])); err != nil {
+		if err := w.svc.Upload(w.t.Context(), store.ActorFor(ownerID), site, d.ID, h, strings.NewReader(w.bodies[h])); err != nil {
 			w.t.Fatal(err)
 		}
 	}
@@ -124,7 +124,7 @@ func (w *pathWorld) live(site, path string, files map[string]string) store.Deplo
 	if err != nil {
 		w.t.Fatalf("create %s %q: %v", site, path, err)
 	}
-	if _, d, err = w.svc.Activate(w.t.Context(), w.owner.ID, site, d.ID); err != nil {
+	if _, d, err = w.svc.Activate(w.t.Context(), store.ActorFor(w.owner.ID), site, d.ID); err != nil {
 		w.t.Fatalf("activate %s %q: %v", site, path, err)
 	}
 	return d
@@ -147,7 +147,7 @@ func (w *pathWorld) files(deployID string) map[string]store.DeployFile {
 // served returns the site's active deploy ID and its files as path to body.
 func (w *pathWorld) served(site string) (string, map[string]string) {
 	w.t.Helper()
-	s, err := w.db.Sites().GetByOwnerName(w.t.Context(), w.owner.ID, site)
+	s, err := w.db.Sites().GetByOwnerName(w.t.Context(), store.ActorFor(w.owner.ID), site)
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestPathDeployReplacesOnlyItsPrefix(t *testing.T) {
 	if d.PathPrefix != "/mockup-x/" || d.BaseDeployID != base.ID {
 		t.Errorf("deploy prefix %q base %q, want /mockup-x/ on %s", d.PathPrefix, d.BaseDeployID, base.ID)
 	}
-	if _, _, err := w.svc.Activate(t.Context(), w.owner.ID, "docs", d.ID); err != nil {
+	if _, _, err := w.svc.Activate(t.Context(), store.ActorFor(w.owner.ID), "docs", d.ID); err != nil {
 		t.Fatal(err)
 	}
 	got := w.files(d.ID)
@@ -218,7 +218,7 @@ func TestPathDeployReplacesOnlyItsPrefix(t *testing.T) {
 	if d.TotalSize != total {
 		t.Errorf("TotalSize = %d, want %d, the merged deploy's", d.TotalSize, total)
 	}
-	stored, err := w.db.Deploys().Get(t.Context(), w.owner.ID, d.SiteID, d.ID)
+	stored, err := w.db.Deploys().Get(t.Context(), store.ActorFor(w.owner.ID), d.SiteID, d.ID)
 	if err != nil || stored.PathPrefix != "/mockup-x/" {
 		t.Errorf("stored deploy prefix %q, %v", stored.PathPrefix, err)
 	}
@@ -246,7 +246,7 @@ func TestEmptyPathDeployRemovesThePrefix(t *testing.T) {
 	if d := w.live("mock", "/p/", nil); d.FileCount != 0 {
 		t.Errorf("FileCount = %d, want 0", d.FileCount)
 	}
-	if _, _, err := w.svc.Create(t.Context(), w.owner.ID, "mock", deploys.Manifest{}); !errors.Is(err, deploys.ErrInvalidManifest) {
+	if _, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "mock", deploys.Manifest{}); !errors.Is(err, deploys.ErrInvalidManifest) {
 		t.Errorf("empty full deploy: %v, want ErrInvalidManifest", err)
 	}
 }
@@ -272,7 +272,7 @@ func TestPathDeployFlagsFollowTheBase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := w.svc.Activate(t.Context(), w.owner.ID, "app", d.ID); err != nil {
+	if _, _, err := w.svc.Activate(t.Context(), store.ActorFor(w.owner.ID), "app", d.ID); err != nil {
 		t.Fatal(err)
 	}
 	inherited := w.live("app", "/x/", map[string]string{"a.html": "a"})
@@ -306,11 +306,11 @@ func TestStaleBaseIsRefusedAndRecreatingSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := w.svc.Activate(t.Context(), w.owner.ID, "docs", dx.ID); err != nil {
+	if _, _, err := w.svc.Activate(t.Context(), store.ActorFor(w.owner.ID), "docs", dx.ID); err != nil {
 		t.Fatal(err)
 	}
 	// Activating y now would drop x's files.
-	if _, _, err := w.svc.Activate(t.Context(), w.owner.ID, "docs", dy.ID); !errors.Is(err, deploys.ErrStaleBase) {
+	if _, _, err := w.svc.Activate(t.Context(), store.ActorFor(w.owner.ID), "docs", dy.ID); !errors.Is(err, deploys.ErrStaleBase) {
 		t.Fatalf("activate on a stale base: %v, want ErrStaleBase", err)
 	}
 	// What the CLI does: create it again, which uploads nothing, and activate.
@@ -321,7 +321,7 @@ func TestStaleBaseIsRefusedAndRecreatingSucceeds(t *testing.T) {
 	if len(missing) != 0 || retry.BaseDeployID != dx.ID {
 		t.Fatalf("retry missing %v base %q, want nothing on %s", missing, retry.BaseDeployID, dx.ID)
 	}
-	if _, _, err := w.svc.Activate(t.Context(), w.owner.ID, "docs", retry.ID); err != nil {
+	if _, _, err := w.svc.Activate(t.Context(), store.ActorFor(w.owner.ID), "docs", retry.ID); err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]string{"index.html": "home", "mockup-x/index.html": "x", "mockup-y/index.html": "y"}
@@ -351,7 +351,7 @@ func TestPathDeployLimitsCountTheMergedDeploy(t *testing.T) {
 	} {
 		m := w.manifest(tc.files)
 		m.Path = "/p/"
-		if _, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", m); !errors.Is(err, tc.err) {
+		if _, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", m); !errors.Is(err, tc.err) {
 			t.Errorf("%s: %v, want %v", tc.name, err, tc.err)
 		}
 	}
@@ -369,7 +369,7 @@ func TestPathDeployLimitsCountTheMergedDeploy(t *testing.T) {
 	m := w2.manifest(map[string]string{"index.html": "x"})
 	m.Path = "/x/"
 	var te *deploys.TargetError
-	if _, _, err := strict.Create(t.Context(), w2.owner.ID, "tools", m); !errors.Is(err, deploys.ErrBlockedType) || !errors.As(err, &te) || te.Target != "setup.exe" {
+	if _, _, err := strict.Create(t.Context(), store.ActorFor(w2.owner.ID), "tools", m); !errors.Is(err, deploys.ErrBlockedType) || !errors.As(err, &te) || te.Target != "setup.exe" {
 		t.Errorf("blocked file kept from the base: %v, want ErrBlockedType naming setup.exe", err)
 	}
 }
@@ -389,7 +389,7 @@ func TestPathDeployQuotas(t *testing.T) {
 	m = w.manifest(map[string]string{"new.html": strings.Repeat("n", 6)})
 	m.Path = "/p/"
 	var te *deploys.TargetError
-	if _, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", m); !errors.Is(err, deploys.ErrLimitExceeded) || !errors.As(err, &te) || te.Target != "files" {
+	if _, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", m); !errors.Is(err, deploys.ErrLimitExceeded) || !errors.As(err, &te) || te.Target != "files" {
 		t.Fatalf("over storage: %v, want the storage quota", err)
 	}
 	// Each path deploy counts towards the daily quota like any deploy.
@@ -399,7 +399,7 @@ func TestPathDeployQuotas(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.Path = "/r/"
-	if _, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", m); !errors.Is(err, deploys.ErrLimitExceeded) || !errors.As(err, &te) || te.Target != "deploys" {
+	if _, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", m); !errors.Is(err, deploys.ErrLimitExceeded) || !errors.As(err, &te) || te.Target != "deploys" {
 		t.Fatalf("fourth deploy in a day: %v, want the daily quota", err)
 	}
 }
@@ -419,7 +419,7 @@ func TestRollbackAcrossPathAndFullDeploys(t *testing.T) {
 		{full, map[string]string{"index.html": "v1"}},
 		{path, map[string]string{"index.html": "v1", "m/index.html": "mock"}},
 	} {
-		if _, _, err := w.svc.Rollback(t.Context(), w.owner.ID, "docs", step.to.ID); err != nil {
+		if _, _, err := w.svc.Rollback(t.Context(), store.ActorFor(w.owner.ID), "docs", step.to.ID); err != nil {
 			t.Fatal(err)
 		}
 		if id, served := w.served("docs"); id != step.to.ID || !maps.Equal(served, step.want) {
@@ -444,7 +444,7 @@ func TestPathDeployOwnerIsolation(t *testing.T) {
 	m.Path = "/x/"
 	// Another owner's site is as missing as one that does not exist.
 	for _, site := range []string{"alpha", "nowhere"} {
-		if _, _, err := w.svc.Create(t.Context(), other.ID, site, m); !errors.Is(err, deploys.ErrNotFound) {
+		if _, _, err := w.svc.Create(t.Context(), store.ActorFor(other.ID), site, m); !errors.Is(err, deploys.ErrNotFound) {
 			t.Errorf("create on %s: %v, want ErrNotFound", site, err)
 		}
 	}
@@ -455,7 +455,7 @@ func TestPathDeployOwnerIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, site := range []string{"alpha", "beta"} {
-		if _, _, err := w.svc.Activate(t.Context(), other.ID, site, d.ID); !errors.Is(err, deploys.ErrNotFound) {
+		if _, _, err := w.svc.Activate(t.Context(), store.ActorFor(other.ID), site, d.ID); !errors.Is(err, deploys.ErrNotFound) {
 			t.Errorf("activate on %s: %v, want ErrNotFound", site, err)
 		}
 	}
@@ -489,7 +489,7 @@ func TestPathDeployRejectsBadPaths(t *testing.T) {
 	} {
 		m := w.manifest(map[string]string{tc.file: "a"})
 		m.Path = tc.path
-		_, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", m)
+		_, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", m)
 		var te *deploys.TargetError
 		if !errors.Is(err, deploys.ErrInvalidPath) || !errors.As(err, &te) || te.Target != tc.target {
 			t.Errorf("%s: %v, want ErrInvalidPath with target %q", tc.name, err, tc.target)
@@ -498,7 +498,7 @@ func TestPathDeployRejectsBadPaths(t *testing.T) {
 	// The merged path is held to the length limit.
 	m := w.manifest(map[string]string{strings.Repeat("a", 1020): "a"})
 	m.Path = "/long/"
-	if _, _, err := w.svc.Create(t.Context(), w.owner.ID, "docs", m); !errors.Is(err, deploys.ErrInvalidPath) {
+	if _, _, err := w.svc.Create(t.Context(), store.ActorFor(w.owner.ID), "docs", m); !errors.Is(err, deploys.ErrInvalidPath) {
 		t.Errorf("merged path over 1024 bytes: %v, want ErrInvalidPath", err)
 	}
 }

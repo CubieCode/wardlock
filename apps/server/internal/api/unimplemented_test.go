@@ -26,6 +26,25 @@ import (
 // will need to attach a credential so protected operations reach the stub
 // rather than answering 401.
 var implemented = map[string]bool{
+	"ListTeams":             true,
+	"CreateTeam":            true,
+	"GetTeam":               true,
+	"UpdateTeam":            true,
+	"DeleteTeam":            true,
+	"ListTeamMembers":       true,
+	"SetTeamMemberRole":     true,
+	"RemoveTeamMember":      true,
+	"ListTeamInvitations":   true,
+	"InviteTeamMember":      true,
+	"DeleteTeamInvitation":  true,
+	"ListTeamTokens":        true,
+	"CreateTeamToken":       true,
+	"RevokeTeamToken":       true,
+	"ListMyTeamInvitations": true,
+	"AcceptTeamInvitation":  true,
+	"DeclineTeamInvitation": true,
+	"TransferSite":          true,
+
 	"GetHealth": true,
 
 	// Sites and deploys (C1.2).
@@ -153,6 +172,10 @@ var pathValues = map[string]string{
 	"preview":    "pr-42",
 	"webhookId":  "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e30",
 	"deliveryId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e31",
+
+	"teamId":       "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e90",
+	"ownerId":      "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e91",
+	"invitationId": "01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e92",
 }
 
 var pathParam = regexp.MustCompile(`\{(\w+)\}`)

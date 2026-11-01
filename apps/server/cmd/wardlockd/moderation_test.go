@@ -46,22 +46,22 @@ func (p *policyEdge) publishAs(ownerID, name string, spa bool, files map[string]
 func (p *policyEdge) publishWith(ownerID, name string, m deploys.Manifest, files map[string]string) {
 	t, ctx := p.t, p.t.Context()
 	t.Helper()
-	if err := p.db.Sites().Create(ctx, store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: p.now()}, store.Quotas{}); err != nil {
+	if err := p.db.Sites().Create(ctx, store.ActorFor(store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: p.now()}.OwnerID), store.Site{ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: p.now()}, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	for path, body := range files {
 		m.Files = append(m.Files, store.DeployFile{Path: path, SHA256: hashOf(body), Size: int64(len(body))})
 	}
-	d, _, err := p.deploys.Create(ctx, ownerID, name, m)
+	d, _, err := p.deploys.Create(ctx, store.ActorFor(ownerID), name, m)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range m.Files {
-		if err := p.deploys.Upload(ctx, ownerID, name, d.ID, f.SHA256, strings.NewReader(files[f.Path])); err != nil {
+		if err := p.deploys.Upload(ctx, store.ActorFor(ownerID), name, d.ID, f.SHA256, strings.NewReader(files[f.Path])); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := p.deploys.Activate(ctx, ownerID, name, d.ID); err != nil {
+	if _, _, err := p.deploys.Activate(ctx, store.ActorFor(ownerID), name, d.ID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -148,12 +148,12 @@ func TestContentScreeningThroughTheEdge(t *testing.T) {
 	const custom = "www.example.com"
 	dns := sitestest.NewResolver(host)
 	svc := p.operatorSites(dns)
-	if _, err := svc.AddDomain(ctx, p.owner.ID, "docs", custom); err != nil {
+	if _, err := svc.AddDomain(ctx, store.ActorFor(p.owner.ID), "docs", custom); err != nil {
 		t.Fatal(err)
 	}
 	dns.CNAME(custom, host)
 	p.advance(time.Minute)
-	if d, err := svc.VerifyDomain(ctx, p.owner.ID, "docs", custom); err != nil || d.Status != store.DomainActive {
+	if d, err := svc.VerifyDomain(ctx, store.ActorFor(p.owner.ID), "docs", custom); err != nil || d.Status != store.DomainActive {
 		t.Fatalf("verify: %+v, %v", d, err)
 	}
 
@@ -362,21 +362,21 @@ func TestAdminModeration(t *testing.T) {
 		t.Fatal(err)
 	}
 	site := store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "docs", CreatedAt: time.Now()}
-	if err := db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
+	if err := db.Sites().Create(ctx, store.ActorFor(site.OwnerID), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	q, f, u := strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("4", 64)
 	d := store.Deploy{ID: store.NewID(), SiteID: site.ID, FileCount: 3, TotalSize: 15, CreatedAt: time.Now()}
 	files := []store.DeployFile{{Path: "q.png", SHA256: q, Size: 5}, {Path: "f.png", SHA256: f, Size: 5}, {Path: "u.avif", SHA256: u, Size: 5}}
-	if err := db.Deploys().Create(ctx, o.ID, d, files, store.Quotas{}); err != nil {
+	if err := db.Deploys().Create(ctx, store.ActorFor(o.ID), d, files, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, h := range []string{q, f, u} {
-		if err := db.Deploys().RecordUpload(ctx, o.ID, store.Blob{SHA256: h, Size: 5, CreatedAt: time.Now()}); err != nil {
+		if err := db.Deploys().RecordUpload(ctx, store.ActorFor(o.ID), o.ID, store.Blob{SHA256: h, Size: 5, CreatedAt: time.Now()}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.Deploys().Activate(ctx, o.ID, site.ID, d.ID, time.Now()); err != nil {
+	if _, err := db.Deploys().Activate(ctx, store.ActorFor(o.ID), site.ID, d.ID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Moderation().EnqueueSite(ctx, site.ID, time.Now()); err != nil {
@@ -574,18 +574,18 @@ func TestServeLoadsQuarantineFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	site := store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "docs", CreatedAt: time.Now()}
-	if err := db.Sites().Create(ctx, site, store.Quotas{}); err != nil {
+	if err := db.Sites().Create(ctx, store.ActorFor(site.OwnerID), site, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	q := strings.Repeat("1", 64)
 	d := store.Deploy{ID: store.NewID(), SiteID: site.ID, FileCount: 1, TotalSize: 5, CreatedAt: time.Now()}
-	if err := db.Deploys().Create(ctx, o.ID, d, []store.DeployFile{{Path: "q.png", SHA256: q, Size: 5}}, store.Quotas{}); err != nil {
+	if err := db.Deploys().Create(ctx, store.ActorFor(o.ID), d, []store.DeployFile{{Path: "q.png", SHA256: q, Size: 5}}, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Deploys().RecordUpload(ctx, o.ID, store.Blob{SHA256: q, Size: 5, CreatedAt: time.Now()}); err != nil {
+	if err := db.Deploys().RecordUpload(ctx, store.ActorFor(o.ID), o.ID, store.Blob{SHA256: q, Size: 5, CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Deploys().Activate(ctx, o.ID, site.ID, d.ID, time.Now()); err != nil {
+	if _, err := db.Deploys().Activate(ctx, store.ActorFor(o.ID), site.ID, d.ID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Moderation().EnqueueSite(ctx, site.ID, time.Now()); err != nil {

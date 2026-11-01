@@ -26,7 +26,7 @@ func quotasContract(t *testing.T, open Opener) {
 		for _, file := range files {
 			d.TotalSize += file.Size
 		}
-		return d, f.r.Deploys.Create(f.t.Context(), ownerID, d, files, q)
+		return d, f.r.Deploys.Create(f.t.Context(), store.ActorFor(ownerID), d, files, q)
 	}
 	usage := func(f *fixture, ownerID string, at time.Time) store.OwnerUsage {
 		f.t.Helper()
@@ -66,7 +66,7 @@ func quotasContract(t *testing.T, open Opener) {
 		before := usage(f, o.ID, now.Add(time.Hour))
 		d, err := create(f, o.ID, s.ID, 2*time.Second, q, file("a.txt", 'a', 40), file("d.txt", 'd', 1))
 		wantQuota(t, err, store.QuotaError{Quota: store.QuotaStorage, Limit: 100, Used: 100, Adding: 1})
-		_, err = f.r.Deploys.Get(t.Context(), o.ID, s.ID, d.ID)
+		_, err = f.r.Deploys.Get(t.Context(), store.ActorFor(o.ID), s.ID, d.ID)
 		wantErr(t, err, store.ErrNotFound)
 		if after := usage(f, o.ID, now.Add(time.Hour)); after != before {
 			t.Fatalf("usage after a refused deploy = %+v, want %+v", after, before)
@@ -111,17 +111,17 @@ func quotasContract(t *testing.T, open Opener) {
 		d2, err := create(f, o.ID, s.ID, time.Second, store.Quotas{}, file("a", 'a', 10), file("c", 'c', 40))
 		f.must(err)
 		f.uploadAll(o.ID, s.ID, d2.ID)
-		_, err = f.r.Deploys.Activate(t.Context(), o.ID, s.ID, d2.ID, now)
+		_, err = f.r.Deploys.Activate(t.Context(), store.ActorFor(o.ID), s.ID, d2.ID, now)
 		f.must(err)
 		// The active deploy cannot go, and a refused delete releases nothing.
-		wantErr(t, f.r.Deploys.Delete(t.Context(), o.ID, d2.ID), store.ErrConstraint)
+		wantErr(t, f.r.Deploys.Delete(t.Context(), store.ActorFor(o.ID), d2.ID), store.ErrConstraint)
 		// Another owner cannot delete it, nor release its storage.
-		wantErr(t, f.r.Deploys.Delete(t.Context(), f.owner().ID, d1.ID), store.ErrNotFound)
+		wantErr(t, f.r.Deploys.Delete(t.Context(), store.ActorFor(f.owner().ID), d1.ID), store.ErrNotFound)
 		if got := stored(f, o.ID); got != 70 {
 			t.Fatalf("stored = %d, want 70", got)
 		}
 		// Deleting d1 releases b only: d2 still lists a.
-		wantErr(t, f.r.Deploys.Delete(t.Context(), o.ID, d1.ID), nil)
+		wantErr(t, f.r.Deploys.Delete(t.Context(), store.ActorFor(o.ID), d1.ID), nil)
 		if got := stored(f, o.ID); got != 50 {
 			t.Fatalf("stored after deleting d1 = %d, want 50", got)
 		}
@@ -144,11 +144,11 @@ func quotasContract(t *testing.T, open Opener) {
 			f.must(err)
 		}
 		// Another owner's delete is a miss and changes nothing.
-		wantErr(t, f.r.Sites.Delete(t.Context(), f.owner().ID, gone.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.Delete(t.Context(), store.ActorFor(f.owner().ID), gone.ID), store.ErrNotFound)
 		if got := stored(f, o.ID); got != 30 {
 			t.Fatalf("stored = %d, want 30", got)
 		}
-		f.must(f.r.Sites.Delete(t.Context(), o.ID, gone.ID))
+		f.must(f.r.Sites.Delete(t.Context(), store.ActorFor(o.ID), gone.ID))
 		if got := stored(f, o.ID); got != 10 {
 			t.Fatalf("stored after deleting the site = %d, want 10", got)
 		}
@@ -162,7 +162,7 @@ func quotasContract(t *testing.T, open Opener) {
 		f.must(err)
 		// An owner cannot delete a taken-down site, which keeps its storage.
 		f.must(f.r.Sites.TakeDown(t.Context(), s.ID, now))
-		wantErr(t, f.r.Sites.Delete(t.Context(), o.ID, s.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.Delete(t.Context(), store.ActorFor(o.ID), s.ID), store.ErrNotFound)
 		if got := stored(f, o.ID); got != 10 {
 			t.Fatalf("stored = %d, want 10", got)
 		}
@@ -216,7 +216,7 @@ func quotasContract(t *testing.T, open Opener) {
 		_, err := create(f, o.ID, s.ID, 2*time.Hour, q, file("a", 'a', 1))
 		wantQuota(t, err, store.QuotaError{Quota: store.QuotaDeploysPerDay, Limit: 2, Used: 2, Adding: 1})
 		// Deleting the site does not hand deploys back.
-		f.must(f.r.Sites.Delete(t.Context(), o.ID, s.ID))
+		f.must(f.r.Sites.Delete(t.Context(), store.ActorFor(o.ID), s.ID))
 		s = f.site(o.ID)
 		_, err = create(f, o.ID, s.ID, 23*time.Hour, q, file("a", 'a', 1))
 		wantQuota(t, err, store.QuotaError{Quota: store.QuotaDeploysPerDay, Limit: 2, Used: 2, Adding: 1})
@@ -234,18 +234,20 @@ func quotasContract(t *testing.T, open Opener) {
 		o := f.owner()
 		q := store.Quotas{Sites: 2}
 		first := f.validSite(o.ID)
-		wantErr(t, f.r.Sites.Create(t.Context(), first, q), nil)
-		wantErr(t, f.r.Sites.Create(t.Context(), f.validSite(o.ID), q), nil)
+		wantErr(t, f.r.Sites.Create(t.Context(), store.ActorFor(first.OwnerID), first, q), nil)
+		wantErr(t, f.r.Sites.Create(t.Context(), store.ActorFor(o.ID), f.validSite(o.ID), q), nil)
 		third := f.validSite(o.ID)
-		wantQuota(t, f.r.Sites.Create(t.Context(), third, q), store.QuotaError{Quota: store.QuotaSites, Limit: 2, Used: 2, Adding: 1})
-		_, err := f.r.Sites.Get(t.Context(), o.ID, third.ID)
+		wantQuota(t, f.r.Sites.Create(t.Context(), store.ActorFor(third.OwnerID), third, q), store.QuotaError{Quota: store.QuotaSites, Limit: 2, Used: 2, Adding: 1})
+		_, err := f.r.Sites.Get(t.Context(), store.ActorFor(o.ID), third.ID)
 		wantErr(t, err, store.ErrNotFound)
 		// Deleting one frees a place.
-		f.must(f.r.Sites.Delete(t.Context(), o.ID, first.ID))
-		wantErr(t, f.r.Sites.Create(t.Context(), third, q), nil)
+		f.must(f.r.Sites.Delete(t.Context(), store.ActorFor(o.ID), first.ID))
+		wantErr(t, f.r.Sites.Create(t.Context(), store.ActorFor(third.OwnerID), third, q), nil)
 		// Another owner has their own allowance; an unknown owner is refused.
-		wantErr(t, f.r.Sites.Create(t.Context(), f.validSite(f.owner().ID), q), nil)
-		wantErr(t, f.r.Sites.Create(t.Context(), f.validSite(store.NewID()), q), store.ErrConstraint)
+		other := f.owner().ID
+		wantErr(t, f.r.Sites.Create(t.Context(), store.ActorFor(other), f.validSite(other), q), nil)
+		stranger := store.NewID()
+		wantErr(t, f.r.Sites.Create(t.Context(), store.ActorFor(stranger), f.validSite(stranger), q), store.ErrConstraint)
 	})
 	t.Run("Overrides", func(t *testing.T) {
 		t.Parallel()
@@ -272,12 +274,12 @@ func quotasContract(t *testing.T, open Opener) {
 		var sites []store.Site
 		for range 3 {
 			s := f.validSite(o.ID)
-			wantErr(t, f.r.Sites.Create(t.Context(), s, defaults), nil)
+			wantErr(t, f.r.Sites.Create(t.Context(), store.ActorFor(s.OwnerID), s, defaults), nil)
 			sites = append(sites, s)
 		}
-		wantQuota(t, f.r.Sites.Create(t.Context(), f.validSite(o.ID), defaults), store.QuotaError{Quota: store.QuotaSites, Limit: 3, Used: 3, Adding: 1})
-		wantErr(t, f.r.Sites.Create(t.Context(), f.validSite(other.ID), defaults), nil)
-		wantQuota(t, f.r.Sites.Create(t.Context(), f.validSite(other.ID), defaults), store.QuotaError{Quota: store.QuotaSites, Limit: 1, Used: 1, Adding: 1})
+		wantQuota(t, f.r.Sites.Create(t.Context(), store.ActorFor(o.ID), f.validSite(o.ID), defaults), store.QuotaError{Quota: store.QuotaSites, Limit: 3, Used: 3, Adding: 1})
+		wantErr(t, f.r.Sites.Create(t.Context(), store.ActorFor(other.ID), f.validSite(other.ID), defaults), nil)
+		wantQuota(t, f.r.Sites.Create(t.Context(), store.ActorFor(other.ID), f.validSite(other.ID), defaults), store.QuotaError{Quota: store.QuotaSites, Limit: 1, Used: 1, Adding: 1})
 		// Storage 0 is unlimited; deploys per day follows the default.
 		_, err = create(f, o.ID, sites[0].ID, 0, defaults, file("big", 'a', 1000))
 		wantErr(t, err, nil)
@@ -318,10 +320,10 @@ func quotasContract(t *testing.T, open Opener) {
 			wg.Go(func() {
 				d := f.validDeploy(s.ID)
 				d.ID = store.NewID()
-				storage[i] = f.r.Deploys.Create(t.Context(), o.ID, d, []store.DeployFile{file("f", letters[i], 30)}, store.Quotas{StorageBytes: 100})
+				storage[i] = f.r.Deploys.Create(t.Context(), store.ActorFor(o.ID), d, []store.DeployFile{file("f", letters[i], 30)}, store.Quotas{StorageBytes: 100})
 			})
 			wg.Go(func() {
-				sites[i] = f.r.Sites.Create(t.Context(), store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "race-" + letters[i:i+1], CreatedAt: now}, store.Quotas{Sites: limit + 1})
+				sites[i] = f.r.Sites.Create(t.Context(), store.ActorFor(store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "race-" + letters[i:i+1], CreatedAt: now}.OwnerID), store.Site{ID: store.NewID(), OwnerID: o.ID, Name: "race-" + letters[i:i+1], CreatedAt: now}, store.Quotas{Sites: limit + 1})
 			})
 		}
 		wg.Wait()
@@ -331,7 +333,7 @@ func quotasContract(t *testing.T, open Opener) {
 			wg.Go(func() {
 				d := f.validDeploy(otherSite.ID)
 				d.ID = store.NewID()
-				daily[i] = f.r.Deploys.Create(t.Context(), other.ID, d, []store.DeployFile{file("f", 'a', 1)}, store.Quotas{DeploysPerDay: limit})
+				daily[i] = f.r.Deploys.Create(t.Context(), store.ActorFor(other.ID), d, []store.DeployFile{file("f", 'a', 1)}, store.Quotas{DeploysPerDay: limit})
 			})
 		}
 		wg.Wait()

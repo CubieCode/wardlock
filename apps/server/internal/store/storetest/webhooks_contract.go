@@ -315,7 +315,7 @@ func webhooksContract(t *testing.T, open Opener) {
 		ctx := t.Context()
 		w := store.Webhook{ID: store.NewID(), OwnerID: o.ID, URL: "https://a.example.test/", AllEvents: true, Sites: []store.WebhookSite{{ID: s.ID}}, SecretSalt: "s", CreatedAt: now}
 		f.must(f.r.Webhooks.Create(ctx, w, 10))
-		f.must(f.r.Sites.Delete(ctx, o.ID, s.ID))
+		f.must(f.r.Sites.Delete(ctx, store.ActorFor(o.ID), s.ID))
 		got, err := f.r.Webhooks.Get(ctx, o.ID, w.ID)
 		f.must(err)
 		if len(got.Sites) != 1 || got.Sites[0] != (store.WebhookSite{ID: s.ID}) {

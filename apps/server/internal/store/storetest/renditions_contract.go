@@ -37,7 +37,7 @@ func renditionsContract(t *testing.T, open Opener) {
 		a, b := f.owner(), f.owner()
 		s := f.site(a.ID)
 		d := pages(f, a.ID, s.ID)
-		got, err := f.r.Renditions.Sources(t.Context(), a.ID, s.ID, d.ID)
+		got, err := f.r.Renditions.Sources(t.Context(), store.ActorFor(a.ID), s.ID, d.ID)
 		wantErr(t, err, nil)
 		if want := []string{"about.html", "docs/Guide.HTM", "index.html"}; !slices.Equal(paths(got), want) {
 			t.Fatalf("sources = %v, want %v", paths(got), want)
@@ -50,7 +50,7 @@ func renditionsContract(t *testing.T, open Opener) {
 		for _, tc := range []struct{ owner, site, deploy string }{
 			{b.ID, s.ID, d.ID}, {a.ID, other.ID, d.ID}, {a.ID, s.ID, store.NewID()},
 		} {
-			_, err := f.r.Renditions.Sources(t.Context(), tc.owner, tc.site, tc.deploy)
+			_, err := f.r.Renditions.Sources(t.Context(), store.ActorFor(tc.owner), tc.site, tc.deploy)
 			wantErr(t, err, store.ErrNotFound)
 		}
 	})
@@ -70,10 +70,10 @@ func renditionsContract(t *testing.T, open Opener) {
 			{Path: "index.html", Format: "md", SHA256: sha('2'), Size: 4},
 			{Path: "about.html", Format: "md", SHA256: sha('2'), Size: 4},
 		}
-		wantErr(t, f.r.Renditions.Put(t.Context(), a.ID, s.ID, d.ID, rs, now), nil)
+		wantErr(t, f.r.Renditions.Put(t.Context(), store.ActorFor(a.ID), s.ID, d.ID, rs, now), nil)
 		// Putting again replaces what changed.
 		rs[0].SHA256, rs[0].Size = sha('3'), 6
-		wantErr(t, f.r.Renditions.Put(t.Context(), a.ID, s.ID, d.ID, rs[:1], now.Add(time.Hour)), nil)
+		wantErr(t, f.r.Renditions.Put(t.Context(), store.ActorFor(a.ID), s.ID, d.ID, rs[:1], now.Add(time.Hour)), nil)
 		got, err := f.r.Renditions.List(t.Context(), d.ID)
 		wantErr(t, err, nil)
 		want := []store.Rendition{rs[2], rs[1], rs[0]}
@@ -89,8 +89,8 @@ func renditionsContract(t *testing.T, open Opener) {
 		}
 
 		// Another owner, or another site, cannot add renditions.
-		wantErr(t, f.r.Renditions.Put(t.Context(), b.ID, s.ID, d.ID, rs, now), store.ErrNotFound)
-		wantErr(t, f.r.Renditions.Put(t.Context(), a.ID, f.site(a.ID).ID, d.ID, rs, now), store.ErrNotFound)
+		wantErr(t, f.r.Renditions.Put(t.Context(), store.ActorFor(b.ID), s.ID, d.ID, rs, now), store.ErrNotFound)
+		wantErr(t, f.r.Renditions.Put(t.Context(), store.ActorFor(a.ID), f.site(a.ID).ID, d.ID, rs, now), store.ErrNotFound)
 		// A path outside the manifest, or a bad format, fails, and nothing
 		// from that Put is kept.
 		for _, bad := range []store.Rendition{
@@ -99,7 +99,7 @@ func renditionsContract(t *testing.T, open Opener) {
 			{Path: "about.html", Format: "txt", SHA256: "NOT-A-HASH", Size: 1},
 		} {
 			good := store.Rendition{Path: "about.html", Format: "txt", SHA256: sha('5'), Size: 1}
-			wantErr(t, f.r.Renditions.Put(t.Context(), a.ID, s.ID, d.ID, []store.Rendition{good, bad}, now), store.ErrConstraint)
+			wantErr(t, f.r.Renditions.Put(t.Context(), store.ActorFor(a.ID), s.ID, d.ID, []store.Rendition{good, bad}, now), store.ErrConstraint)
 		}
 		got, err = f.r.Renditions.List(t.Context(), d.ID)
 		wantErr(t, err, nil)
@@ -108,7 +108,7 @@ func renditionsContract(t *testing.T, open Opener) {
 		}
 
 		// Deleting the deploy deletes its renditions.
-		wantErr(t, f.r.Deploys.Delete(t.Context(), a.ID, d.ID), nil)
+		wantErr(t, f.r.Deploys.Delete(t.Context(), store.ActorFor(a.ID), d.ID), nil)
 		got, err = f.r.Renditions.List(t.Context(), d.ID)
 		wantErr(t, err, nil)
 		if len(got) != 0 {

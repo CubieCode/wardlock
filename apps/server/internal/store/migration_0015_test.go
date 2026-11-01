@@ -46,7 +46,7 @@ func TestMigration0015(t *testing.T) {
 	if got, err := db.CountForTest(ctx, `SELECT COUNT(*) FROM deploys WHERE id = 'd2' AND redirects LIKE '[{"from":"/a"%' AND headers LIKE '[{"path":"/*"%'`); err != nil || got != 1 {
 		t.Fatalf("deploy with rules = %d, %v; want 1", got, err)
 	}
-	d, err := db.Deploys().Get(ctx, "o1", "s1", "d2")
+	d, err := db.Deploys().Get(ctx, store.ActorFor("o1"), "s1", "d2")
 	if err != nil {
 		t.Fatal(err)
 	}

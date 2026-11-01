@@ -119,17 +119,19 @@ func checkColour(c int) error {
 	return nil
 }
 
-// ListGroups returns the owner's groups by name, ignoring case.
-func (s *Service) ListGroups(ctx context.Context, ownerID string) ([]store.Group, error) {
-	groups, err := s.c.Organisation.ListGroups(ctx, ownerID)
+// ListGroups returns the account's groups by name, ignoring case; "" is the
+// actor's own.
+func (s *Service) ListGroups(ctx context.Context, actor store.Actor, account string) ([]store.Group, error) {
+	groups, err := s.c.Organisation.ListGroups(ctx, actor, actor.Account(account))
 	if err != nil {
 		return nil, fmt.Errorf("list groups: %w", err)
 	}
 	return groups, nil
 }
 
-// CreateGroup creates a group with an optional note.
-func (s *Service) CreateGroup(ctx context.Context, ownerID, name, note string) (store.Group, error) {
+// CreateGroup creates a group with an optional note in the account; "" is
+// the actor's own.
+func (s *Service) CreateGroup(ctx context.Context, actor store.Actor, account, name, note string) (store.Group, error) {
 	name, err := checkGroupName(name)
 	if err != nil {
 		return store.Group{}, err
@@ -137,8 +139,8 @@ func (s *Service) CreateGroup(ctx context.Context, ownerID, name, note string) (
 	if note, err = checkNote(note); err != nil {
 		return store.Group{}, err
 	}
-	g := store.Group{ID: store.NewID(), OwnerID: ownerID, Name: name, NameKey: GroupNameKey(name), Note: note, CreatedAt: s.now()}
-	err = s.c.Organisation.CreateGroup(ctx, g, MaxGroups)
+	g := store.Group{ID: store.NewID(), OwnerID: actor.Account(account), Name: name, NameKey: GroupNameKey(name), Note: note, CreatedAt: s.now()}
+	err = s.c.Organisation.CreateGroup(ctx, actor, g, MaxGroups)
 	switch {
 	case errors.Is(err, store.ErrConflict):
 		return store.Group{}, ErrGroupNameTaken
@@ -152,8 +154,8 @@ func (s *Service) CreateGroup(ctx context.Context, ownerID, name, note string) (
 
 // UpdateGroup renames the group or changes its note; nil leaves a field
 // as it is and an empty note removes it.
-func (s *Service) UpdateGroup(ctx context.Context, ownerID, id string, name, note *string) (store.Group, error) {
-	g, err := s.c.Organisation.GetGroup(ctx, ownerID, id)
+func (s *Service) UpdateGroup(ctx context.Context, actor store.Actor, id string, name, note *string) (store.Group, error) {
+	g, err := s.c.Organisation.GetGroup(ctx, actor, id)
 	if err != nil {
 		return store.Group{}, storeErr("get group", err)
 	}
@@ -168,7 +170,7 @@ func (s *Service) UpdateGroup(ctx context.Context, ownerID, id string, name, not
 			return store.Group{}, err
 		}
 	}
-	err = s.c.Organisation.UpdateGroup(ctx, g)
+	err = s.c.Organisation.UpdateGroup(ctx, actor, g)
 	if errors.Is(err, store.ErrConflict) {
 		return store.Group{}, ErrGroupNameTaken
 	}
@@ -176,13 +178,13 @@ func (s *Service) UpdateGroup(ctx context.Context, ownerID, id string, name, not
 }
 
 // DeleteGroup deletes the group; its sites become ungrouped.
-func (s *Service) DeleteGroup(ctx context.Context, ownerID, id string) error {
-	return storeErr("delete group", s.c.Organisation.DeleteGroup(ctx, ownerID, id))
+func (s *Service) DeleteGroup(ctx context.Context, actor store.Actor, id string) error {
+	return storeErr("delete group", s.c.Organisation.DeleteGroup(ctx, actor, id))
 }
 
-// ListTags returns the owner's tags by name.
-func (s *Service) ListTags(ctx context.Context, ownerID string) ([]store.Tag, error) {
-	tags, err := s.c.Organisation.ListTags(ctx, ownerID)
+// ListTags, for the account ("" for the actor's own), returns the owner's tags by name.
+func (s *Service) ListTags(ctx context.Context, actor store.Actor, account string) ([]store.Tag, error) {
+	tags, err := s.c.Organisation.ListTags(ctx, actor, actor.Account(account))
 	if err != nil {
 		return nil, fmt.Errorf("list tags: %w", err)
 	}
@@ -191,18 +193,18 @@ func (s *Service) ListTags(ctx context.Context, ownerID string) ([]store.Tag, er
 
 // CreateTag creates a tag. Without a colour it takes the lowest slot 1-8
 // none of the owner's tags has, or 0 when all eight are taken.
-func (s *Service) CreateTag(ctx context.Context, ownerID, name string, colour *int) (store.Tag, error) {
+func (s *Service) CreateTag(ctx context.Context, actor store.Actor, account, name string, colour *int) (store.Tag, error) {
 	if err := checkTagName(name); err != nil {
 		return store.Tag{}, err
 	}
-	t := store.Tag{ID: store.NewID(), OwnerID: ownerID, Name: name, Colour: store.AutoColour, CreatedAt: s.now()}
+	t := store.Tag{ID: store.NewID(), OwnerID: actor.Account(account), Name: name, Colour: store.AutoColour, CreatedAt: s.now()}
 	if colour != nil {
 		if err := checkColour(*colour); err != nil {
 			return store.Tag{}, err
 		}
 		t.Colour = *colour
 	}
-	t, err := s.c.Organisation.CreateTag(ctx, t, MaxTags)
+	t, err := s.c.Organisation.CreateTag(ctx, actor, t, MaxTags)
 	switch {
 	case errors.Is(err, store.ErrConflict):
 		return store.Tag{}, ErrTagNameTaken
@@ -216,8 +218,8 @@ func (s *Service) CreateTag(ctx context.Context, ownerID, name string, colour *i
 
 // UpdateTag renames the tag or changes its colour; nil leaves a field as
 // it is.
-func (s *Service) UpdateTag(ctx context.Context, ownerID, id string, name *string, colour *int) (store.Tag, error) {
-	t, err := s.c.Organisation.GetTag(ctx, ownerID, id)
+func (s *Service) UpdateTag(ctx context.Context, actor store.Actor, id string, name *string, colour *int) (store.Tag, error) {
+	t, err := s.c.Organisation.GetTag(ctx, actor, id)
 	if err != nil {
 		return store.Tag{}, storeErr("get tag", err)
 	}
@@ -233,7 +235,7 @@ func (s *Service) UpdateTag(ctx context.Context, ownerID, id string, name *strin
 		}
 		t.Colour = *colour
 	}
-	err = s.c.Organisation.UpdateTag(ctx, t)
+	err = s.c.Organisation.UpdateTag(ctx, actor, t)
 	if errors.Is(err, store.ErrConflict) {
 		return store.Tag{}, ErrTagNameTaken
 	}
@@ -241,18 +243,18 @@ func (s *Service) UpdateTag(ctx context.Context, ownerID, id string, name *strin
 }
 
 // DeleteTag deletes the tag and removes it from its sites.
-func (s *Service) DeleteTag(ctx context.Context, ownerID, id string) error {
-	return storeErr("delete tag", s.c.Organisation.DeleteTag(ctx, ownerID, id))
+func (s *Service) DeleteTag(ctx context.Context, actor store.Actor, id string) error {
+	return storeErr("delete tag", s.c.Organisation.DeleteTag(ctx, actor, id))
 }
 
 // TagIDs returns each site's tag IDs in tag-name order, keyed by site ID;
 // a site with no tags has none.
-func (s *Service) TagIDs(ctx context.Context, ownerID string, sites ...store.Site) (map[string][]string, error) {
+func (s *Service) TagIDs(ctx context.Context, actor store.Actor, sites ...store.Site) (map[string][]string, error) {
 	ids := make([]string, len(sites))
 	for i, site := range sites {
 		ids[i] = site.ID
 	}
-	tags, err := s.c.Sites.TagIDs(ctx, ownerID, ids...)
+	tags, err := s.c.Sites.TagIDs(ctx, actor, ids...)
 	if err != nil {
 		return nil, fmt.Errorf("list site tags: %w", err)
 	}
@@ -262,37 +264,41 @@ func (s *Service) TagIDs(ctx context.Context, ownerID string, sites ...store.Sit
 // SetOrganisation puts the owner's site in groupID (none when empty) and
 // replaces its tags with tagIDs, naming only existing groups and tags. It
 // returns the site as it is now. A deploy-scoped token may call it.
-func (s *Service) SetOrganisation(ctx context.Context, ownerID, siteName, groupID string, tagIDs []string) (store.Site, error) {
+func (s *Service) SetOrganisation(ctx context.Context, actor store.Actor, siteName, groupID string, tagIDs []string) (store.Site, error) {
 	if err := checkIDs("tagIds", tagIDs); err != nil {
 		return store.Site{}, err
 	}
 	if len(tagIDs) > MaxTagsPerSite {
 		return store.Site{}, tooManyTags("tagIds")
 	}
-	return s.organiseOne(ctx, ownerID, siteName, store.OrganiseChange{
+	return s.organiseOne(ctx, actor, siteName, store.OrganiseChange{
 		SetGroup: true, GroupID: groupID, SetTags: true, TagIDs: tagIDs,
 	})
 }
 
 // SetPinned pins or unpins the owner's site; pinning a pinned site keeps
 // its first time.
-func (s *Service) SetPinned(ctx context.Context, ownerID, siteName string, pinned bool) (store.Site, error) {
+func (s *Service) SetPinned(ctx context.Context, actor store.Actor, siteName string, pinned bool) (store.Site, error) {
 	c := store.OrganiseChange{SetPinned: true}
 	if pinned {
 		c.PinnedAt = s.now()
 	}
-	return s.organiseOne(ctx, ownerID, siteName, c)
+	return s.organiseOne(ctx, actor, siteName, c)
 }
 
-func (s *Service) organiseOne(ctx context.Context, ownerID, siteName string, c store.OrganiseChange) (store.Site, error) {
+func (s *Service) organiseOne(ctx context.Context, actor store.Actor, siteName string, c store.OrganiseChange) (store.Site, error) {
 	if !ValidName(siteName) {
 		return store.Site{}, ErrNotFound
 	}
-	c.MaxTagsPerSite = MaxTagsPerSite
-	if _, err := s.organise(ctx, ownerID, []string{siteName}, c, "tagIds"); err != nil {
+	site, err := s.Get(ctx, actor, siteName)
+	if err != nil {
 		return store.Site{}, err
 	}
-	return s.Get(ctx, ownerID, siteName)
+	c.MaxTagsPerSite = MaxTagsPerSite
+	if _, err := s.organise(ctx, actor, site.OwnerID, []string{siteName}, c, "tagIds"); err != nil {
+		return store.Site{}, err
+	}
+	return s.Get(ctx, actor, siteName)
 }
 
 // Bulk is one change to many sites (Organise). A zero field changes
@@ -311,12 +317,12 @@ type Bulk struct {
 	PinnedAt time.Time
 }
 
-// Organise applies b to up to MaxOrganiseSites of the owner's sites, all
-// or nothing: any missing or foreign site, group or tag is ErrNotFound for
+// Organise applies b to up to MaxOrganiseSites of the account's sites ("" for
+// the actor's own), all or nothing: any missing or foreign site, group or tag is ErrNotFound for
 // the whole request. It returns each site's group, tags and pin from
 // before, in the order named, so the caller can undo by sending the
 // inverse.
-func (s *Service) Organise(ctx context.Context, ownerID string, siteNames []string, b Bulk) ([]store.SiteOrganisation, error) {
+func (s *Service) Organise(ctx context.Context, actor store.Actor, account string, siteNames []string, b Bulk) ([]store.SiteOrganisation, error) {
 	if len(siteNames) == 0 || len(siteNames) > MaxOrganiseSites {
 		return nil, invalid("sites", fmt.Sprintf("sites must name 1-%d sites.", MaxOrganiseSites))
 	}
@@ -369,11 +375,11 @@ func (s *Service) Organise(ctx context.Context, ownerID string, siteNames []stri
 			}
 		}
 	}
-	return s.organise(ctx, ownerID, siteNames, c, "addTagIds")
+	return s.organise(ctx, actor, actor.Account(account), siteNames, c, "addTagIds")
 }
 
-func (s *Service) organise(ctx context.Context, ownerID string, siteNames []string, c store.OrganiseChange, tagsTarget string) ([]store.SiteOrganisation, error) {
-	prior, err := s.c.Organisation.Organise(ctx, ownerID, siteNames, c)
+func (s *Service) organise(ctx context.Context, actor store.Actor, account string, siteNames []string, c store.OrganiseChange, tagsTarget string) ([]store.SiteOrganisation, error) {
+	prior, err := s.c.Organisation.Organise(ctx, actor, account, siteNames, c)
 	if errors.Is(err, store.ErrLimitReached) {
 		return nil, tooManyTags(tagsTarget)
 	}

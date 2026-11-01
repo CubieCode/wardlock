@@ -53,6 +53,19 @@ type Invite struct {
 	ValidFor  time.Duration
 }
 
+// TeamInvite is the data for an invitation to join a team (T7.1). URL leads
+// to the signed-in owner's invitations; it carries no secret.
+type TeamInvite struct {
+	URL string
+	// Host is the dashboard host.
+	Host string
+	// Team is the team's name.
+	Team string
+	// InvitedBy is the inviting admin's address.
+	InvitedBy string
+	ValidFor  time.Duration
+}
+
 // AbuseReport is a visitor's report about a site, for the operator
 // (A2.13). Every field but SiteID, SiteName and ReceivedAt is the
 // reporter's words, with share-link tokens already removed.
@@ -166,6 +179,27 @@ func InviteMessage(to netmail.Address, d Invite) (Message, error) {
 		return Message{}, fmt.Errorf("render html: %w", err)
 	}
 	return Message{To: to, Subject: "You're invited to Wardlock on " + d.Host, Text: text.String(), HTML: body.String()}, nil
+}
+
+// TeamInviteMessage builds the email inviting an owner to a team. The team's
+// name stays out of the subject, as admins choose it and the dev sink logs
+// subjects.
+func TeamInviteMessage(to netmail.Address, d TeamInvite) (Message, error) {
+	var text, body bytes.Buffer
+	if err := textTemplates.ExecuteTemplate(&text, "teaminvite.txt.tmpl", d); err != nil {
+		return Message{}, fmt.Errorf("render teaminvite.txt.tmpl: %w", err)
+	}
+	if err := htmlTemplates.ExecuteTemplate(&body, "link", linkLayout{
+		Title:  "You're invited to a team on Wardlock",
+		Lead:   d.InvitedBy + " invited you to the team " + d.Team + " on the Wardlock server at " + d.Host + ".",
+		Action: "Review the invitation",
+		URL:    d.URL,
+		Expiry: fmt.Sprintf("The invitation lasts %d days. Sign in with this address to accept it.", days(d.ValidFor)),
+		Ignore: "If you did not expect this invitation, you can ignore this email.",
+	}); err != nil {
+		return Message{}, fmt.Errorf("render html: %w", err)
+	}
+	return Message{To: to, Subject: "You're invited to a team on " + d.Host, Text: text.String(), HTML: body.String()}, nil
 }
 
 // AbuseReportMessage builds the plain-text report sent to the operator's

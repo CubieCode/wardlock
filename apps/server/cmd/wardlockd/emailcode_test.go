@@ -26,7 +26,7 @@ const (
 
 func (p *policyEdge) setEmail(site, prefix string, allow store.Allowlist, links bool) store.Policy {
 	p.t.Helper()
-	pol, err := p.acc.Set(p.t.Context(), p.owner.ID, site, access.Rule{
+	pol, err := p.acc.Set(p.t.Context(), store.ActorFor(p.owner.ID), site, access.Rule{
 		PathPrefix: prefix, Visibility: store.Protected, Links: links, Email: true, Allowlist: &allow,
 	})
 	if err != nil {

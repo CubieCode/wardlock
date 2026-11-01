@@ -26,7 +26,7 @@ var (
 // request context; a missing or another owner's group or tag in a filter
 // answers the same 404.
 func (s *Server) ListSiteSummaries(ctx context.Context, req ListSiteSummariesRequestObject) (ListSiteSummariesResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListSiteSummariesdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -62,7 +62,7 @@ func (s *Server) ListSiteSummaries(ctx context.Context, req ListSiteSummariesReq
 		}
 		after = &c
 	}
-	page, err := s.Sites.SiteSummaries(ctx, owner, filter, sort, after, limit)
+	page, err := s.Sites.SiteSummaries(ctx, actor, deref(req.Params.Team), filter, sort, after, limit)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -106,7 +106,7 @@ func (s *Server) summaryBody(site store.SiteSummary) SiteSummary {
 		TagIds:        site.TagIDs,
 		Pinned:        !site.PinnedAt.IsZero(),
 		Visibility:    PolicyVisibility(site.Default.Visibility),
-		Methods:       policyBody(site.Default).Methods,
+		Methods:       policyMethods(site.Default),
 		WorkingLinks:  count32(site.WorkingLinks),
 		ExpiringLinks: count32(site.ExpiringLinks),
 		Requests:      site.Requests,
@@ -133,12 +133,12 @@ func (s *Server) summaryBody(site store.SiteSummary) SiteSummary {
 
 // GetSiteCounts counts the owner's sites in each saved view, group and
 // tag (V5.5).
-func (s *Server) GetSiteCounts(ctx context.Context, _ GetSiteCountsRequestObject) (GetSiteCountsResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+func (s *Server) GetSiteCounts(ctx context.Context, req GetSiteCountsRequestObject) (GetSiteCountsResponseObject, error) {
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return GetSiteCountsdefaultJSONResponse(*unauthenticated), nil
 	}
-	c, err := s.Sites.SiteCounts(ctx, owner)
+	c, err := s.Sites.SiteCounts(ctx, actor, deref(req.Params.Team))
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func (s *Server) GetSiteCounts(ctx context.Context, _ GetSiteCountsRequestObject
 // across all their sites (V5.11): the links each summary's expiringLinks
 // counts. Only what the Links tab shows after creation; never a token.
 func (s *Server) ListExpiringLinks(ctx context.Context, req ListExpiringLinksRequestObject) (ListExpiringLinksResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListExpiringLinksdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -174,7 +174,7 @@ func (s *Server) ListExpiringLinks(ctx context.Context, req ListExpiringLinksReq
 	if f != nil {
 		return ListExpiringLinksdefaultJSONResponse(*f), nil
 	}
-	links, err := s.Sites.ExpiringLinks(ctx, owner, limit)
+	links, err := s.Sites.ExpiringLinks(ctx, actor, deref(req.Params.Team), limit)
 	if err != nil {
 		return nil, err
 	}

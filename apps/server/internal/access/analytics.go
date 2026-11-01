@@ -21,8 +21,10 @@ var AnalyticsRanges = []int{7, 30, 90}
 var ErrInvalidAnalytics = errors.New("invalid analytics request")
 
 // AnalyticsScope narrows a report to at most one of a site (by name), a
-// group or a tag (by ID); the zero value is all the owner's sites.
+// group or a tag (by ID); the zero value is all the owner's sites. Account
+// reads a team's instead of the actor's own; a named site says its own.
 type AnalyticsScope struct {
+	Account  string
 	SiteName string
 	GroupID  string
 	TagID    string
@@ -37,9 +39,9 @@ type Analytics struct {
 	store.TrafficReport
 }
 
-// Analytics reports ownerID's requests in scope over the last days days.
+// Analytics reports the actor's requests in scope over the last days days.
 // A missing or foreign site, group or tag is ErrNotFound.
-func (s *Service) Analytics(ctx context.Context, ownerID string, scope AnalyticsScope, days int) (Analytics, error) {
+func (s *Service) Analytics(ctx context.Context, actor store.Actor, scope AnalyticsScope, days int) (Analytics, error) {
 	if s.c.Traffic == nil {
 		return Analytics{}, errors.New("analytics: no traffic rollup configured")
 	}
@@ -53,16 +55,18 @@ func (s *Service) Analytics(ctx context.Context, ownerID string, scope Analytics
 		return Analytics{}, fmt.Errorf("analytics: %w", ErrInvalidAnalytics)
 	}
 	q := store.TrafficScope{GroupID: scope.GroupID, TagID: scope.TagID}
+	account := actor.Account(scope.Account)
 	if scope.SiteName != "" {
-		site, err := s.ownedSite(ctx, ownerID, scope.SiteName)
+		site, err := s.ownedSite(ctx, actor, scope.SiteName)
 		if err != nil {
 			return Analytics{}, err
 		}
 		q.SiteID = site.ID
+		account = site.OwnerID
 	}
 	to := s.c.Now().UTC().Truncate(time.Hour).Add(time.Hour)
 	from := to.Add(-time.Duration(days) * 24 * time.Hour)
-	report, err := s.c.Traffic.Report(ctx, ownerID, q, from, to)
+	report, err := s.c.Traffic.Report(ctx, actor, account, q, from, to)
 	if errors.Is(err, store.ErrNotFound) {
 		return Analytics{}, fmt.Errorf("analytics: %w", ErrNotFound)
 	}

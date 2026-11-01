@@ -344,6 +344,11 @@ func (Unimplemented) RollbackSite(context.Context, RollbackSiteRequestObject) (R
 	return nil, ErrNotImplemented
 }
 
+// TransferSite is not implemented yet.
+func (Unimplemented) TransferSite(context.Context, TransferSiteRequestObject) (TransferSiteResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
 // ListTags is not implemented yet.
 func (Unimplemented) ListTags(context.Context, ListTagsRequestObject) (ListTagsResponseObject, error) {
 	return nil, ErrNotImplemented
@@ -361,6 +366,91 @@ func (Unimplemented) DeleteTag(context.Context, DeleteTagRequestObject) (DeleteT
 
 // UpdateTag is not implemented yet.
 func (Unimplemented) UpdateTag(context.Context, UpdateTagRequestObject) (UpdateTagResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListMyTeamInvitations is not implemented yet.
+func (Unimplemented) ListMyTeamInvitations(context.Context, ListMyTeamInvitationsRequestObject) (ListMyTeamInvitationsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// AcceptTeamInvitation is not implemented yet.
+func (Unimplemented) AcceptTeamInvitation(context.Context, AcceptTeamInvitationRequestObject) (AcceptTeamInvitationResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeclineTeamInvitation is not implemented yet.
+func (Unimplemented) DeclineTeamInvitation(context.Context, DeclineTeamInvitationRequestObject) (DeclineTeamInvitationResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListTeams is not implemented yet.
+func (Unimplemented) ListTeams(context.Context, ListTeamsRequestObject) (ListTeamsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// CreateTeam is not implemented yet.
+func (Unimplemented) CreateTeam(context.Context, CreateTeamRequestObject) (CreateTeamResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeleteTeam is not implemented yet.
+func (Unimplemented) DeleteTeam(context.Context, DeleteTeamRequestObject) (DeleteTeamResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// GetTeam is not implemented yet.
+func (Unimplemented) GetTeam(context.Context, GetTeamRequestObject) (GetTeamResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// UpdateTeam is not implemented yet.
+func (Unimplemented) UpdateTeam(context.Context, UpdateTeamRequestObject) (UpdateTeamResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListTeamInvitations is not implemented yet.
+func (Unimplemented) ListTeamInvitations(context.Context, ListTeamInvitationsRequestObject) (ListTeamInvitationsResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// InviteTeamMember is not implemented yet.
+func (Unimplemented) InviteTeamMember(context.Context, InviteTeamMemberRequestObject) (InviteTeamMemberResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// DeleteTeamInvitation is not implemented yet.
+func (Unimplemented) DeleteTeamInvitation(context.Context, DeleteTeamInvitationRequestObject) (DeleteTeamInvitationResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListTeamMembers is not implemented yet.
+func (Unimplemented) ListTeamMembers(context.Context, ListTeamMembersRequestObject) (ListTeamMembersResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// RemoveTeamMember is not implemented yet.
+func (Unimplemented) RemoveTeamMember(context.Context, RemoveTeamMemberRequestObject) (RemoveTeamMemberResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// SetTeamMemberRole is not implemented yet.
+func (Unimplemented) SetTeamMemberRole(context.Context, SetTeamMemberRoleRequestObject) (SetTeamMemberRoleResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// ListTeamTokens is not implemented yet.
+func (Unimplemented) ListTeamTokens(context.Context, ListTeamTokensRequestObject) (ListTeamTokensResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// CreateTeamToken is not implemented yet.
+func (Unimplemented) CreateTeamToken(context.Context, CreateTeamTokenRequestObject) (CreateTeamTokenResponseObject, error) {
+	return nil, ErrNotImplemented
+}
+
+// RevokeTeamToken is not implemented yet.
+func (Unimplemented) RevokeTeamToken(context.Context, RevokeTeamTokenRequestObject) (RevokeTeamTokenResponseObject, error) {
 	return nil, ErrNotImplemented
 }
 

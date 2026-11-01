@@ -36,6 +36,8 @@ Read docs/SECURITY-MODEL.md and the access sections of docs/SPEC.md and docs/ARC
 
 **Response headers on protected sites:** `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer` (or `same-origin`), `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control: private` (`no-store` on login, interstitial and callback pages, server errors and any response that sets or clears a cookie). Never block AI fetchers in `robots.txt`; access is the policy's job.
 
+**Isolation.** The owner API's isolation is per `store.Actor`: the verified owner and their memberships, or a team token. Never take an owner, team or role from the request. Missing and foreign sites answer the same `404`; `403 forbidden_role` only where the actor can see the site. A share-link token, site session or dashboard cookie never authorises an owner operation, and team tokens are API credentials on the dashboard host like any other, never a way into a site's protected content through the edge. Team sites use the same policies, links and sessions as any site: the edge matrices also run on one (`onTeamSite`).
+
 **Access log.** One entry per access: token public ID (or policy kind), site, path, time, IP (truncated per config) and User-Agent. Never raw tokens. Writes are buffered and batched off the request path; serving never waits on the database.
 
 **Required test matrix** for any change here (table-driven, through the real edge handler):

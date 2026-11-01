@@ -27,7 +27,7 @@ const stripMarker = `history.replaceState`
 // link creates a share link on site and returns it with its token.
 func (p *policyEdge) link(site string, n access.NewLink) (store.ShareLink, string) {
 	p.t.Helper()
-	l, token, err := p.acc.CreateLink(p.t.Context(), p.owner.ID, site, n)
+	l, token, err := p.acc.CreateLink(p.t.Context(), store.ActorFor(p.owner.ID), site, n)
 	if err != nil {
 		p.t.Fatal(err)
 	}
@@ -126,6 +126,9 @@ const (
 	// onPreview is a preview of docs serving the same files (C1.19), with
 	// a primary set elsewhere that must not redirect it.
 	onPreview
+	// onTeamSite is the base-domain hostname of sites that moved to a team
+	// (T7.1), which the rest of the matrix then acts as.
+	onTeamSite
 )
 
 // apply sets p up for v once docs and other are published.
@@ -137,6 +140,8 @@ func (v hostVariant) apply(p *policyEdge) {
 		p.primaryOnBase()
 		p.deployFiles("docs", deploys.Manifest{Preview: "pr-1"}, policyFiles)
 		p.siteHost = previewHost
+	case onTeamSite:
+		p.moveToTeam()
 	}
 }
 
@@ -146,6 +151,7 @@ func withHosts(t *testing.T, matrix func(t *testing.T, v hostVariant)) {
 	t.Run("no primary", func(t *testing.T) { matrix(t, onBase) })
 	t.Run("on the primary hostname", func(t *testing.T) { matrix(t, onPrimary) })
 	t.Run("on a preview hostname", func(t *testing.T) { matrix(t, onPreview) })
+	t.Run("on a team's site", func(t *testing.T) { matrix(t, onTeamSite) })
 }
 
 // primaryOnBase gives docs an active custom domain and makes its
@@ -295,7 +301,7 @@ func shareLinkMatrix(t *testing.T, variant hostVariant) {
 	t.Run("revoked", func(t *testing.T) {
 		e := setup(t)
 		cookie := e.p.visit(visit{target: withT("/", e.token), header: html}).sessionCookie()
-		if err := e.p.acc.RevokeLink(t.Context(), e.p.owner.ID, "docs", e.l.PublicID); err != nil {
+		if err := e.p.acc.RevokeLink(t.Context(), store.ActorFor(e.p.owner.ID), "docs", e.l.PublicID); err != nil {
 			t.Fatal(err)
 		}
 		e.p.visit(visit{target: withT("/", e.token)}).expect(t, 401, "protected", "Home page")
@@ -310,7 +316,7 @@ func shareLinkMatrix(t *testing.T, variant hostVariant) {
 	t.Run("rotated: the old token and its sessions fail, the new token works", func(t *testing.T) {
 		e := setup(t)
 		cookie := e.p.visit(visit{target: withT("/", e.token), header: html}).sessionCookie()
-		l, fresh, err := e.p.acc.RotateLink(t.Context(), e.p.owner.ID, "docs", e.l.PublicID)
+		l, fresh, err := e.p.acc.RotateLink(t.Context(), store.ActorFor(e.p.owner.ID), "docs", e.l.PublicID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -519,7 +525,7 @@ func useLimitedLink(t *testing.T, variant hostVariant) {
 		return tk
 	}
 	old := ticketFor(token2)
-	if _, _, err := p.acc.RotateLink(t.Context(), p.owner.ID, "docs", l2.PublicID); err != nil {
+	if _, _, err := p.acc.RotateLink(t.Context(), store.ActorFor(p.owner.ID), "docs", l2.PublicID); err != nil {
 		t.Fatal(err)
 	}
 	p.visit(visit{method: http.MethodPost, target: "/.wardlock/view", header: sameOrigin, form: url.Values{"ticket": {old}}}).expect(t, http.StatusGone, "", "")

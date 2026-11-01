@@ -24,7 +24,7 @@ const (
 
 func (p *policyEdge) setPassword(site, prefix, pw string, links bool) store.Policy {
 	p.t.Helper()
-	pol, err := p.acc.Set(p.t.Context(), p.owner.ID, site, access.Rule{
+	pol, err := p.acc.Set(p.t.Context(), store.ActorFor(p.owner.ID), site, access.Rule{
 		PathPrefix: prefix, Visibility: store.Protected, Links: links, Password: true, NewPassword: pw,
 	})
 	if err != nil {

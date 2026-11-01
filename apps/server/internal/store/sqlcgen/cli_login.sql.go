@@ -62,9 +62,10 @@ SET status = ?1,
 WHERE user_code = ?7
   AND status = 'pending'
   AND expires_at > ?6
-  -- A suspended owner decides nothing, even racing the suspension (A2.13).
+  -- A suspended owner decides nothing, even racing the suspension (A2.13),
+  -- and neither does a team.
   AND NOT EXISTS (
-    SELECT 1 FROM owners WHERE owners.id = ?2 AND owners.suspended_at IS NOT NULL
+    SELECT 1 FROM owners WHERE owners.id = ?2 AND (owners.suspended_at IS NOT NULL OR owners.kind = 'team')
   )
 `
 
@@ -147,7 +148,7 @@ const redeemCLILogin = `-- name: RedeemCLILogin :execrows
 UPDATE cli_login_requests SET status = 'redeemed', api_token_id = ?1
 WHERE cli_login_requests.id = ?2 AND status = 'approved' AND expires_at > ?3
   AND NOT EXISTS (
-    SELECT 1 FROM owners WHERE owners.id = cli_login_requests.owner_id AND owners.suspended_at IS NOT NULL
+    SELECT 1 FROM owners WHERE owners.id = cli_login_requests.owner_id AND (owners.suspended_at IS NOT NULL OR owners.kind = 'team')
   )
 `
 

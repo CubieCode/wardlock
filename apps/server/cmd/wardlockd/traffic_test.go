@@ -44,7 +44,7 @@ func TestSlowRollupDoesNotSlowServingAndMatchesTheLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	// oneSite serves the site with this ID.
-	if err := db.Sites().Create(ctx, store.Site{ID: "site-docs", OwnerID: owner.ID, Name: "docs", CreatedAt: time.Now()}, store.Quotas{}); err != nil {
+	if err := db.Sites().Create(ctx, store.ActorFor(store.Site{ID: "site-docs", OwnerID: owner.ID, Name: "docs", CreatedAt: time.Now()}.OwnerID), store.Site{ID: "site-docs", OwnerID: owner.ID, Name: "docs", CreatedAt: time.Now()}, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := accesslog.Backfill(ctx, db.Traffic(), time.Now, slog.New(slog.DiscardHandler)); err != nil {
@@ -72,7 +72,7 @@ func TestSlowRollupDoesNotSlowServingAndMatchesTheLog(t *testing.T) {
 		t.Fatalf("Close() = %v with %d dropped", err, w.Dropped())
 	}
 
-	logged, err := db.AccessLog().ListBySite(ctx, owner.ID, "site-docs", store.AccessCursor{}, store.MaxAccessListLimit)
+	logged, err := db.AccessLog().ListBySite(ctx, store.ActorFor(owner.ID), "site-docs", store.AccessCursor{}, store.MaxAccessListLimit)
 	if err != nil || len(logged) != n {
 		t.Fatalf("ListBySite() = %d entries, %v; want %d", len(logged), err, n)
 	}
@@ -94,7 +94,7 @@ func TestSlowRollupDoesNotSlowServingAndMatchesTheLog(t *testing.T) {
 		pathCounts[e.Path] = add(pathCounts[e.Path])
 	}
 	from := time.Now().Add(-2 * time.Hour)
-	r, err := db.Traffic().Report(ctx, owner.ID, store.TrafficScope{}, from, time.Now().Add(time.Hour))
+	r, err := db.Traffic().Report(ctx, store.ActorFor(owner.ID), owner.ID, store.TrafficScope{}, from, time.Now().Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -20,7 +20,7 @@ const maxCursorPath = 1024
 
 // ListDeployFiles lists one page of a deploy's files, ordered by path.
 func (s *Server) ListDeployFiles(ctx context.Context, req ListDeployFilesRequestObject) (ListDeployFilesResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListDeployFilesdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -32,7 +32,7 @@ func (s *Server) ListDeployFiles(ctx context.Context, req ListDeployFilesRequest
 	if !ok || len(after) > maxCursorPath {
 		return ListDeployFilesdefaultJSONResponse(*badCursor), nil
 	}
-	files, err := s.Deploys.Files(ctx, owner, req.Site, req.DeployId, after, limit+1)
+	files, err := s.Deploys.Files(ctx, actor, req.Site, req.DeployId, after, limit+1)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -55,7 +55,7 @@ func (s *Server) ListDeployFiles(ctx context.Context, req ListDeployFilesRequest
 // If-None-Match support, as an attachment that never renders on the
 // dashboard origin.
 func (s *Server) DownloadDeployBlob(ctx context.Context, req DownloadDeployBlobRequestObject) (DownloadDeployBlobResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return DownloadDeployBlobdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -63,7 +63,7 @@ func (s *Server) DownloadDeployBlob(ctx context.Context, req DownloadDeployBlobR
 	if !ok {
 		return nil, errNoDownloadRequest
 	}
-	body, _, err := s.Deploys.Open(ctx, owner, req.Site, req.DeployId, req.Sha256)
+	body, _, err := s.Deploys.Open(ctx, actor, req.Site, req.DeployId, req.Sha256)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {

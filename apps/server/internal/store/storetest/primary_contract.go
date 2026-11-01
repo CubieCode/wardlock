@@ -21,16 +21,16 @@ func primaryContract(t *testing.T, open Opener) {
 		active := f.activeDomain(o.ID, s.ID)
 
 		wantPrimary(t, f, o.ID, s, false, "", false)
-		f.must(f.r.Sites.SetPrimaryBase(t.Context(), o.ID, s.ID))
+		f.must(f.r.Sites.SetPrimaryBase(t.Context(), store.ActorFor(o.ID), s.ID))
 		wantPrimary(t, f, o.ID, s, true, "", false)
-		f.must(f.r.Sites.SetPrimaryDomain(t.Context(), o.ID, s.ID, active.ID))
+		f.must(f.r.Sites.SetPrimaryDomain(t.Context(), store.ActorFor(o.ID), s.ID, active.ID))
 		wantPrimary(t, f, o.ID, s, false, active.Hostname, true)
-		f.must(f.r.Sites.SetPrimaryBase(t.Context(), o.ID, s.ID))
+		f.must(f.r.Sites.SetPrimaryBase(t.Context(), store.ActorFor(o.ID), s.ID))
 		wantPrimary(t, f, o.ID, s, true, "", false)
-		f.must(f.r.Sites.ClearPrimary(t.Context(), o.ID, s.ID))
+		f.must(f.r.Sites.ClearPrimary(t.Context(), store.ActorFor(o.ID), s.ID))
 		wantPrimary(t, f, o.ID, s, false, "", false)
 		// Clearing a site with no primary is no error.
-		f.must(f.r.Sites.ClearPrimary(t.Context(), o.ID, s.ID))
+		f.must(f.r.Sites.ClearPrimary(t.Context(), store.ActorFor(o.ID), s.ID))
 	})
 	t.Run("EveryReadReturnsIt", func(t *testing.T) {
 		t.Parallel()
@@ -38,15 +38,15 @@ func primaryContract(t *testing.T, open Opener) {
 		o := f.owner()
 		s := f.site(o.ID)
 		active := f.activeDomain(o.ID, s.ID)
-		f.must(f.r.Sites.SetPrimaryDomain(t.Context(), o.ID, s.ID, active.ID))
+		f.must(f.r.Sites.SetPrimaryDomain(t.Context(), store.ActorFor(o.ID), s.ID, active.ID))
 		plain := f.activeDomain(o.ID, s.ID)
 		for _, d := range []store.Domain{active, plain} {
-			got, err := f.r.Domains.Get(t.Context(), o.ID, s.ID, d.Hostname)
+			got, err := f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), s.ID, d.Hostname)
 			if err != nil || got.Primary != (d.ID == active.ID) {
 				t.Fatalf("Domains.Get(%s) = %+v, %v; want Primary %t", d.Hostname, got, err, d.ID == active.ID)
 			}
 		}
-		domains, err := f.r.Domains.List(t.Context(), o.ID, s.ID, "", 10)
+		domains, err := f.r.Domains.List(t.Context(), store.ActorFor(o.ID), s.ID, "", 10)
 		if err != nil || len(domains) != 2 {
 			t.Fatalf("Domains.List() = %+v, %v", domains, err)
 		}
@@ -64,17 +64,17 @@ func primaryContract(t *testing.T, open Opener) {
 				t.Fatalf("%s = %+v, want primary %s", what, got, active.Hostname)
 			}
 		}
-		got, err := f.r.Sites.Get(t.Context(), o.ID, s.ID)
+		got, err := f.r.Sites.Get(t.Context(), store.ActorFor(o.ID), s.ID)
 		check("Get", got, err)
-		got, err = f.r.Sites.GetByOwnerName(t.Context(), o.ID, s.Name)
+		got, err = f.r.Sites.GetByOwnerName(t.Context(), store.ActorFor(o.ID), s.Name)
 		check("GetByOwnerName", got, err)
-		got, err = f.r.Sites.GetByOwnerDomain(t.Context(), o.ID, active.Hostname)
+		got, err = f.r.Sites.GetByOwnerDomain(t.Context(), store.ActorFor(o.ID), active.Hostname)
 		check("GetByOwnerDomain", got, err)
 		got, err = f.r.Sites.GetByName(t.Context(), s.Name)
 		check("GetByName", got, err)
 		got, err = f.r.Sites.GetByID(t.Context(), s.ID)
 		check("GetByID", got, err)
-		list, err := f.r.Sites.List(t.Context(), o.ID, "", 10)
+		list, err := f.r.Sites.List(t.Context(), store.ActorFor(o.ID), "", "", 10)
 		if len(list) != 1 {
 			t.Fatalf("List() = %+v, %v; want the site", list, err)
 		}
@@ -90,13 +90,13 @@ func primaryContract(t *testing.T, open Opener) {
 		f := newFixture(t, open)
 		o := f.owner()
 		s := f.site(o.ID)
-		f.must(f.r.Sites.SetPrimaryBase(t.Context(), o.ID, s.ID))
+		f.must(f.r.Sites.SetPrimaryBase(t.Context(), store.ActorFor(o.ID), s.ID))
 		pending := f.validDomain(s.ID)
-		f.must(f.r.Domains.Create(t.Context(), o.ID, pending))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), pending))
 		lapsed := f.validDomain(s.ID)
 		lapsed.Status, lapsed.LastCheckedAt, lapsed.VerifiedAt, lapsed.FailingSince = store.DomainLapsed, now, now, now
 		lapsed.LastFailureReason, lapsed.FailureDetail = store.DomainNoRecord, "No CNAME or TXT record found."
-		f.must(f.r.Domains.Create(t.Context(), o.ID, lapsed))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), lapsed))
 		sibling := f.site(o.ID)
 		siblings := f.activeDomain(o.ID, sibling.ID)
 		other := f.owner()
@@ -106,7 +106,7 @@ func primaryContract(t *testing.T, open Opener) {
 			"pending": pending.ID, "lapsed": lapsed.ID, "another site's": siblings.ID,
 			"another owner's": others.ID, "unknown": store.NewID(),
 		} {
-			if err := f.r.Sites.SetPrimaryDomain(t.Context(), o.ID, s.ID, id); err == nil {
+			if err := f.r.Sites.SetPrimaryDomain(t.Context(), store.ActorFor(o.ID), s.ID, id); err == nil {
 				t.Errorf("SetPrimaryDomain(%s domain) = nil, want ErrNotFound", name)
 			} else {
 				wantErr(t, err, store.ErrNotFound)
@@ -122,11 +122,11 @@ func primaryContract(t *testing.T, open Opener) {
 		s := f.site(o.ID)
 		active := f.activeDomain(o.ID, s.ID)
 		other := f.owner()
-		wantErr(t, f.r.Sites.SetPrimaryBase(t.Context(), other.ID, s.ID), store.ErrNotFound)
-		wantErr(t, f.r.Sites.SetPrimaryDomain(t.Context(), other.ID, s.ID, active.ID), store.ErrNotFound)
-		f.must(f.r.Sites.SetPrimaryBase(t.Context(), o.ID, s.ID))
-		wantErr(t, f.r.Sites.ClearPrimary(t.Context(), other.ID, s.ID), store.ErrNotFound)
-		wantErr(t, f.r.Sites.SetPrimaryBase(t.Context(), o.ID, store.NewID()), store.ErrNotFound)
+		wantErr(t, f.r.Sites.SetPrimaryBase(t.Context(), store.ActorFor(other.ID), s.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.SetPrimaryDomain(t.Context(), store.ActorFor(other.ID), s.ID, active.ID), store.ErrNotFound)
+		f.must(f.r.Sites.SetPrimaryBase(t.Context(), store.ActorFor(o.ID), s.ID))
+		wantErr(t, f.r.Sites.ClearPrimary(t.Context(), store.ActorFor(other.ID), s.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.SetPrimaryBase(t.Context(), store.ActorFor(o.ID), store.NewID()), store.ErrNotFound)
 		wantPrimary(t, f, o.ID, s, true, "", false)
 	})
 	t.Run("TakenDownIsFrozen", func(t *testing.T) {
@@ -135,11 +135,11 @@ func primaryContract(t *testing.T, open Opener) {
 		o := f.owner()
 		s := f.site(o.ID)
 		active := f.activeDomain(o.ID, s.ID)
-		f.must(f.r.Sites.SetPrimaryBase(t.Context(), o.ID, s.ID))
+		f.must(f.r.Sites.SetPrimaryBase(t.Context(), store.ActorFor(o.ID), s.ID))
 		f.must(f.r.Sites.TakeDown(t.Context(), s.ID, now))
-		wantErr(t, f.r.Sites.SetPrimaryDomain(t.Context(), o.ID, s.ID, active.ID), store.ErrNotFound)
-		wantErr(t, f.r.Sites.ClearPrimary(t.Context(), o.ID, s.ID), store.ErrNotFound)
-		wantErr(t, f.r.Sites.SetPrimaryBase(t.Context(), o.ID, s.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.SetPrimaryDomain(t.Context(), store.ActorFor(o.ID), s.ID, active.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.ClearPrimary(t.Context(), store.ActorFor(o.ID), s.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.SetPrimaryBase(t.Context(), store.ActorFor(o.ID), s.ID), store.ErrNotFound)
 		wantPrimary(t, f, o.ID, s, true, "", false)
 	})
 	t.Run("LapseSuspendsRecoveryResumes", func(t *testing.T) {
@@ -148,7 +148,7 @@ func primaryContract(t *testing.T, open Opener) {
 		o := f.owner()
 		s := f.site(o.ID)
 		active := f.activeDomain(o.ID, s.ID)
-		f.must(f.r.Sites.SetPrimaryDomain(t.Context(), o.ID, s.ID, active.ID))
+		f.must(f.r.Sites.SetPrimaryDomain(t.Context(), store.ActorFor(o.ID), s.ID, active.ID))
 
 		lapsed := active
 		lapsed.Status, lapsed.LastCheckedAt = store.DomainLapsed, now.Add(time.Hour)
@@ -156,7 +156,7 @@ func primaryContract(t *testing.T, open Opener) {
 		f.must(f.r.Domains.RecordCheck(t.Context(), active, lapsed))
 		wantPrimary(t, f, o.ID, s, false, active.Hostname, false)
 		// The domain still says it is the chosen primary.
-		got, err := f.r.Domains.Get(t.Context(), o.ID, s.ID, active.Hostname)
+		got, err := f.r.Domains.Get(t.Context(), store.ActorFor(o.ID), s.ID, active.Hostname)
 		if err != nil || !got.Primary {
 			t.Fatalf("Get() of the lapsed primary = %+v, %v; want Primary", got, err)
 		}
@@ -173,14 +173,14 @@ func primaryContract(t *testing.T, open Opener) {
 		o := f.owner()
 		s := f.site(o.ID)
 		active := f.activeDomain(o.ID, s.ID)
-		f.must(f.r.Sites.SetPrimaryDomain(t.Context(), o.ID, s.ID, active.ID))
-		f.must(f.r.Domains.Delete(t.Context(), o.ID, s.ID, active.Hostname))
+		f.must(f.r.Sites.SetPrimaryDomain(t.Context(), store.ActorFor(o.ID), s.ID, active.ID))
+		f.must(f.r.Domains.Delete(t.Context(), store.ActorFor(o.ID), s.ID, active.Hostname))
 		wantPrimary(t, f, o.ID, s, false, "", false)
 
 		// The same hostname claimed again is a new domain: not primary.
 		again := f.validDomain(s.ID)
 		again.Hostname, again.Status, again.LastCheckedAt, again.VerifiedAt = active.Hostname, store.DomainActive, now, now
-		f.must(f.r.Domains.Create(t.Context(), o.ID, again))
+		f.must(f.r.Domains.Create(t.Context(), store.ActorFor(o.ID), again))
 		wantPrimary(t, f, o.ID, s, false, "", false)
 	})
 	t.Run("DeletingTheSite", func(t *testing.T) {
@@ -189,9 +189,9 @@ func primaryContract(t *testing.T, open Opener) {
 		o := f.owner()
 		s := f.site(o.ID)
 		active := f.activeDomain(o.ID, s.ID)
-		f.must(f.r.Sites.SetPrimaryDomain(t.Context(), o.ID, s.ID, active.ID))
-		f.must(f.r.Sites.Delete(t.Context(), o.ID, s.ID))
-		_, err := f.r.Sites.Get(t.Context(), o.ID, s.ID)
+		f.must(f.r.Sites.SetPrimaryDomain(t.Context(), store.ActorFor(o.ID), s.ID, active.ID))
+		f.must(f.r.Sites.Delete(t.Context(), store.ActorFor(o.ID), s.ID))
+		_, err := f.r.Sites.Get(t.Context(), store.ActorFor(o.ID), s.ID)
 		wantErr(t, err, store.ErrNotFound)
 	})
 }
@@ -201,13 +201,13 @@ func (f *fixture) activeDomain(ownerID, siteID string) store.Domain {
 	f.t.Helper()
 	d := f.validDomain(siteID)
 	d.Status, d.LastCheckedAt, d.VerifiedAt = store.DomainActive, now, now
-	f.must(f.r.Domains.Create(f.t.Context(), ownerID, d))
+	f.must(f.r.Domains.Create(f.t.Context(), store.ActorFor(ownerID), d))
 	return d
 }
 
 func wantPrimary(t *testing.T, f *fixture, ownerID string, s store.Site, base bool, domain string, active bool) {
 	t.Helper()
-	got, err := f.r.Sites.Get(t.Context(), ownerID, s.ID)
+	got, err := f.r.Sites.Get(t.Context(), store.ActorFor(ownerID), s.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

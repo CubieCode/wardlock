@@ -70,7 +70,7 @@ func TestCustomDomainsThroughTheEdge(t *testing.T) {
 		DashboardHost: "wardlock.localhost",
 		Dashboard:     http.NotFoundHandler(),
 		Health:        http.NotFoundHandler(),
-		Sites:         siteSource{baseDomain: "wardlock.localhost", owners: p.db.Owners(), sites: p.db.Sites(), domains: p.db.Domains(), deploys: p.db.Deploys(), previews: p.db.Previews(), renditions: p.db.Renditions()},
+		Sites:         siteSource{baseDomain: "wardlock.localhost", sites: p.db.Sites(), domains: p.db.Domains(), deploys: p.db.Deploys(), previews: p.db.Previews(), renditions: p.db.Renditions()},
 		Blobs:         p.blobs,
 		Invalidator:   p.notifier,
 		Access:        p.acc,
@@ -135,7 +135,7 @@ func TestCustomDomainsThroughTheEdge(t *testing.T) {
 	}
 
 	// Pending: added, no DNS yet.
-	d, err := svc.AddDomain(ctx, p.owner.ID, "docs", custom)
+	d, err := svc.AddDomain(ctx, store.ActorFor(p.owner.ID), "docs", custom)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestCustomDomainsThroughTheEdge(t *testing.T) {
 	// Active once the CNAME is in place, on the next request.
 	dns.CNAME(custom, target)
 	p.advance(time.Minute)
-	if d, err = svc.VerifyDomain(ctx, p.owner.ID, "docs", custom); err != nil || d.Status != store.DomainActive {
+	if d, err = svc.VerifyDomain(ctx, store.ActorFor(p.owner.ID), "docs", custom); err != nil || d.Status != store.DomainActive {
 		t.Fatalf("verify: %+v, %v", d, err)
 	}
 	served(true)
@@ -183,7 +183,7 @@ func TestCustomDomainsThroughTheEdge(t *testing.T) {
 	if _, err := svc.CheckDue(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if d, _ = svc.GetDomain(ctx, p.owner.ID, "docs", custom); d.Status != store.DomainLapsed {
+	if d, _ = svc.GetDomain(ctx, store.ActorFor(p.owner.ID), "docs", custom); d.Status != store.DomainLapsed {
 		t.Fatalf("after 72 hours of failures: %+v", d)
 	}
 	served(false)
@@ -200,7 +200,7 @@ func TestCustomDomainsThroughTheEdge(t *testing.T) {
 	served(true)
 
 	// Removed: unserved at once, certificate deleted.
-	if err := svc.RemoveDomain(ctx, p.owner.ID, "docs", custom); err != nil {
+	if err := svc.RemoveDomain(ctx, store.ActorFor(p.owner.ID), "docs", custom); err != nil {
 		t.Fatal(err)
 	}
 	served(false)

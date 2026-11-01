@@ -42,7 +42,7 @@ func TestGCCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := time.Now().Add(-48 * time.Hour)
-	if err := db.Deploys().RecordUpload(t.Context(), owner.ID, store.Blob{SHA256: h, Size: int64(len(body)), CreatedAt: old}); err != nil {
+	if err := db.Deploys().RecordUpload(t.Context(), store.ActorFor(owner.ID), owner.ID, store.Blob{SHA256: h, Size: int64(len(body)), CreatedAt: old}); err != nil {
 		t.Fatal(err)
 	}
 	_ = db.Close()

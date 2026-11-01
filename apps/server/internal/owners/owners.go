@@ -105,6 +105,9 @@ type Config struct {
 	// Invites is InvitesOwners (the default when empty) or
 	// InvitesOperator.
 	Invites string
+	// Teams backs teams (T7.1); nil where they are not needed, when an
+	// owner simply has no memberships.
+	Teams TeamsConfig
 }
 
 // Service is owner authentication. It is safe for concurrent use.
@@ -118,6 +121,8 @@ type Service struct {
 	now      func() time.Time
 	limits   Limits
 	invites  string
+	teams    store.Teams
+	maxTeams int64
 	limiter  *limiter
 	// addressLimiter counts email-code sends per address in a bounded
 	// table of its own: addresses cost nothing to invent, so filling it
@@ -157,6 +162,8 @@ func New(cfg Config) (*Service, error) {
 		now:            cfg.Now,
 		limits:         cfg.Limits,
 		invites:        cfg.Invites,
+		teams:          cfg.Teams.Teams,
+		maxTeams:       cfg.Teams.MaxTeams,
 		limiter:        newLimiter(cfg.Now),
 		addressLimiter: newLimiter(cfg.Now),
 	}, nil
@@ -212,7 +219,7 @@ func NormaliseEmail(raw string) (string, error) {
 		return "", ErrInvalidEmail
 	}
 	a, err := netmail.ParseAddress(e)
-	if err != nil || a.Name != "" || a.Address != e {
+	if err != nil || a.Name != "" || a.Address != e || store.IsTeamAddress(e) {
 		return "", ErrInvalidEmail
 	}
 	return e, nil

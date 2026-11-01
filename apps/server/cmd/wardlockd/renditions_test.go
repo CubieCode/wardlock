@@ -33,7 +33,7 @@ var renditionFiles = map[string]string{
 func (p *policyEdge) publishFiles(name string, files map[string]string) {
 	t, ctx := p.t, p.t.Context()
 	t.Helper()
-	if err := p.db.Sites().Create(ctx, store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: name, CreatedAt: p.now()}, store.Quotas{}); err != nil {
+	if err := p.db.Sites().Create(ctx, store.ActorFor(store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: name, CreatedAt: p.now()}.OwnerID), store.Site{ID: store.NewID(), OwnerID: p.owner.ID, Name: name, CreatedAt: p.now()}, store.Quotas{}); err != nil {
 		t.Fatal(err)
 	}
 	var m deploys.Manifest
@@ -41,16 +41,16 @@ func (p *policyEdge) publishFiles(name string, files map[string]string) {
 		sum := sha256.Sum256([]byte(body))
 		m.Files = append(m.Files, store.DeployFile{Path: path, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(body))})
 	}
-	d, _, err := p.deploys.Create(ctx, p.owner.ID, name, m)
+	d, _, err := p.deploys.Create(ctx, store.ActorFor(p.owner.ID), name, m)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range m.Files {
-		if err := p.deploys.Upload(ctx, p.owner.ID, name, d.ID, f.SHA256, strings.NewReader(files[f.Path])); err != nil {
+		if err := p.deploys.Upload(ctx, store.ActorFor(p.owner.ID), name, d.ID, f.SHA256, strings.NewReader(files[f.Path])); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := p.deploys.Activate(ctx, p.owner.ID, name, d.ID); err != nil {
+	if _, _, err := p.deploys.Activate(ctx, store.ActorFor(p.owner.ID), name, d.ID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -204,7 +204,7 @@ func TestRenditionsWithShareLinks(t *testing.T) {
 		}
 	}
 	// Rotation: the old token dies at once, the new one works.
-	_, rotated, err := p.acc.RotateLink(t.Context(), p.owner.ID, "docs", l.PublicID)
+	_, rotated, err := p.acc.RotateLink(t.Context(), store.ActorFor(p.owner.ID), "docs", l.PublicID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestRenditionsWithShareLinks(t *testing.T) {
 		t.Fatalf("rotated token = %d %q", r.code, r.body)
 	}
 	// Revocation: nothing works any more.
-	if err := p.acc.RevokeLink(t.Context(), p.owner.ID, "docs", l.PublicID); err != nil {
+	if err := p.acc.RevokeLink(t.Context(), store.ActorFor(p.owner.ID), "docs", l.PublicID); err != nil {
 		t.Fatal(err)
 	}
 	denied(t, rotated)
@@ -235,7 +235,7 @@ func TestTokenPatternMatchesShareLinks(t *testing.T) {
 	for i := range 64 {
 		l, token := p.link("docs", access.NewLink{Label: "pin"})
 		if i%2 == 1 {
-			if _, token, err = p.acc.RotateLink(t.Context(), p.owner.ID, "docs", l.PublicID); err != nil {
+			if _, token, err = p.acc.RotateLink(t.Context(), store.ActorFor(p.owner.ID), "docs", l.PublicID); err != nil {
 				t.Fatal(err)
 			}
 		}

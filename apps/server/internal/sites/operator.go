@@ -141,7 +141,7 @@ func (s *Service) hostnames(ctx context.Context, site store.Site) ([]string, err
 		return nil, nil
 	}
 	for after := ""; ; {
-		ds, err := s.c.Domains.List(ctx, site.OwnerID, site.ID, after, checkPage)
+		ds, err := s.c.Domains.List(ctx, store.ActorFor(site.OwnerID), site.ID, after, checkPage)
 		if err != nil {
 			return nil, fmt.Errorf("list domains: %w", err)
 		}

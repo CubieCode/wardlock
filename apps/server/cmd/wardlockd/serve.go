@@ -207,7 +207,7 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 	defer stopNotifications()
 
 	tokenSvc, err := owners.NewTokens(owners.TokensConfig{
-		Tokens: db.APITokens(), Logger: log, Secret: cfg.Secret, DashboardURL: dashURL,
+		Tokens: db.APITokens(), Teams: db.Teams(), Logger: log, Secret: cfg.Secret, DashboardURL: dashURL,
 	})
 	if err != nil {
 		_ = ln.Close()
@@ -264,7 +264,6 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Health:          platform.Healthz(),
 		Sites: siteSource{
 			baseDomain: cfg.BaseDomain,
-			owners:     db.Owners(),
 			sites:      db.Sites(),
 			domains:    db.Domains(),
 			deploys:    db.Deploys(),
@@ -479,6 +478,7 @@ func newOwners(cfg platform.Config, log *slog.Logger, db *store.DB, dashURL *url
 		Secret:       cfg.Secret,
 		DashboardURL: dashURL,
 		Invites:      cfg.Invites,
+		Teams:        owners.TeamsConfig{Teams: db.Teams(), MaxTeams: cfg.MaxOwnerTeams},
 	})
 }
 

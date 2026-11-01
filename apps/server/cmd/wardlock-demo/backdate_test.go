@@ -34,15 +34,15 @@ func TestBackdater(t *testing.T) {
 	policy := store.Policy{ID: store.NewID(), SiteID: site.ID, PathPrefix: "/", Visibility: store.Protected, LinksEnabled: true, Version: 1, CreatedAt: now, UpdatedAt: now}
 	link := store.ShareLink{ID: store.NewID(), SiteID: site.ID, PublicID: "abcdefgh23", TokenHash: "hash", PathPrefix: "/", CreatedAt: now, ExpiresAt: now.Add(30 * 24 * time.Hour)}
 	must(t, db.Owners().Create(ctx, owner))
-	must(t, db.Sites().Create(ctx, site, store.Quotas{}))
-	must(t, db.Deploys().Create(ctx, owner.ID, deploy, []store.DeployFile{{Path: "index.html", SHA256: sha256Of('a'), Size: 5}}, store.Quotas{}))
-	must(t, db.Deploys().RecordUpload(ctx, owner.ID, store.Blob{SHA256: sha256Of('a'), Size: 5, CreatedAt: now}))
-	_, err = db.Deploys().Activate(ctx, owner.ID, site.ID, deploy.ID, now)
+	must(t, db.Sites().Create(ctx, store.ActorFor(site.OwnerID), site, store.Quotas{}))
+	must(t, db.Deploys().Create(ctx, store.ActorFor(owner.ID), deploy, []store.DeployFile{{Path: "index.html", SHA256: sha256Of('a'), Size: 5}}, store.Quotas{}))
+	must(t, db.Deploys().RecordUpload(ctx, store.ActorFor(owner.ID), owner.ID, store.Blob{SHA256: sha256Of('a'), Size: 5, CreatedAt: now}))
+	_, err = db.Deploys().Activate(ctx, store.ActorFor(owner.ID), site.ID, deploy.ID, now)
 	must(t, err)
 	pending := store.Deploy{ID: store.NewID(), SiteID: site.ID, FileCount: 1, TotalSize: 5, CreatedAt: now}
-	must(t, db.Deploys().Create(ctx, owner.ID, pending, []store.DeployFile{{Path: "index.html", SHA256: sha256Of('a'), Size: 5}}, store.Quotas{}))
-	must(t, db.Policies().Create(ctx, owner.ID, policy))
-	must(t, db.Links().Create(ctx, owner.ID, link))
+	must(t, db.Deploys().Create(ctx, store.ActorFor(owner.ID), pending, []store.DeployFile{{Path: "index.html", SHA256: sha256Of('a'), Size: 5}}, store.Quotas{}))
+	must(t, db.Policies().Create(ctx, store.ActorFor(owner.ID), policy))
+	must(t, db.Links().Create(ctx, store.ActorFor(owner.ID), link))
 
 	bd, err := openBackdater(ctx, path)
 	if err != nil {
@@ -62,15 +62,15 @@ func TestBackdater(t *testing.T) {
 	owners, err := db.Owners().ListAll(ctx, "", 10)
 	must(t, err)
 	equal(t, "owner", owners[0].CreatedAt, ownerAt)
-	gotSite, err := db.Sites().Get(ctx, owner.ID, site.ID)
+	gotSite, err := db.Sites().Get(ctx, store.ActorFor(owner.ID), site.ID)
 	must(t, err)
 	equal(t, "site", gotSite.CreatedAt, siteAt)
 	equal(t, "site activation", gotSite.ActivatedAt, deployAt.Add(4*time.Second))
-	gotDeploy, err := db.Deploys().Get(ctx, owner.ID, site.ID, deploy.ID)
+	gotDeploy, err := db.Deploys().Get(ctx, store.ActorFor(owner.ID), site.ID, deploy.ID)
 	must(t, err)
 	equal(t, "deploy", gotDeploy.CreatedAt, deployAt)
 	equal(t, "deploy activation", gotDeploy.ActivatedAt, deployAt.Add(4*time.Second))
-	gotPending, err := db.Deploys().Get(ctx, owner.ID, site.ID, pending.ID)
+	gotPending, err := db.Deploys().Get(ctx, store.ActorFor(owner.ID), site.ID, pending.ID)
 	must(t, err)
 	if !gotPending.ActivatedAt.IsZero() {
 		t.Error("backdating a pending deploy activated it")

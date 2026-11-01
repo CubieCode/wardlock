@@ -136,6 +136,7 @@ export function SitePage({
   const placeholder: Site = {
     id: '',
     name,
+    owner: { kind: 'owner', id: '', name: '' },
     hostname: '',
     url: '',
     createdAt: 0,

@@ -93,7 +93,7 @@ func (r gcRepo) PrunableDeploys(ctx context.Context, keep int, pendingBefore tim
 
 func (r gcRepo) DeletePrunableDeploy(ctx context.Context, id string, pendingBefore time.Time) (bool, error) {
 	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
-		owner, err := q.DeployOwner(ctx, id)
+		owner, err := lockDeployOwner(ctx, q, id)
 		if errors.Is(err, sql.ErrNoRows) {
 			return errNothingDeleted
 		}

@@ -29,6 +29,11 @@ const me = {
 const docs: Site = {
   id: '01928c5e-7a1b-7c3d-9e4f-646f63730000',
   name: 'docs',
+  owner: {
+    kind: 'owner',
+    id: '01928c5e-7a1b-7c3d-9e4f-5a6b7c8d9e00',
+    name: 'owner@example.test',
+  },
   hostname: 'docs.sites.example.test',
   url: 'https://docs.sites.example.test/',
   createdAt: now,

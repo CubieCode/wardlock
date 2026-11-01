@@ -32,7 +32,7 @@ func previewDays(v string) (int, bool) {
 }
 
 // previewBody answers preview p of site, serving d.
-func (s *Server) previewBody(site store.Site, p store.Preview, d store.Deploy) Preview {
+func (s *Server) previewBody(ctx context.Context, site store.Site, p store.Preview, d store.Deploy) Preview {
 	host := s.Sites.Hostname(deploys.PreviewLabel(site.Name, p.Name))
 	out := Preview{
 		Name:       p.Name,
@@ -40,7 +40,7 @@ func (s *Server) previewBody(site store.Site, p store.Preview, d store.Deploy) P
 		Url:        s.siteURL(host),
 		CreatedAt:  p.CreatedAt.UnixMilli(),
 		DeployedAt: p.DeployedAt.UnixMilli(),
-		Deploy:     deployBody(site, d),
+		Deploy:     s.deployBody(ctx, site, d),
 	}
 	if !p.ExpiresAt.IsZero() {
 		out.ExpiresAt = millis(p.ExpiresAt)
@@ -50,7 +50,7 @@ func (s *Server) previewBody(site store.Site, p store.Preview, d store.Deploy) P
 
 // ListPreviews lists a site's previews by name.
 func (s *Server) ListPreviews(ctx context.Context, req ListPreviewsRequestObject) (ListPreviewsResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return ListPreviewsdefaultJSONResponse(*unauthenticated), nil
 	}
@@ -62,7 +62,7 @@ func (s *Server) ListPreviews(ctx context.Context, req ListPreviewsRequestObject
 	if !ok || (after != "" && !deploys.ValidPreviewName(after)) {
 		return ListPreviewsdefaultJSONResponse(*badCursor), nil
 	}
-	site, list, err := s.Deploys.Previews(ctx, owner, req.Site, after, limit+1)
+	site, list, err := s.Deploys.Previews(ctx, actor, req.Site, after, limit+1)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -76,25 +76,25 @@ func (s *Server) ListPreviews(ctx context.Context, req ListPreviewsRequestObject
 		page.NextCursor = encodeCursor(list[limit-1].Name)
 	}
 	for _, p := range list {
-		d, err := s.Deploys.Deploy(ctx, owner, site, p.DeployID)
+		d, err := s.Deploys.Deploy(ctx, actor, site, p.DeployID)
 		if errors.Is(err, deploys.ErrNotFound) {
 			continue // deleted with its preview since the listing
 		}
 		if err != nil {
 			return nil, err
 		}
-		page.Items = append(page.Items, s.previewBody(site, p, d))
+		page.Items = append(page.Items, s.previewBody(ctx, site, p, d))
 	}
 	return page, nil
 }
 
 // DeletePreview removes one of the site's previews.
 func (s *Server) DeletePreview(ctx context.Context, req DeletePreviewRequestObject) (DeletePreviewResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return DeletePreviewdefaultJSONResponse(*unauthenticated), nil
 	}
-	if err := s.Deploys.DeletePreview(ctx, owner, req.Site, req.Preview); err != nil {
+	if err := s.Deploys.DeletePreview(ctx, actor, req.Site, req.Preview); err != nil {
 		f, err := failed(err)
 		if f == nil {
 			return nil, err
@@ -106,11 +106,11 @@ func (s *Server) DeletePreview(ctx context.Context, req DeletePreviewRequestObje
 
 // PromotePreview activates a preview's deploy on the live site.
 func (s *Server) PromotePreview(ctx context.Context, req PromotePreviewRequestObject) (PromotePreviewResponseObject, error) {
-	owner, ok := OwnerID(ctx)
+	actor, ok := ActorOf(ctx)
 	if !ok {
 		return PromotePreviewdefaultJSONResponse(*unauthenticated), nil
 	}
-	site, d, p, err := s.Deploys.Promote(ctx, owner, req.Site, req.Preview)
+	site, d, p, err := s.Deploys.Promote(ctx, actor, req.Site, req.Preview)
 	if err != nil {
 		f, err := failed(err)
 		if f == nil {
@@ -118,10 +118,10 @@ func (s *Server) PromotePreview(ctx context.Context, req PromotePreviewRequestOb
 		}
 		return PromotePreviewdefaultJSONResponse(*f), nil
 	}
-	body, err := s.siteBodyWithTags(ctx, owner, site)
+	body, err := s.siteBodyWithTags(ctx, actor, site)
 	if err != nil {
 		return nil, err
 	}
-	pb := s.previewBody(site, p, d)
-	return PromotePreview200JSONResponse{Site: body, Deploy: deployBody(site, d), Preview: &pb}, nil
+	pb := s.previewBody(ctx, site, p, d)
+	return PromotePreview200JSONResponse{Site: body, Deploy: s.deployBody(ctx, site, d), Preview: &pb}, nil
 }

@@ -20,7 +20,6 @@ import (
 // edge.SiteSource, so the edge never imports store.
 type siteSource struct {
 	baseDomain string
-	owners     store.Owners
 	sites      store.Sites
 	domains    store.Domains
 	deploys    store.Deploys
@@ -47,27 +46,21 @@ func (s siteSource) SiteForHost(ctx context.Context, host string) (edge.ServedSi
 		Name:           site.Name,
 		ActiveDeployID: site.ActiveDeployID,
 		ActivatedAt:    site.ActivatedAt,
-		Unavailable:    !site.TakenDownAt.IsZero(),
-		PrimaryHost:    sites.PrimaryHost(site, s.baseDomain),
+		// Taken down, or its owner or team suspended (A2.13, T7.1). A member's
+		// suspension ends only their own access.
+		Unavailable: site.Unavailable(),
+		PrimaryHost: sites.PrimaryHost(site, s.baseDomain),
 	}
 	if preview.Name != "" {
 		// A preview serves its own deploy, whatever is live.
 		served.Preview, served.ExpiresAt = preview.Name, preview.ExpiresAt
 		served.ActiveDeployID, served.ActivatedAt = preview.DeployID, preview.DeployedAt
 	}
-	if !served.Unavailable {
-		// A suspended owner's sites are unavailable too (A2.13).
-		o, err := s.owners.Get(ctx, site.OwnerID)
-		if err != nil {
-			return edge.ServedSite{}, fmt.Errorf("get owner: %w", err)
-		}
-		served.Unavailable = !o.SuspendedAt.IsZero()
-	}
 	if served.Unavailable || served.ActiveDeployID == "" {
 		return served, nil
 	}
 	// The owner comes from the site row: this is routing, not an owner request.
-	d, err := s.deploys.Get(ctx, site.OwnerID, site.ID, served.ActiveDeployID)
+	d, err := s.deploys.Get(ctx, store.ActorFor(site.OwnerID), site.ID, served.ActiveDeployID)
 	if err != nil {
 		return edge.ServedSite{}, fmt.Errorf("get active deploy: %w", err)
 	}

@@ -13,12 +13,64 @@ import (
 	"database/sql"
 )
 
-const createAPIToken = `-- name: CreateAPIToken :exec
-INSERT INTO api_tokens (id, owner_id, public_id, token_hash, name, scope_deploy, scope_manage, created_at, expires_at, last_used_at, revoked_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+const createAPIToken = `-- name: CreateAPIToken :execrows
+INSERT INTO api_tokens (id, owner_id, public_id, token_hash, name, scope_deploy, scope_manage, created_at, expires_at, last_used_at, revoked_at, created_by)
+SELECT CAST(?1 AS TEXT), owners.id, CAST(?2 AS TEXT), CAST(?3 AS TEXT), CAST(?4 AS TEXT),
+  CAST(?5 AS INTEGER), CAST(?6 AS INTEGER), CAST(?7 AS INTEGER),
+  CAST(?8 AS INTEGER), CAST(?9 AS INTEGER), CAST(?10 AS INTEGER), CAST(?11 AS TEXT)
+FROM owners WHERE owners.id = ?12 AND owners.kind = ?13
 `
 
 type CreateAPITokenParams struct {
+	ID          string
+	PublicID    string
+	TokenHash   string
+	Name        string
+	ScopeDeploy int64
+	ScopeManage int64
+	CreatedAt   int64
+	ExpiresAt   sql.NullInt64
+	LastUsedAt  sql.NullInt64
+	RevokedAt   sql.NullInt64
+	CreatedBy   sql.NullString
+	OwnerID     string
+	AccountKind string
+}
+
+// Inserts a token for the account in owner_id only when its kind is
+// account_kind: an owner's personal token, or a team token with created_by
+// the admin who made it. Nothing else can give a team a personal token.
+func (q *Queries) CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, createAPIToken,
+		arg.ID,
+		arg.PublicID,
+		arg.TokenHash,
+		arg.Name,
+		arg.ScopeDeploy,
+		arg.ScopeManage,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+		arg.LastUsedAt,
+		arg.RevokedAt,
+		arg.CreatedBy,
+		arg.OwnerID,
+		arg.AccountKind,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const getAPITokenByPublicID = `-- name: GetAPITokenByPublicID :one
+SELECT api_tokens.id, api_tokens.owner_id, api_tokens.public_id, api_tokens.token_hash, api_tokens.name,
+  api_tokens.scope_deploy, api_tokens.scope_manage, api_tokens.created_at, api_tokens.expires_at,
+  api_tokens.last_used_at, api_tokens.revoked_at, api_tokens.created_by, owners.kind AS account_kind
+FROM api_tokens JOIN owners ON owners.id = api_tokens.owner_id
+WHERE api_tokens.public_id = ?1 AND owners.suspended_at IS NULL
+`
+
+type GetAPITokenByPublicIDRow struct {
 	ID          string
 	OwnerID     string
 	PublicID    string
@@ -30,39 +82,16 @@ type CreateAPITokenParams struct {
 	ExpiresAt   sql.NullInt64
 	LastUsedAt  sql.NullInt64
 	RevokedAt   sql.NullInt64
+	CreatedBy   sql.NullString
+	AccountKind string
 }
-
-func (q *Queries) CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) error {
-	_, err := q.db.ExecContext(ctx, createAPIToken,
-		arg.ID,
-		arg.OwnerID,
-		arg.PublicID,
-		arg.TokenHash,
-		arg.Name,
-		arg.ScopeDeploy,
-		arg.ScopeManage,
-		arg.CreatedAt,
-		arg.ExpiresAt,
-		arg.LastUsedAt,
-		arg.RevokedAt,
-	)
-	return err
-}
-
-const getAPITokenByPublicID = `-- name: GetAPITokenByPublicID :one
-SELECT api_tokens.id, api_tokens.owner_id, api_tokens.public_id, api_tokens.token_hash, api_tokens.name,
-  api_tokens.scope_deploy, api_tokens.scope_manage, api_tokens.created_at, api_tokens.expires_at,
-  api_tokens.last_used_at, api_tokens.revoked_at
-FROM api_tokens JOIN owners ON owners.id = api_tokens.owner_id
-WHERE api_tokens.public_id = ?1 AND owners.suspended_at IS NULL
-`
 
 // Instance-wide: Bearer authentication looks a token up by its public ID
 // before comparing the HMAC. A suspended owner's tokens are never found
 // (A2.13); they work again once the owner is reinstated.
-func (q *Queries) GetAPITokenByPublicID(ctx context.Context, publicID string) (ApiToken, error) {
+func (q *Queries) GetAPITokenByPublicID(ctx context.Context, publicID string) (GetAPITokenByPublicIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getAPITokenByPublicID, publicID)
-	var i ApiToken
+	var i GetAPITokenByPublicIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.OwnerID,
@@ -75,12 +104,26 @@ func (q *Queries) GetAPITokenByPublicID(ctx context.Context, publicID string) (A
 		&i.ExpiresAt,
 		&i.LastUsedAt,
 		&i.RevokedAt,
+		&i.CreatedBy,
+		&i.AccountKind,
 	)
 	return i, err
 }
 
+const getAPITokenName = `-- name: GetAPITokenName :one
+SELECT name FROM api_tokens WHERE id = ?1
+`
+
+// The name createdBy shows for a token, revoked or not.
+func (q *Queries) GetAPITokenName(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getAPITokenName, id)
+	var name string
+	err := row.Scan(&name)
+	return name, err
+}
+
 const listAPITokens = `-- name: ListAPITokens :many
-SELECT id, owner_id, public_id, token_hash, name, scope_deploy, scope_manage, created_at, expires_at, last_used_at, revoked_at
+SELECT id, owner_id, public_id, token_hash, name, scope_deploy, scope_manage, created_at, expires_at, last_used_at, revoked_at, created_by
 FROM api_tokens
 WHERE owner_id = ?1
   AND revoked_at IS NULL
@@ -131,6 +174,7 @@ func (q *Queries) ListAPITokens(ctx context.Context, arg ListAPITokensParams) ([
 			&i.ExpiresAt,
 			&i.LastUsedAt,
 			&i.RevokedAt,
+			&i.CreatedBy,
 		); err != nil {
 			return nil, err
 		}

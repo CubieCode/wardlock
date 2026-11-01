@@ -65,6 +65,7 @@ function fakeServer(
   let site: Site = {
     id: id('01'),
     name: 'docs',
+    owner: { kind: 'owner', id: id('02'), name: 'owner@example.test' },
     hostname: 'docs.sites.example.test',
     url: 'https://docs.sites.example.test/',
     createdAt: now,

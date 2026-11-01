@@ -52,6 +52,9 @@ type OutboxEntry struct {
 	// NextAttemptAt is set while the row is pending.
 	NextAttemptAt time.Time
 	FinishedAt    time.Time
+	// TeamID is the team an admin's copy of an email is about (T7.1). See
+	// Notifications.Enqueue and WorkingAdmin.
+	TeamID string
 }
 
 // NotificationRecipient is an owner as the notification worker needs them.
@@ -92,8 +95,14 @@ type Notifications interface {
 	Recipient(ctx context.Context, ownerID string) (NotificationRecipient, error)
 	// Enqueue adds entries in one transaction, due at their CreatedAt,
 	// skipping any whose Channel and EventKey already have a row, and
-	// returns how many it added.
+	// returns how many it added. An email about a team's account goes to
+	// each of its admins, as a row of their own (T7.1), with TeamID set: a
+	// team has no mailbox.
 	Enqueue(ctx context.Context, entries ...OutboxEntry) (int, error)
+	// WorkingAdmin reports whether ownerID can still be told about teamID:
+	// an admin of it, with neither suspended. Roles change after a row is
+	// queued, so the worker asks again as each one goes.
+	WorkingAdmin(ctx context.Context, teamID, ownerID string) (bool, error)
 	// Due returns up to limit pending rows of channel due at now, oldest
 	// due first.
 	Due(ctx context.Context, channel NotificationChannel, now time.Time, limit int) ([]OutboxEntry, error)
@@ -193,7 +202,7 @@ func (r notificationsRepo) Recipient(ctx context.Context, ownerID string) (Notif
 func enqueueParams(e OutboxEntry) sqlcgen.EnqueueNotificationParams {
 	return sqlcgen.EnqueueNotificationParams{
 		ID: e.ID, Channel: string(e.Channel), EventKey: e.EventKey, OwnerID: e.OwnerID,
-		Event: e.Event, Payload: e.Payload, CreatedAt: ms(e.CreatedAt),
+		Event: e.Event, Payload: e.Payload, CreatedAt: ms(e.CreatedAt), TeamID: nullString(e.TeamID),
 	}
 }
 
@@ -201,11 +210,17 @@ func (r notificationsRepo) Enqueue(ctx context.Context, entries ...OutboxEntry) 
 	added := 0
 	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		for _, e := range entries {
-			n, err := q.EnqueueNotification(ctx, enqueueParams(e))
+			rows, err := teamRecipients(ctx, q, e)
 			if err != nil {
-				return mapErr("enqueue notification", err)
+				return err
 			}
-			added += int(n)
+			for _, row := range rows {
+				n, err := q.EnqueueNotification(ctx, enqueueParams(row))
+				if err != nil {
+					return mapErr("enqueue notification", err)
+				}
+				added += int(n)
+			}
 		}
 		return nil
 	})
@@ -215,11 +230,46 @@ func (r notificationsRepo) Enqueue(ctx context.Context, entries ...OutboxEntry) 
 	return added, nil
 }
 
+// teamRecipients returns e as it is, unless it is an email to a team, when it
+// returns one copy for each admin able to read it, each with its own event
+// key so a person keeps their own opt-outs, cap and retries.
+func teamRecipients(ctx context.Context, q *sqlcgen.Queries, e OutboxEntry) ([]OutboxEntry, error) {
+	if e.Channel != NotificationEmail {
+		return []OutboxEntry{e}, nil
+	}
+	kind, err := q.GetAccountKind(ctx, e.OwnerID)
+	if err != nil {
+		return nil, mapErr("get account kind", err)
+	}
+	if AccountKind(kind) != AccountTeam {
+		return []OutboxEntry{e}, nil
+	}
+	admins, err := q.ListTeamAdminIDs(ctx, e.OwnerID)
+	if err != nil {
+		return nil, mapErr("list team admins", err)
+	}
+	out := make([]OutboxEntry, len(admins))
+	for i, admin := range admins {
+		out[i] = e
+		out[i].ID, out[i].OwnerID, out[i].EventKey, out[i].TeamID = NewID(), admin, e.EventKey+":"+admin, e.OwnerID
+	}
+	return out, nil
+}
+
+func (r notificationsRepo) WorkingAdmin(ctx context.Context, teamID, ownerID string) (bool, error) {
+	n, err := r.db.q.CountWorkingAdmin(ctx, sqlcgen.CountWorkingAdminParams{TeamID: teamID, OwnerID: ownerID})
+	if err != nil {
+		return false, mapErr("check team admin", err)
+	}
+	return n > 0, nil
+}
+
 func outboxFrom(row sqlcgen.NotificationOutbox) OutboxEntry {
 	return OutboxEntry{
 		ID: row.ID, Channel: NotificationChannel(row.Channel), EventKey: row.EventKey, OwnerID: row.OwnerID,
 		Event: row.Event, Payload: row.Payload, Status: NotificationStatus(row.Status), Attempts: row.Attempts,
 		CreatedAt: fromMs(row.CreatedAt), NextAttemptAt: fromNullMs(row.NextAttemptAt), FinishedAt: fromNullMs(row.FinishedAt),
+		TeamID: row.TeamID.String,
 	}
 }
 

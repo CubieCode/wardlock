@@ -72,6 +72,8 @@ func DefaultTokenLimits() TokenLimits {
 // TokensConfig holds the Tokens service's dependencies.
 type TokensConfig struct {
 	Tokens store.APITokens
+	// Teams backs team tokens (T7.1).
+	Teams  store.Teams
 	Logger *slog.Logger
 	// Secret is the server key (WARDLOCK_SECRET) that keys token and
 	// device code hashes.
@@ -89,6 +91,7 @@ type TokensConfig struct {
 // returns to its caller; it logs public IDs and record IDs only.
 type Tokens struct {
 	tokens  store.APITokens
+	teams   store.Teams
 	log     *slog.Logger
 	secret  []byte
 	dash    *url.URL
@@ -113,6 +116,7 @@ func NewTokens(cfg TokensConfig) (*Tokens, error) {
 	}
 	return &Tokens{
 		tokens:  cfg.Tokens,
+		teams:   cfg.Teams,
 		log:     cfg.Logger,
 		secret:  cfg.Secret,
 		dash:    cfg.DashboardURL,
@@ -146,6 +150,8 @@ type TokenAuth struct {
 	PublicID string
 	OwnerID  string
 	Scopes   Scopes
+	// Team reports a team token (T7.1): OwnerID is then the team.
+	Team bool
 }
 
 // Create makes a new API token for ownerID. The raw token is returned once
@@ -207,7 +213,14 @@ func tokenName(name string) (string, error) {
 // List returns one page of ownerID's usable tokens, newest first, and the
 // cursor for the next page ("" on the last).
 func (s *Tokens) List(ctx context.Context, ownerID, cursor string, limit int) ([]APITokenInfo, string, error) {
-	q := store.APITokenQuery{OwnerID: ownerID, Now: s.now(), Limit: limit + 1}
+	return s.page(ctx, ownerID, cursor, limit, s.tokens.List)
+}
+
+// page reads one page of an account's usable tokens with list.
+func (s *Tokens) page(ctx context.Context, accountID, cursor string, limit int,
+	list func(context.Context, store.APITokenQuery) ([]store.APIToken, error),
+) ([]APITokenInfo, string, error) {
+	q := store.APITokenQuery{OwnerID: accountID, Now: s.now(), Limit: limit + 1}
 	if cursor != "" {
 		created, id, err := decodeCursor(cursor)
 		if err != nil {
@@ -215,7 +228,7 @@ func (s *Tokens) List(ctx context.Context, ownerID, cursor string, limit int) ([
 		}
 		q.BeforeCreated, q.BeforeID = created, id
 	}
-	rows, err := s.tokens.List(ctx, q)
+	rows, err := list(ctx, q)
 	if err != nil {
 		return nil, "", err
 	}
@@ -298,7 +311,7 @@ func (s *Tokens) Authenticate(ctx context.Context, c Client, raw string) (TokenA
 	}
 	return TokenAuth{
 		TokenID: row.ID, PublicID: row.PublicID, OwnerID: row.OwnerID,
-		Scopes: Scopes{Deploy: row.ScopeDeploy, Manage: row.ScopeManage},
+		Scopes: Scopes{Deploy: row.ScopeDeploy, Manage: row.ScopeManage}, Team: row.Team,
 	}, nil
 }
 

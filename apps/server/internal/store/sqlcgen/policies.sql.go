@@ -14,8 +14,8 @@ import (
 )
 
 const createPolicy = `-- name: CreatePolicy :exec
-INSERT INTO policies (id, site_id, path_prefix, visibility, links_enabled, password_enabled, email_enabled, oauth_enabled, password_hash, version, created_at, updated_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+INSERT INTO policies (id, site_id, path_prefix, visibility, links_enabled, password_enabled, email_enabled, oauth_enabled, password_hash, version, created_at, updated_at, created_by, created_by_token)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
 `
 
 type CreatePolicyParams struct {
@@ -31,6 +31,8 @@ type CreatePolicyParams struct {
 	Version         int64
 	CreatedAt       int64
 	UpdatedAt       int64
+	CreatedBy       sql.NullString
+	CreatedByToken  sql.NullString
 }
 
 func (q *Queries) CreatePolicy(ctx context.Context, arg CreatePolicyParams) error {
@@ -47,6 +49,8 @@ func (q *Queries) CreatePolicy(ctx context.Context, arg CreatePolicyParams) erro
 		arg.Version,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.CreatedBy,
+		arg.CreatedByToken,
 	)
 	return err
 }
@@ -106,7 +110,7 @@ func (q *Queries) EnsureDefaultPolicy(ctx context.Context, arg EnsureDefaultPoli
 }
 
 const getPolicyByPrefix = `-- name: GetPolicyByPrefix :one
-SELECT policies.id, policies.site_id, policies.path_prefix, policies.visibility, policies.links_enabled, policies.password_enabled, policies.email_enabled, policies.oauth_enabled, policies.password_hash, policies.version, policies.created_at, policies.updated_at
+SELECT policies.id, policies.site_id, policies.path_prefix, policies.visibility, policies.links_enabled, policies.password_enabled, policies.email_enabled, policies.oauth_enabled, policies.password_hash, policies.version, policies.created_at, policies.updated_at, policies.created_by, policies.created_by_token
 FROM policies JOIN sites ON sites.id = policies.site_id
 WHERE sites.owner_id = ?1 AND policies.site_id = ?2
   AND policies.path_prefix = ?3
@@ -134,12 +138,14 @@ func (q *Queries) GetPolicyByPrefix(ctx context.Context, arg GetPolicyByPrefixPa
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CreatedBy,
+		&i.CreatedByToken,
 	)
 	return i, err
 }
 
 const listOwnerPolicies = `-- name: ListOwnerPolicies :many
-SELECT policies.id, policies.site_id, policies.path_prefix, policies.visibility, policies.links_enabled, policies.password_enabled, policies.email_enabled, policies.oauth_enabled, policies.password_hash, policies.version, policies.created_at, policies.updated_at
+SELECT policies.id, policies.site_id, policies.path_prefix, policies.visibility, policies.links_enabled, policies.password_enabled, policies.email_enabled, policies.oauth_enabled, policies.password_hash, policies.version, policies.created_at, policies.updated_at, policies.created_by, policies.created_by_token
 FROM policies JOIN sites ON sites.id = policies.site_id
 WHERE sites.owner_id = ?1 AND policies.site_id = ?2
   AND policies.path_prefix > ?3
@@ -183,6 +189,8 @@ func (q *Queries) ListOwnerPolicies(ctx context.Context, arg ListOwnerPoliciesPa
 			&i.Version,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CreatedBy,
+			&i.CreatedByToken,
 		); err != nil {
 			return nil, err
 		}
@@ -198,7 +206,7 @@ func (q *Queries) ListOwnerPolicies(ctx context.Context, arg ListOwnerPoliciesPa
 }
 
 const listSitePolicies = `-- name: ListSitePolicies :many
-SELECT id, site_id, path_prefix, visibility, links_enabled, password_enabled, email_enabled, oauth_enabled, password_hash, version, created_at, updated_at
+SELECT id, site_id, path_prefix, visibility, links_enabled, password_enabled, email_enabled, oauth_enabled, password_hash, version, created_at, updated_at, created_by, created_by_token
 FROM policies WHERE site_id = ?1
 ORDER BY path_prefix
 `
@@ -226,6 +234,8 @@ func (q *Queries) ListSitePolicies(ctx context.Context, siteID string) ([]Policy
 			&i.Version,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.CreatedBy,
+			&i.CreatedByToken,
 		); err != nil {
 			return nil, err
 		}
@@ -244,8 +254,9 @@ const updatePolicy = `-- name: UpdatePolicy :exec
 UPDATE policies
 SET visibility = ?1, links_enabled = ?2, password_enabled = ?3,
   email_enabled = ?4, oauth_enabled = ?5, password_hash = ?6,
-  version = ?7, updated_at = ?8
-WHERE id = ?9 AND site_id = ?10
+  version = ?7, updated_at = ?8,
+  created_by = ?9, created_by_token = ?10
+WHERE id = ?11 AND site_id = ?12
 `
 
 type UpdatePolicyParams struct {
@@ -257,6 +268,8 @@ type UpdatePolicyParams struct {
 	PasswordHash    sql.NullString
 	Version         int64
 	UpdatedAt       int64
+	CreatedBy       sql.NullString
+	CreatedByToken  sql.NullString
 	ID              string
 	SiteID          string
 }
@@ -271,6 +284,8 @@ func (q *Queries) UpdatePolicy(ctx context.Context, arg UpdatePolicyParams) erro
 		arg.PasswordHash,
 		arg.Version,
 		arg.UpdatedAt,
+		arg.CreatedBy,
+		arg.CreatedByToken,
 		arg.ID,
 		arg.SiteID,
 	)

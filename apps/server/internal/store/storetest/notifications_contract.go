@@ -255,7 +255,7 @@ func notificationsContract(t *testing.T, open Opener) {
 	domain := func(f *fixture, ownerID, siteID string, change func(*store.Domain)) store.Domain {
 		f.t.Helper()
 		d := f.validDomain(siteID)
-		f.must(f.r.Domains.Create(f.t.Context(), ownerID, d))
+		f.must(f.r.Domains.Create(f.t.Context(), store.ActorFor(ownerID), d))
 		next := d
 		next.Status = store.DomainActive
 		next.LastCheckedAt = now
@@ -271,7 +271,7 @@ func notificationsContract(t *testing.T, open Opener) {
 		f.t.Helper()
 		l := f.validLink(siteID)
 		change(&l)
-		f.must(f.r.Links.Create(f.t.Context(), ownerID, l))
+		f.must(f.r.Links.Create(f.t.Context(), store.ActorFor(ownerID), l))
 		return l
 	}
 	token := func(f *fixture, ownerID string, created, expires time.Time) store.APIToken {
@@ -336,7 +336,7 @@ func notificationsContract(t *testing.T, open Opener) {
 				f.must(f.r.Links.Use(ctx, unlimited.ID, unlimited.TokenHash, now))
 				revoked := link(f, o.ID, s.ID, func(l *store.ShareLink) { l.MaxUses = 1 })
 				f.must(f.r.Links.Use(ctx, revoked.ID, revoked.TokenHash, now))
-				f.must(f.r.Links.Revoke(ctx, o.ID, s.ID, revoked.PublicID, now))
+				f.must(f.r.Links.Revoke(ctx, store.ActorFor(o.ID), s.ID, revoked.PublicID, now))
 				f.must(f.r.Links.Use(ctx, spent.ID, spent.TokenHash, now))
 				return spent.ID
 			},
@@ -434,9 +434,9 @@ func notificationsContract(t *testing.T, open Opener) {
 		deployed := func(name string, days int, at time.Time) {
 			d := f.validDeploy(s.ID)
 			d.Preview, d.PreviewDays, d.CreatedAt = name, &days, at
-			f.must(f.r.Deploys.Create(ctx, o.ID, d, []store.DeployFile{{Path: "index.html", SHA256: sha('b'), Size: 5}}, store.Quotas{}))
+			f.must(f.r.Deploys.Create(ctx, store.ActorFor(o.ID), d, []store.DeployFile{{Path: "index.html", SHA256: sha('b'), Size: 5}}, store.Quotas{}))
 			f.uploadAll(o.ID, s.ID, d.ID)
-			_, err := f.r.Deploys.Activate(ctx, o.ID, s.ID, d.ID, at)
+			_, err := f.r.Deploys.Activate(ctx, store.ActorFor(o.ID), s.ID, d.ID, at)
 			f.must(err)
 		}
 		deployed("soon", 7, now.Add(-6*24*hour))
