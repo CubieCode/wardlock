@@ -725,7 +725,8 @@ describe('team tokens', () => {
       screen.getByText(/only time Wardlock shows this token/),
     ).toBeTruthy();
     expect((bodyOf(route) as { name: string }).name).toBe('New');
-    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    // The dialog opens in an effect, after its fields are in the DOM.
+    fireEvent.click(await screen.findByRole('button', { name: 'Done' }));
     await waitFor(() => expect(screen.queryByDisplayValue(secret)).toBeNull());
   });
 
