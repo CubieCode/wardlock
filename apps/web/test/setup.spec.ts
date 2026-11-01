@@ -1,22 +1,28 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
+import { execFileSync } from 'node:child_process';
 import { expect, test } from '@playwright/test';
 import {
   accessOwnerFor,
-  cliOwnerFor,
   firstOwnerState,
   foreignSite,
+  mailbox,
   ownerFor,
   passkeyOwnerFor,
   projects,
   schemes,
   sitesOwnerFor,
+  teamAdmin,
+  teamAdminState,
 } from './mail.js';
 import { createSite } from './publish.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 const setupURL = process.env.WARDLOCK_ACCEPTANCE_SETUP_URL;
-if (!origin || !setupURL) throw new Error('Run through pnpm browser:test');
+const wardlockd = process.env.WARDLOCK_ACCEPTANCE_WARDLOCKD;
+const adminEnv = process.env.WARDLOCK_ACCEPTANCE_ADMIN_ENV;
+if (!origin || !setupURL || !wardlockd || !adminEnv)
+  throw new Error('Run through pnpm browser:test');
 
 // Runs once, before the desktop and mobile projects: the setup URL creates
 // the first owner, who invites the owners each project and theme signs in
@@ -75,7 +81,6 @@ test('the setup URL creates the first owner', async ({
       for (const email of [
         ownerFor(project, scheme),
         passkeyOwnerFor(project, scheme),
-        cliOwnerFor(project, scheme),
         sitesOwnerFor(project, scheme),
         accessOwnerFor(project, scheme),
       ]) {
@@ -87,6 +92,34 @@ test('the setup URL creates the first owner', async ({
       }
   await createSite(page.request, foreignSite);
   await page.context().storageState({ path: firstOwnerState });
+
+  // The first owner has spent their invitations (20 an hour), and a team's
+  // count towards the same limit, so the teams spec's admin comes from the
+  // operator. One account, signed in once and by email code: link redemptions
+  // are limited per IP, and the sign-in specs spend all of them.
+  const lead = await browser.newContext();
+  try {
+    execFileSync(wardlockd, ['admin', 'create', '--email', teamAdmin], {
+      env: { ...process.env, ...(JSON.parse(adminEnv) as object) },
+      encoding: 'utf8',
+    });
+    const leadPage = await lead.newPage();
+    await leadPage.goto(`${origin}/sign-in`);
+    await leadPage
+      .getByRole('textbox', { name: 'Email address' })
+      .fill(teamAdmin);
+    await leadPage.getByRole('button', { name: 'Send code' }).click();
+    await leadPage
+      .getByRole('textbox', { name: 'Sign-in code' })
+      .fill(await mailbox(teamAdmin).code());
+    await leadPage.getByRole('button', { name: 'Sign in' }).click();
+    await expect(
+      leadPage.getByRole('heading', { level: 1, name: 'Overview' }),
+    ).toBeVisible();
+    await lead.storageState({ path: teamAdminState });
+  } finally {
+    await lead.close();
+  }
 
   // The URL worked once: a browser without the new owner's session is
   // refused by the server, not just redirected by the dashboard.

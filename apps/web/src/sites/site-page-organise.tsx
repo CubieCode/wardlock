@@ -13,6 +13,7 @@ import {
   type TagSlot,
 } from '@wardlock/ui';
 import { useEffect, useState } from 'react';
+import { teamQuery, useSiteAccess } from '../teams/scope.js';
 import type { Site } from './format.js';
 
 export type Group = components['schemas']['Group'];
@@ -26,10 +27,11 @@ export type OrganisationState =
 /** Tag names: 1 to 30 lowercase letters, digits and hyphens (SPEC). */
 const tagName = /^[a-z0-9-]{1,30}$/;
 
-async function loadOrganisation(api: ApiClient) {
+async function loadOrganisation(api: ApiClient, team: string | undefined) {
+  const params = { query: teamQuery(team) };
   const [groups, tags] = await Promise.all([
-    api.GET('/api/v0/groups'),
-    api.GET('/api/v0/tags'),
+    api.GET('/api/v0/groups', { params }),
+    api.GET('/api/v0/tags', { params }),
   ]);
   if (!groups.data || !tags.data)
     throw new Error('could not load groups and tags');
@@ -55,9 +57,15 @@ const failure = (what: string, message: string | undefined) =>
     ? `Could not ${what}: ${message}`
     : `Could not ${what}. Check your connection, then try again.`;
 
+/** The team a site belongs to, undefined for the owner's own. */
+export const siteTeam = (site: Site) =>
+  site.owner.kind === 'team' ? site.owner.id : undefined;
+
 /**
- * The owner's groups and tags, and the site's pin, group and tags changes.
- * Each change answers the site as it is now, which `onSite` receives.
+ * The groups and tags of the account the site belongs to, and the site's
+ * pin, group and tags changes. Each change answers the site as it is now,
+ * which `onSite` receives. Moving the site to another account reads that
+ * account's instead. Nothing loads until the site is known (`site.id`).
  */
 export function useOrganise(
   api: ApiClient,
@@ -69,16 +77,19 @@ export function useOrganise(
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const known = site.id !== '';
+  const team = siteTeam(site);
   useEffect(() => {
+    if (!known) return;
     let live = true;
-    loadOrganisation(api).then(
+    loadOrganisation(api, team).then(
       (loaded) => live && setState({ kind: 'ready', ...loaded }),
       () => live && setState({ kind: 'error' }),
     );
     return () => {
       live = false;
     };
-  }, [api, attempt]);
+  }, [api, known, team, attempt]);
 
   const path = { site: site.name };
 
@@ -128,7 +139,10 @@ export function useOrganise(
     setTags: (tagIds) => organise('change the tags', site.groupId, tagIds),
     createTag: (name) =>
       run('create the tag', async () => {
-        const created = await api.POST('/api/v0/tags', { body: { name } });
+        const created = await api.POST('/api/v0/tags', {
+          params: { query: teamQuery(team) },
+          body: { name },
+        });
         if (!created.data) return created.error?.message ?? '';
         const tag = created.data;
         setState((current) =>
@@ -180,6 +194,7 @@ export function TagChips({
   tags: Tag[];
   organise: Organise;
 }) {
+  const { edit } = useSiteAccess(site);
   return site.tagIds.map((id) => {
     const tag = tags.find((t) => t.id === id);
     return tag ? (
@@ -187,9 +202,12 @@ export function TagChips({
         key={id}
         label={tag.name}
         slot={slot(tag)}
-        onRemove={() =>
-          organise.setTags(site.tagIds.filter((other) => other !== id))
-        }
+        {...(edit
+          ? {
+              onRemove: () =>
+                organise.setTags(site.tagIds.filter((other) => other !== id)),
+            }
+          : {})}
       />
     ) : null;
   });
@@ -291,6 +309,7 @@ export function Organisation({
   organise: Organise;
 }) {
   const { state } = organise;
+  const { edit } = useSiteAccess(site);
   if (state.kind === 'loading')
     return <p className="site-muted">Loading groups and tags…</p>;
   if (state.kind === 'error')
@@ -311,7 +330,9 @@ export function Organisation({
     >
       <GroupChip group={state.groups.find((g) => g.id === site.groupId)} />
       <TagChips site={site} tags={state.tags} organise={organise} />
-      <TagPicker site={site} tags={state.tags} organise={organise} />
+      {edit ? (
+        <TagPicker site={site} tags={state.tags} organise={organise} />
+      ) : null}
     </div>
   );
 }

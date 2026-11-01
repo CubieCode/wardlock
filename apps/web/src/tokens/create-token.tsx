@@ -16,6 +16,13 @@ import { failure, unreachable } from '../auth/messages.js';
 import { scopeChoices } from '../cli-login/cli-login.js';
 import type { CreatedApiToken } from './format.js';
 
+/** What creating a token answers, as far as this dialog needs it. */
+interface Answer {
+  data?: CreatedApiToken;
+  error?: { code: string; message: string; target?: string | undefined };
+  response: Response;
+}
+
 type Scope = components['schemas']['Scope'];
 type Request = components['schemas']['CreateApiTokenRequest'];
 const fields = ['name', 'scopes', 'expiresAt'] as const;
@@ -48,10 +55,20 @@ export function CreateTokenDialog({
   api,
   onClose,
   onCreated,
+  title = 'Create an API token',
+  scopesHint = 'Both can read your sites and deploys. Choose only what it needs.',
+  create: send = (body) => api.POST('/api/v0/tokens', { body }),
+  refusal = (answer) => failure(answer.response),
 }: {
   api: ApiClient;
   onClose: () => void;
   onCreated: (created: CreatedApiToken) => void;
+  title?: string;
+  scopesHint?: string;
+  /** Sends the request; the owner's own tokens unless given, as for a team. */
+  create?: (body: Request) => Promise<Answer>;
+  /** Says why the server refused anything that is not about one field. */
+  refusal?: (answer: Answer) => string;
 }) {
   const formId = useId();
   const [name, setName] = useState('');
@@ -113,20 +130,18 @@ export function CreateTokenDialog({
     setProblem(null);
     if (!built.body) return;
     setBusy(true);
-    const result = await api
-      .POST('/api/v0/tokens', { body: built.body })
-      .catch(() => null);
+    const result = await send(built.body).catch(() => null);
     setBusy(false);
     if (result?.data) return onCreated(result.data);
     const target = fields.find((field) => field === result?.error?.target);
     if (target) return setErrors({ [target]: result?.error?.message });
-    setProblem(result ? failure(result.response) : unreachable);
+    setProblem(result ? refusal(result) : unreachable);
   };
 
   return (
     <Dialog
       open
-      title="Create an API token"
+      title={title}
       onClose={close}
       actions={
         <>
@@ -151,7 +166,7 @@ export function CreateTokenDialog({
         />
         <Fieldset
           legend="What may this token do?"
-          hint="Both can read your sites and deploys. Choose only what it needs."
+          hint={scopesHint}
           error={errors.scopes}
         >
           {scopeChoices.map((choice) => (

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { withTeam } from '../shell/router.js';
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import { Button, Notice, type TableColumn } from '@wardlock/ui';
 import { useEffect, useState } from 'react';
@@ -43,7 +44,9 @@ function Via({ site, entry }: { site: string; entry: AccessLogEntry }) {
   if (entry.via === 'none')
     return <span className="visit-muted">{viaText.none}</span>;
   if (entry.via !== 'link' || !entry.linkPublicId) return viaText[entry.via];
-  const href = `/sites/${encodeURIComponent(site)}/links/${entry.linkPublicId}`;
+  const href = withTeam(
+    `/sites/${encodeURIComponent(site)}/links/${entry.linkPublicId}`,
+  );
   // One element, so a row stacked on a phone keeps the words together.
   return (
     <span>

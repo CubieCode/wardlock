@@ -12,7 +12,12 @@ export async function loadAllSiteNames(api: ApiClient) {
       params: { query: { limit: 100, ...(cursor ? { cursor } : {}) } },
     });
     if (!data) throw new Error('could not list sites');
-    names.push(...data.items.map((site) => site.name));
+    // A webhook hears only the owner's own sites, never a team's.
+    names.push(
+      ...data.items
+        .filter((site) => site.owner.kind === 'owner')
+        .map((site) => site.name),
+    );
     cursor = data.nextCursor;
   } while (cursor);
   return names;

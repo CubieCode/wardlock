@@ -9,7 +9,9 @@ import { LinkDetail } from '../links/access-log-page.js';
 import { ShareLinksCard } from '../links/share-links.js';
 import { AccessTab } from '../policies/providers.js';
 import { useTitle } from '../shell/page.js';
+import { navigate, withTeam } from '../shell/router.js';
 import { useWide } from '../shell/wide.js';
+import { useScope } from '../teams/scope.js';
 import { SiteAccessLogTab } from './access-log-page.js';
 import {
   defaultPolicy,
@@ -20,7 +22,7 @@ import {
 } from './format.js';
 import { DeploysTab } from './site-page-deploys.js';
 import { SiteHeader } from './site-page-header.js';
-import { useOrganise } from './site-page-organise.js';
+import { siteTeam, useOrganise } from './site-page-organise.js';
 import { PreviewsTab } from './previews.js';
 import { OverviewTab } from './site-page-overview.js';
 import { SettingsTab } from './site-page-settings.js';
@@ -152,6 +154,19 @@ export function SitePage({
     setSite,
   );
 
+  // The address says whose site this is, however the owner arrived, so the
+  // switcher and every link from here agree with it.
+  const { team } = useScope();
+  const belongsTo =
+    state.kind === 'ready' ? (siteTeam(state.site) ?? '') : undefined;
+  useEffect(() => {
+    if (belongsTo === undefined || belongsTo === (team ?? '')) return;
+    const url = new URL(window.location.href);
+    if (belongsTo) url.searchParams.set('team', belongsTo);
+    else url.searchParams.delete('team');
+    navigate(url.pathname + url.search, { replace: true });
+  }, [belongsTo, team]);
+
   if (state.kind === 'loading') return <p role="status">Loading site…</p>;
   if (state.kind === 'not-found')
     return (
@@ -161,7 +176,7 @@ export function SitePage({
           description="There is no site with this name in your account."
         />
         <p>
-          <a href="/sites">Go to your sites</a>
+          <a href={withTeam('/sites')}>Go to your sites</a>
         </p>
       </>
     );
@@ -317,14 +332,21 @@ export function SitePage({
       body = <SiteAccessLogTab api={api} name={site.name} />;
       break;
     case 'settings':
-      body = <SettingsTab api={api} site={site} organise={organise} />;
+      body = (
+        <SettingsTab
+          api={api}
+          site={site}
+          organise={organise}
+          onMoved={setSite}
+        />
+      );
       break;
   }
 
   return (
     <>
       <p className="site-back">
-        <a href="/sites">All sites</a>
+        <a href={withTeam('/sites')}>All sites</a>
       </p>
       <SiteHeader
         api={api}

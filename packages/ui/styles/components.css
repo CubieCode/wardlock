@@ -1114,6 +1114,15 @@
 }
 
 /* Bulk bar: fixed at the foot while things are selected */
+/* Each of these is its own stacking context, so a popover opened from one
+   rises only as far as the bar does. It rises with its popover, not always:
+   a bar left this high would cover a popover opened from the page. */
+.wl-rail:has(.wl-popover),
+.wl-rail-header:has(.wl-popover),
+.wl-bottom-bar:has(.wl-popover) {
+  z-index: 60;
+}
+
 /* Centred without a transform: a transform would make the bar the
    containing block of the fixed popovers it opens. */
 .wl-bulk-bar {
@@ -1781,6 +1790,11 @@
     height: 100vh;
     background: var(--color-surface);
     border-right: 1px solid var(--color-border);
+  }
+
+  /* Above the navigator, which follows it, so its labels show over it. */
+  .wl-rail {
+    z-index: 2;
   }
 
   .wl-rail-header,

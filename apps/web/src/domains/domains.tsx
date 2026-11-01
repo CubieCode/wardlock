@@ -14,6 +14,7 @@ import {
 } from '@wardlock/ui';
 import { useEffect, useRef, useState, type FormEvent, type Ref } from 'react';
 import type { Site } from '../sites/format.js';
+import { useSiteAccess } from '../teams/scope.js';
 import {
   byHostname,
   CheckTimes,
@@ -77,6 +78,7 @@ export function DomainsCard({
   /** The site as the server answered, after its primary hostname changed. */
   onSiteChange: (site: Site) => void;
 }) {
+  const { edit } = useSiteAccess(site);
   const [state, setState] = useState<ListState>({ kind: 'loading' });
   const [removing, setRemoving] = useState<Domain | null>(null);
   const [done, setDone] = useState<Message>(null);
@@ -301,7 +303,7 @@ export function DomainsCard({
             While the operator has taken this site down, its domains stay as
             they are: none can be added or removed.
           </p>
-        ) : (
+        ) : !edit ? null : (
           <AddDomainForm
             api={api}
             site={site}
@@ -494,6 +496,7 @@ function DomainRow({
   onGone: () => void;
   onRemove: () => void;
 }) {
+  const { edit } = useSiteAccess(site);
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<Message>(null);
   const failure = domain.failureReason
@@ -572,16 +575,18 @@ function DomainRow({
           {domain.primary && <StatusTag tone="primary">Primary</StatusTag>}
         </p>
         <div className="domain-row-actions">
-          <Button
-            type="button"
-            // Not `disabled`, which would drop keyboard focus mid-check.
-            aria-disabled={checking}
-            aria-label={`Check ${domain.hostname} now`}
-            onClick={checkNow}
-          >
-            {checking ? 'Checking…' : 'Check now'}
-          </Button>
-          {!site.unavailable && (
+          {edit && (
+            <Button
+              type="button"
+              // Not `disabled`, which would drop keyboard focus mid-check.
+              aria-disabled={checking}
+              aria-label={`Check ${domain.hostname} now`}
+              onClick={checkNow}
+            >
+              {checking ? 'Checking…' : 'Check now'}
+            </Button>
+          )}
+          {edit && !site.unavailable && (
             <Button
               type="button"
               aria-label={`Remove ${domain.hostname}`}

@@ -13,6 +13,7 @@ import {
 } from '@wardlock/ui';
 import { useRef, useState } from 'react';
 import { sitesHref, tagSlot } from '../shell/navigator.js';
+import { teamQuery } from '../teams/scope.js';
 import { useFocusAfterDelete, useFocusOnReturn } from './focus.js';
 import {
   attempt,
@@ -37,6 +38,8 @@ export const slotName = (slot: TagSlot) =>
 /** The owner's tags, with New tag, Colour, Rename and Delete. */
 export function TagsCard({
   api,
+  team,
+  edit = true,
   tags,
   counts,
   recount,
@@ -45,6 +48,10 @@ export function TagsCard({
   onDeleted,
 }: {
   api: ApiClient;
+  /** The team these belong to; undefined for the owner's own. */
+  team?: string | undefined;
+  /** False for a viewer: the list alone, with no way to change it. */
+  edit?: boolean;
   tags: Tag[];
   /** Sites with each tag, by tag ID. */
   counts: Record<string, number>;
@@ -88,6 +95,7 @@ export function TagsCard({
             <TagRow
               key={tag.id}
               api={api}
+              edit={edit}
               tag={tag}
               count={counts[tag.id] ?? 0}
               recount={recount}
@@ -97,7 +105,7 @@ export function TagsCard({
           ))}
         </ul>
       )}
-      {creating ? (
+      {!edit ? null : creating ? (
         <NameForm
           label="New tag name"
           hint={nameHint}
@@ -106,7 +114,10 @@ export function TagsCard({
           onCancel={() => setCreating(false)}
           onSubmit={async (name) => {
             const result = await attempt(() =>
-              api.POST('/api/v0/tags', { body: { name } }),
+              api.POST('/api/v0/tags', {
+                params: { query: teamQuery(team) },
+                body: { name },
+              }),
             );
             if ('error' in result) return result.error;
             if (result.data) onCreated(result.data);
@@ -138,6 +149,7 @@ export function TagsCard({
 
 function TagRow({
   api,
+  edit,
   tag,
   count,
   recount,
@@ -145,6 +157,7 @@ function TagRow({
   onDeleted,
 }: {
   api: ApiClient;
+  edit: boolean;
   tag: Tag;
   count: number;
   recount: () => Promise<void>;
@@ -196,41 +209,43 @@ function TagRow({
         count={count}
         context={`tagged ${tag.name}`}
       />
-      <span className="organise-actions">
-        <ColourPicker
-          tag={tag}
-          onPick={async (colour) => {
-            setError(null);
-            const result = await attempt(() =>
-              api.PATCH('/api/v0/tags/{tagId}', {
-                params: { path },
-                body: { colour },
-              }),
-            );
-            if ('error' in result) {
-              setError(`Could not change the colour: ${result.error}`);
-              return false;
-            }
-            if (result.data) onChanged(result.data);
-            return true;
-          }}
-        />
-        <Button
-          ref={renameButton}
-          type="button"
-          aria-label={`Rename ${tag.name}`}
-          onClick={() => setRenaming(true)}
-        >
-          Rename
-        </Button>
-        <Button
-          type="button"
-          aria-label={`Delete ${tag.name}`}
-          onClick={() => setDeleting(true)}
-        >
-          Delete
-        </Button>
-      </span>
+      {edit ? (
+        <span className="organise-actions">
+          <ColourPicker
+            tag={tag}
+            onPick={async (colour) => {
+              setError(null);
+              const result = await attempt(() =>
+                api.PATCH('/api/v0/tags/{tagId}', {
+                  params: { path },
+                  body: { colour },
+                }),
+              );
+              if ('error' in result) {
+                setError(`Could not change the colour: ${result.error}`);
+                return false;
+              }
+              if (result.data) onChanged(result.data);
+              return true;
+            }}
+          />
+          <Button
+            ref={renameButton}
+            type="button"
+            aria-label={`Rename ${tag.name}`}
+            onClick={() => setRenaming(true)}
+          >
+            Rename
+          </Button>
+          <Button
+            type="button"
+            aria-label={`Delete ${tag.name}`}
+            onClick={() => setDeleting(true)}
+          >
+            Delete
+          </Button>
+        </span>
+      ) : null}
       {error ? (
         <p className="organise-error" role="alert">
           {error}

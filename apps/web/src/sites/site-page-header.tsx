@@ -4,6 +4,7 @@
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import { CopyField, Notice, StatusTag } from '@wardlock/ui';
 import { useEffect, useState } from 'react';
+import { teamPath } from '../shell/router.js';
 import { AccessWord, Time, type Policy, type Site } from './format.js';
 import { OpenSiteButton } from './open-site.js';
 import { Organisation, type Organise } from './site-page-organise.js';
@@ -82,6 +83,7 @@ export function SiteHeader({
               )}
             </span>
             {' · '}
+            <TeamName site={site} />
             <WeekRequests api={api} name={site.name} />
             {live}
           </p>
@@ -102,6 +104,7 @@ export function SiteHeader({
           <div className="site-header-side">
             <Organisation site={site} organise={organise} />
             <p className="site-header-meta">
+              <TeamName site={site} />
               <WeekRequests api={api} name={site.name} />
               {live}
             </p>
@@ -119,6 +122,17 @@ export function SiteHeader({
           delete a policy or tear it down until the operator restores it.
         </Notice>
       )}
+    </>
+  );
+}
+
+/** The team a site belongs to, linked and followed by a separator. */
+function TeamName({ site }: { site: Site }) {
+  if (site.owner.kind !== 'team') return null;
+  return (
+    <>
+      <a href={teamPath(site.owner.id)}>{site.owner.name}</a>
+      {' · '}
     </>
   );
 }

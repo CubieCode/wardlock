@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 CubieCode
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { withTeam } from '../shell/router.js';
 import { Tab, Tabs } from '@wardlock/ui';
 
 /** The site page's tabs in order, each at `/sites/<name>/<path>`. */
@@ -19,7 +20,7 @@ export type SiteTabId = (typeof siteTabs)[number]['id'];
 
 /** A path on a site's page, such as `access` or `links/<id>`. */
 export const siteHref = (name: string, path = '') =>
-  `/sites/${encodeURIComponent(name)}${path ? `/${path}` : ''}`;
+  withTeam(`/sites/${encodeURIComponent(name)}${path ? `/${path}` : ''}`);
 
 /** The row of tabs under the site header. */
 export function SiteTabs({ name, tab }: { name: string; tab: SiteTabId }) {

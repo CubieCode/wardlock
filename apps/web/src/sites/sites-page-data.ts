@@ -3,6 +3,7 @@
 
 import type { ApiClient, components } from '@wardlock/apiclient-ts';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { teamQuery } from '../teams/scope.js';
 import type { Group, Tag } from './site-page-organise.js';
 import type { ListQuery } from './sites-page-query.js';
 import type { SiteSummary } from './sites-page-sections.js';
@@ -25,6 +26,7 @@ export class Missing extends Error {}
 export async function loadSites(
   api: ApiClient,
   { g, t, v, q, sort }: Pick<ListQuery, 'g' | 't' | 'v' | 'q' | 'sort'>,
+  team?: string,
 ) {
   const sites: SiteSummary[] = [];
   let cursor: string | undefined;
@@ -32,6 +34,7 @@ export async function loadSites(
     const { data, response } = await api.GET('/api/v0/site-summaries', {
       params: {
         query: {
+          ...teamQuery(team),
           limit: 100,
           sort,
           ...(g ? { group: g } : {}),
@@ -61,6 +64,7 @@ export async function loadSites(
 export function useSites(
   api: ApiClient,
   query: Pick<ListQuery, 'g' | 't' | 'v' | 'q' | 'sort'>,
+  team?: string,
 ) {
   const [state, setState] = useState<ListState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -73,7 +77,7 @@ export function useSites(
 
   useEffect(() => {
     const request = ++latest.current;
-    loadSites(api, { g, t, v, q, sort }).then(
+    loadSites(api, { g, t, v, q, sort }, team).then(
       (sites) => {
         if (request !== latest.current) return;
         setState({ kind: 'ready', sites });
@@ -85,7 +89,7 @@ export function useSites(
         setAnswered(asked);
       },
     );
-  }, [api, g, t, v, q, sort, attempt, asked]);
+  }, [api, g, t, v, q, sort, team, attempt, asked]);
   const pending = answered !== asked;
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
@@ -114,15 +118,16 @@ export type MetaState =
  * The owner's groups and tags (names, notes and colours for sections and
  * chips) and the site counts, read together and beside the list.
  */
-export function useMeta(api: ApiClient) {
+export function useMeta(api: ApiClient, team?: string) {
   const [state, setState] = useState<MetaState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let live = true;
+    const params = { query: teamQuery(team) };
     Promise.all([
-      api.GET('/api/v0/groups'),
-      api.GET('/api/v0/tags'),
-      api.GET('/api/v0/site-counts'),
+      api.GET('/api/v0/groups', { params }),
+      api.GET('/api/v0/tags', { params }),
+      api.GET('/api/v0/site-counts', { params }),
     ]).then(
       ([groups, tags, counts]) => {
         if (!live) return;
@@ -142,7 +147,7 @@ export function useMeta(api: ApiClient) {
     return () => {
       live = false;
     };
-  }, [api, attempt]);
+  }, [api, team, attempt]);
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
   const retry = useCallback(() => {
     setState({ kind: 'loading' });

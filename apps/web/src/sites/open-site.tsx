@@ -4,6 +4,7 @@
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import { Button, Notice } from '@wardlock/ui';
 import { useState, type ReactNode } from 'react';
+import { useSiteAccess } from '../teams/scope.js';
 import type { Policy, Site } from './format.js';
 
 /** How long the share link behind Open site keeps working. */
@@ -51,6 +52,7 @@ export function OpenSiteButton({
 }) {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const { edit } = useSiteAccess(site);
 
   const open = async () => {
     setFailure(null);
@@ -90,6 +92,9 @@ export function OpenSiteButton({
     tab.location.href = onHostOf(result.data.url, url);
     onLinkCreated();
   };
+
+  // A protected site opens through a share link, which a viewer cannot make.
+  if (!edit && policy?.visibility !== 'public') return null;
 
   return (
     <div className="site-open">

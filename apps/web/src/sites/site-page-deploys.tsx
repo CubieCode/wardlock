@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ApiClient } from '@wardlock/apiclient-ts';
+import { useSiteAccess } from '../teams/scope.js';
 import { Button, Card, EmptyState, Notice, StatusTag } from '@wardlock/ui';
 import { useState } from 'react';
 import {
@@ -12,6 +13,7 @@ import {
   type Activation,
   type Deploy,
   type Site,
+  madeBy,
 } from './format.js';
 import { RollbackDialog } from './rollback.js';
 import { siteHref } from './site-page-tabs.js';
@@ -39,6 +41,7 @@ export function DeploysTab({
   onRefresh: () => void;
   onRolledBack: (activation: Activation) => void;
 }) {
+  const { edit } = useSiteAccess(site);
   const [rollbackTo, setRollbackTo] = useState<Deploy | null>(null);
   const [rolledBack, setRolledBack] = useState<Deploy | null>(null);
   const active = deploys.find((d) => d.id === site.activeDeployId);
@@ -76,8 +79,9 @@ export function DeploysTab({
             <DeployRow
               key={deploy.id}
               deploy={deploy}
+              createdBy={site.owner.kind === 'team'}
               onRollback={
-                site.activeDeployId && !site.unavailable
+                edit && site.activeDeployId && !site.unavailable
                   ? () => setRollbackTo(deploy)
                   : undefined
               }
@@ -232,9 +236,12 @@ export function deployFacts(deploy: Deploy) {
  */
 function DeployRow({
   deploy,
+  createdBy,
   onRollback,
 }: {
   deploy: Deploy;
+  /** Whether to say who made it: on a team's site, where it varies. */
+  createdBy: boolean;
   /** Absent when no deploy is live, so there is nothing to roll back from. */
   onRollback: (() => void) | undefined;
 }) {
@@ -278,6 +285,9 @@ function DeployRow({
           )}
           {' · '}
           {deployFacts(deploy)}
+          {createdBy && deploy.createdBy ? (
+            <> · Deployed by {madeBy(deploy.createdBy)}</>
+          ) : null}
         </p>
         <DeployRules deploy={deploy} />
       </div>

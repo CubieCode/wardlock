@@ -12,8 +12,11 @@ import {
   RailItem,
   RailLayout,
 } from '@wardlock/ui';
-import { useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import type { Me } from '../auth/session.js';
+import { ScopeProvider, useScope } from '../teams/scope.js';
+import { TeamSwitcher } from '../teams/switcher.js';
+import { TeamMissing } from '../teams/team-page.js';
 import { AccountMenu, type Place } from './account-menu.js';
 import { filterIcon, searchIcon } from './icons.js';
 import { JumpTo } from './jump-to.js';
@@ -27,7 +30,7 @@ import {
   useNavigatorData,
 } from './navigator.js';
 import { useTitle } from './page.js';
-import { matchPath } from './router.js';
+import { matchPath, withTeam } from './router.js';
 import { barPlaces, shellRoutes, type ShellRoute } from './routes.js';
 import './shell.css';
 
@@ -38,14 +41,15 @@ import './shell.css';
  * list; and the jump-to palette on ⌘K (Apple) or Ctrl+K. Below 48rem the
  * navigator opens in a drawer from the Browse sites button.
  */
-export function Shell({
-  api,
-  me,
-  pathname,
-  route,
-  children,
-  filters = navigatorFilters,
-}: {
+export function Shell(props: ShellProps) {
+  return (
+    <ScopeProvider api={props.api} ownerId={props.me.owner.id}>
+      <Frame {...props} />
+    </ScopeProvider>
+  );
+}
+
+interface ShellProps {
   api: ApiClient;
   me: Me;
   pathname: string;
@@ -54,7 +58,22 @@ export function Shell({
   children: ReactNode;
   /** Whether the sites list honours the navigator's filters (V5.8). */
   filters?: boolean;
-}) {
+}
+
+function Frame({
+  api,
+  me,
+  pathname,
+  route,
+  children,
+  filters = navigatorFilters,
+}: ShellProps) {
+  const { team, teams } = useScope();
+  // A team this owner is not in, or has just left.
+  const missing =
+    team !== undefined &&
+    teams.kind === 'ready' &&
+    !teams.teams.some((t) => t.id === team);
   // Wide screens get the rail and the navigator column; narrow ones the top
   // and bottom bars and the drawer. The layout's CSS draws the same split, so
   // only one set is ever on the page.
@@ -66,8 +85,9 @@ export function Shell({
   // Narrow screens show the navigator only in the drawer.
   const navigator = useNavigatorData(
     api,
-    withNavigator && (wide || filters),
+    withNavigator && (wide || filters) && !missing,
     filters,
+    team,
   );
 
   useEffect(() => {
@@ -88,7 +108,7 @@ export function Shell({
       ? [
           {
             ...route.rail,
-            href: route.path,
+            href: withTeam(route.path),
             current: isCurrent(route.path, pathname),
           },
         ]
@@ -143,6 +163,7 @@ export function Shell({
                 </>
               }
             >
+              <TeamSwitcher api={api} compact={false} />
               {placed.map(place)}
             </Rail>
           ) : null
@@ -159,21 +180,30 @@ export function Shell({
         header={
           wide ? null : (
             <>
-              <a className="shell-home" href="/">
+              <a className="shell-home" href={withTeam('/')}>
                 <Mark />
-                Wardlock
+                {/* Beside a team and Browse sites, the name needs the room. */}
+                <span
+                  className={
+                    withDrawer && team ? 'wl-visually-hidden' : undefined
+                  }
+                >
+                  Wardlock
+                </span>
               </a>
+              <TeamSwitcher api={api} compact />
               {withDrawer ? (
                 <button
                   type="button"
                   className="shell-browse"
+                  title="Browse sites"
                   aria-expanded={drawer}
                   onClick={() => setDrawer(true)}
                 >
                   <span className="shell-nav-icon" aria-hidden="true">
                     {filterIcon}
                   </span>
-                  Browse sites
+                  <span className="wl-visually-hidden">Browse sites</span>
                 </button>
               ) : null}
             </>
@@ -182,7 +212,14 @@ export function Shell({
         navigator={withNavigator && wide ? navigatorContent : undefined}
         navigatorLabel="Sites navigator"
       >
-        {children}
+        {/*
+          Another team starts from fresh pages, never showing the last one's.
+          A site's page is the site's, whichever team the address names, and
+          corrects the address itself without being read again.
+        */}
+        <Fragment key={/^\/sites\/./.test(pathname) ? 'site' : (team ?? '')}>
+          {missing ? <TeamMissing /> : children}
+        </Fragment>
       </RailLayout>
       {withDrawer ? (
         <Drawer
@@ -194,7 +231,12 @@ export function Shell({
         </Drawer>
       ) : null}
       {jumping ? (
-        <JumpTo api={api} filters={filters} onClose={() => setJumping(false)} />
+        <JumpTo
+          api={api}
+          team={team}
+          filters={filters}
+          onClose={() => setJumping(false)}
+        />
       ) : null}
     </>
   );
@@ -216,7 +258,7 @@ export function NotFoundPage() {
         description="There is nothing at this address."
       />
       <p>
-        <a href="/">Go to the overview</a>
+        <a href={withTeam('/')}>Go to the overview</a>
       </p>
     </>
   );

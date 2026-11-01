@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { DomainStatus, type Domain } from '../domains/format.js';
 import { expiryText, LinkStatus, type ShareLink } from '../links/format.js';
 import { methodsText } from '../policies/format.js';
+import { useSiteAccess } from '../teams/scope.js';
 import {
   AccessWord,
   shortId,
@@ -59,6 +60,7 @@ export function OverviewTab({
   /** Shown in the access card when a refresh after a change failed. */
   refreshNotice: ReactNode;
 }) {
+  const { edit } = useSiteAccess(site);
   const [links, setLinks] = useState<Preview<ShareLink>>({ kind: 'loading' });
   const [domains, setDomains] = useState<Preview<Domain>>({
     kind: 'loading',
@@ -103,7 +105,9 @@ export function OverviewTab({
         </ul>
         {refreshNotice}
         <CardLinks>
-          <a href={siteHref(site.name, 'access')}>Manage access</a>
+          <a href={siteHref(site.name, 'access')}>
+            {edit ? 'Manage access' : 'View access'}
+          </a>
         </CardLinks>
       </Card>
 
@@ -131,7 +135,9 @@ export function OverviewTab({
             </ul>
           ))}
         <CardLinks>
-          <a href={siteHref(site.name, 'links')}>Manage share links</a>
+          <a href={siteHref(site.name, 'links')}>
+            {edit ? 'Manage share links' : 'View share links'}
+          </a>
         </CardLinks>
       </Card>
 
@@ -164,7 +170,9 @@ export function OverviewTab({
           </Notice>
         )}
         <CardLinks>
-          <a href={siteHref(site.name, 'domains')}>Manage domains</a>
+          <a href={siteHref(site.name, 'domains')}>
+            {edit ? 'Manage domains' : 'View domains'}
+          </a>
         </CardLinks>
       </Card>
 

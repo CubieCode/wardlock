@@ -262,11 +262,14 @@ describe('adding a webhook', () => {
       [createRoute]: created(),
       'GET /api/v0/sites': (target) =>
         target.searchParams.get('cursor')
-          ? json({ items: [{ name: 'shop' }] })(target, null)
-          : json({ items: [{ name: 'docs' }], nextCursor: 'more' })(
+          ? json({ items: [{ name: 'shop', owner: { kind: 'owner' } }] })(
               target,
               null,
-            ),
+            )
+          : json({
+              items: [{ name: 'docs', owner: { kind: 'owner' } }],
+              nextCursor: 'more',
+            })(target, null),
     });
     render(<WebhooksPage api={server.api} />);
     await openAdd();
@@ -484,7 +487,9 @@ describe('editing', () => {
     const server = renderWebhook(
       {
         [patchRoute]: json(webhook()),
-        'GET /api/v0/sites': json({ items: [{ name: 'docs' }] }),
+        'GET /api/v0/sites': json({
+          items: [{ name: 'docs', owner: { kind: 'owner' } }],
+        }),
       },
       webhook({ events: ['site.created'], sites: [] }),
     );

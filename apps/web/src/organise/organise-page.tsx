@@ -5,6 +5,7 @@ import type { ApiClient, components } from '@wardlock/apiclient-ts';
 import { Button, Notice, PageHeader } from '@wardlock/ui';
 import { useEffect, useState } from 'react';
 import { useTitle } from '../shell/page.js';
+import { teamQuery, useScope, useTeamAccess } from '../teams/scope.js';
 import { GroupsCard, type Group } from './groups.js';
 import { TagsCard, type Tag } from './tags.js';
 import './organise.css';
@@ -34,11 +35,15 @@ function countsByID(counts: SiteCounts) {
   };
 }
 
-async function load(api: ApiClient): Promise<Organisation> {
+async function load(
+  api: ApiClient,
+  team: string | undefined,
+): Promise<Organisation> {
+  const params = { query: teamQuery(team) };
   const [groups, tags, counts] = await Promise.all([
-    api.GET('/api/v0/groups'),
-    api.GET('/api/v0/tags'),
-    api.GET('/api/v0/site-counts'),
+    api.GET('/api/v0/groups', { params }),
+    api.GET('/api/v0/tags', { params }),
+    api.GET('/api/v0/site-counts', { params }),
   ]);
   if (!groups.data || !tags.data || !counts.data)
     throw new Error('could not load groups and tags');
@@ -74,19 +79,21 @@ const without = <T extends { id: string }>(items: T[], id: string) =>
  */
 export function OrganisePage({ api }: { api: ApiClient }) {
   useTitle('Groups and tags');
+  const { team } = useScope();
+  const { edit } = useTeamAccess();
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
-    load(api).then(
+    load(api, team).then(
       (loaded) => live && setState({ kind: 'ready', ...loaded }),
       () => live && setState({ kind: 'error' }),
     );
     return () => {
       live = false;
     };
-  }, [api, attempt]);
+  }, [api, team, attempt]);
 
   const update = (change: (current: Organisation) => Partial<Organisation>) =>
     setState((current) =>
@@ -95,7 +102,9 @@ export function OrganisePage({ api }: { api: ApiClient }) {
 
   // Before a delete is confirmed, so it names how many sites it holds now.
   const recount = async () => {
-    const counts = await api.GET('/api/v0/site-counts').catch(() => undefined);
+    const counts = await api
+      .GET('/api/v0/site-counts', { params: { query: teamQuery(team) } })
+      .catch(() => undefined);
     if (counts?.data) update(() => countsByID(counts.data));
   };
 
@@ -103,7 +112,11 @@ export function OrganisePage({ api }: { api: ApiClient }) {
     <>
       <PageHeader
         title="Groups and tags"
-        description="Sort your sites with groups and tags. Only you see them; visitors never do."
+        description={
+          team
+            ? 'Sort the team’s sites with groups and tags. Everyone in the team sees them; visitors never do.'
+            : 'Sort your sites with groups and tags. Only you see them; visitors never do.'
+        }
       />
       {state.kind === 'loading' ? (
         <p role="status">Loading groups and tags…</p>
@@ -131,6 +144,8 @@ export function OrganisePage({ api }: { api: ApiClient }) {
         <div className="organise-columns">
           <GroupsCard
             api={api}
+            team={team}
+            edit={edit}
             groups={state.groups}
             counts={state.groupSites}
             recount={recount}
@@ -150,6 +165,8 @@ export function OrganisePage({ api }: { api: ApiClient }) {
           />
           <TagsCard
             api={api}
+            team={team}
+            edit={edit}
             tags={state.tags}
             counts={state.tagSites}
             recount={recount}

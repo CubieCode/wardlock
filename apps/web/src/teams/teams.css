@@ -1,0 +1,111 @@
+/* SPDX-FileCopyrightText: 2026 CubieCode */
+/* SPDX-License-Identifier: AGPL-3.0-only */
+
+.team-stack {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.team-form {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: stretch;
+}
+
+.team-invite {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.team-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.team-member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.team-email {
+  overflow-wrap: anywhere;
+}
+
+.team-muted,
+.team-said {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.team-role {
+  width: auto;
+  min-height: var(--touch-target);
+}
+
+.team-role-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.team-square {
+  display: grid;
+  place-items: center;
+  width: var(--space-6);
+  height: var(--space-6);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+/* The top bar's form, below 48rem. */
+.team-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: var(--touch-target);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.team-switch-name {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 48rem) {
+  .team-invite {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  /* Lines the button up with the fields under their labels. */
+  .team-invite-action {
+    padding-top: calc(var(--text-sm) * var(--line-height) + var(--space-1));
+  }
+
+  .team-invite > .wl-notice,
+  .team-invite-hint {
+    grid-column: 1 / -1;
+  }
+
+  .team-form {
+    max-width: 28rem;
+  }
+}

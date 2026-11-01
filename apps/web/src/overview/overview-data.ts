@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ApiClient, components } from '@wardlock/apiclient-ts';
+import { teamQuery } from '../teams/scope.js';
 
 export type SiteSummary = components['schemas']['SiteSummary'];
 export type SiteCounts = components['schemas']['SiteCounts'];
@@ -24,13 +25,18 @@ export interface OverviewData {
 }
 
 /** Every site summary, newest live deploy first, a page at a time. */
-async function allSummaries(api: ApiClient) {
+async function allSummaries(api: ApiClient, team: string | undefined) {
   const sites: SiteSummary[] = [];
   let cursor: string | undefined;
   do {
     const { data } = await api.GET('/api/v0/site-summaries', {
       params: {
-        query: { sort: 'deploy', limit: 100, ...(cursor ? { cursor } : {}) },
+        query: {
+          ...teamQuery(team),
+          sort: 'deploy',
+          limit: 100,
+          ...(cursor ? { cursor } : {}),
+        },
       },
     });
     if (!data) throw new Error('could not list site summaries');
@@ -45,13 +51,17 @@ async function allSummaries(api: ApiClient) {
  * the counts, the summaries, the group names and the soonest expiring
  * links. Never one read per site.
  */
-export async function loadOverview(api: ApiClient): Promise<OverviewData> {
+export async function loadOverview(
+  api: ApiClient,
+  team?: string,
+): Promise<OverviewData> {
+  const params = { query: teamQuery(team) };
   const [counts, sites, groups, expiring] = await Promise.all([
-    api.GET('/api/v0/site-counts'),
-    allSummaries(api),
-    api.GET('/api/v0/groups'),
+    api.GET('/api/v0/site-counts', { params }),
+    allSummaries(api, team),
+    api.GET('/api/v0/groups', { params }),
     api.GET('/api/v0/expiring-links', {
-      params: { query: { limit: shownExpiringLinks } },
+      params: { query: { ...teamQuery(team), limit: shownExpiringLinks } },
     }),
   ]);
   if (!counts.data || !groups.data || !expiring.data)
