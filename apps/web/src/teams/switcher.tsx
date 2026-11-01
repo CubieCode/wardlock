@@ -78,6 +78,7 @@ export function TeamSwitcher({
               type="button"
               className="team-switch"
               aria-label={label}
+              title={name}
             >
               <span className="team-switch-name">{name}</span>
               <span aria-hidden="true">⌄</span>

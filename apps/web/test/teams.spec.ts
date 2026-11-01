@@ -259,6 +259,46 @@ for (const scheme of schemes) {
         await shot(member, 'viewer-settings-page');
       });
 
+      if (isMobile(info))
+        await test.step('the top bar shows the team’s name', async () => {
+          const name = admin.locator('.team-switch-name');
+          const whole = () =>
+            name.evaluate((el) => el.scrollWidth <= el.clientWidth);
+
+          for (const [step, path] of [
+            ['list', `/sites?team=${teamId}`],
+            ['map', `/sites?view=map&team=${teamId}`],
+          ] as const) {
+            await admin.goto(`${origin}${path}`);
+            await expect(
+              admin.getByRole('button', { name: 'Browse sites' }),
+            ).toBeVisible();
+            await expect(name).toHaveText(teamName);
+            expect(await whole()).toBe(true);
+            await shot(admin, `topbar-${step}`);
+          }
+
+          // A long name is cut with an ellipsis, keeping its start and its
+          // whole self as the button's name and title.
+          const long = `${teamName} and everyone who looks after the client sites`;
+          const rename = (to: string) =>
+            admin.request.patch(`${origin}/api/v0/teams/${teamId}`, {
+              data: { name: to },
+              headers,
+            });
+          expect((await rename(long)).status()).toBe(200);
+          await admin.goto(`${origin}/sites?team=${teamId}`);
+          await expect(name).toHaveText(long);
+          expect(await whole()).toBe(false);
+          expect((await name.boundingBox())!.width).toBeGreaterThan(160);
+          await expect(switcher(admin)).toHaveAttribute('title', long);
+          await expect(
+            admin.getByRole('button', { name: `Switch team: ${long}` }),
+          ).toBeVisible();
+          await shot(admin, 'topbar-long');
+          expect((await rename(teamName)).status()).toBe(200);
+        });
+
       await test.step('a page of the owner’s own is personal', async () => {
         await admin.goto(`${origin}/sites?team=${teamId}`);
         await goToPlace(admin, info, 'API tokens');

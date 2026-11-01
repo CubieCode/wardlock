@@ -182,20 +182,28 @@ function Frame({
             <>
               <a className="shell-home" href={withTeam('/')}>
                 <Mark />
-                Wardlock
+                {/* Beside a team and Browse sites, the name needs the room. */}
+                <span
+                  className={
+                    withDrawer && team ? 'wl-visually-hidden' : undefined
+                  }
+                >
+                  Wardlock
+                </span>
               </a>
               <TeamSwitcher api={api} compact />
               {withDrawer ? (
                 <button
                   type="button"
                   className="shell-browse"
+                  title="Browse sites"
                   aria-expanded={drawer}
                   onClick={() => setDrawer(true)}
                 >
                   <span className="shell-nav-icon" aria-hidden="true">
                     {filterIcon}
                   </span>
-                  Browse sites
+                  <span className="wl-visually-hidden">Browse sites</span>
                 </button>
               ) : null}
             </>
