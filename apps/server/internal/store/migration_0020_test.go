@@ -110,6 +110,29 @@ func TestMigration0020(t *testing.T) {
 	count(`SELECT COUNT(*) FROM teams`, 0)
 	count(`SELECT COUNT(*) FROM team_members`, 0)
 	count(`SELECT COUNT(*) FROM team_invitations`, 0)
-	// A team's creator can go without taking the team's history with them.
-	count(`SELECT COUNT(*) FROM owners WHERE id = 'o1'`, 1)
+
+	// A team's creator and an inviter can go without taking the team, its
+	// invitations or anyone else's membership with them.
+	exec(
+		`INSERT INTO owners (id, email, created_at) VALUES ('o3', 'three@example.test', 1)`,
+		`INSERT INTO owners (id, email, kind, created_at) VALUES ('t2', 't2@team.wardlock.invalid', 'team', 1)`,
+		`INSERT INTO teams (id, name, created_by, created_at) VALUES ('t2', 'Kept', 'o3', 1)`,
+		`INSERT INTO team_members (team_id, owner_id, role, created_at) VALUES ('t2', 'o3', 'admin', 1)`,
+		`INSERT INTO team_members (team_id, owner_id, role, created_at) VALUES ('t2', 'o1', 'admin', 1)`,
+		`INSERT INTO team_invitations (id, team_id, email, role, invited_by, created_at, expires_at) VALUES ('i3', 't2', 'z@example.test', 'viewer', 'o3', 1, 2)`,
+		`DELETE FROM owners WHERE id = 'o3'`,
+	)
+	count(`SELECT COUNT(*) FROM teams WHERE id = 't2' AND name = 'Kept' AND created_by IS NULL`, 1)
+	count(`SELECT COUNT(*) FROM team_invitations WHERE id = 'i3' AND invited_by IS NULL`, 1)
+	count(`SELECT COUNT(*) FROM team_members WHERE team_id = 't2' AND owner_id = 'o3'`, 0)
+	count(`SELECT COUNT(*) FROM team_members WHERE team_id = 't2' AND owner_id = 'o1'`, 1)
+
+	// A queued email can name its team, and that outlives the team.
+	exec(
+		`INSERT INTO notification_outbox (id, channel, event_key, owner_id, event, payload, status, attempts, created_at, team_id)
+		 VALUES ('n1', 'email', 'k', 'o1', 'e', '{}', 'pending', 0, 1, 't2')`,
+		`DELETE FROM team_members WHERE team_id = 't2'`,
+		`DELETE FROM owners WHERE id = 't2'`,
+	)
+	count(`SELECT COUNT(*) FROM notification_outbox WHERE id = 'n1' AND team_id = 't2'`, 1)
 }

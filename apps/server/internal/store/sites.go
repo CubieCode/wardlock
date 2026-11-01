@@ -37,6 +37,9 @@ type Site struct {
 	// only): the owner's address, or the team's name.
 	OwnerKind AccountKind
 	OwnerName string
+	// OwnerSuspendedAt is when the operator suspended that account (A2.13,
+	// T7.1, read only; zero while it is not).
+	OwnerSuspendedAt time.Time
 	// The owner's choice of primary hostname (C1.18, read only; see
 	// Sites.SetPrimaryBase and SetPrimaryDomain): PrimaryBase for the
 	// base-domain hostname, or PrimaryDomain, the hostname of one of the
@@ -48,11 +51,16 @@ type Site struct {
 	PrimaryDomainActive bool
 }
 
+// Unavailable reports whether the operator has stopped the site, by taking it
+// down or suspending its owner or team. It reads the owner's state from the
+// site's own row, so no kind of account can skip it. Everything an owner may
+// not do to a taken-down site, they may not do to any unavailable one.
+func (s Site) Unavailable() bool { return !s.TakenDownAt.IsZero() || !s.OwnerSuspendedAt.IsZero() }
+
 // OperatorSite is a site as `wardlockd admin list-sites` shows it.
 type OperatorSite struct {
 	Site
-	OwnerEmail       string
-	OwnerSuspendedAt time.Time
+	OwnerEmail string
 }
 
 // Sites stores sites. Every method that takes an Actor matches only sites
@@ -61,8 +69,8 @@ type OperatorSite struct {
 type Sites interface {
 	// Create inserts s under the account s.OwnerID, which the actor must be
 	// able to edit; ActiveDeployID, ActivatedAt, GroupID and PinnedAt are
-	// ignored (see Deploys.Activate and Organisation). A name held by any
-	// site is ErrConflict. An account that already has as many sites as
+	// ignored (see Deploys.Activate and Organisation). A suspended team is
+	// ErrTeamSuspended, and a name held by any site ErrConflict. An account that already has as many sites as
 	// quotas.Sites, after its own override (A2.14), gets a *QuotaError
 	// (ErrQuotaExceeded); concurrent creates by one account are serialised
 	// so they cannot both take the last place.
@@ -95,8 +103,8 @@ type Sites interface {
 	// ExpiringLinks returns up to limit of accountID's links that
 	// Summaries counts as ExpiringLinks under w, soonest expiry first.
 	ExpiringLinks(ctx context.Context, actor Actor, accountID string, w SummaryWindow, limit int) ([]ExpiringLink, error)
-	// SetActiveDeploy points the site at one of its own deploys. A
-	// taken-down site is ErrNotFound.
+	// SetActiveDeploy points the site at one of its own deploys. An
+	// unavailable site is ErrNotFound.
 	SetActiveDeploy(ctx context.Context, actor Actor, siteID, deployID string) error
 	// SetPrimaryBase makes the site's base-domain hostname its primary
 	// (C1.18), and SetPrimaryDomain the custom domain domainID, which must
@@ -132,7 +140,7 @@ type Sites interface {
 	// names the team in OwnerName.
 	ListAll(ctx context.Context, afterName string, limit int) ([]OperatorSite, error)
 	// UnavailableIDs returns the IDs of every site that is taken down or
-	// owned by a suspended owner, in ID order.
+	// owned by a suspended owner or team, in ID order.
 	UnavailableIDs(ctx context.Context) ([]string, error)
 }
 
@@ -151,6 +159,9 @@ func (r sitesRepo) Create(ctx context.Context, actor Actor, s Site, quotas Quota
 			return fmt.Errorf("create site: %w", ErrConstraint) // no such owner
 		}
 		if err != nil {
+			return err
+		}
+		if err := teamActive(ctx, q, s.OwnerID); err != nil {
 			return err
 		}
 		if quotas.Sites > 0 {
@@ -331,7 +342,7 @@ func (r sitesRepo) Delete(ctx context.Context, actor Actor, id string) error {
 		if err := releaseSite(ctx, q, ownerID, id); err != nil {
 			return err
 		}
-		// No row (a taken-down site) rolls the release back.
+		// No row (an unavailable site) rolls the release back.
 		n, err := q.DeleteSite(ctx, sqlcgen.DeleteSiteParams{ID: id, OwnerID: ownerID})
 		return rowsAffected("delete site", n, err)
 	})
@@ -369,13 +380,8 @@ func (r sitesRepo) ListAll(ctx context.Context, afterName string, limit int) ([]
 	}
 	out := make([]OperatorSite, len(rows))
 	for i, row := range rows {
-		s, _ := siteFrom("", siteRow(sqlcgen.GetSiteByIDRow{
-			ID: row.ID, OwnerID: row.OwnerID, Name: row.Name, ActiveDeployID: row.ActiveDeployID,
-			CreatedAt: row.CreatedAt, ActivatedAt: row.ActivatedAt, TakenDownAt: row.TakenDownAt,
-			GroupID: row.GroupID, OwnerKind: row.OwnerKind, OwnerEmail: row.OwnerEmail, TeamName: row.TeamName,
-			PrimaryBase: row.PrimaryBase, PrimaryDomain: row.PrimaryDomain, PrimaryDomainStatus: row.PrimaryDomainStatus,
-		}), nil)
-		out[i] = OperatorSite{Site: s, OwnerEmail: row.OwnerEmail, OwnerSuspendedAt: fromNullMs(row.OwnerSuspendedAt)}
+		s, _ := siteFrom("", siteRow(row), nil)
+		out[i] = OperatorSite{Site: s, OwnerEmail: row.OwnerEmail}
 	}
 	return out, nil
 }
@@ -392,7 +398,7 @@ func (r sitesRepo) UnavailableIDs(ctx context.Context) ([]string, error) {
 type siteColumns = sqlcgen.GetSiteByIDRow
 
 // siteRow reads any site query's row: sqlc gives each its own struct type.
-func siteRow[R sqlcgen.GetSiteByIDRow | sqlcgen.GetSiteByNameRow | sqlcgen.GetSiteByDomainRow | sqlcgen.ListSitesRow](row R) siteColumns {
+func siteRow[R sqlcgen.GetSiteByIDRow | sqlcgen.GetSiteByNameRow | sqlcgen.GetSiteByDomainRow | sqlcgen.ListSitesRow | sqlcgen.ListAllSitesRow](row R) siteColumns {
 	return siteColumns(row)
 }
 
@@ -401,18 +407,19 @@ func siteFrom(what string, row siteColumns, err error) (Site, error) {
 		return Site{}, mapErr(what, err)
 	}
 	s := Site{
-		ID:             row.ID,
-		OwnerID:        row.OwnerID,
-		Name:           row.Name,
-		ActiveDeployID: row.ActiveDeployID.String,
-		CreatedAt:      fromMs(row.CreatedAt),
-		ActivatedAt:    fromNullMs(row.ActivatedAt),
-		TakenDownAt:    fromNullMs(row.TakenDownAt),
-		GroupID:        row.GroupID.String,
-		OwnerKind:      AccountKind(row.OwnerKind),
-		OwnerName:      row.OwnerEmail,
-		PrimaryBase:    row.PrimaryBase == 1,
-		PrimaryDomain:  row.PrimaryDomain.String,
+		ID:               row.ID,
+		OwnerID:          row.OwnerID,
+		Name:             row.Name,
+		ActiveDeployID:   row.ActiveDeployID.String,
+		CreatedAt:        fromMs(row.CreatedAt),
+		ActivatedAt:      fromNullMs(row.ActivatedAt),
+		TakenDownAt:      fromNullMs(row.TakenDownAt),
+		GroupID:          row.GroupID.String,
+		OwnerKind:        AccountKind(row.OwnerKind),
+		OwnerName:        row.OwnerEmail,
+		OwnerSuspendedAt: fromNullMs(row.OwnerSuspendedAt),
+		PrimaryBase:      row.PrimaryBase == 1,
+		PrimaryDomain:    row.PrimaryDomain.String,
 		// The column is NULL only without a chosen domain.
 		PrimaryDomainActive: row.PrimaryDomainStatus.String == string(DomainActive),
 	}

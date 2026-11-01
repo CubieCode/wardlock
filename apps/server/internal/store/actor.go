@@ -105,12 +105,19 @@ func (a Actor) Require(accountID string, need Role) error {
 	if accountID == a.OwnerID && !a.IsTeamToken() {
 		return nil
 	}
-	role, ok := a.Role(accountID)
+	return a.RequireTeam(accountID, need)
+}
+
+// RequireTeam is Require for what only a team has, its members, invitations,
+// tokens and name: an actor's own personal account is no team, so it is
+// ErrNotFound, exactly like a missing one.
+func (a Actor) RequireTeam(teamID string, need Role) error {
+	role, ok := a.Role(teamID)
 	if !ok {
-		return fmt.Errorf("account: %w", ErrNotFound)
+		return fmt.Errorf("team: %w", ErrNotFound)
 	}
 	if role.rank() < need.rank() {
-		return fmt.Errorf("account: %w", ErrForbiddenRole)
+		return fmt.Errorf("team: %w", ErrForbiddenRole)
 	}
 	return nil
 }

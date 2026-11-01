@@ -36,6 +36,9 @@ var (
 	ErrInvalidRole = errors.New("invalid role")
 	// ErrTeamLimit means the owner has started as many teams as they may.
 	ErrTeamLimit = errors.New("team limit reached")
+	// ErrNotWorkingOwner means the operator named someone suspended to hold a
+	// role in a team.
+	ErrNotWorkingOwner = errors.New("not a working owner")
 )
 
 // TeamsConfig is what the Service needs for teams; zero MaxTeams is
@@ -69,6 +72,9 @@ func (s *Service) CreateTeam(ctx context.Context, actor store.Actor, name string
 	if err != nil {
 		return store.Team{}, err
 	}
+	// Teams share the owner-invitation limit, on a key of their own: both are
+	// how one owner reaches out on an instance, and an operator tunes them
+	// as one (docs/DEPLOYMENT.md).
 	if err := s.allow("team:"+actor.OwnerID, s.limits.InvitePerOwner); err != nil {
 		return store.Team{}, err
 	}
@@ -162,7 +168,7 @@ func (s *Service) InviteToTeam(ctx context.Context, actor store.Actor, teamID, e
 	if err != nil {
 		return store.TeamInvitation{}, err
 	}
-	if err := actor.Require(teamID, store.RoleAdmin); err != nil {
+	if err := actor.RequireTeam(teamID, store.RoleAdmin); err != nil {
 		return store.TeamInvitation{}, err
 	}
 	if err := s.allow("invite:"+actor.OwnerID, s.limits.InvitePerOwner); err != nil {
@@ -316,14 +322,32 @@ func (s *Service) OwnerTeamQuota(ctx context.Context, ownerID string) (*int64, e
 	return s.teams.TeamQuota(ctx, ownerID)
 }
 
-// RevokeTeamTokens revokes every token of the team, for the operator: a
-// team has no suspension of its own.
-func (s *Service) RevokeTeamTokens(ctx context.Context, id string) (int64, error) {
-	return s.teams.RevokeAllTokens(ctx, id, s.now())
+// SuspendTeam suspends the team with this ID (`wardlockd admin suspend-team`):
+// its tokens are refused and its sites unavailable, with their evidence kept,
+// and a running server notices by polling, as for a suspended owner (A2.13).
+// Its members keep their own accounts. An ID that is not a team's is
+// store.ErrNotFound.
+func (s *Service) SuspendTeam(ctx context.Context, id string) (store.Team, error) {
+	if err := s.teams.Suspend(ctx, id, s.now()); err != nil {
+		return store.Team{}, fmt.Errorf("suspend team: %w", err)
+	}
+	s.log.LogAttrs(ctx, slog.LevelInfo, "operator suspended team", slog.String("team_id", id))
+	return s.teams.Find(ctx, id)
+}
+
+// ReinstateTeam lifts the team's suspension (`wardlockd admin
+// reinstate-team`): its tokens and sites work again.
+func (s *Service) ReinstateTeam(ctx context.Context, id string) (store.Team, error) {
+	if err := s.teams.Reinstate(ctx, id); err != nil {
+		return store.Team{}, fmt.Errorf("reinstate team: %w", err)
+	}
+	s.log.LogAttrs(ctx, slog.LevelInfo, "operator reinstated team", slog.String("team_id", id))
+	return s.teams.Find(ctx, id)
 }
 
 // ForceTeamRole gives the owner with this address a role in the team, for the
-// operator repairing a team with no working admin.
+// operator repairing a team with no working admin. Someone suspended cannot
+// repair anything, so naming one is ErrNotWorkingOwner.
 func (s *Service) ForceTeamRole(ctx context.Context, id, email string, role store.Role) (store.Owner, error) {
 	if !role.Valid() {
 		return store.Owner{}, ErrInvalidRole
@@ -332,7 +356,18 @@ func (s *Service) ForceTeamRole(ctx context.Context, id, email string, role stor
 	if err != nil {
 		return store.Owner{}, err
 	}
-	return o, s.teams.ForceRole(ctx, id, o.ID, role, s.now())
+	if !o.SuspendedAt.IsZero() {
+		return store.Owner{}, ErrNotWorkingOwner
+	}
+	err = s.teams.ForceRole(ctx, id, o.ID, role, s.now())
+	if errors.Is(err, store.ErrNotWorkingOwner) {
+		return store.Owner{}, ErrNotWorkingOwner
+	}
+	if err != nil {
+		return store.Owner{}, err
+	}
+	s.log.LogAttrs(ctx, slog.LevelInfo, "operator set team role", slog.String("team_id", id), slog.String("owner_id", o.ID), slog.String("role", string(role)))
+	return o, nil
 }
 
 // TeamsStarted counts the teams the owner has started.
@@ -348,7 +383,7 @@ func (s *Service) SetOwnerTeamQuota(ctx context.Context, ownerID string, max *in
 // CreateTeamToken mints a token owned by the team. The actor must be its
 // admin; the token outlives them.
 func (s *Tokens) CreateTeamToken(ctx context.Context, actor store.Actor, teamID, name string, scopes Scopes, expiresAt time.Time) (APITokenInfo, string, error) {
-	if err := actor.Require(teamID, store.RoleAdmin); err != nil {
+	if err := actor.RequireTeam(teamID, store.RoleAdmin); err != nil {
 		return APITokenInfo{}, "", err
 	}
 	name, err := tokenName(name)

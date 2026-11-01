@@ -695,6 +695,7 @@ erDiagram
     INTEGER created_at
     INTEGER next_attempt_at
     INTEGER finished_at
+    TEXT team_id
   }
   webhooks {
     TEXT id PK

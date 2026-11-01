@@ -264,7 +264,6 @@ func serve(ctx context.Context, getenv func(string) string, logOut io.Writer) er
 		Health:          platform.Healthz(),
 		Sites: siteSource{
 			baseDomain: cfg.BaseDomain,
-			owners:     db.Owners(),
 			sites:      db.Sites(),
 			domains:    db.Domains(),
 			deploys:    db.Deploys(),

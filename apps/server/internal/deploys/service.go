@@ -157,7 +157,7 @@ func (s *Service) site(ctx context.Context, actor store.Actor, name string) (sto
 // operator, never handed out for rehosting.
 func (s *Service) changeable(ctx context.Context, actor store.Actor, name string) (store.Site, error) {
 	site, err := s.site(ctx, actor, name)
-	if err == nil && !site.TakenDownAt.IsZero() {
+	if err == nil && site.Unavailable() {
 		return store.Site{}, ErrSiteUnavailable
 	}
 	return site, err
@@ -173,7 +173,7 @@ func (s *Service) writable(ctx context.Context, actor store.Actor, name string) 
 	if err := actor.Require(site.OwnerID, store.RoleEditor); err != nil {
 		return store.Site{}, fmt.Errorf("site: %w", err)
 	}
-	if !site.TakenDownAt.IsZero() {
+	if site.Unavailable() {
 		return store.Site{}, ErrSiteUnavailable
 	}
 	return site, nil

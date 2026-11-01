@@ -43,7 +43,9 @@ Owners:
 
 Teams:
   list-teams               List every team with its members and their roles
-  revoke-team-tokens TEAM  Revoke every token of a team, by ID
+  suspend-team TEAM        Refuse a team's tokens and make its sites unavailable,
+                           by ID; its members keep their own accounts
+  reinstate-team TEAM      Lift a suspension: its tokens and sites work again
   set-team-role TEAM ADDRESS ROLE
                            Give an owner a role in a team, adding them if needed:
                            for a team with no working admin
@@ -112,16 +114,17 @@ type adminCommand struct {
 }
 
 var adminCommands = map[string]adminCommand{
-	"list-owners":        {0, listOwners},
-	"list-teams":         {0, listTeams},
-	"revoke-team-tokens": {1, revokeTeamTokens},
-	"set-team-role":      {3, setTeamRole},
-	"suspend-owner":      {1, suspendOwner},
-	"reinstate-owner":    {1, reinstateOwner},
-	"list-sites":         {0, listSites},
-	"takedown-site":      {1, takedownSite},
-	"restore-site":       {1, restoreSite},
-	"teardown-site":      {1, teardownSite},
+	"list-owners":     {0, listOwners},
+	"list-teams":      {0, listTeams},
+	"suspend-team":    {1, suspendTeam},
+	"reinstate-team":  {1, reinstateTeam},
+	"set-team-role":   {3, setTeamRole},
+	"suspend-owner":   {1, suspendOwner},
+	"reinstate-owner": {1, reinstateOwner},
+	"list-sites":      {0, listSites},
+	"takedown-site":   {1, takedownSite},
+	"restore-site":    {1, restoreSite},
+	"teardown-site":   {1, teardownSite},
 }
 
 // adminEnv is what the operator commands work with: the database and the
@@ -244,7 +247,7 @@ func adminCreate(ctx context.Context, args []string, getenv func(string) string,
 // for. The operator typed it, so echoing it is safe.
 func operatorErr(err error, what, ref string) error {
 	switch {
-	case errors.Is(err, owners.ErrNotFound), errors.Is(err, sites.ErrNotFound):
+	case errors.Is(err, owners.ErrNotFound), errors.Is(err, sites.ErrNotFound), errors.Is(err, store.ErrNotFound):
 		return fmt.Errorf("no %s %q on this server", what, ref)
 	case errors.Is(err, owners.ErrInvalidEmail):
 		return fmt.Errorf("%q is not a plain email address", ref)
@@ -262,14 +265,24 @@ func siteOwnerLabel(s store.OperatorSite) string {
 
 func listTeams(ctx context.Context, a *adminEnv, _ []string, out io.Writer) error {
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "TEAM\tCREATED\tID\tMEMBER\tROLE\tSTATUS")
+	fmt.Fprintln(tw, "TEAM\tSTATUS\tCREATED\tID\tMEMBER\tROLE\tMEMBER STATUS")
 	err := a.owners.ListAllTeams(ctx, func(t store.Team, members []store.TeamMember) error {
+		status := "active"
+		if !t.SuspendedAt.IsZero() {
+			status = "suspended " + day(t.SuspendedAt)
+		}
+		team := fmt.Sprintf("%s\t%s\t%s\t%s", t.Name, status, day(t.CreatedAt), t.ID)
+		// A team with nobody left in it still exists, and may need repair.
+		if len(members) == 0 {
+			_, err := fmt.Fprintf(tw, "%s\t-\t-\t-\n", team)
+			return err
+		}
 		for _, m := range members {
-			status := "active"
+			memberStatus := "active"
 			if !m.SuspendedAt.IsZero() {
-				status = "suspended"
+				memberStatus = "suspended"
 			}
-			if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", t.Name, day(t.CreatedAt), t.ID, m.Email, m.Role, status); err != nil {
+			if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", team, m.Email, m.Role, memberStatus); err != nil {
 				return err
 			}
 		}
@@ -281,12 +294,25 @@ func listTeams(ctx context.Context, a *adminEnv, _ []string, out io.Writer) erro
 	return tw.Flush()
 }
 
-func revokeTeamTokens(ctx context.Context, a *adminEnv, args []string, out io.Writer) error {
-	n, err := a.owners.RevokeTeamTokens(ctx, args[0])
+func suspendTeam(ctx context.Context, a *adminEnv, args []string, out io.Writer) error {
+	t, err := a.owners.SuspendTeam(ctx, args[0])
 	if err != nil {
 		return operatorErr(err, "team", args[0])
 	}
-	fmt.Fprintf(out, "Revoked %d tokens of team %s.\n", n, args[0])
+	fmt.Fprintf(out, "Suspended team %s (%s) as of %s.\n"+
+		"Its tokens are refused and its sites answer the unavailable page. Its files are kept,\n"+
+		"and its members keep their own accounts.\n"+
+		"Undo with: wardlockd admin reinstate-team %s\n", t.Name, t.ID, stamp(t.SuspendedAt), t.ID)
+	return nil
+}
+
+func reinstateTeam(ctx context.Context, a *adminEnv, args []string, out io.Writer) error {
+	t, err := a.owners.ReinstateTeam(ctx, args[0])
+	if err != nil {
+		return operatorErr(err, "team", args[0])
+	}
+	fmt.Fprintf(out, "Reinstated team %s (%s).\n"+
+		"Its tokens work again and its sites serve unless taken down.\n", t.Name, t.ID)
 	return nil
 }
 
@@ -297,8 +323,10 @@ func setTeamRole(ctx context.Context, a *adminEnv, args []string, out io.Writer)
 		return fmt.Errorf("%q is not a role: use admin, editor or viewer", args[2])
 	case errors.Is(err, store.ErrLastAdmin):
 		return fmt.Errorf("team %s would have no working admin", args[0])
+	case errors.Is(err, owners.ErrNotWorkingOwner):
+		return fmt.Errorf("%s is suspended, so cannot hold a role in a team: reinstate them first, or name someone else", args[1])
 	case errors.Is(err, store.ErrNotFound):
-		return operatorErr(owners.ErrNotFound, "team", args[0])
+		return operatorErr(err, "team", args[0])
 	case err != nil:
 		return operatorErr(err, "owner", args[1])
 	}
@@ -368,6 +396,8 @@ func siteStatus(s store.OperatorSite) string {
 	switch {
 	case !s.TakenDownAt.IsZero():
 		return "taken down " + day(s.TakenDownAt)
+	case !s.OwnerSuspendedAt.IsZero() && s.OwnerKind == store.AccountTeam:
+		return "team suspended"
 	case !s.OwnerSuspendedAt.IsZero():
 		return "owner suspended"
 	case s.ActiveDeployID == "":

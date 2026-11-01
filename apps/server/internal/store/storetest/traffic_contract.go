@@ -397,11 +397,13 @@ func trafficContract(t *testing.T, open Opener) {
 		f := newFixture(t, open)
 		o, suspended := f.owner(), f.owner()
 		live, down, held := f.site(o.ID), f.site(o.ID), f.site(suspended.ID)
+		tm := f.team(f.owner())
+		teamHeld := f.site(tm.ID)
 		l := f.link(o.ID, live.ID)
 		f.backfill()
 		hour := now.Truncate(time.Hour)
 		var entries []store.AccessEntry
-		for _, s := range []store.Site{live, down, held} {
+		for _, s := range []store.Site{live, down, held, teamHeld} {
 			for _, at := range []time.Time{hour.Add(-3 * time.Hour), hour.Add(-2 * time.Hour), hour} {
 				e := f.entry(s.ID, at, 200, store.ViaLink, l.PublicID, "/", "curl/8")
 				e.Country = "NZ"
@@ -411,6 +413,7 @@ func trafficContract(t *testing.T, open Opener) {
 		f.must(f.r.AccessLog.Append(t.Context(), entries))
 		f.must(f.r.Sites.TakeDown(t.Context(), down.ID, now))
 		f.must(f.r.Owners.Suspend(t.Context(), suspended.ID, now))
+		f.must(f.r.Teams.Suspend(t.Context(), tm.ID, now))
 		cutoff := hour.Add(-time.Hour)
 		for range 2 {
 			pruned, err := f.r.Traffic.PruneHour(t.Context(), cutoff)
@@ -439,6 +442,9 @@ func trafficContract(t *testing.T, open Opener) {
 		}
 		if got := hoursOf(suspended.ID, held); got != 3 {
 			t.Errorf("suspended owner's site hours = %d, want 3", got)
+		}
+		if got := hoursOf(tm.ID, teamHeld); got != 3 {
+			t.Errorf("suspended team's site hours = %d, want 3", got)
 		}
 		r, err := f.r.Traffic.Report(t.Context(), store.ActorFor(o.ID), o.ID, store.TrafficScope{SiteID: live.ID}, allFrom, hour)
 		f.must(err)

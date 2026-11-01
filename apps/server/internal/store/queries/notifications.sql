@@ -15,13 +15,13 @@ SELECT email, suspended_at FROM owners WHERE id = sqlc.arg(id) AND kind = 'owner
 
 -- Adds a row unless its (channel, event_key) has one already.
 -- name: EnqueueNotification :execrows
-INSERT INTO notification_outbox (id, channel, event_key, owner_id, event, payload, status, attempts, created_at, next_attempt_at)
-VALUES (sqlc.arg(id), sqlc.arg(channel), sqlc.arg(event_key), sqlc.arg(owner_id), sqlc.arg(event), sqlc.arg(payload), 'pending', 0, sqlc.arg(created_at), sqlc.arg(created_at))
+INSERT INTO notification_outbox (id, channel, event_key, owner_id, event, payload, status, attempts, created_at, next_attempt_at, team_id)
+VALUES (sqlc.arg(id), sqlc.arg(channel), sqlc.arg(event_key), sqlc.arg(owner_id), sqlc.arg(event), sqlc.arg(payload), 'pending', 0, sqlc.arg(created_at), sqlc.arg(created_at), sqlc.narg(team_id))
 ON CONFLICT (channel, event_key) DO NOTHING;
 
 -- Instance-wide: rows waiting to be tried, oldest due first.
 -- name: ListDueNotifications :many
-SELECT id, channel, event_key, owner_id, event, payload, status, attempts, created_at, next_attempt_at, finished_at
+SELECT id, channel, event_key, owner_id, event, payload, status, attempts, created_at, next_attempt_at, finished_at, team_id
 FROM notification_outbox
 WHERE channel = sqlc.arg(channel) AND status = 'pending' AND next_attempt_at <= sqlc.arg(now)
 ORDER BY next_attempt_at, id
@@ -66,7 +66,7 @@ WHERE channel = sqlc.arg(channel) AND status = 'held'
 ORDER BY owner_id;
 
 -- name: ListHeldNotifications :many
-SELECT id, channel, event_key, owner_id, event, payload, status, attempts, created_at, next_attempt_at, finished_at
+SELECT id, channel, event_key, owner_id, event, payload, status, attempts, created_at, next_attempt_at, finished_at, team_id
 FROM notification_outbox
 WHERE owner_id = sqlc.arg(owner_id) AND channel = sqlc.arg(channel) AND status = 'held'
 ORDER BY created_at, id;

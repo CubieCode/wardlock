@@ -78,6 +78,7 @@ func (r sitesRepo) Summaries(ctx context.Context, actor Actor, ownerID string, w
 			ID: row.ID, OwnerID: row.OwnerID, Name: row.Name, ActiveDeployID: row.ActiveDeployID,
 			CreatedAt: row.CreatedAt, ActivatedAt: row.ActivatedAt, TakenDownAt: row.TakenDownAt,
 			GroupID: row.GroupID, OwnerKind: row.OwnerKind, OwnerEmail: row.OwnerEmail, TeamName: row.TeamName,
+			OwnerSuspendedAt: row.OwnerSuspendedAt,
 		}, nil)
 		s.PinnedAt = pins[s.ID]
 		out[i] = SiteSummary{

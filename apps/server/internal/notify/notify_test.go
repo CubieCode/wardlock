@@ -590,6 +590,105 @@ func TestHeldForSuspendedOwnerIsDropped(t *testing.T) {
 	}
 }
 
+// teamSite is a team with admin as its admin and another admin, and a site with
+// two used-up links on it, so one pass queues a copy for each.
+func (w *world) teamSite(admin, second store.Owner) (store.Team, store.Site) {
+	w.t.Helper()
+	ctx := w.t.Context()
+	tm := store.Team{ID: store.NewID(), Name: "Web team", CreatedAt: w.clock.Add(-90 * day)}
+	w.must(w.db.Teams().Create(ctx, store.ActorFor(admin.ID), tm, 0))
+	w.must(w.db.Teams().ForceRole(ctx, tm.ID, second.ID, store.RoleAdmin, w.clock))
+	s := store.Site{ID: store.NewID(), OwnerID: tm.ID, Name: "docs", CreatedAt: w.clock.Add(-90 * day)}
+	w.must(w.db.Sites().Create(ctx, store.ActorFor(tm.ID), s, store.Quotas{}))
+	return tm, s
+}
+
+// queue finds the team's events and queues them without sending any: mail is
+// failing for this pass, as it would be for a row waiting on a retry.
+func (w *world) queue() {
+	w.t.Helper()
+	w.service().Detect(w.t.Context())
+}
+
+// Admins are chosen when a row is queued, so a row waiting to go is read again.
+func TestTeamEmailFollowsRolesAtSendTime(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		change func(w *world, tm store.Team, leaving store.Owner, actor store.Actor)
+	}{
+		{"demoted", func(w *world, tm store.Team, leaving store.Owner, actor store.Actor) {
+			w.must(w.db.Teams().SetRole(t.Context(), actor, tm.ID, leaving.ID, store.RoleViewer))
+		}},
+		{"removed", func(w *world, tm store.Team, leaving store.Owner, actor store.Actor) {
+			w.must(w.db.Teams().RemoveMember(t.Context(), actor, tm.ID, leaving.ID))
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			w := newWorld(t)
+			stays, leaving := w.owner("stays"), w.owner("leaving")
+			tm, s := w.teamSite(stays, leaving)
+			w.usedUpLink(tm.ID, s.ID, "First")
+			w.queue()
+			actor := store.Actor{OwnerID: stays.ID, Memberships: []store.Membership{{TeamID: tm.ID, Role: store.RoleAdmin}}}
+			c.change(w, tm, leaving, actor)
+			w.service().Deliver(t.Context())
+			got := w.box.subjects()
+			if len(got) != 1 || !strings.HasPrefix(got[0], stays.Email) {
+				t.Fatalf("sent %q, want only %s's", got, stays.Email)
+			}
+		})
+	}
+}
+
+func TestTeamEmailIsNotSentWhileSuspended(t *testing.T) {
+	w := newWorld(t)
+	a, b := w.owner("a"), w.owner("b")
+	tm, s := w.teamSite(a, b)
+	w.usedUpLink(tm.ID, s.ID, "First")
+	w.queue()
+	w.must(w.db.Teams().Suspend(t.Context(), tm.ID, w.clock))
+	w.service().Deliver(t.Context())
+	w.usedUpLink(tm.ID, s.ID, "Second")
+	w.queue()
+	w.service().Deliver(t.Context())
+	w.must(w.db.Teams().Reinstate(t.Context(), tm.ID))
+	w.service().Deliver(t.Context())
+	if got := w.box.subjects(); len(got) != 0 {
+		t.Fatalf("sent %q", got)
+	}
+}
+
+// A summary is built from what is held, and only what they may still hear.
+func TestTeamHeldEmailLeavesTheSummaryOnceTheyGo(t *testing.T) {
+	w := newWorld(t)
+	w.cap = 1
+	stays, leaving := w.owner("stays"), w.owner("leaving")
+	tm, s := w.teamSite(stays, leaving)
+	for _, label := range []string{"First", "Second", "Third"} {
+		w.usedUpLink(tm.ID, s.ID, label)
+	}
+	w.pass()
+	count := func(o store.Owner) (n int) {
+		for _, got := range w.box.subjects() {
+			if strings.HasPrefix(got, o.Email) {
+				n++
+			}
+		}
+		return n
+	}
+	if count(stays) != 1 || count(leaving) != 1 {
+		t.Fatalf("sent %q, want one each with the rest held", w.box.subjects())
+	}
+	actor := store.Actor{OwnerID: stays.ID, Memberships: []store.Membership{{TeamID: tm.ID, Role: store.RoleAdmin}}}
+	w.must(w.db.Teams().RemoveMember(t.Context(), actor, tm.ID, leaving.ID))
+	w.clock = w.clock.Add(2 * hour)
+	w.pass()
+	w.pass()
+	if count(stays) != 2 || count(leaving) != 1 {
+		t.Fatalf("sent %q, want a summary for the one who stayed only", w.box.subjects())
+	}
+}
+
 func TestWithheld(t *testing.T) {
 	d := mail.Withheld{Site: "docs", Host: "app.example.test", Paths: []string{"img/a.png"}, Contact: "abuse@example.test"}
 	queue := func(w *world, s *notify.Service, ownerID, key string) {

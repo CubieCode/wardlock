@@ -267,8 +267,9 @@ func sortKey(sort SummarySort, site store.SiteSummary) int64 {
 	return 0
 }
 
-// Down reports whether the operator has taken site down.
-func Down(site store.SiteSummary) bool { return !site.TakenDownAt.IsZero() }
+// Down reports whether the operator has taken site down or suspended its
+// owner.
+func Down(site store.SiteSummary) bool { return site.Unavailable() }
 
 func inView(v View, site store.SiteSummary) bool {
 	switch v {

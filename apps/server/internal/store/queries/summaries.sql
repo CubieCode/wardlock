@@ -11,7 +11,7 @@
 -- is 1 when the rollup has any request from active_from on.
 -- name: ListSiteSummaries :many
 SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
-  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name,
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name, owners.suspended_at AS owner_suspended_at,
   deploys.message AS deploy_message,
   policies.visibility, policies.links_enabled, policies.password_enabled, policies.email_enabled, policies.oauth_enabled,
   CAST((

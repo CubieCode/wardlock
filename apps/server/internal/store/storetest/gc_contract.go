@@ -211,6 +211,10 @@ func gcContract(t *testing.T, open Opener) {
 		theirs := f.site(suspended.ID)
 		previewAt(f, suspended.ID, theirs.ID, "short", 0, 1)
 		f.must(f.r.Owners.Suspend(t.Context(), suspended.ID, now))
+		tm := f.team(f.owner())
+		teamHeld := f.site(tm.ID)
+		previewAt(f, tm.ID, teamHeld.ID, "short", 0, 1)
+		f.must(f.r.Teams.Suspend(t.Context(), tm.ID, now))
 
 		n, err := f.r.GC.DeleteExpiredPreviews(t.Context(), now.Add(day-time.Millisecond))
 		if err != nil || n != 0 {
@@ -225,7 +229,7 @@ func gcContract(t *testing.T, open Opener) {
 		if want := []string{"long", "never"}; !slices.Equal(previewNames(left), want) {
 			t.Fatalf("previews left = %v, want %v", previewNames(left), want)
 		}
-		for _, k := range []struct{ owner, site string }{{o.ID, down.ID}, {suspended.ID, theirs.ID}} {
+		for _, k := range []struct{ owner, site string }{{o.ID, down.ID}, {suspended.ID, theirs.ID}, {tm.ID, teamHeld.ID}} {
 			if _, err := f.r.Previews.Get(t.Context(), store.ActorFor(k.owner), k.site, "short", now); err != nil {
 				t.Fatalf("kept preview of %s: %v", k.site, err)
 			}

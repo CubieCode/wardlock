@@ -114,7 +114,8 @@ type Organisation interface {
 	// the change, in siteNames order. Any site, group or tag that is not
 	// the account's is ErrNotFound and changes nothing. A change that only
 	// pins needs a viewer, since a pin is the actor's own (T7.1); anything
-	// else needs an editor.
+	// else needs an editor. Pins are a person's, so a team token changing one
+	// is ErrForbiddenRole.
 	Organise(ctx context.Context, actor Actor, accountID string, siteNames []string, c OrganiseChange) ([]SiteOrganisation, error)
 }
 
@@ -285,6 +286,9 @@ func (r organisationRepo) Organise(ctx context.Context, actor Actor, ownerID str
 	}
 	if err := actor.Require(ownerID, need); err != nil {
 		return nil, fmt.Errorf("organise sites: %w", err)
+	}
+	if c.SetPinned && actor.IsTeamToken() {
+		return nil, fmt.Errorf("organise sites: %w", ErrForbiddenRole)
 	}
 	var prior []SiteOrganisation
 	err := r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {

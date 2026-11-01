@@ -274,7 +274,7 @@ func (s *Service) Delete(ctx context.Context, actor store.Actor, name string) er
 	if err != nil {
 		return err
 	}
-	if !site.TakenDownAt.IsZero() {
+	if site.Unavailable() {
 		return ErrUnavailable
 	}
 	// The site's custom domains go with it, and so do their certificates.

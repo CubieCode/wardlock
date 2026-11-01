@@ -98,6 +98,7 @@ func failed(err error) (*failure, error) {
 		{deploys.ErrWithheld, http.StatusUnavailableForLegalReasons, "file_withheld", "The operator of this server has withheld this file, so it cannot be downloaded.", ""},
 		{deploys.ErrSiteUnavailable, http.StatusConflict, "site_unavailable", siteUnavailable, ""},
 		{sites.ErrUnavailable, http.StatusConflict, "site_unavailable", siteUnavailable, ""},
+		{store.ErrTeamSuspended, http.StatusConflict, "team_suspended", teamSuspended, ""},
 	} {
 		if errors.Is(err, m.err) {
 			return fail(m.status, m.code, m.message, m.target), nil
@@ -108,6 +109,9 @@ func failed(err error) (*failure, error) {
 
 // siteUnavailable explains a site_unavailable refusal.
 const siteUnavailable = "The operator of this server has taken this site down. Its deploys, domains and access records are kept as they are until the operator restores it."
+
+// teamSuspended explains a team_suspended refusal.
+const teamSuspended = "The operator of this server has suspended this team. It takes no new sites, members or tokens until the operator reinstates it."
 
 const (
 	defaultLimit = 50
@@ -152,7 +156,7 @@ func (s *Server) siteBody(site store.Site, tagIDs []string) Site {
 		Url:       s.siteURL(host),
 		CreatedAt: site.CreatedAt.UnixMilli(),
 		// Owners see that their site is down, never why (A2.13).
-		Unavailable: !site.TakenDownAt.IsZero(),
+		Unavailable: site.Unavailable(),
 		TagIds:      tagIDs,
 		Pinned:      !site.PinnedAt.IsZero(),
 		Owner:       SiteOwner{Kind: SiteOwnerKind(site.OwnerKind), Id: site.OwnerID, Name: site.OwnerName},

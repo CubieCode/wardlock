@@ -47,7 +47,7 @@ func (s *Service) SetPrimaryHost(ctx context.Context, actor store.Actor, siteNam
 	if err != nil {
 		return store.Site{}, err
 	}
-	if !site.TakenDownAt.IsZero() {
+	if site.Unavailable() {
 		return store.Site{}, ErrUnavailable
 	}
 	h, err := NormaliseHostname(host)
@@ -83,7 +83,7 @@ func (s *Service) ClearPrimaryHost(ctx context.Context, actor store.Actor, siteN
 	if err != nil {
 		return store.Site{}, err
 	}
-	if !site.TakenDownAt.IsZero() {
+	if site.Unavailable() {
 		return store.Site{}, ErrUnavailable
 	}
 	if err := s.c.Sites.ClearPrimary(ctx, actor, site.ID); err != nil {

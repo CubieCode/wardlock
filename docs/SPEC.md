@@ -410,9 +410,10 @@ A team is a shared account: it has a name, members and sites, and every site bel
 - **Isolation.** A site is reachable by its owner and by members of its team, as far as their role allows. Anyone else gets the same `404` as for a site that does not exist; `403 forbidden_role` is answered only where the caller can already see the site.
 - **Members.** A team always keeps at least one admin who is not suspended (`409 team_needs_admin`). Leaving or being removed ends access on the next request, and what the member made stays with the team. Inviting and removing members stays dashboard-only, as owner invitations are.
 - **Tokens.** A personal token acts as its owner, limited by both their role and the token's scope. A team token is owned by the team, survives members leaving, is listed and revoked by the team's admins, and acts as an editor limited by its scope. Team tokens cannot use webhooks.
-- **Groups, tags and pins.** A team has its own groups and tags. Pins stay personal.
+- **Groups, tags and pins.** A team has its own groups and tags. Pins stay personal, so a team token cannot change one (`403 forbidden_role`).
 - **Quotas.** A team has its own quotas and overrides (A2.14), and its deploys count to the team, not to the member who deployed. `WARDLOCK_QUOTA_TEAMS` limits how many teams one owner may start, so per-team quotas cannot be multiplied.
-- **Moving a site.** `transferSite` moves a site between an owner and a team, or between two teams. It needs ownership or admin of the source and admin of the target, keeps deploys, links, domains and analytics, and is refused while the site is taken down.
+- **Moving a site.** `transferSite` moves a site between an owner and a team, or between two teams. It needs ownership or admin of the source and admin of the target, keeps deploys, links, domains and analytics, and is refused while the site is taken down or its team suspended.
+- **Suspending a team.** The operator can suspend a whole team (`wardlockd admin suspend-team`): its tokens stop working and its sites answer the unavailable page, as a suspended owner's do, while its members keep their personal accounts. The maintainer decided this on 2026-11-01.
 - **Who did what.** Deploys, policies, share links and domains record who made them (`createdBy`), by owner or by team token, and keep it after a member leaves.
 
 The maintainer confirmed the role table, team tokens and team quotas on 2026-11-01.
@@ -437,6 +438,8 @@ The maintainer confirmed the role table, team tokens and team quotas on 2026-11-
 - An admin invites an address with a role (`inviteTeamMember`), rate-limited with owner invitations. Inviting the address again replaces its invitation, and a current member cannot be invited (`409 already_member`): their role changes instead. An invitation lasts 7 days. Removing a member deletes the invitations to them and the open ones they sent, and an admin who is demoted loses the open ones they sent, so nothing they set up outlives their authority.
 - An invitation is bound to the address, not to a secret: there is no token in the email, whose link only opens the dashboard. Only an owner signed in with that verified address sees it (`listMyTeamInvitations`) or can accept or decline it; the address is read from their account, never from the request, so an invitation ID is worth nothing to anyone else and answers the same `404`.
 - Accepting twice changes nothing while the owner is still a member, and keeps any role changed since. Once they have left or been removed, a spent invitation grants nothing.
+- An invitation lasts only as long as whoever sent it can send one. Accepting checks, in its transaction, that the inviter is still an admin of the team and not suspended and that the team is not suspended; otherwise it answers the same `404` as an expired invitation and is not listed. Sending re-reads the admin's role in its transaction too, so an admin demoted a moment before cannot send one.
+- **Until T7.2** the email's link to `/team-invitations` has no page behind it: that dashboard page is T7.2's, so invitations can be created and accepted only through the session API for now.
 - An address with no owner account gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and they see the team's invitation once signed in. With `WARDLOCK_INVITES=operator` the invitation is refused with `403 invites_restricted`, which tells the admin that the address has no account here.
 
 </details>
@@ -445,6 +448,7 @@ The maintainer confirmed the role table, team tokens and team quotas on 2026-11-
 <summary>The API in detail</summary>
 
 - **The Site object** gains `owner: {kind: owner | team, id, name}`, where `name` is the owner's address or the team's name. Team names are not unique: uniqueness would reveal which names other teams use.
+- **Team routes.** Every `/teams/{id}` operation needs a team. Any other ID, the caller's own owner ID included, answers the same `404` as a team that does not exist.
 - **`team`.** `listSites` answers everything the caller can see, and `?team=<id>` narrows it to one team. `listSiteSummaries`, `getSiteCounts`, `listExpiringLinks`, `getAnalytics`, `listGroups`, `listTags`, `createGroup`, `createTag` and `organiseSites` use the caller's own account unless given `?team=<id>`, and `createSite` takes `team` in its body. A team the caller is not in answers the same `404` as a missing one.
 - **`getMe`** with a team token answers `team: {id, name}` as well as `owner`, which then names the team's own account, not a person.
 - **Scopes.** `listTeams`, `getTeam` and `listTeamMembers` are reads and accept either scope. `transferSite` needs `manage`. Everything else about teams takes a dashboard session only: tokens never manage members or tokens. Webhook operations refuse team tokens.
@@ -459,7 +463,7 @@ The maintainer confirmed the role table, team tokens and team quotas on 2026-11-
 - **What moves.** Deploys, share links, policies, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; each person's pin stays theirs.
 - **Storage and quotas.** The target's site and storage quotas apply, `413 limit_exceeded` otherwise, and the move is all or nothing. Bytes only this site held leave the source and count to the target. The daily deploy count stays with whoever made the deploys.
 - **Files.** The target can download and activate whatever the source had uploaded of the site's files, and nothing more: a hash a deploy merely lists stays not held.
-- **Taken down.** A taken-down site answers `409 site_unavailable`: it is evidence where it is.
+- **Taken down.** A taken-down site, or one whose team is suspended, answers `409 site_unavailable`: it is evidence where it is. A suspended target answers `409 team_suspended`.
 
 </details>
 
@@ -467,9 +471,10 @@ The maintainer confirmed the role table, team tokens and team quotas on 2026-11-
 <summary>Deleting, notifications, webhooks and operators in detail</summary>
 
 - **Deleting a team.** Refused while it has sites (`409 team_has_sites`): move or delete them first. Its members, invitations, tokens, groups and tags go with it.
-- **Notifications.** A team's emails (expiring links, withheld files and the rest) go to its admins, each under their own opt-outs and hourly cap. A suspended admin gets none. The maintainer confirmed this on 2026-11-01.
+- **Notifications.** A team's emails (expiring links, withheld files and the rest) go to its admins, each under their own opt-outs and hourly cap. A suspended admin gets none. Each copy is checked again when it goes and when a summary is built, so someone removed or demoted since gets no more. The maintainer confirmed this on 2026-11-01.
 - **Webhooks** stay personal: an owner's webhook hears only their personal sites and cannot list a team's, and team tokens cannot use them. There are no team webhooks in T7.1.
-- **Operator controls.** Suspending an owner ends their team access, while the team's sites keep serving: a team has no suspension of its own. Taking down a team's site works as for any site. `wardlockd admin list-teams` lists teams and their members, `list-sites` shows `team NAME` as the owner, and `team-quota TEAM` shows and overrides a team's quotas. `quota ADDRESS --teams N` overrides how many teams one owner may start. `revoke-team-tokens TEAM` revokes every token of a team, since suspending a member leaves team tokens working, and `set-team-role TEAM ADDRESS ROLE` repairs a team with no working admin.
+- **Operator controls.** Suspending an owner ends their team access, while the team's sites keep serving and its tokens keep working: nothing is revoked automatically. Taking down a team's site works as for any site. `wardlockd admin list-teams` lists teams and their members, `list-sites` shows `team NAME` as the owner, and `team-quota TEAM` shows and overrides a team's quotas. `quota ADDRESS --teams N` overrides how many teams one owner may start. `set-team-role TEAM ADDRESS ROLE` repairs a team with no working admin, and refuses a suspended owner.
+- **Suspending a team.** `suspend-team TEAM` mirrors `suspend-owner`, the maintainer's decision of 2026-11-01. The team's tokens are refused, and every site of the team is unavailable: the unavailable page to visitors, and to members exactly what a taken-down site answers (reads, policies and share links still work; `409 site_unavailable` for the rest). Garbage collection, access-log and analytics retention skip its sites, as evidence. No notifications or webhooks go out for it. It takes on nothing new: creating a site in it, moving a site into it, inviting, creating a team token and deleting it answer `409 team_suspended`, and open invitations to it cannot be accepted. Members keep their personal accounts, can see the team and can leave. `reinstate-team TEAM` restores all of it, except sites taken down in their own right. A suspended team is still an account and never a principal: it appears in no list of owners.
 
 </details>
 

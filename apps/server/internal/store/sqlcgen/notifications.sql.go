@@ -91,8 +91,8 @@ func (q *Queries) DeleteNotificationOptOut(ctx context.Context, arg DeleteNotifi
 }
 
 const enqueueNotification = `-- name: EnqueueNotification :execrows
-INSERT INTO notification_outbox (id, channel, event_key, owner_id, event, payload, status, attempts, created_at, next_attempt_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', 0, ?7, ?7)
+INSERT INTO notification_outbox (id, channel, event_key, owner_id, event, payload, status, attempts, created_at, next_attempt_at, team_id)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', 0, ?7, ?7, ?8)
 ON CONFLICT (channel, event_key) DO NOTHING
 `
 
@@ -104,6 +104,7 @@ type EnqueueNotificationParams struct {
 	Event     string
 	Payload   string
 	CreatedAt int64
+	TeamID    sql.NullString
 }
 
 // Adds a row unless its (channel, event_key) has one already.
@@ -116,6 +117,7 @@ func (q *Queries) EnqueueNotification(ctx context.Context, arg EnqueueNotificati
 		arg.Event,
 		arg.Payload,
 		arg.CreatedAt,
+		arg.TeamID,
 	)
 	if err != nil {
 		return 0, err
@@ -162,7 +164,7 @@ func (q *Queries) GetNotificationRecipient(ctx context.Context, id string) (GetN
 }
 
 const listDueNotifications = `-- name: ListDueNotifications :many
-SELECT id, channel, event_key, owner_id, event, payload, status, attempts, created_at, next_attempt_at, finished_at
+SELECT id, channel, event_key, owner_id, event, payload, status, attempts, created_at, next_attempt_at, finished_at, team_id
 FROM notification_outbox
 WHERE channel = ?1 AND status = 'pending' AND next_attempt_at <= ?2
 ORDER BY next_attempt_at, id
@@ -197,6 +199,7 @@ func (q *Queries) ListDueNotifications(ctx context.Context, arg ListDueNotificat
 			&i.CreatedAt,
 			&i.NextAttemptAt,
 			&i.FinishedAt,
+			&i.TeamID,
 		); err != nil {
 			return nil, err
 		}
@@ -500,7 +503,7 @@ func (q *Queries) ListHeldNotificationOwners(ctx context.Context, channel string
 }
 
 const listHeldNotifications = `-- name: ListHeldNotifications :many
-SELECT id, channel, event_key, owner_id, event, payload, status, attempts, created_at, next_attempt_at, finished_at
+SELECT id, channel, event_key, owner_id, event, payload, status, attempts, created_at, next_attempt_at, finished_at, team_id
 FROM notification_outbox
 WHERE owner_id = ?1 AND channel = ?2 AND status = 'held'
 ORDER BY created_at, id
@@ -532,6 +535,7 @@ func (q *Queries) ListHeldNotifications(ctx context.Context, arg ListHeldNotific
 			&i.CreatedAt,
 			&i.NextAttemptAt,
 			&i.FinishedAt,
+			&i.TeamID,
 		); err != nil {
 			return nil, err
 		}

@@ -147,6 +147,7 @@ type NotificationOutbox struct {
 	CreatedAt     int64
 	NextAttemptAt sql.NullInt64
 	FinishedAt    sql.NullInt64
+	TeamID        sql.NullString
 }
 
 type Owner struct {

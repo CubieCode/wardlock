@@ -5,7 +5,9 @@
 -- a row in teams with the same id. sites.owner_id, groups, tags, tokens,
 -- blob holdings, quotas and stored bytes all name an account, so a site
 -- belongs to exactly one owner or one team by construction, and every
--- existing row keeps its current owner. A team row cannot sign in: its
+-- existing row keeps its current owner. owners.suspended_at suspends a team
+-- too, as `wardlockd admin suspend-team` sets it, so what keeps a suspended
+-- owner's sites and evidence keeps a team's. A team row cannot sign in: its
 -- address is reserved (RFC 2606 .invalid) and internal/store refuses it
 -- wherever a person is meant, so no owner lookup, session, passkey, sign-in
 -- code or CLI login ever reaches one.
@@ -96,3 +98,9 @@ UPDATE domains SET created_by = (SELECT sites.owner_id FROM sites WHERE sites.id
 
 -- The admin who created a team token (NULL on personal tokens).
 ALTER TABLE api_tokens ADD COLUMN created_by TEXT;
+
+-- The team a queued email is about, when it is one admin's copy. Their role is
+-- read again when it goes, so someone removed or demoted since hears nothing.
+-- No foreign key: a deleted team's rows must stay and be dropped, not look
+-- personal.
+ALTER TABLE notification_outbox ADD COLUMN team_id TEXT;

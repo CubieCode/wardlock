@@ -11,7 +11,6 @@ package sqlcgen
 import (
 	"context"
 	"database/sql"
-	"strings"
 )
 
 const addTeamMember = `-- name: AddTeamMember :exec
@@ -112,6 +111,28 @@ SELECT COUNT(*) FROM teams WHERE created_by = ?1
 
 func (q *Queries) CountTeamsCreatedBy(ctx context.Context, ownerID sql.NullString) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countTeamsCreatedBy, ownerID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countWorkingAdmin = `-- name: CountWorkingAdmin :one
+SELECT COUNT(*) FROM team_members
+JOIN owners ON owners.id = team_members.owner_id
+JOIN owners AS team_account ON team_account.id = team_members.team_id
+WHERE team_members.team_id = ?1 AND team_members.owner_id = ?2 AND team_members.role = 'admin'
+  AND owners.suspended_at IS NULL AND team_account.suspended_at IS NULL
+`
+
+type CountWorkingAdminParams struct {
+	TeamID  string
+	OwnerID string
+}
+
+// 1 while owner_id is a working admin: an admin of the team, not suspended, in
+// a team that is not suspended.
+func (q *Queries) CountWorkingAdmin(ctx context.Context, arg CountWorkingAdminParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countWorkingAdmin, arg.TeamID, arg.OwnerID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -239,6 +260,17 @@ func (q *Queries) GetAccountKind(ctx context.Context, id string) (string, error)
 	return kind, err
 }
 
+const getAccountSuspendedAt = `-- name: GetAccountSuspendedAt :one
+SELECT suspended_at FROM owners WHERE id = ?1
+`
+
+func (q *Queries) GetAccountSuspendedAt(ctx context.Context, id string) (sql.NullInt64, error) {
+	row := q.db.QueryRowContext(ctx, getAccountSuspendedAt, id)
+	var suspended_at sql.NullInt64
+	err := row.Scan(&suspended_at)
+	return suspended_at, err
+}
+
 const getOwnerMaxTeams = `-- name: GetOwnerMaxTeams :one
 SELECT max_teams FROM owners WHERE id = ?1 AND kind = 'owner'
 `
@@ -251,17 +283,28 @@ func (q *Queries) GetOwnerMaxTeams(ctx context.Context, id string) (sql.NullInt6
 }
 
 const getTeam = `-- name: GetTeam :one
-SELECT id, name, created_by, created_at FROM teams WHERE id = ?1
+SELECT teams.id, teams.name, teams.created_by, teams.created_at, owners.suspended_at
+FROM teams JOIN owners ON owners.id = teams.id
+WHERE teams.id = ?1
 `
 
-func (q *Queries) GetTeam(ctx context.Context, id string) (Team, error) {
+type GetTeamRow struct {
+	ID          string
+	Name        string
+	CreatedBy   sql.NullString
+	CreatedAt   int64
+	SuspendedAt sql.NullInt64
+}
+
+func (q *Queries) GetTeam(ctx context.Context, id string) (GetTeamRow, error) {
 	row := q.db.QueryRowContext(ctx, getTeam, id)
-	var i Team
+	var i GetTeamRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.SuspendedAt,
 	)
 	return i, err
 }
@@ -319,9 +362,10 @@ func (q *Queries) GetTeamMemberRole(ctx context.Context, arg GetTeamMemberRolePa
 }
 
 const listAllTeams = `-- name: ListAllTeams :many
-SELECT id, name, created_by, created_at FROM teams
-WHERE id > ?1
-ORDER BY id
+SELECT teams.id, teams.name, teams.created_by, teams.created_at, owners.suspended_at
+FROM teams JOIN owners ON owners.id = teams.id
+WHERE teams.id > ?1
+ORDER BY teams.id
 LIMIT ?2
 `
 
@@ -330,21 +374,30 @@ type ListAllTeamsParams struct {
 	RowLimit int64
 }
 
+type ListAllTeamsRow struct {
+	ID          string
+	Name        string
+	CreatedBy   sql.NullString
+	CreatedAt   int64
+	SuspendedAt sql.NullInt64
+}
+
 // Instance-wide, for `wardlockd admin list-teams` only.
-func (q *Queries) ListAllTeams(ctx context.Context, arg ListAllTeamsParams) ([]Team, error) {
+func (q *Queries) ListAllTeams(ctx context.Context, arg ListAllTeamsParams) ([]ListAllTeamsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAllTeams, arg.AfterID, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Team
+	var items []ListAllTeamsRow
 	for rows.Next() {
-		var i Team
+		var i ListAllTeamsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.CreatedBy,
 			&i.CreatedAt,
+			&i.SuspendedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -364,6 +417,13 @@ SELECT team_invitations.id, team_invitations.team_id, team_invitations.email, te
   team_invitations.created_at, team_invitations.expires_at, team_invitations.accepted_at, teams.name AS team_name
 FROM team_invitations JOIN teams ON teams.id = team_invitations.team_id
 WHERE team_invitations.email = ?1 AND team_invitations.accepted_at IS NULL AND team_invitations.expires_at > ?2
+  AND EXISTS (
+    SELECT 1 FROM team_members
+    JOIN owners AS inviter ON inviter.id = team_members.owner_id
+    JOIN owners AS team_account ON team_account.id = team_members.team_id
+    WHERE team_members.team_id = team_invitations.team_id AND team_members.owner_id = team_invitations.invited_by
+      AND team_members.role = 'admin' AND inviter.suspended_at IS NULL AND team_account.suspended_at IS NULL
+  )
 ORDER BY team_invitations.created_at DESC, team_invitations.id DESC
 `
 
@@ -384,7 +444,8 @@ type ListInvitationsForEmailRow struct {
 	TeamName   string
 }
 
-// Open invitations to one address, newest first.
+// Open invitations to one address, newest first. One whose inviter is no
+// longer a working admin is dead, as Accept finds it.
 func (q *Queries) ListInvitationsForEmail(ctx context.Context, arg ListInvitationsForEmailParams) ([]ListInvitationsForEmailRow, error) {
 	rows, err := q.db.QueryContext(ctx, listInvitationsForEmail, arg.Email, arg.Now)
 	if err != nil {
@@ -454,11 +515,14 @@ func (q *Queries) ListMemberships(ctx context.Context, ownerID string) ([]ListMe
 const listTeamAdminIDs = `-- name: ListTeamAdminIDs :many
 SELECT team_members.owner_id FROM team_members
 JOIN owners ON owners.id = team_members.owner_id
-WHERE team_members.team_id = ?1 AND team_members.role = 'admin' AND owners.suspended_at IS NULL
+JOIN owners AS team_account ON team_account.id = team_members.team_id
+WHERE team_members.team_id = ?1 AND team_members.role = 'admin'
+  AND owners.suspended_at IS NULL AND team_account.suspended_at IS NULL
 ORDER BY team_members.owner_id
 `
 
-// Who hears about a team's sites: its admins who can read mail.
+// Who hears about a team's sites: its admins who can read mail, while the
+// team is not suspended.
 func (q *Queries) ListTeamAdminIDs(ctx context.Context, teamID string) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listTeamAdminIDs, teamID)
 	if err != nil {
@@ -597,35 +661,38 @@ func (q *Queries) ListTeamMembers(ctx context.Context, arg ListTeamMembersParams
 }
 
 const listTeams = `-- name: ListTeams :many
-SELECT id, name, created_by, created_at FROM teams
-WHERE id IN (/*SLICE:ids*/?)
-ORDER BY name, id
+SELECT teams.id, teams.name, teams.created_by, teams.created_at, owners.suspended_at
+FROM teams JOIN owners ON owners.id = teams.id
+WHERE teams.id = ?1
+  OR teams.id IN (SELECT team_members.team_id FROM team_members WHERE team_members.owner_id = ?1)
+ORDER BY teams.name, teams.id
 `
 
-func (q *Queries) ListTeams(ctx context.Context, ids []string) ([]Team, error) {
-	query := listTeams
-	var queryParams []interface{}
-	if len(ids) > 0 {
-		for _, v := range ids {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
-	}
-	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+type ListTeamsRow struct {
+	ID          string
+	Name        string
+	CreatedBy   sql.NullString
+	CreatedAt   int64
+	SuspendedAt sql.NullInt64
+}
+
+// The teams an account can see: an owner's memberships, or a team token's own
+// team, whose account is the team.
+func (q *Queries) ListTeams(ctx context.Context, accountID string) ([]ListTeamsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTeams, accountID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Team
+	var items []ListTeamsRow
 	for rows.Next() {
-		var i Team
+		var i ListTeamsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.CreatedBy,
 			&i.CreatedAt,
+			&i.SuspendedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -652,6 +719,18 @@ type MarkTeamInvitationAcceptedParams struct {
 func (q *Queries) MarkTeamInvitationAccepted(ctx context.Context, arg MarkTeamInvitationAcceptedParams) error {
 	_, err := q.db.ExecContext(ctx, markTeamInvitationAccepted, arg.AcceptedAt, arg.ID)
 	return err
+}
+
+const reinstateTeam = `-- name: ReinstateTeam :execrows
+UPDATE owners SET suspended_at = NULL WHERE id = ?1 AND kind = 'team'
+`
+
+func (q *Queries) ReinstateTeam(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, reinstateTeam, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const removeTeamMember = `-- name: RemoveTeamMember :execrows
@@ -688,25 +767,6 @@ func (q *Queries) RenameTeam(ctx context.Context, arg RenameTeamParams) (int64, 
 	return result.RowsAffected()
 }
 
-const revokeAllAccountTokens = `-- name: RevokeAllAccountTokens :execrows
-UPDATE api_tokens SET revoked_at = ?1
-WHERE owner_id = ?2 AND revoked_at IS NULL
-`
-
-type RevokeAllAccountTokensParams struct {
-	RevokedAt sql.NullInt64
-	OwnerID   string
-}
-
-// For `wardlockd admin revoke-team-tokens`; keeps the first time.
-func (q *Queries) RevokeAllAccountTokens(ctx context.Context, arg RevokeAllAccountTokensParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, revokeAllAccountTokens, arg.RevokedAt, arg.OwnerID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
 const setOwnerMaxTeams = `-- name: SetOwnerMaxTeams :execrows
 UPDATE owners SET max_teams = ?1 WHERE id = ?2 AND kind = 'owner'
 `
@@ -726,7 +786,8 @@ func (q *Queries) SetOwnerMaxTeams(ctx context.Context, arg SetOwnerMaxTeamsPara
 
 const setSiteOwner = `-- name: SetSiteOwner :execrows
 UPDATE sites SET owner_id = ?1, group_id = NULL
-WHERE id = ?2 AND owner_id = ?3 AND taken_down_at IS NULL
+WHERE sites.id = ?2 AND sites.owner_id = ?3 AND sites.taken_down_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM owners WHERE owners.id = sites.owner_id AND owners.suspended_at IS NOT NULL)
 `
 
 type SetSiteOwnerParams struct {
@@ -736,7 +797,7 @@ type SetSiteOwnerParams struct {
 }
 
 // Moves a site to another account (T7.1). The source is named so a site
-// moved meanwhile changes nothing, and a taken-down site cannot move. Its
+// moved meanwhile changes nothing, and an unavailable site cannot move. Its
 // group belongs to the source, so it goes.
 func (q *Queries) SetSiteOwner(ctx context.Context, arg SetSiteOwnerParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, setSiteOwner, arg.ToOwner, arg.ID, arg.FromOwner)
@@ -758,6 +819,26 @@ type SetTeamMemberRoleParams struct {
 
 func (q *Queries) SetTeamMemberRole(ctx context.Context, arg SetTeamMemberRoleParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, setTeamMemberRole, arg.Role, arg.TeamID, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const suspendTeam = `-- name: SuspendTeam :execrows
+UPDATE owners SET suspended_at = COALESCE(suspended_at, ?1) WHERE id = ?2 AND kind = 'team'
+`
+
+type SuspendTeamParams struct {
+	SuspendedAt sql.NullInt64
+	ID          string
+}
+
+// Suspension, for `wardlockd admin` only: the same column as an owner's, so
+// every join that keeps a suspended owner's sites, tokens and evidence keeps a
+// suspended team's. Suspending keeps the first time; reinstating clears it.
+func (q *Queries) SuspendTeam(ctx context.Context, arg SuspendTeamParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, suspendTeam, arg.SuspendedAt, arg.ID)
 	if err != nil {
 		return 0, err
 	}

@@ -153,7 +153,7 @@ func (q *Queries) ListOwnerSiteTags(ctx context.Context, ownerID string) ([]Site
 const listSiteSummaries = `-- name: ListSiteSummaries :many
 
 SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
-  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name,
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name, owners.suspended_at AS owner_suspended_at,
   deploys.message AS deploy_message,
   policies.visibility, policies.links_enabled, policies.password_enabled, policies.email_enabled, policies.oauth_enabled,
   CAST((
@@ -190,26 +190,27 @@ type ListSiteSummariesParams struct {
 }
 
 type ListSiteSummariesRow struct {
-	ID              string
-	OwnerID         string
-	Name            string
-	ActiveDeployID  sql.NullString
-	CreatedAt       int64
-	ActivatedAt     sql.NullInt64
-	TakenDownAt     sql.NullInt64
-	GroupID         sql.NullString
-	OwnerKind       string
-	OwnerEmail      string
-	TeamName        sql.NullString
-	DeployMessage   sql.NullString
-	Visibility      sql.NullString
-	LinksEnabled    sql.NullInt64
-	PasswordEnabled sql.NullInt64
-	EmailEnabled    sql.NullInt64
-	OauthEnabled    sql.NullInt64
-	WorkingLinks    int64
-	ExpiringLinks   int64
-	Active          int64
+	ID               string
+	OwnerID          string
+	Name             string
+	ActiveDeployID   sql.NullString
+	CreatedAt        int64
+	ActivatedAt      sql.NullInt64
+	TakenDownAt      sql.NullInt64
+	GroupID          sql.NullString
+	OwnerKind        string
+	OwnerEmail       string
+	TeamName         sql.NullString
+	OwnerSuspendedAt sql.NullInt64
+	DeployMessage    sql.NullString
+	Visibility       sql.NullString
+	LinksEnabled     sql.NullInt64
+	PasswordEnabled  sql.NullInt64
+	EmailEnabled     sql.NullInt64
+	OauthEnabled     sql.NullInt64
+	WorkingLinks     int64
+	ExpiringLinks    int64
+	Active           int64
 }
 
 // Site summaries (V5.5): one owner's sites with what the dashboard's lists,
@@ -249,6 +250,7 @@ func (q *Queries) ListSiteSummaries(ctx context.Context, arg ListSiteSummariesPa
 			&i.OwnerKind,
 			&i.OwnerEmail,
 			&i.TeamName,
+			&i.OwnerSuspendedAt,
 			&i.DeployMessage,
 			&i.Visibility,
 			&i.LinksEnabled,

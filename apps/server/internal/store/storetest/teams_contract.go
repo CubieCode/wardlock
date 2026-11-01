@@ -87,6 +87,42 @@ func teamsContract(t *testing.T, open Opener) {
 				t.Errorf("%+v Require(%q, %s) = %v, want %v", c.actor, c.account, c.need, err, c.want)
 			}
 		}
+		// What only a team has: an owner's own account is no team.
+		for _, c := range []struct {
+			actor store.Actor
+			team  string
+			need  store.Role
+			want  error
+		}{
+			{a, "me", store.RoleViewer, store.ErrNotFound},
+			{a, "other", store.RoleViewer, store.ErrNotFound},
+			{a, "", store.RoleViewer, store.ErrNotFound},
+			{a, "ta", store.RoleAdmin, nil},
+			{a, "te", store.RoleAdmin, store.ErrForbiddenRole},
+			{tok, "te", store.RoleEditor, nil},
+			{tok, "te", store.RoleAdmin, store.ErrForbiddenRole},
+		} {
+			if err := c.actor.RequireTeam(c.team, c.need); !errors.Is(err, c.want) {
+				t.Errorf("%+v RequireTeam(%q, %s) = %v, want %v", c.actor, c.team, c.need, err, c.want)
+			}
+		}
+	})
+
+	t.Run("UnavailableFailsClosed", func(t *testing.T) {
+		t.Parallel()
+		for _, s := range []store.Site{
+			{TakenDownAt: now},
+			{OwnerSuspendedAt: now},
+			{OwnerKind: store.AccountOwner, OwnerSuspendedAt: now},
+			{OwnerKind: store.AccountTeam, OwnerSuspendedAt: now},
+		} {
+			if !s.Unavailable() {
+				t.Errorf("%+v is available", s)
+			}
+		}
+		if (store.Site{}).Unavailable() {
+			t.Error("a site nobody stopped is unavailable")
+		}
 	})
 
 	t.Run("CreateAndRead", func(t *testing.T) {
@@ -220,7 +256,7 @@ func teamsContract(t *testing.T, open Opener) {
 		}), store.ErrConstraint)
 		wantErr(t, f.r.Teams.CreateToken(t.Context(), f.actor(admin), store.APIToken{
 			ID: store.NewID(), OwnerID: admin.ID, PublicID: f.publicID(), TokenHash: f.hash(), Name: "x", ScopeDeploy: true, CreatedAt: now,
-		}), store.ErrConstraint)
+		}), store.ErrNotFound)
 
 		// It outlives the admin who made it and is found as a team's.
 		wantErr(t, f.r.Teams.RemoveMember(t.Context(), f.actor(admin), tm.ID, admin.ID), nil)
@@ -303,20 +339,6 @@ func teamsContract(t *testing.T, open Opener) {
 		ctx := t.Context()
 		a, b := f.owner(), f.owner()
 		tm := f.team(a)
-		tok := store.APIToken{ID: store.NewID(), OwnerID: tm.ID, PublicID: f.publicID(), TokenHash: f.hash(), Name: "ci", ScopeDeploy: true, CreatedAt: now}
-		f.must(f.r.Teams.CreateToken(ctx, f.actor(a), tok))
-		n, err := f.r.Teams.RevokeAllTokens(ctx, tm.ID, now)
-		if err != nil || n != 1 {
-			t.Fatalf("RevokeAllTokens = %d, %v", n, err)
-		}
-		got, err := f.r.APITokens.GetByPublicID(ctx, tok.PublicID)
-		f.must(err)
-		if got.RevokedAt.IsZero() {
-			t.Fatal("token not revoked")
-		}
-		_, err = f.r.Teams.RevokeAllTokens(ctx, a.ID, now)
-		wantErr(t, err, store.ErrNotFound)
-
 		f.must(f.r.Owners.Suspend(ctx, a.ID, now))
 		wantErr(t, f.r.Teams.ForceRole(ctx, tm.ID, b.ID, store.RoleAdmin, now), nil)
 		if role, ok := f.actor(b).Role(tm.ID); !ok || role != store.RoleAdmin {
@@ -324,6 +346,213 @@ func teamsContract(t *testing.T, open Opener) {
 		}
 		wantErr(t, f.r.Teams.ForceRole(ctx, tm.ID, b.ID, store.RoleViewer, now), store.ErrLastAdmin)
 		wantErr(t, f.r.Teams.ForceRole(ctx, b.ID, a.ID, store.RoleViewer, now), store.ErrNotFound)
+		// Only someone who can act may hold a role: not the suspended, and
+		// not a team's own account.
+		wantErr(t, f.r.Teams.ForceRole(ctx, tm.ID, a.ID, store.RoleAdmin, now), store.ErrNotWorkingOwner)
+		wantErr(t, f.r.Teams.ForceRole(ctx, tm.ID, tm.ID, store.RoleViewer, now), store.ErrNotWorkingOwner)
+		wantErr(t, f.r.Teams.ForceRole(ctx, tm.ID, f.team(b).ID, store.RoleViewer, now), store.ErrNotWorkingOwner)
+		wantErr(t, f.r.Teams.ForceRole(ctx, tm.ID, store.NewID(), store.RoleViewer, now), store.ErrNotWorkingOwner)
+	})
+
+	// Suspending a team mirrors suspending an owner, for the account alone.
+	t.Run("SuspendAndReinstate", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		ctx := t.Context()
+		admin, invitee := f.owner(), f.owner()
+		tm := f.team(admin)
+		s := f.teamSite(admin, tm.ID)
+		d := f.validDeploy(s.ID)
+		f.must(f.r.Deploys.Create(ctx, f.actor(admin), d, nil, store.Quotas{}))
+		tok := store.APIToken{ID: store.NewID(), OwnerID: tm.ID, PublicID: f.publicID(), TokenHash: f.hash(), Name: "ci", ScopeDeploy: true, CreatedAt: now}
+		f.must(f.r.Teams.CreateToken(ctx, f.actor(admin), tok))
+		a := f.actor(admin)
+
+		wantErr(t, f.r.Teams.Suspend(ctx, admin.ID, now), store.ErrNotFound)
+		wantErr(t, f.r.Teams.Suspend(ctx, store.NewID(), now), store.ErrNotFound)
+		wantErr(t, f.r.Teams.Reinstate(ctx, admin.ID), store.ErrNotFound)
+		f.must(f.r.Teams.Suspend(ctx, tm.ID, now))
+		// Suspending again keeps the first time.
+		f.must(f.r.Teams.Suspend(ctx, tm.ID, now.Add(time.Hour)))
+		got, err := f.r.Teams.Find(ctx, tm.ID)
+		f.must(err)
+		if !got.SuspendedAt.Equal(now) {
+			t.Fatalf("SuspendedAt = %v, want %v", got.SuspendedAt, now)
+		}
+
+		// Tokens are refused, and the site is unavailable however it is read.
+		_, err = f.r.APITokens.GetByPublicID(ctx, tok.PublicID)
+		wantErr(t, err, store.ErrNotFound)
+		site, err := f.r.Sites.Get(ctx, a, s.ID)
+		f.must(err)
+		if !site.Unavailable() || !site.TakenDownAt.IsZero() {
+			t.Fatalf("site = %+v", site)
+		}
+		routed, err := f.r.Sites.GetByName(ctx, s.Name)
+		f.must(err)
+		if !routed.Unavailable() {
+			t.Fatal("the edge's read does not see the suspension")
+		}
+		ids, err := f.r.Sites.UnavailableIDs(ctx)
+		if err != nil || !slices.Equal(ids, []string{s.ID}) {
+			t.Fatalf("UnavailableIDs = %v, %v", ids, err)
+		}
+
+		// Writes that passed a check made just before stop as they land.
+		wantErr(t, f.r.Sites.SetActiveDeploy(ctx, a, s.ID, d.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.SetPrimaryBase(ctx, a, s.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.ClearPrimary(ctx, a, s.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.Delete(ctx, a, s.ID), store.ErrNotFound)
+		wantErr(t, f.r.Sites.Transfer(ctx, a, s.ID, admin.ID, store.Quotas{}, now), store.ErrSiteTakenDown)
+
+		// It takes nothing new, and cannot be deleted out from under them.
+		wantErr(t, f.r.Sites.Create(ctx, a, f.validSite(tm.ID), store.Quotas{}), store.ErrTeamSuspended)
+		wantErr(t, f.r.Teams.Delete(ctx, a, tm.ID), store.ErrTeamSuspended)
+		wantErr(t, f.r.Teams.Invite(ctx, a, store.TeamInvitation{
+			ID: store.NewID(), TeamID: tm.ID, Email: invitee.Email, Role: store.RoleViewer, CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		}), store.ErrTeamSuspended)
+		wantErr(t, f.r.Teams.CreateToken(ctx, a, store.APIToken{
+			ID: store.NewID(), OwnerID: tm.ID, PublicID: f.publicID(), TokenHash: f.hash(), Name: "x", ScopeDeploy: true, CreatedAt: now,
+		}), store.ErrTeamSuspended)
+		mine := f.site(admin.ID)
+		wantErr(t, f.r.Sites.Transfer(ctx, a, mine.ID, tm.ID, store.Quotas{}, now), store.ErrTeamSuspended)
+
+		// Members keep their own accounts, and the team stays out of everything
+		// that means a person.
+		if ms, err := f.r.Teams.Memberships(ctx, admin.ID); err != nil || len(ms) != 1 {
+			t.Fatalf("Memberships = %v, %v", ms, err)
+		}
+		if _, err := f.r.Owners.Get(ctx, admin.ID); err != nil {
+			t.Fatal(err)
+		}
+		_, err = f.r.Owners.Get(ctx, tm.ID)
+		wantErr(t, err, store.ErrNotFound)
+		all, err := f.r.Owners.ListAll(ctx, "", 100)
+		if err != nil || slices.ContainsFunc(all, func(o store.Owner) bool { return o.ID == tm.ID }) {
+			t.Fatalf("ListAll = %+v, %v", all, err)
+		}
+		_, err = f.r.Notifications.Recipient(ctx, tm.ID)
+		wantErr(t, err, store.ErrNotFound)
+		added, err := f.r.Notifications.Enqueue(ctx, store.OutboxEntry{
+			ID: store.NewID(), Channel: store.NotificationEmail, EventKey: "k", OwnerID: tm.ID, Event: "e", Payload: "{}", CreatedAt: now,
+		})
+		f.must(err)
+		if added != 0 {
+			t.Fatalf("queued %d emails for a suspended team", added)
+		}
+
+		f.must(f.r.Teams.Reinstate(ctx, tm.ID))
+		if _, err := f.r.APITokens.GetByPublicID(ctx, tok.PublicID); err != nil {
+			t.Fatalf("token after reinstating: %v", err)
+		}
+		if site, err = f.r.Sites.Get(ctx, a, s.ID); err != nil || site.Unavailable() {
+			t.Fatalf("site after reinstating = %+v, %v", site, err)
+		}
+		f.must(f.r.Sites.SetActiveDeploy(ctx, a, s.ID, d.ID))
+		// Taken down as well, it stays down.
+		f.must(f.r.Sites.TakeDown(ctx, s.ID, now))
+		f.must(f.r.Teams.Suspend(ctx, tm.ID, now))
+		f.must(f.r.Teams.Reinstate(ctx, tm.ID))
+		if site, err = f.r.Sites.Get(ctx, a, s.ID); err != nil || !site.Unavailable() {
+			t.Fatalf("taken-down site after reinstating = %+v, %v", site, err)
+		}
+	})
+
+	// An invitation grants what its inviter could give, and only while they can.
+	t.Run("AcceptChecksTheInviterAndTheTeam", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		ctx := t.Context()
+		boss, inviter, invitee, other := f.owner(), f.owner(), f.owner(), f.owner()
+		tm := f.team(boss)
+		f.member(boss, tm.ID, inviter, store.RoleAdmin)
+		invite := func(to store.Owner) store.TeamInvitation {
+			inv := store.TeamInvitation{ID: store.NewID(), TeamID: tm.ID, Email: to.Email, Role: store.RoleViewer, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+			f.must(f.r.Teams.Invite(ctx, f.actor(inviter), inv))
+			return inv
+		}
+		listed := func(o store.Owner) int {
+			t.Helper()
+			list, err := f.r.Teams.InvitationsFor(ctx, o.ID, now)
+			f.must(err)
+			return len(list)
+		}
+		sent, spent := invite(invitee), invite(other)
+		_, err := f.r.Teams.Accept(ctx, other.ID, spent.ID, now)
+		f.must(err)
+		if listed(invitee) != 1 {
+			t.Fatal("open invitation not listed")
+		}
+
+		// The inviter suspended: dead, as if expired, and the same answer as
+		// a missing one.
+		f.must(f.r.Owners.Suspend(ctx, inviter.ID, now))
+		_, err = f.r.Teams.Accept(ctx, invitee.ID, sent.ID, now)
+		wantErr(t, err, store.ErrNotFound)
+		if listed(invitee) != 0 {
+			t.Fatal("dead invitation listed")
+		}
+		if ms, _ := f.r.Teams.Memberships(ctx, invitee.ID); len(ms) != 0 {
+			t.Fatalf("joined through a suspended inviter: %v", ms)
+		}
+		// Accepted before that, it stays as harmless as ever.
+		if _, err := f.r.Teams.Accept(ctx, other.ID, spent.ID, now); err != nil {
+			t.Fatalf("accepting twice: %v", err)
+		}
+		f.must(f.r.Owners.Reinstate(ctx, inviter.ID))
+
+		// The team suspended: dead while it is.
+		f.must(f.r.Teams.Suspend(ctx, tm.ID, now))
+		_, err = f.r.Teams.Accept(ctx, invitee.ID, sent.ID, now)
+		wantErr(t, err, store.ErrNotFound)
+		if listed(invitee) != 0 {
+			t.Fatal("invitation to a suspended team listed")
+		}
+		f.must(f.r.Teams.Reinstate(ctx, tm.ID))
+		if listed(invitee) != 1 {
+			t.Fatal("invitation not back after reinstating")
+		}
+		_, err = f.r.Teams.Accept(ctx, invitee.ID, sent.ID, now)
+		f.must(err)
+	})
+
+	// An Actor is read at the start of a request, so one who lost the right
+	// meanwhile may still arrive holding it. Invite reads the role again.
+	t.Run("InviteRereadsTheRole", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		ctx := t.Context()
+		boss, racer, invitee := f.owner(), f.owner(), f.owner()
+		tm := f.team(boss)
+		f.member(boss, tm.ID, racer, store.RoleAdmin)
+		inv := func() store.TeamInvitation {
+			return store.TeamInvitation{ID: store.NewID(), TeamID: tm.ID, Email: invitee.Email, Role: store.RoleAdmin, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+		}
+		stale := f.actor(racer)
+		f.must(f.r.Teams.SetRole(ctx, f.actor(boss), tm.ID, racer.ID, store.RoleViewer))
+		wantErr(t, f.r.Teams.Invite(ctx, stale, inv()), store.ErrForbiddenRole)
+		f.must(f.r.Teams.SetRole(ctx, f.actor(boss), tm.ID, racer.ID, store.RoleAdmin))
+		f.must(f.r.Owners.Suspend(ctx, racer.ID, now))
+		wantErr(t, f.r.Teams.Invite(ctx, stale, inv()), store.ErrForbiddenRole)
+		f.must(f.r.Owners.Reinstate(ctx, racer.ID))
+		f.must(f.r.Teams.RemoveMember(ctx, f.actor(boss), tm.ID, racer.ID))
+		wantErr(t, f.r.Teams.Invite(ctx, stale, inv()), store.ErrNotFound)
+		if open, err := f.r.Teams.Invitations(ctx, f.actor(boss), tm.ID, now); err != nil || len(open) != 0 {
+			t.Fatalf("Invitations = %+v, %v", open, err)
+		}
+	})
+
+	t.Run("CreateTokenForAnAccountThatIsNoTeam", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, open)
+		a := f.owner()
+		f.team(a)
+		// An Actor still naming a team deleted meanwhile, past the role check.
+		gone := store.NewID()
+		stale := store.Actor{OwnerID: a.ID, Memberships: []store.Membership{{TeamID: gone, Role: store.RoleAdmin}}}
+		wantErr(t, f.r.Teams.CreateToken(t.Context(), stale, store.APIToken{
+			ID: store.NewID(), OwnerID: gone, PublicID: f.publicID(), TokenHash: f.hash(), Name: "x", ScopeDeploy: true, CreatedAt: now,
+		}), store.ErrNotFound)
 	})
 
 	t.Run("DeleteOnlyWithoutSites", func(t *testing.T) {
@@ -422,6 +651,24 @@ func teamsContract(t *testing.T, open Opener) {
 		f.must(f.r.Organisation.CreateGroup(t.Context(), f.actor(admin), g, 0))
 		_, err = f.r.Organisation.Organise(t.Context(), f.actor(viewer), tm.ID, []string{s.Name}, store.OrganiseChange{SetGroup: true, GroupID: g.ID})
 		wantErr(t, err, store.ErrForbiddenRole)
+		// A team token is nobody, so it has no pins: alone or with other changes.
+		token := store.TeamTokenActor(tm.ID, "t")
+		for _, c := range []store.OrganiseChange{
+			{SetPinned: true, PinnedAt: now},
+			{SetPinned: true},
+			{SetPinned: true, PinnedAt: now, SetGroup: true, GroupID: g.ID},
+		} {
+			_, err = f.r.Organisation.Organise(t.Context(), token, tm.ID, []string{s.Name}, c)
+			wantErr(t, err, store.ErrForbiddenRole)
+		}
+		_, err = f.r.Organisation.Organise(t.Context(), store.TeamTokenActor(store.NewID(), "t"), tm.ID, []string{s.Name}, store.OrganiseChange{SetPinned: true, PinnedAt: now})
+		wantErr(t, err, store.ErrNotFound)
+		if got, err := f.r.Sites.Get(t.Context(), token, s.ID); err != nil || !got.PinnedAt.IsZero() {
+			t.Fatalf("team token's read = %+v, %v", got, err)
+		}
+		// It may still change everything else.
+		_, err = f.r.Organisation.Organise(t.Context(), token, tm.ID, []string{s.Name}, store.OrganiseChange{SetGroup: true, GroupID: g.ID})
+		f.must(err)
 	})
 
 	t.Run("GroupsAndTagsBelongToTheTeam", func(t *testing.T) {
@@ -620,6 +867,25 @@ func teamsContract(t *testing.T, open Opener) {
 		if !slices.Equal(to, want) {
 			t.Fatalf("rows for %v, want %v", to, want)
 		}
+		// Each admin's copy remembers the team, for the check when it goes.
+		for _, e := range due {
+			if want := map[bool]string{true: "", false: tm.ID}[e.OwnerID == viewer.ID]; e.TeamID != want {
+				t.Fatalf("row for %s has team %q, want %q", e.OwnerID, e.TeamID, want)
+			}
+		}
+		for _, c := range []struct {
+			who  string
+			want bool
+		}{{admin.ID, true}, {second.ID, true}, {gone.ID, false}, {viewer.ID, false}, {store.NewID(), false}} {
+			if got, err := f.r.Notifications.WorkingAdmin(ctx, tm.ID, c.who); err != nil || got != c.want {
+				t.Fatalf("WorkingAdmin(%s) = %v, %v; want %v", c.who, got, err, c.want)
+			}
+		}
+		f.must(f.r.Teams.Suspend(ctx, tm.ID, now))
+		if got, err := f.r.Notifications.WorkingAdmin(ctx, tm.ID, admin.ID); err != nil || got {
+			t.Fatalf("WorkingAdmin of a suspended team = %v, %v", got, err)
+		}
+		f.must(f.r.Teams.Reinstate(ctx, tm.ID))
 		web := entry(store.NotificationWebhook, admin.ID, "hook")
 		added, err = f.r.Notifications.Enqueue(ctx, web)
 		f.must(err)

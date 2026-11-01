@@ -24,6 +24,12 @@ var (
 	ErrAlreadyMember = errors.New("already a member")
 	// ErrTeamHasSites means a team cannot be deleted while it has sites.
 	ErrTeamHasSites = errors.New("team has sites")
+	// ErrTeamSuspended means the operator has suspended the team, so it takes
+	// nothing new: no site, member or token, and it cannot be deleted.
+	ErrTeamSuspended = errors.New("team is suspended")
+	// ErrNotWorkingOwner means someone suspended, or a team's own account,
+	// was named to hold a role.
+	ErrNotWorkingOwner = errors.New("not a working owner")
 )
 
 // Team is a shared account (T7.1). Its ID is also a row in owners, kind
@@ -33,6 +39,9 @@ type Team struct {
 	Name      string
 	CreatedBy string
 	CreatedAt time.Time
+	// SuspendedAt is when the operator suspended the team (read only; zero
+	// while it is not).
+	SuspendedAt time.Time
 	// Role is the actor's role in the team, set by reads that have an actor.
 	Role Role
 }
@@ -77,7 +86,8 @@ type Teams interface {
 	List(ctx context.Context, actor Actor) ([]Team, error)
 	Rename(ctx context.Context, actor Actor, id, name string) error
 	// Delete removes a team that has no sites, with its members,
-	// invitations, tokens, groups and tags; ErrTeamHasSites otherwise.
+	// invitations, tokens, groups and tags; ErrTeamHasSites otherwise, and
+	// ErrTeamSuspended while suspended.
 	Delete(ctx context.Context, actor Actor, id string) error
 
 	// Members returns up to limit members by address, after afterEmail.
@@ -93,25 +103,30 @@ type Teams interface {
 	RemoveMember(ctx context.Context, actor Actor, id, ownerID string) error
 
 	// Invite creates i, replacing any invitation to its address. A current
-	// member is ErrAlreadyMember.
+	// member is ErrAlreadyMember, and a suspended team ErrTeamSuspended. The
+	// actor's role is read again under the team's lock, so one demoted
+	// meanwhile is ErrForbiddenRole.
 	Invite(ctx context.Context, actor Actor, i TeamInvitation) error
 	// Invitations lists the team's open invitations at now, newest first.
 	Invitations(ctx context.Context, actor Actor, id string, now time.Time) ([]TeamInvitation, error)
 	DeleteInvitation(ctx context.Context, actor Actor, id, invitationID string) error
 
-	// InvitationsFor lists open invitations to the owner's own address. The
-	// address is read from the owner's row, never from the request.
+	// InvitationsFor lists open invitations to the owner's own address that
+	// Accept would take. The address is read from the owner's row, never from
+	// the request.
 	InvitationsFor(ctx context.Context, ownerID string, now time.Time) ([]TeamInvitation, error)
 	// Accept makes the owner a member with the invitation's role, when it was
 	// sent to the owner's address as stored now and is open at now, and
 	// returns the team. Accepting one already accepted, while still a member,
-	// changes nothing and succeeds; anyone else, an expired invitation or one
-	// accepted by a member since removed is ErrNotFound.
+	// changes nothing and succeeds; anyone else, an expired invitation, one
+	// accepted by a member since removed, one whose inviter is no longer a
+	// working admin and any in a suspended team are ErrNotFound.
 	Accept(ctx context.Context, ownerID, invitationID string, now time.Time) (Team, error)
 	// Decline removes an invitation to the owner's own address.
 	Decline(ctx context.Context, ownerID, invitationID string) error
 
-	// CreateToken adds t, owned by the team t.OwnerID. Admins only.
+	// CreateToken adds t, owned by the team t.OwnerID. Admins only;
+	// ErrTeamSuspended while suspended.
 	CreateToken(ctx context.Context, actor Actor, t APIToken) error
 	// Tokens returns one page of the team's usable tokens. Admins only.
 	Tokens(ctx context.Context, actor Actor, q APITokenQuery) ([]APIToken, error)
@@ -128,10 +143,16 @@ type Teams interface {
 	Find(ctx context.Context, id string) (Team, error)
 	// Started counts the teams the owner started.
 	Started(ctx context.Context, ownerID string) (int64, error)
-	// RevokeAllTokens revokes every token of the team and returns how many.
-	RevokeAllTokens(ctx context.Context, id string, at time.Time) (int64, error)
+	// Suspend marks the team suspended at at (an already suspended team keeps
+	// the first time): its tokens are refused and its sites unavailable,
+	// with their evidence kept, until Reinstate. Its members keep their own
+	// accounts. An ID that is not a team is ErrNotFound. Instance-wide.
+	Suspend(ctx context.Context, id string, at time.Time) error
+	// Reinstate lifts a suspension; ErrNotFound as for Suspend.
+	Reinstate(ctx context.Context, id string) error
 	// ForceRole makes ownerID a member with role, for a team with nobody
-	// left to do it. Taking the last working admin's is ErrLastAdmin.
+	// left to do it. Taking the last working admin's is ErrLastAdmin, and
+	// naming someone suspended or a team's own account ErrNotWorkingOwner.
 	ForceRole(ctx context.Context, id, ownerID string, role Role, at time.Time) error
 	// TeamQuota returns the owner's override of how many teams they may
 	// start; nil follows the instance.
@@ -220,12 +241,27 @@ func checkTeamQuota(ctx context.Context, q *sqlcgen.Queries, ownerID string, max
 	return nil
 }
 
-func teamFrom(row sqlcgen.Team) Team {
-	return Team{ID: row.ID, Name: row.Name, CreatedBy: row.CreatedBy.String, CreatedAt: fromMs(row.CreatedAt)}
+func teamFrom(row sqlcgen.GetTeamRow) Team {
+	return Team{
+		ID: row.ID, Name: row.Name, CreatedBy: row.CreatedBy.String, CreatedAt: fromMs(row.CreatedAt),
+		SuspendedAt: fromNullMs(row.SuspendedAt),
+	}
+}
+
+// teamActive refuses a suspended team (ErrTeamSuspended).
+func teamActive(ctx context.Context, q *sqlcgen.Queries, id string) error {
+	at, err := q.GetAccountSuspendedAt(ctx, id)
+	if err != nil {
+		return mapErr("get team", err)
+	}
+	if at.Valid {
+		return fmt.Errorf("team: %w", ErrTeamSuspended)
+	}
+	return nil
 }
 
 func (r teamsRepo) Get(ctx context.Context, actor Actor, id string) (Team, error) {
-	if err := actor.Require(id, RoleViewer); err != nil {
+	if err := actor.RequireTeam(id, RoleViewer); err != nil {
 		return Team{}, fmt.Errorf("get team: %w", err)
 	}
 	t, err := r.Find(ctx, id)
@@ -245,30 +281,20 @@ func (r teamsRepo) Find(ctx context.Context, id string) (Team, error) {
 }
 
 func (r teamsRepo) List(ctx context.Context, actor Actor) ([]Team, error) {
-	ids := make([]string, 0, len(actor.Memberships)+1)
-	for _, m := range actor.Memberships {
-		ids = append(ids, m.TeamID)
-	}
-	if actor.IsTeamToken() {
-		ids = append(ids, actor.OwnerID)
-	}
-	if len(ids) == 0 {
-		return []Team{}, nil
-	}
-	rows, err := r.db.q.ListTeams(ctx, ids)
+	rows, err := r.db.q.ListTeams(ctx, actor.OwnerID)
 	if err != nil {
 		return nil, mapErr("list teams", err)
 	}
 	out := make([]Team, len(rows))
 	for i, row := range rows {
-		out[i] = teamFrom(row)
+		out[i] = teamFrom(sqlcgen.GetTeamRow(row))
 		out[i].Role, _ = actor.Role(row.ID)
 	}
 	return out, nil
 }
 
 func (r teamsRepo) Rename(ctx context.Context, actor Actor, id, name string) error {
-	if err := actor.Require(id, RoleAdmin); err != nil {
+	if err := actor.RequireTeam(id, RoleAdmin); err != nil {
 		return fmt.Errorf("rename team: %w", err)
 	}
 	n, err := r.db.q.RenameTeam(ctx, sqlcgen.RenameTeamParams{Name: name, ID: id})
@@ -276,12 +302,15 @@ func (r teamsRepo) Rename(ctx context.Context, actor Actor, id, name string) err
 }
 
 func (r teamsRepo) Delete(ctx context.Context, actor Actor, id string) error {
-	if err := actor.Require(id, RoleAdmin); err != nil {
+	if err := actor.RequireTeam(id, RoleAdmin); err != nil {
 		return fmt.Errorf("delete team: %w", err)
 	}
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
 		if _, err := q.LockOwnerQuotas(ctx, id); err != nil {
 			return mapErr("lock team", err)
+		}
+		if err := teamActive(ctx, q, id); err != nil {
+			return err
 		}
 		sites, err := q.CountOwnerSites(ctx, id)
 		if err != nil {
@@ -296,7 +325,7 @@ func (r teamsRepo) Delete(ctx context.Context, actor Actor, id string) error {
 }
 
 func (r teamsRepo) Members(ctx context.Context, actor Actor, id, afterEmail string, limit int) ([]TeamMember, error) {
-	if err := actor.Require(id, RoleViewer); err != nil {
+	if err := actor.RequireTeam(id, RoleViewer); err != nil {
 		return nil, fmt.Errorf("list team members: %w", err)
 	}
 	return r.members(ctx, id, afterEmail, limit)
@@ -318,7 +347,7 @@ func (r teamsRepo) members(ctx context.Context, id, afterEmail string, limit int
 }
 
 func (r teamsRepo) SetRole(ctx context.Context, actor Actor, id, ownerID string, role Role) error {
-	if err := actor.Require(id, RoleAdmin); err != nil {
+	if err := actor.RequireTeam(id, RoleAdmin); err != nil {
 		return fmt.Errorf("set member role: %w", err)
 	}
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
@@ -342,10 +371,10 @@ func setRole(ctx context.Context, q *sqlcgen.Queries, id, ownerID string, role R
 
 func (r teamsRepo) RemoveMember(ctx context.Context, actor Actor, id, ownerID string) error {
 	if actor.OwnerID == ownerID && !actor.IsTeamToken() {
-		if err := actor.Require(id, RoleViewer); err != nil {
+		if err := actor.RequireTeam(id, RoleViewer); err != nil {
 			return fmt.Errorf("leave team: %w", err)
 		}
-	} else if err := actor.Require(id, RoleAdmin); err != nil {
+	} else if err := actor.RequireTeam(id, RoleAdmin); err != nil {
 		return fmt.Errorf("remove member: %w", err)
 	}
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
@@ -393,10 +422,29 @@ func keepAdmin(ctx context.Context, q *sqlcgen.Queries, teamID, ownerID string, 
 }
 
 func (r teamsRepo) Invite(ctx context.Context, actor Actor, i TeamInvitation) error {
-	if err := actor.Require(i.TeamID, RoleAdmin); err != nil {
+	if err := actor.RequireTeam(i.TeamID, RoleAdmin); err != nil {
 		return fmt.Errorf("invite member: %w", err)
 	}
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
+		// The same lock a demotion or removal takes, and the role as it stands
+		// under it: an invitation never comes from someone who just lost the
+		// right to send it, whatever the request's Actor still says.
+		if _, err := q.LockOwnerQuotas(ctx, i.TeamID); err != nil {
+			return mapErr("lock team", err)
+		}
+		if err := teamActive(ctx, q, i.TeamID); err != nil {
+			return err
+		}
+		if _, err := q.GetTeamMemberRole(ctx, sqlcgen.GetTeamMemberRoleParams{TeamID: i.TeamID, OwnerID: actor.OwnerID}); err != nil {
+			return mapErr("get member role", err)
+		}
+		admins, err := q.CountWorkingAdmin(ctx, sqlcgen.CountWorkingAdminParams{TeamID: i.TeamID, OwnerID: actor.OwnerID})
+		if err != nil {
+			return mapErr("check inviter", err)
+		}
+		if admins == 0 {
+			return fmt.Errorf("invite member: %w", ErrForbiddenRole)
+		}
 		n, err := q.CountMembersWithEmail(ctx, sqlcgen.CountMembersWithEmailParams{TeamID: i.TeamID, Email: i.Email})
 		if err != nil {
 			return mapErr("find member", err)
@@ -412,7 +460,7 @@ func (r teamsRepo) Invite(ctx context.Context, actor Actor, i TeamInvitation) er
 }
 
 func (r teamsRepo) Invitations(ctx context.Context, actor Actor, id string, now time.Time) ([]TeamInvitation, error) {
-	if err := actor.Require(id, RoleAdmin); err != nil {
+	if err := actor.RequireTeam(id, RoleAdmin); err != nil {
 		return nil, fmt.Errorf("list invitations: %w", err)
 	}
 	rows, err := r.db.q.ListTeamInvitations(ctx, sqlcgen.ListTeamInvitationsParams{TeamID: id, Now: ms(now)})
@@ -435,7 +483,7 @@ func invitationFrom(row sqlcgen.GetTeamInvitationRow) TeamInvitation {
 }
 
 func (r teamsRepo) DeleteInvitation(ctx context.Context, actor Actor, id, invitationID string) error {
-	if err := actor.Require(id, RoleAdmin); err != nil {
+	if err := actor.RequireTeam(id, RoleAdmin); err != nil {
 		return fmt.Errorf("delete invitation: %w", err)
 	}
 	n, err := r.db.q.DeleteTeamInvitation(ctx, sqlcgen.DeleteTeamInvitationParams{ID: invitationID, TeamID: id})
@@ -497,6 +545,18 @@ func (r teamsRepo) Accept(ctx context.Context, ownerID, invitationID string, now
 		if row.ExpiresAt <= ms(now) {
 			return fmt.Errorf("accept invitation: %w", ErrNotFound)
 		}
+		// An invitation grants what its inviter could give, so it lasts only
+		// as long as they can, under the lock a demotion takes.
+		if _, err := q.LockOwnerQuotas(ctx, row.TeamID); err != nil {
+			return mapErr("lock team", err)
+		}
+		admins, err := q.CountWorkingAdmin(ctx, sqlcgen.CountWorkingAdminParams{TeamID: row.TeamID, OwnerID: row.InvitedBy.String})
+		if err != nil {
+			return mapErr("check inviter", err)
+		}
+		if admins == 0 {
+			return fmt.Errorf("accept invitation: %w", ErrNotFound)
+		}
 		if !member {
 			team.Role = Role(row.Role)
 			err := q.AddTeamMember(ctx, sqlcgen.AddTeamMemberParams{TeamID: row.TeamID, OwnerID: ownerID, Role: row.Role, CreatedAt: ms(now)})
@@ -526,22 +586,29 @@ func (r teamsRepo) Decline(ctx context.Context, ownerID, invitationID string) er
 }
 
 func (r teamsRepo) CreateToken(ctx context.Context, actor Actor, t APIToken) error {
-	if err := actor.Require(t.OwnerID, RoleAdmin); err != nil {
+	if err := actor.RequireTeam(t.OwnerID, RoleAdmin); err != nil {
 		return fmt.Errorf("create team token: %w", err)
 	}
+	if err := teamActive(ctx, r.db.q, t.OwnerID); err != nil {
+		return err
+	}
 	t.CreatedBy = actor.OwnerID
-	return insertAPIToken(ctx, r.db.q, t, AccountTeam)
+	err := insertAPIToken(ctx, r.db.q, t, AccountTeam)
+	if errors.Is(err, ErrConstraint) {
+		return fmt.Errorf("create team token: %w", ErrNotFound) // deleted meanwhile
+	}
+	return err
 }
 
 func (r teamsRepo) Tokens(ctx context.Context, actor Actor, q APITokenQuery) ([]APIToken, error) {
-	if err := actor.Require(q.OwnerID, RoleAdmin); err != nil {
+	if err := actor.RequireTeam(q.OwnerID, RoleAdmin); err != nil {
 		return nil, fmt.Errorf("list team tokens: %w", err)
 	}
 	return r.db.APITokens().List(ctx, q)
 }
 
 func (r teamsRepo) RevokeToken(ctx context.Context, actor Actor, id, tokenID string, at time.Time) error {
-	if err := actor.Require(id, RoleAdmin); err != nil {
+	if err := actor.RequireTeam(id, RoleAdmin); err != nil {
 		return fmt.Errorf("revoke team token: %w", err)
 	}
 	return r.db.APITokens().Revoke(ctx, id, tokenID, at)
@@ -554,7 +621,7 @@ func (r teamsRepo) ListAll(ctx context.Context, afterID string, limit int) ([]Te
 	}
 	out := make([]Team, len(rows))
 	for i, row := range rows {
-		out[i] = teamFrom(row)
+		out[i] = teamFrom(sqlcgen.GetTeamRow(row))
 	}
 	return out, nil
 }
@@ -578,12 +645,14 @@ func (r teamsRepo) AllMembers(ctx context.Context, id string) ([]TeamMember, err
 	}
 }
 
-func (r teamsRepo) RevokeAllTokens(ctx context.Context, id string, at time.Time) (int64, error) {
-	if _, err := r.Find(ctx, id); err != nil {
-		return 0, err
-	}
-	n, err := r.db.q.RevokeAllAccountTokens(ctx, sqlcgen.RevokeAllAccountTokensParams{RevokedAt: nullMs(at), OwnerID: id})
-	return n, mapErr("revoke team tokens", err)
+func (r teamsRepo) Suspend(ctx context.Context, id string, at time.Time) error {
+	n, err := r.db.q.SuspendTeam(ctx, sqlcgen.SuspendTeamParams{ID: id, SuspendedAt: nullMs(at)})
+	return rowsAffected("suspend team", n, err)
+}
+
+func (r teamsRepo) Reinstate(ctx context.Context, id string) error {
+	n, err := r.db.q.ReinstateTeam(ctx, id)
+	return rowsAffected("reinstate team", n, err)
 }
 
 func (r teamsRepo) ForceRole(ctx context.Context, id, ownerID string, role Role, at time.Time) error {
@@ -591,7 +660,15 @@ func (r teamsRepo) ForceRole(ctx context.Context, id, ownerID string, role Role,
 		return err
 	}
 	return r.db.withTx(ctx, func(_ *sql.Tx, q *sqlcgen.Queries) error {
-		_, err := q.GetTeamMemberRole(ctx, sqlcgen.GetTeamMemberRoleParams{TeamID: id, OwnerID: ownerID})
+		// GetOwner finds people only, so a team's own account stops here too.
+		target, err := q.GetOwner(ctx, ownerID)
+		if errors.Is(err, sql.ErrNoRows) || err == nil && target.SuspendedAt.Valid {
+			return fmt.Errorf("set team role: %w", ErrNotWorkingOwner)
+		}
+		if err != nil {
+			return mapErr("get owner", err)
+		}
+		_, err = q.GetTeamMemberRole(ctx, sqlcgen.GetTeamMemberRoleParams{TeamID: id, OwnerID: ownerID})
 		if errors.Is(err, sql.ErrNoRows) {
 			return mapErr("add team member", q.AddTeamMember(ctx, sqlcgen.AddTeamMemberParams{
 				TeamID: id, OwnerID: ownerID, Role: string(role), CreatedAt: ms(at),

@@ -55,7 +55,7 @@ func (s *Service) AddDomain(ctx context.Context, actor store.Actor, siteName, ho
 	if err != nil {
 		return store.Domain{}, err
 	}
-	if !site.TakenDownAt.IsZero() {
+	if site.Unavailable() {
 		return store.Domain{}, ErrUnavailable
 	}
 	d := store.Domain{
@@ -150,7 +150,7 @@ func (s *Service) RemoveDomain(ctx context.Context, actor store.Actor, siteName,
 	if err := actor.Require(site.OwnerID, store.RoleEditor); err != nil {
 		return fmt.Errorf("remove domain: %w", err)
 	}
-	if !site.TakenDownAt.IsZero() {
+	if site.Unavailable() {
 		// A taken-down site's domains are frozen with it (A2.13).
 		return ErrUnavailable
 	}

@@ -715,7 +715,7 @@ func (s *Service) Delete(ctx context.Context, actor store.Actor, siteName, id st
 	if err != nil {
 		return err
 	}
-	if !site.TakenDownAt.IsZero() {
+	if site.Unavailable() {
 		return ErrSiteUnavailable
 	}
 	ps, err := s.loadPolicies(ctx, site.ID)

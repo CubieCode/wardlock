@@ -277,7 +277,12 @@ func (s *Service) deliver(ctx context.Context, e store.OutboxEntry) bool {
 		s.logErr(ctx, "read notification recipient", err)
 		return true
 	}
-	if to.Suspended {
+	gone, err := s.teamGone(ctx, e)
+	if err != nil {
+		s.logErr(ctx, "read notification team", err)
+		return true
+	}
+	if to.Suspended || gone {
 		settle(store.NotificationDropped)
 		return true
 	}
@@ -326,6 +331,17 @@ func (s *Service) deliver(ctx context.Context, e store.OutboxEntry) bool {
 	next := s.now().Add(backoff(e.Attempts + 1))
 	s.logErr(ctx, "reschedule notification", s.c.Store.Reschedule(context.WithoutCancel(ctx), e.ID, next))
 	return false
+}
+
+// teamGone reports whether e is an admin's copy of a team's email and they
+// can no longer be told: admins are chosen when a row is queued, and someone
+// removed or demoted since must hear no more about the team (T7.1).
+func (s *Service) teamGone(ctx context.Context, e store.OutboxEntry) (bool, error) {
+	if e.TeamID == "" {
+		return false, nil
+	}
+	admin, err := s.c.Store.WorkingAdmin(ctx, e.TeamID, e.OwnerID)
+	return !admin, err
 }
 
 func (s *Service) fail(ctx context.Context, e store.OutboxEntry, err error) {
@@ -377,8 +393,8 @@ func (s *Service) message(to netmail.Address, e store.OutboxEntry) (mail.Message
 }
 
 // summarise rolls each owner's held rows into one email, as soon as the cap
-// has room for it. Anything turned off since, or a suspended owner's, is
-// dropped instead.
+// has room for it. Anything turned off since, a suspended owner's, or a
+// team's they can no longer be told about, is dropped instead.
 func (s *Service) summarise(ctx context.Context) {
 	ids, err := s.c.Store.HeldOwners(ctx, store.NotificationEmail)
 	if err != nil {
@@ -414,7 +430,11 @@ func (s *Service) summariseOwner(ctx context.Context, ownerID string) error {
 	var ids, subjects []string
 	for _, e := range held {
 		var p emailPayload
-		if to.Suspended || slices.Contains(off, e.Event) || json.Unmarshal([]byte(e.Payload), &p) != nil || p.Notice == nil {
+		gone, err := s.teamGone(ctx, e)
+		if err != nil {
+			return err
+		}
+		if to.Suspended || gone || slices.Contains(off, e.Event) || json.Unmarshal([]byte(e.Payload), &p) != nil || p.Notice == nil {
 			if err := s.c.Store.Settle(ctx, e.ID, store.NotificationDropped, s.now()); err != nil {
 				return err
 			}

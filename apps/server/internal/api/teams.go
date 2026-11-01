@@ -37,6 +37,7 @@ func teamFailed(err error) (*failure, error) {
 		{store.ErrAlreadyMember, http.StatusConflict, "already_member", "This address is already a member. Change their role instead.", "email"},
 		{store.ErrLastAdmin, http.StatusConflict, "team_needs_admin", "A team must keep at least one admin.", ""},
 		{store.ErrTeamHasSites, http.StatusConflict, "team_has_sites", "This team still has sites. Move or delete them first.", ""},
+		{store.ErrTeamSuspended, http.StatusConflict, "team_suspended", teamSuspended, ""},
 		{owners.ErrInvalidTeamName, http.StatusBadRequest, "invalid_request", "name must be 1 to 80 characters.", "name"},
 		{owners.ErrInvalidRole, http.StatusBadRequest, "invalid_request", "role must be admin, editor or viewer.", "role"},
 		{owners.ErrInvalidEmail, http.StatusBadRequest, "invalid_request", "email must be a plain email address.", "email"},

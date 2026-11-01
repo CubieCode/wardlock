@@ -13,8 +13,9 @@ import (
 	"wardlock.nz/server/internal/store/sqlcgen"
 )
 
-// ErrSiteTakenDown means the operator has taken the site down, so it cannot
-// move: its files and records are evidence where they are.
+// ErrSiteTakenDown means the operator has taken the site down or suspended
+// its team, so it cannot move: its files and records are evidence where they
+// are.
 var ErrSiteTakenDown = errors.New("site is taken down")
 
 // Transfer moves siteID to the account toID (T7.1). The actor needs ownership
@@ -25,8 +26,8 @@ var ErrSiteTakenDown = errors.New("site is taken down")
 // storage quotas apply, and its share of the site's files moves with it: the
 // source hands back the bytes only this site held and the target counts them.
 // The target can then read and activate what the source had uploaded, and
-// nothing else. A taken-down site is ErrSiteTakenDown. Moving a site to its
-// own account changes nothing.
+// nothing else. An unavailable site is ErrSiteTakenDown, and a suspended
+// target ErrTeamSuspended. Moving a site to its own account changes nothing.
 func (r sitesRepo) Transfer(ctx context.Context, actor Actor, siteID, toID string, quotas Quotas, at time.Time) error {
 	from, err := r.db.authorizeSite(ctx, actor, siteID, RoleViewer)
 	if err != nil {
@@ -49,11 +50,14 @@ func (r sitesRepo) Transfer(ctx context.Context, actor Actor, siteID, toID strin
 		if site.OwnerID != from {
 			return fmt.Errorf("transfer site: %w", ErrNotFound)
 		}
-		if site.TakenDownAt.Valid {
+		if site.TakenDownAt.Valid || site.OwnerSuspendedAt.Valid {
 			return fmt.Errorf("transfer site: %w", ErrSiteTakenDown)
 		}
 		stored, limits, err := lockAccounts(ctx, q, from, toID, quotas)
 		if err != nil {
+			return err
+		}
+		if err := teamActive(ctx, q, toID); err != nil {
 			return err
 		}
 		if limits.Sites > 0 {

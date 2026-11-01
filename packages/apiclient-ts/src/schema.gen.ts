@@ -440,7 +440,7 @@ export interface paths {
     post?: never;
     /**
      * Delete a team.
-     * @description Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. Its tokens, groups, tags, members and invitations go with it.
+     * @description Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. A suspended team answers `409 team_suspended`. Its tokens, groups, tags, members and invitations go with it.
      */
     delete: operations['deleteTeam'];
     options?: never;
@@ -534,7 +534,7 @@ export interface paths {
     put?: never;
     /**
      * Invite an address to a team.
-     * @description Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+     * @description Admins only. Inviting an address again replaces its invitation, a current member answers `409 already_member`, and a suspended team `409 team_suspended`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
      */
     post: operations['inviteTeamMember'];
     delete?: never;
@@ -595,7 +595,7 @@ export interface paths {
     put?: never;
     /**
      * Create a team token.
-     * @description Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+     * @description Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team. A suspended team answers `409 team_suspended`.
      */
     post: operations['createTeamToken'];
     delete?: never;
@@ -672,7 +672,7 @@ export interface paths {
     put?: never;
     /**
      * Accept an invitation.
-     * @description Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one and an expired one answer the same `404`. Accepting twice changes nothing, while still a member.
+     * @description Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one, an expired one, one whose inviter is no longer a working admin and one to a suspended team answer the same `404`. Accepting twice changes nothing, while still a member.
      */
     post: operations['acceptTeamInvitation'];
     delete?: never;
@@ -724,7 +724,7 @@ export interface paths {
     put?: never;
     /**
      * Move a site to or from a team.
-     * @description Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+     * @description Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A site the operator has taken down or whose team is suspended answers `409 site_unavailable`, and a suspended target `409 team_suspended`.
      */
     post: operations['transferSite'];
     delete?: never;
@@ -966,7 +966,7 @@ export interface paths {
     put?: never;
     /**
      * Create an empty site.
-     * @description Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
+     * @description Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team; a suspended team answers `409 team_suspended`. The CLI calls this before the first deploy to a new name.
      */
     post: operations['createSite'];
     delete?: never;
@@ -1044,7 +1044,7 @@ export interface paths {
     get?: never;
     /**
      * Pin a site.
-     * @description Pinning a pinned site changes nothing.
+     * @description Pins are personal, so a viewer may pin and a team token, which is nobody, answers `403 forbidden_role`. Pinning a pinned site changes nothing.
      */
     put: operations['pinSite'];
     post?: never;
@@ -1759,7 +1759,7 @@ export interface paths {
     put?: never;
     /**
      * Change the group, tags or pin of many sites at once.
-     * @description Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
+     * @description Applies every given change to each named site, all or nothing. It works in one account, the caller's own or the team named by `team`: site names, groups and tags are all found within that account, so one in any other account, or missing, makes the whole request answer `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). Changing groups or tags needs an editor. A change that only pins or unpins needs a viewer, since a pin is the caller's own, and a team token changing a pin answers `403 forbidden_role`, with or without other changes. A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
      */
     post: operations['organiseSites'];
     delete?: never;

@@ -3541,7 +3541,7 @@ type ClientInterface interface {
 
 	// OrganiseSitesWithBody Change the group, tags or pin of many sites at once.
 	//
-	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
+	// Applies every given change to each named site, all or nothing. It works in one account, the caller's own or the team named by `team`: site names, groups and tags are all found within that account, so one in any other account, or missing, makes the whole request answer `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). Changing groups or tags needs an editor. A change that only pins or unpins needs a viewer, since a pin is the caller's own, and a team token changing a pin answers `403 forbidden_role`, with or without other changes. A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -3550,7 +3550,7 @@ type ClientInterface interface {
 
 	// OrganiseSites Change the group, tags or pin of many sites at once.
 	//
-	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
+	// Applies every given change to each named site, all or nothing. It works in one account, the caller's own or the team named by `team`: site names, groups and tags are all found within that account, so one in any other account, or missing, makes the whole request answer `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). Changing groups or tags needs an editor. A change that only pins or unpins needs a viewer, since a pin is the caller's own, and a team token changing a pin answers `403 forbidden_role`, with or without other changes. A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -3676,7 +3676,7 @@ type ClientInterface interface {
 
 	// CreateSiteWithBody Create an empty site.
 	//
-	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team; a suspended team answers `409 team_suspended`. The CLI calls this before the first deploy to a new name.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -3685,7 +3685,7 @@ type ClientInterface interface {
 
 	// CreateSite Create an empty site.
 	//
-	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team; a suspended team answers `409 team_suspended`. The CLI calls this before the first deploy to a new name.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -3889,7 +3889,7 @@ type ClientInterface interface {
 
 	// PinSite Pin a site.
 	//
-	// Pinning a pinned site changes nothing.
+	// Pins are personal, so a viewer may pin and a team token, which is nobody, answers `403 forbidden_role`. Pinning a pinned site changes nothing.
 	//
 	// Corresponds with PUT /api/v0/sites/{site}/pin (the `PinSite` operationId).
 	PinSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3992,7 +3992,7 @@ type ClientInterface interface {
 
 	// TransferSiteWithBody Move a site to or from a team.
 	//
-	// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+	// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A site the operator has taken down or whose team is suspended answers `409 site_unavailable`, and a suspended target `409 team_suspended`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -4001,7 +4001,7 @@ type ClientInterface interface {
 
 	// TransferSite Move a site to or from a team.
 	//
-	// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+	// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A site the operator has taken down or whose team is suspended answers `409 site_unavailable`, and a suspended target `409 team_suspended`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -4067,7 +4067,7 @@ type ClientInterface interface {
 
 	// AcceptTeamInvitation Accept an invitation.
 	//
-	// Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one and an expired one answer the same `404`. Accepting twice changes nothing, while still a member.
+	// Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one, an expired one, one whose inviter is no longer a working admin and one to a suspended team answer the same `404`. Accepting twice changes nothing, while still a member.
 	//
 	// Corresponds with POST /api/v0/team-invitations/{invitationId}/accept (the `AcceptTeamInvitation` operationId).
 	AcceptTeamInvitation(ctx context.Context, invitationId InvitationId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -4106,7 +4106,7 @@ type ClientInterface interface {
 
 	// DeleteTeam Delete a team.
 	//
-	// Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. Its tokens, groups, tags, members and invitations go with it.
+	// Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. A suspended team answers `409 team_suspended`. Its tokens, groups, tags, members and invitations go with it.
 	//
 	// Corresponds with DELETE /api/v0/teams/{teamId} (the `DeleteTeam` operationId).
 	DeleteTeam(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -4145,7 +4145,7 @@ type ClientInterface interface {
 
 	// InviteTeamMemberWithBody Invite an address to a team.
 	//
-	// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+	// Admins only. Inviting an address again replaces its invitation, a current member answers `409 already_member`, and a suspended team `409 team_suspended`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -4154,7 +4154,7 @@ type ClientInterface interface {
 
 	// InviteTeamMember Invite an address to a team.
 	//
-	// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+	// Admins only. Inviting an address again replaces its invitation, a current member answers `409 already_member`, and a suspended team `409 team_suspended`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -4209,7 +4209,7 @@ type ClientInterface interface {
 
 	// CreateTeamTokenWithBody Create a team token.
 	//
-	// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+	// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team. A suspended team answers `409 team_suspended`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -4218,7 +4218,7 @@ type ClientInterface interface {
 
 	// CreateTeamToken Create a team token.
 	//
-	// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+	// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team. A suspended team answers `409 team_suspended`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -4912,7 +4912,7 @@ func (c *Client) SetNotificationSettings(ctx context.Context, body SetNotificati
 
 // OrganiseSitesWithBody Change the group, tags or pin of many sites at once.
 //
-// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
+// Applies every given change to each named site, all or nothing. It works in one account, the caller's own or the team named by `team`: site names, groups and tags are all found within that account, so one in any other account, or missing, makes the whole request answer `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). Changing groups or tags needs an editor. A change that only pins or unpins needs a viewer, since a pin is the caller's own, and a team token changing a pin answers `403 forbidden_role`, with or without other changes. A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 //
 // Takes any type of body and a specified content type.
 //
@@ -4931,7 +4931,7 @@ func (c *Client) OrganiseSitesWithBody(ctx context.Context, params *OrganiseSite
 
 // OrganiseSites Change the group, tags or pin of many sites at once.
 //
-// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
+// Applies every given change to each named site, all or nothing. It works in one account, the caller's own or the team named by `team`: site names, groups and tags are all found within that account, so one in any other account, or missing, makes the whole request answer `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). Changing groups or tags needs an editor. A change that only pins or unpins needs a viewer, since a pin is the caller's own, and a team token changing a pin answers `403 forbidden_role`, with or without other changes. A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 //
 // Takes a body of the `application/json` content type.
 //
@@ -5217,7 +5217,7 @@ func (c *Client) ListSites(ctx context.Context, params *ListSitesParams, reqEdit
 
 // CreateSiteWithBody Create an empty site.
 //
-// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team; a suspended team answers `409 team_suspended`. The CLI calls this before the first deploy to a new name.
 //
 // Takes any type of body and a specified content type.
 //
@@ -5236,7 +5236,7 @@ func (c *Client) CreateSiteWithBody(ctx context.Context, contentType string, bod
 
 // CreateSite Create an empty site.
 //
-// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team; a suspended team answers `409 team_suspended`. The CLI calls this before the first deploy to a new name.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -5700,7 +5700,7 @@ func (c *Client) UnpinSite(ctx context.Context, site SiteName, reqEditors ...Req
 
 // PinSite Pin a site.
 //
-// Pinning a pinned site changes nothing.
+// Pins are personal, so a viewer may pin and a team token, which is nobody, answers `403 forbidden_role`. Pinning a pinned site changes nothing.
 //
 // Corresponds with PUT /api/v0/sites/{site}/pin (the `PinSite` operationId).
 func (c *Client) PinSite(ctx context.Context, site SiteName, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5933,7 +5933,7 @@ func (c *Client) RollbackSite(ctx context.Context, site SiteName, body RollbackS
 
 // TransferSiteWithBody Move a site to or from a team.
 //
-// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A site the operator has taken down or whose team is suspended answers `409 site_unavailable`, and a suspended target `409 team_suspended`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -5952,7 +5952,7 @@ func (c *Client) TransferSiteWithBody(ctx context.Context, site SiteName, conten
 
 // TransferSite Move a site to or from a team.
 //
-// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A site the operator has taken down or whose team is suspended answers `409 site_unavailable`, and a suspended target `409 team_suspended`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -6098,7 +6098,7 @@ func (c *Client) ListMyTeamInvitations(ctx context.Context, reqEditors ...Reques
 
 // AcceptTeamInvitation Accept an invitation.
 //
-// Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one and an expired one answer the same `404`. Accepting twice changes nothing, while still a member.
+// Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one, an expired one, one whose inviter is no longer a working admin and one to a suspended team answer the same `404`. Accepting twice changes nothing, while still a member.
 //
 // Corresponds with POST /api/v0/team-invitations/{invitationId}/accept (the `AcceptTeamInvitation` operationId).
 func (c *Client) AcceptTeamInvitation(ctx context.Context, invitationId InvitationId, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -6187,7 +6187,7 @@ func (c *Client) CreateTeam(ctx context.Context, body CreateTeamJSONRequestBody,
 
 // DeleteTeam Delete a team.
 //
-// Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. Its tokens, groups, tags, members and invitations go with it.
+// Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. A suspended team answers `409 team_suspended`. Its tokens, groups, tags, members and invitations go with it.
 //
 // Corresponds with DELETE /api/v0/teams/{teamId} (the `DeleteTeam` operationId).
 func (c *Client) DeleteTeam(ctx context.Context, teamId TeamId, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -6276,7 +6276,7 @@ func (c *Client) ListTeamInvitations(ctx context.Context, teamId TeamId, reqEdit
 
 // InviteTeamMemberWithBody Invite an address to a team.
 //
-// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+// Admins only. Inviting an address again replaces its invitation, a current member answers `409 already_member`, and a suspended team `409 team_suspended`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
 //
 // Takes any type of body and a specified content type.
 //
@@ -6295,7 +6295,7 @@ func (c *Client) InviteTeamMemberWithBody(ctx context.Context, teamId TeamId, co
 
 // InviteTeamMember Invite an address to a team.
 //
-// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+// Admins only. Inviting an address again replaces its invitation, a current member answers `409 already_member`, and a suspended team `409 team_suspended`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -6420,7 +6420,7 @@ func (c *Client) ListTeamTokens(ctx context.Context, teamId TeamId, params *List
 
 // CreateTeamTokenWithBody Create a team token.
 //
-// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team. A suspended team answers `409 team_suspended`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -6439,7 +6439,7 @@ func (c *Client) CreateTeamTokenWithBody(ctx context.Context, teamId TeamId, con
 
 // CreateTeamToken Create a team token.
 //
-// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team. A suspended team answers `409 team_suspended`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -11620,7 +11620,7 @@ type ClientWithResponsesInterface interface {
 
 	// OrganiseSitesWithBodyWithResponse Change the group, tags or pin of many sites at once.
 	//
-	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
+	// Applies every given change to each named site, all or nothing. It works in one account, the caller's own or the team named by `team`: site names, groups and tags are all found within that account, so one in any other account, or missing, makes the whole request answer `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). Changing groups or tags needs an editor. A change that only pins or unpins needs a viewer, since a pin is the caller's own, and a team token changing a pin answers `403 forbidden_role`, with or without other changes. A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -11629,7 +11629,7 @@ type ClientWithResponsesInterface interface {
 
 	// OrganiseSitesWithResponse Change the group, tags or pin of many sites at once.
 	//
-	// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
+	// Applies every given change to each named site, all or nothing. It works in one account, the caller's own or the team named by `team`: site names, groups and tags are all found within that account, so one in any other account, or missing, makes the whole request answer `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). Changing groups or tags needs an editor. A change that only pins or unpins needs a viewer, since a pin is the caller's own, and a team token changing a pin answers `403 forbidden_role`, with or without other changes. A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -11773,7 +11773,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateSiteWithBodyWithResponse Create an empty site.
 	//
-	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team; a suspended team answers `409 team_suspended`. The CLI calls this before the first deploy to a new name.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -11782,7 +11782,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateSiteWithResponse Create an empty site.
 	//
-	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
+	// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team; a suspended team answers `409 team_suspended`. The CLI calls this before the first deploy to a new name.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -12018,7 +12018,7 @@ type ClientWithResponsesInterface interface {
 
 	// PinSiteWithResponse Pin a site.
 	//
-	// Pinning a pinned site changes nothing.
+	// Pins are personal, so a viewer may pin and a team token, which is nobody, answers `403 forbidden_role`. Pinning a pinned site changes nothing.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -12135,7 +12135,7 @@ type ClientWithResponsesInterface interface {
 
 	// TransferSiteWithBodyWithResponse Move a site to or from a team.
 	//
-	// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+	// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A site the operator has taken down or whose team is suspended answers `409 site_unavailable`, and a suspended target `409 team_suspended`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -12144,7 +12144,7 @@ type ClientWithResponsesInterface interface {
 
 	// TransferSiteWithResponse Move a site to or from a team.
 	//
-	// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+	// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A site the operator has taken down or whose team is suspended answers `409 site_unavailable`, and a suspended target `409 team_suspended`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -12216,7 +12216,7 @@ type ClientWithResponsesInterface interface {
 
 	// AcceptTeamInvitationWithResponse Accept an invitation.
 	//
-	// Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one and an expired one answer the same `404`. Accepting twice changes nothing, while still a member.
+	// Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one, an expired one, one whose inviter is no longer a working admin and one to a suspended team answer the same `404`. Accepting twice changes nothing, while still a member.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -12261,7 +12261,7 @@ type ClientWithResponsesInterface interface {
 
 	// DeleteTeamWithResponse Delete a team.
 	//
-	// Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. Its tokens, groups, tags, members and invitations go with it.
+	// Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. A suspended team answers `409 team_suspended`. Its tokens, groups, tags, members and invitations go with it.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -12306,7 +12306,7 @@ type ClientWithResponsesInterface interface {
 
 	// InviteTeamMemberWithBodyWithResponse Invite an address to a team.
 	//
-	// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+	// Admins only. Inviting an address again replaces its invitation, a current member answers `409 already_member`, and a suspended team `409 team_suspended`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -12315,7 +12315,7 @@ type ClientWithResponsesInterface interface {
 
 	// InviteTeamMemberWithResponse Invite an address to a team.
 	//
-	// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+	// Admins only. Inviting an address again replaces its invitation, a current member answers `409 already_member`, and a suspended team `409 team_suspended`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -12378,7 +12378,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateTeamTokenWithBodyWithResponse Create a team token.
 	//
-	// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+	// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team. A suspended team answers `409 team_suspended`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -12387,7 +12387,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateTeamTokenWithResponse Create a team token.
 	//
-	// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+	// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team. A suspended team answers `409 team_suspended`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -20093,7 +20093,7 @@ func (c *ClientWithResponses) SetNotificationSettingsWithResponse(ctx context.Co
 
 // OrganiseSitesWithBodyWithResponse Change the group, tags or pin of many sites at once.
 //
-// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
+// Applies every given change to each named site, all or nothing. It works in one account, the caller's own or the team named by `team`: site names, groups and tags are all found within that account, so one in any other account, or missing, makes the whole request answer `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). Changing groups or tags needs an editor. A change that only pins or unpins needs a viewer, since a pin is the caller's own, and a team token changing a pin answers `403 forbidden_role`, with or without other changes. A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -20108,7 +20108,7 @@ func (c *ClientWithResponses) OrganiseSitesWithBodyWithResponse(ctx context.Cont
 
 // OrganiseSitesWithResponse Change the group, tags or pin of many sites at once.
 //
-// Applies every given change to each named site, all or nothing. If any site, group or tag is missing or another owner's, the whole request answers `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
+// Applies every given change to each named site, all or nothing. It works in one account, the caller's own or the team named by `team`: site names, groups and tags are all found within that account, so one in any other account, or missing, makes the whole request answer `404 not_found` and nothing changes; so does a site going past 20 tags (`413 limit_exceeded`, target `addTagIds`). Changing groups or tags needs an editor. A change that only pins or unpins needs a viewer, since a pin is the caller's own, and a team token changing a pin answers `403 forbidden_role`, with or without other changes. A tag in both `addTagIds` and `removeTagIds`, or `groupId` with `ungroup`, answers `400 invalid_request`. The answer gives each site's group, tags and pin from before the change, in the order named, so a client can undo by sending the inverse (with `pinnedAt` to re-pin a site where it was).
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -20348,7 +20348,7 @@ func (c *ClientWithResponses) ListSitesWithResponse(ctx context.Context, params 
 
 // CreateSiteWithBodyWithResponse Create an empty site.
 //
-// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team; a suspended team answers `409 team_suspended`. The CLI calls this before the first deploy to a new name.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -20363,7 +20363,7 @@ func (c *ClientWithResponses) CreateSiteWithBodyWithResponse(ctx context.Context
 
 // CreateSiteWithResponse Create an empty site.
 //
-// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team. The CLI calls this before the first deploy to a new name.
+// Site names are unique per instance. A name held by any site, the caller's or another owner's, answers `409 site_name_taken`; site names are public through DNS, so this reveals nothing secret. An owner who already has as many sites as their quota allows gets `413 limit_exceeded` with target `name`. `team` creates the site under a team the caller can edit, counted against the team; a suspended team answers `409 team_suspended`. The CLI calls this before the first deploy to a new name.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -20755,7 +20755,7 @@ func (c *ClientWithResponses) UnpinSiteWithResponse(ctx context.Context, site Si
 
 // PinSiteWithResponse Pin a site.
 //
-// Pinning a pinned site changes nothing.
+// Pins are personal, so a viewer may pin and a team token, which is nobody, answers `403 forbidden_role`. Pinning a pinned site changes nothing.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -20950,7 +20950,7 @@ func (c *ClientWithResponses) RollbackSiteWithResponse(ctx context.Context, site
 
 // TransferSiteWithBodyWithResponse Move a site to or from a team.
 //
-// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A site the operator has taken down or whose team is suspended answers `409 site_unavailable`, and a suspended target `409 team_suspended`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -20965,7 +20965,7 @@ func (c *ClientWithResponses) TransferSiteWithBodyWithResponse(ctx context.Conte
 
 // TransferSiteWithResponse Move a site to or from a team.
 //
-// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A taken-down site answers `409 site_unavailable`.
+// Needs ownership or admin of the source, and to be admin of a target team; moving to `owner` moves the site to the caller's own account, never someone else's. Deploys, links, domains and analytics stay with the site; its group and tags belong to the source, so they are cleared; pins stay with each person. The target's site and storage quotas apply (`413 limit_exceeded`). A site the operator has taken down or whose team is suspended answers `409 site_unavailable`, and a suspended target `409 team_suspended`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -21085,7 +21085,7 @@ func (c *ClientWithResponses) ListMyTeamInvitationsWithResponse(ctx context.Cont
 
 // AcceptTeamInvitationWithResponse Accept an invitation.
 //
-// Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one and an expired one answer the same `404`. Accepting twice changes nothing, while still a member.
+// Only for an invitation to the signed-in owner's own verified address, read from their account and never from the request; any other, a missing one, an expired one, one whose inviter is no longer a working admin and one to a suspended team answer the same `404`. Accepting twice changes nothing, while still a member.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -21160,7 +21160,7 @@ func (c *ClientWithResponses) CreateTeamWithResponse(ctx context.Context, body C
 
 // DeleteTeamWithResponse Delete a team.
 //
-// Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. Its tokens, groups, tags, members and invitations go with it.
+// Admins only. A team that still has sites answers `409 team_has_sites`: move or delete them first. A suspended team answers `409 team_suspended`. Its tokens, groups, tags, members and invitations go with it.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -21235,7 +21235,7 @@ func (c *ClientWithResponses) ListTeamInvitationsWithResponse(ctx context.Contex
 
 // InviteTeamMemberWithBodyWithResponse Invite an address to a team.
 //
-// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+// Admins only. Inviting an address again replaces its invitation, a current member answers `409 already_member`, and a suspended team `409 team_suspended`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -21250,7 +21250,7 @@ func (c *ClientWithResponses) InviteTeamMemberWithBodyWithResponse(ctx context.C
 
 // InviteTeamMemberWithResponse Invite an address to a team.
 //
-// Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
+// Admins only. Inviting an address again replaces its invitation, a current member answers `409 already_member`, and a suspended team `409 team_suspended`. An address with no owner account also gets the normal owner invitation when `WARDLOCK_INVITES` allows it, and is otherwise refused with `403 invites_restricted`. The invitation lasts 7 days and can be accepted only by an owner signed in with that address.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -21355,7 +21355,7 @@ func (c *ClientWithResponses) ListTeamTokensWithResponse(ctx context.Context, te
 
 // CreateTeamTokenWithBodyWithResponse Create a team token.
 //
-// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team. A suspended team answers `409 team_suspended`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -21370,7 +21370,7 @@ func (c *ClientWithResponses) CreateTeamTokenWithBodyWithResponse(ctx context.Co
 
 // CreateTeamTokenWithResponse Create a team token.
 //
-// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team.
+// Admins only. The response is the only time the token is shown. A team token acts as an editor of its team, limited by its scopes; it never administers the team. A suspended team answers `409 team_suspended`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //

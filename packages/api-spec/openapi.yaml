@@ -86,9 +86,9 @@ info:
     | ------ | ----- |
     | 400 | `invalid_request` (malformed JSON, missing or invalid field), `invalid_code`, `invalid_site_name`, `reserved_site_name`, `invalid_path`, `invalid_manifest`, `invalid_config` (a deploy's redirect or header rule is malformed or sets a header a deploy may not; `target` is `redirects[i]` or `headers[i]`), `invalid_hostname`, `invalid_preview_name` (a preview name breaks the rules or its hostname label would pass 63 characters; `target` is `preview`), `hash_mismatch`, `unexpected_blob`, `invalid_policy_path`, `invalid_policy`, `invalid_share_link`, `invalid_passkey` |
     | 401 | `unauthenticated`: no credential, or an expired, revoked or unknown one |
-    | 403 | `forbidden`: the credential lacks the scope, or a cookie request came from another origin; `invites_restricted`: the operator has kept invitations to themselves |
+    | 403 | `forbidden`: the credential lacks the scope, or a cookie request came from another origin; `forbidden_role`: the caller can see the team or site but their role does not allow this, or a team token tried to change a pin; `invites_restricted`: the operator has kept invitations to themselves |
     | 404 | `not_found` |
-    | 409 | `site_name_taken` (also, with `target` `preview`, for a preview whose hostname label is a site's name), `group_name_taken`, `tag_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `stale_base` (a path deploy's site changed after it was created; create it again), `default_policy`, `passkey_limit`, `site_unavailable` (the operator has taken the site down), `domain_not_active` (a pending or lapsed custom domain cannot be the primary hostname) |
+    | 409 | `site_name_taken` (also, with `target` `preview`, for a preview whose hostname label is a site's name), `group_name_taken`, `tag_name_taken`, `domain_taken`, `blobs_missing`, `deploy_not_pending`, `deploy_not_activated`, `no_previous_deploy`, `stale_base` (a path deploy's site changed after it was created; create it again), `default_policy`, `passkey_limit`, `site_unavailable` (the operator has taken the site down or suspended its team), `domain_not_active` (a pending or lapsed custom domain cannot be the primary hostname), `team_has_sites` (a team cannot be deleted while it has sites), `team_needs_admin` (a team must keep an admin who is not suspended), `already_member` (a current member cannot be invited), `team_suspended` (the operator has suspended the team, which takes no new sites, members or tokens and cannot be deleted) |
     | 410 | `login_expired` |
     | 413 | `limit_exceeded`: a deploy limit (files, bytes per file or per video file, bytes in total, redirects, header rules, bytes per rule value or in all rules) or one of the owner's quotas (bytes stored, sites, deploys in 24 hours), or an organisation limit (100 groups, 200 tags, 20 tags on a site); the `message` names the file and the limit, and `target` is the file's path, or `files`, `deploys`, `redirects`, `headers`, `redirects[i]`, `headers[i]`, `name`, `tagIds` or `addTagIds` |
     | 422 | `file_type_blocked`: the manifest lists a file whose extension the operator has blocked; `target` is its path |
@@ -993,7 +993,8 @@ paths:
       summary: Delete a team.
       description: >-
         Admins only. A team that still has sites answers `409 team_has_sites`:
-        move or delete them first. Its tokens, groups, tags, members and
+        move or delete them first. A suspended team answers
+        `409 team_suspended`. Its tokens, groups, tags, members and
         invitations go with it.
       tags: [teams]
       security:
@@ -1162,7 +1163,7 @@ paths:
       operationId: inviteTeamMember
       summary: Invite an address to a team.
       description: >-
-        Admins only. Inviting an address again replaces its invitation, and a current member answers `409 already_member`. An
+        Admins only. Inviting an address again replaces its invitation, a current member answers `409 already_member`, and a suspended team `409 team_suspended`. An
         address with no owner account also gets the normal owner invitation
         when `WARDLOCK_INVITES` allows it, and is otherwise refused with
         `403 invites_restricted`. The invitation lasts 7 days and can be
@@ -1278,7 +1279,7 @@ paths:
       description: >-
         Admins only. The response is the only time the token is shown. A team
         token acts as an editor of its team, limited by its scopes; it never
-        administers the team.
+        administers the team. A suspended team answers `409 team_suspended`.
       tags: [teams]
       security:
         - sessionCookie: []
@@ -1375,8 +1376,9 @@ paths:
       description: >-
         Only for an invitation to the signed-in owner's own verified address,
         read from their account and never from the request; any other, a
-        missing one and an expired one answer the same `404`. Accepting twice
-        changes nothing, while still a member.
+        missing one, an expired one, one whose inviter is no longer a working
+        admin and one to a suspended team answer the same `404`. Accepting
+        twice changes nothing, while still a member.
       tags: [teams]
       security:
         - sessionCookie: []
@@ -1437,8 +1439,9 @@ paths:
         never someone else's. Deploys, links, domains and analytics stay with
         the site; its group and tags belong to the source, so they are
         cleared; pins stay with each person. The target's site and storage
-        quotas apply (`413 limit_exceeded`). A taken-down site answers
-        `409 site_unavailable`.
+        quotas apply (`413 limit_exceeded`). A site the operator has taken
+        down or whose team is suspended answers `409 site_unavailable`, and a
+        suspended target `409 team_suspended`.
       tags: [teams]
       security:
         - sessionCookie: []
@@ -2001,8 +2004,9 @@ paths:
         names are public through DNS, so this reveals nothing secret. An
         owner who already has as many sites as their quota allows gets `413
         limit_exceeded` with target `name`. `team` creates the site under a
-        team the caller can edit, counted against the team. The CLI calls
-        this before the first deploy to a new name.
+        team the caller can edit, counted against the team; a suspended team
+        answers `409 team_suspended`. The CLI calls this before the first
+        deploy to a new name.
       tags: [sites]
       security:
         - sessionCookie: []
@@ -2163,7 +2167,10 @@ paths:
     put:
       operationId: pinSite
       summary: Pin a site.
-      description: Pinning a pinned site changes nothing.
+      description: >-
+        Pins are personal, so a viewer may pin and a team token, which is
+        nobody, answers `403 forbidden_role`. Pinning a pinned site changes
+        nothing.
       tags: [organisation]
       security:
         - sessionCookie: []
@@ -3818,10 +3825,15 @@ paths:
       operationId: organiseSites
       summary: Change the group, tags or pin of many sites at once.
       description: >-
-        Applies every given change to each named site, all or nothing. If
-        any site, group or tag is missing or another owner's, the whole
-        request answers `404 not_found` and nothing changes; so does a site
-        going past 20 tags (`413 limit_exceeded`, target `addTagIds`).
+        Applies every given change to each named site, all or nothing. It
+        works in one account, the caller's own or the team named by `team`:
+        site names, groups and tags are all found within that account, so
+        one in any other account, or missing, makes the whole request answer
+        `404 not_found` and nothing changes; so does a site going past 20
+        tags (`413 limit_exceeded`, target `addTagIds`). Changing groups or
+        tags needs an editor. A change that only pins or unpins needs a
+        viewer, since a pin is the caller's own, and a team token changing a
+        pin answers `403 forbidden_role`, with or without other changes.
         A tag in both `addTagIds` and `removeTagIds`, or `groupId` with
         `ungroup`, answers `400 invalid_request`. The answer gives each
         site's group, tags and pin from before the change, in the order

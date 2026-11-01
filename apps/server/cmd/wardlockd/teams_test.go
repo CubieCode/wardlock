@@ -5,9 +5,14 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -63,6 +68,46 @@ func TestSuspendedMemberLeavesTeamSiteServing(t *testing.T) {
 	}
 	p.notifier.Notify(ctx, p.siteID("docs"))
 	p.do(http.MethodGet, host, "/", "", nil).unavailable(t)
+}
+
+// Suspending a team takes its sites away as suspending an owner does, within
+// the watch's interval, and reinstating brings them back.
+func TestSuspendedTeamSitesAreUnavailable(t *testing.T) {
+	p := newPolicyEdge(t)
+	ctx := t.Context()
+	p.publish("docs")
+	p.moveToTeam()
+	team := p.owner.ID
+	p.do(http.MethodGet, host, "/", "", nil).expect(t, http.StatusOK, "Home page", "")
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		(&unavailableWatch{log: p.log, sites: p.db.Sites(), domains: p.db.Domains(), notify: p.notifier}).run(watchCtx, 5*time.Millisecond)
+	})
+	t.Cleanup(func() { cancel(); wg.Wait() })
+	eventually := func(what string, code int) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for p.do(http.MethodGet, host, "/", "", nil).code != code {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	// The watch reads its baseline first; suspending before that goes unseen.
+	time.Sleep(20 * time.Millisecond)
+
+	if err := p.db.Teams().Suspend(ctx, team, p.now()); err != nil {
+		t.Fatal(err)
+	}
+	eventually("the suspended team's site to go", http.StatusForbidden)
+	p.do(http.MethodGet, host, "/", "", nil).unavailable(t)
+	if err := p.db.Teams().Reinstate(ctx, team); err != nil {
+		t.Fatal(err)
+	}
+	eventually("the reinstated team's site to serve", http.StatusOK)
 }
 
 func TestAdminTeams(t *testing.T) {
@@ -128,9 +173,27 @@ func TestAdminTeams(t *testing.T) {
 	if err != nil || over.Sites == nil || *over.Sites != 9 {
 		t.Fatalf("override = %+v, %v", over, err)
 	}
-	if _, err := admin("team-quota", store.NewID()); err == nil {
-		t.Fatal("team-quota of a missing team worked")
+	refused := func(want string, args ...string) {
+		t.Helper()
+		out, err := admin(args...)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("admin %v: %v\n%s\nwant an error with %q", args, err, out, want)
+		}
 	}
+	gone := store.NewID()
+	noTeam := fmt.Sprintf("no team %q on this server", gone)
+	refused(noTeam, "team-quota", gone)
+	refused(noTeam, "team-quota", gone, "--sites", "1")
+	refused(noTeam, "suspend-team", gone)
+	refused(noTeam, "reinstate-team", gone)
+	refused(noTeam, "set-team-role", gone, "owner@example.test", "viewer")
+	// An owner's ID names no team, and a role goes to someone who exists.
+	notTeam := fmt.Sprintf("no team %q on this server", o.ID)
+	refused(notTeam, "team-quota", o.ID)
+	refused(notTeam, "suspend-team", o.ID)
+	refused(notTeam, "reinstate-team", o.ID)
+	refused(`no owner "nobody@example.test" on this server`, "set-team-role", tm.ID, "nobody@example.test", "viewer")
+	refused("is not a plain email address", "set-team-role", tm.ID, store.TeamAddress(tm.ID), "viewer")
 
 	out = must("quota", "owner@example.test")
 	if !strings.Contains(out, "teams") {
@@ -147,21 +210,88 @@ func TestAdminTeams(t *testing.T) {
 
 	// Repairing a team, once its only admin is suspended.
 	must("create", "--email", "second@example.test")
+	must("create", "--email", "third@example.test")
 	must("suspend-owner", "owner@example.test")
 	if out := must("set-team-role", tm.ID, "second@example.test", "admin"); !strings.Contains(out, "admin of team") {
 		t.Fatalf("set-team-role:\n%s", out)
 	}
-	if _, err := admin("set-team-role", tm.ID, "second@example.test", "emperor"); err == nil {
-		t.Fatal("an unknown role worked")
+	refused(`"emperor" is not a role`, "set-team-role", tm.ID, "second@example.test", "emperor")
+	refused("would have no working admin", "set-team-role", tm.ID, "second@example.test", "viewer")
+	// A suspended owner can repair nothing, as a new member or an old one.
+	must("suspend-owner", "third@example.test")
+	refused("third@example.test is suspended", "set-team-role", tm.ID, "third@example.test", "admin")
+	refused("owner@example.test is suspended", "set-team-role", tm.ID, "owner@example.test", "viewer")
+	if ms, err := db.Teams().Memberships(t.Context(), func() string {
+		third, err := db.Owners().GetByEmail(t.Context(), "third@example.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return third.ID
+	}()); err != nil || len(ms) != 0 {
+		t.Fatalf("a suspended owner joined: %v, %v", ms, err)
 	}
-	if _, err := admin("set-team-role", tm.ID, "second@example.test", "viewer"); err == nil {
-		t.Fatal("the last working admin was demoted")
+	must("reinstate-owner", "third@example.test")
+
+	// Suspending a team, end to end.
+	second, err := db.Owners().GetByEmail(t.Context(), "second@example.test")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if out := must("revoke-team-tokens", tm.ID); !strings.Contains(out, "Revoked 0 tokens") {
-		t.Fatalf("revoke-team-tokens:\n%s", out)
+	tok := store.APIToken{ID: store.NewID(), OwnerID: tm.ID, PublicID: "aaaaaaaaaa", TokenHash: "h", Name: "ci", ScopeDeploy: true, CreatedAt: time.Now()}
+	if err := db.Teams().CreateToken(t.Context(), store.Actor{OwnerID: second.ID, Memberships: []store.Membership{{TeamID: tm.ID, Role: store.RoleAdmin}}}, tok); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := admin("revoke-team-tokens", store.NewID()); err == nil {
-		t.Fatal("revoking a missing team's tokens worked")
+	logs.Reset()
+	out = must("suspend-team", tm.ID)
+	if !strings.Contains(out, "Suspended team Web team") || !strings.Contains(out, "reinstate-team "+tm.ID) {
+		t.Fatalf("suspend-team:\n%s", out)
+	}
+	if strings.Contains(logs.String(), "Web team") || !strings.Contains(logs.String(), tm.ID) {
+		t.Fatalf("logs name the team, not its ID:\n%s", logs.String())
+	}
+	if _, err := db.APITokens().GetByPublicID(t.Context(), tok.PublicID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a suspended team's token: %v", err)
+	}
+	if out := must("list-sites"); !strings.Contains(out, "team suspended") {
+		t.Fatalf("list-sites:\n%s", out)
+	}
+	if out := must("list-teams"); !strings.Contains(out, "suspended "+day(time.Now())) {
+		t.Fatalf("list-teams:\n%s", out)
+	}
+	if out := must("list-owners"); strings.Contains(out, tm.ID) {
+		t.Fatalf("a suspended team in list-owners:\n%s", out)
+	}
+	if _, err := db.Owners().Get(t.Context(), second.ID); err != nil {
+		t.Fatalf("a member's account: %v", err)
+	}
+	// Suspending twice is harmless, and a team is not an owner.
+	must("suspend-team", tm.ID)
+	refused("is not a plain email address", "reinstate-owner", tm.ID)
+	if out := must("reinstate-team", tm.ID); !strings.Contains(out, "Reinstated team Web team") {
+		t.Fatalf("reinstate-team:\n%s", out)
+	}
+	if _, err := db.APITokens().GetByPublicID(t.Context(), tok.PublicID); err != nil {
+		t.Fatalf("token after reinstating: %v", err)
+	}
+	if out := must("list-sites"); strings.Contains(out, "suspended") {
+		t.Fatalf("list-sites after reinstating:\n%s", out)
+	}
+	if _, err := admin("revoke-team-tokens", tm.ID); !errors.Is(err, errUsage) {
+		t.Fatalf("revoke-team-tokens is gone: %v", err)
+	}
+
+	// A team with no members left is the one that most needs finding: its last
+	// member's account went without the rules that keep an admin.
+	raw, err := sql.Open("sqlite", filepath.Join(dir, "wardlock.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = raw.Close() }()
+	if _, err := raw.ExecContext(t.Context(), `DELETE FROM team_members WHERE team_id = ?`, tm.ID); err != nil {
+		t.Fatal(err)
+	}
+	if out := must("list-teams"); !strings.Contains(out, "Web team") || !strings.Contains(out, tm.ID) {
+		t.Fatalf("list-teams leaves out a team with no members:\n%s", out)
 	}
 
 	// A team is never treated as a person, by its address or its ID.

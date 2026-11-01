@@ -320,9 +320,23 @@ type matrixOp struct {
 	scope string
 	// teamOnly operations name a team, so only the team row applies.
 	teamOnly bool
+	// personal operations change something only a person has, so a team token
+	// that can see the site is forbidden_role.
+	personal bool
+	// suspended is what the operation answers on a suspended team, once the
+	// caller is otherwise allowed: "" goes through, as it does for a taken-down
+	// site, and the rest are the code of a 409.
+	suspended string
 	// before readies the instance for a call that succeeds.
 	before func(*teamEnv)
 }
+
+// What a suspended team's operations answer: the same as a taken-down site's
+// for a site, or a refusal of its own for what the team would take on.
+const (
+	siteUnavailable = "site_unavailable"
+	teamSuspended   = "team_suspended"
+)
 
 func sitePath(suffix string) func(fixtures) string {
 	return func(fx fixtures) string { return "/sites/" + fx.site + suffix }
@@ -354,8 +368,8 @@ func matrixOps() []matrixOp {
 	ops := []matrixOp{
 		{id: "GetSite", method: http.MethodGet, path: sitePath(""), need: store.RoleViewer, scope: "any"},
 		{id: "ListDeploys", method: http.MethodGet, path: sitePath("/deploys"), need: store.RoleViewer, scope: "any"},
-		{id: "ListDeployFiles", method: http.MethodGet, path: deploy(active, "/files"), need: store.RoleViewer, scope: "any"},
-		{id: "DownloadDeployBlob", method: http.MethodGet, path: deploy(active, "/blobs/"+liveFile.hash()), need: store.RoleViewer, scope: "any"},
+		{id: "ListDeployFiles", method: http.MethodGet, path: deploy(active, "/files"), need: store.RoleViewer, scope: "any", suspended: siteUnavailable},
+		{id: "DownloadDeployBlob", method: http.MethodGet, path: deploy(active, "/blobs/"+liveFile.hash()), need: store.RoleViewer, scope: "any", suspended: siteUnavailable},
 		{id: "ListPreviews", method: http.MethodGet, path: sitePath("/previews"), need: store.RoleViewer, scope: "any"},
 		{id: "ListDomains", method: http.MethodGet, path: sitePath("/domains"), need: store.RoleViewer, scope: "any"},
 		{id: "GetDomain", method: http.MethodGet, path: domain(""), need: store.RoleViewer, scope: "any"},
@@ -365,36 +379,37 @@ func matrixOps() []matrixOp {
 		{id: "ListSiteAccessLog", method: http.MethodGet, path: sitePath("/access-log"), need: store.RoleViewer, scope: "any"},
 		{id: "GetAnalytics", method: http.MethodGet, path: func(fx fixtures) string { return "/analytics?days=7&site=" + fx.site }, need: store.RoleViewer, scope: "any"},
 
-		{id: "CreateDeploy", method: http.MethodPost, path: sitePath("/deploys"), body: constBody(manifest(file{"more.html", "more"})), need: store.RoleEditor, scope: "deploy"},
+		{id: "CreateDeploy", method: http.MethodPost, path: sitePath("/deploys"), body: constBody(manifest(file{"more.html", "more"})), need: store.RoleEditor, scope: "deploy", suspended: siteUnavailable},
 		{id: "UploadDeployBlob", method: http.MethodPut, path: func(fx fixtures) string {
 			return "/sites/" + fx.site + "/deploys/" + fx.pending + "/blobs/" + waitingFile.hash()
-		}, body: constBody([]byte(waitingFile.content)), need: store.RoleEditor, scope: "deploy"},
-		{id: "ActivateDeploy", method: http.MethodPost, path: deploy(func(fx fixtures) string { return fx.next }, "/activate"), need: store.RoleEditor, scope: "deploy"},
-		{id: "RollbackSite", method: http.MethodPost, path: sitePath("/rollback"), body: constBody(map[string]any{}), need: store.RoleEditor, scope: "deploy"},
-		{id: "DeletePreview", method: http.MethodDelete, path: sitePath("/previews/pr-1"), need: store.RoleEditor, scope: "deploy"},
-		{id: "PromotePreview", method: http.MethodPost, path: sitePath("/previews/pr-1/promote"), need: store.RoleEditor, scope: "deploy"},
+		}, body: constBody([]byte(waitingFile.content)), need: store.RoleEditor, scope: "deploy", suspended: siteUnavailable},
+		{id: "ActivateDeploy", method: http.MethodPost, path: deploy(func(fx fixtures) string { return fx.next }, "/activate"), need: store.RoleEditor, scope: "deploy", suspended: siteUnavailable},
+		{id: "RollbackSite", method: http.MethodPost, path: sitePath("/rollback"), body: constBody(map[string]any{}), need: store.RoleEditor, scope: "deploy", suspended: siteUnavailable},
+		{id: "DeletePreview", method: http.MethodDelete, path: sitePath("/previews/pr-1"), need: store.RoleEditor, scope: "deploy", suspended: siteUnavailable},
+		{id: "PromotePreview", method: http.MethodPost, path: sitePath("/previews/pr-1/promote"), need: store.RoleEditor, scope: "deploy", suspended: siteUnavailable},
 		{id: "SetSiteOrganisation", method: http.MethodPut, path: sitePath("/organisation"), body: func(fx fixtures) any {
 			return map[string]any{"groupId": fx.group, "tagIds": []string{fx.tag}}
 		}, need: store.RoleEditor, scope: "any"},
 
-		{id: "DeleteSite", method: http.MethodDelete, path: sitePath(""), need: store.RoleEditor, scope: "manage"},
-		{id: "AddDomain", method: http.MethodPost, path: sitePath("/domains"), body: constBody(map[string]any{"hostname": "added.example.test"}), need: store.RoleEditor, scope: "manage"},
-		{id: "RemoveDomain", method: http.MethodDelete, path: domain(""), need: store.RoleEditor, scope: "manage"},
+		{id: "DeleteSite", method: http.MethodDelete, path: sitePath(""), need: store.RoleEditor, scope: "manage", suspended: siteUnavailable},
+		{id: "AddDomain", method: http.MethodPost, path: sitePath("/domains"), body: constBody(map[string]any{"hostname": "added.example.test"}), need: store.RoleEditor, scope: "manage", suspended: siteUnavailable},
+		{id: "RemoveDomain", method: http.MethodDelete, path: domain(""), need: store.RoleEditor, scope: "manage", suspended: siteUnavailable},
 		{id: "VerifyDomain", method: http.MethodPost, path: domain("/verify"), need: store.RoleEditor, scope: "manage", before: func(e *teamEnv) { e.hs.advance(time.Hour) }},
 		{id: "SetPrimaryHost", method: http.MethodPut, path: sitePath("/primary-host"), body: func(fx fixtures) any {
 			return map[string]any{"host": fx.site + "." + baseDomain}
-		}, need: store.RoleEditor, scope: "manage"},
-		{id: "ClearPrimaryHost", method: http.MethodDelete, path: sitePath("/primary-host"), need: store.RoleEditor, scope: "manage"},
+		}, need: store.RoleEditor, scope: "manage", suspended: siteUnavailable},
+		{id: "ClearPrimaryHost", method: http.MethodDelete, path: sitePath("/primary-host"), need: store.RoleEditor, scope: "manage", suspended: siteUnavailable},
 		{id: "SetPolicy", method: http.MethodPut, path: sitePath("/policies"), body: constBody(map[string]any{"path": "/more/", "visibility": "protected", "methods": []string{"links"}}), need: store.RoleEditor, scope: "manage"},
-		{id: "DeletePolicy", method: http.MethodDelete, path: func(fx fixtures) string { return "/sites/" + fx.site + "/policies/" + fx.policy }, need: store.RoleEditor, scope: "manage"},
+		{id: "DeletePolicy", method: http.MethodDelete, path: func(fx fixtures) string { return "/sites/" + fx.site + "/policies/" + fx.policy }, need: store.RoleEditor, scope: "manage", suspended: siteUnavailable},
 		{id: "CreateShareLink", method: http.MethodPost, path: sitePath("/links"), body: constBody(map[string]any{"path": "/"}), need: store.RoleEditor, scope: "manage"},
 		{id: "RevokeShareLink", method: http.MethodDelete, path: link(""), need: store.RoleEditor, scope: "manage"},
 		{id: "RotateShareLink", method: http.MethodPost, path: link("/rotate"), need: store.RoleEditor, scope: "manage"},
 		// A pin is the caller's own, so reading the site is enough.
-		{id: "PinSite", method: http.MethodPut, path: sitePath("/pin"), need: store.RoleViewer, scope: "manage"},
-		{id: "UnpinSite", method: http.MethodDelete, path: sitePath("/pin"), need: store.RoleViewer, scope: "manage"},
+		// A team token has no pins of its own, so it may not change one.
+		{id: "PinSite", method: http.MethodPut, path: sitePath("/pin"), need: store.RoleViewer, scope: "manage", personal: true},
+		{id: "UnpinSite", method: http.MethodDelete, path: sitePath("/pin"), need: store.RoleViewer, scope: "manage", personal: true},
 		// Admin of the source, moving to the caller's own account.
-		{id: "TransferSite", method: http.MethodPost, path: sitePath("/transfer"), body: constBody(map[string]any{"to": map[string]any{"kind": "owner"}}), need: store.RoleAdmin, scope: "manage"},
+		{id: "TransferSite", method: http.MethodPost, path: sitePath("/transfer"), body: constBody(map[string]any{"to": map[string]any{"kind": "owner"}}), need: store.RoleAdmin, scope: "manage", suspended: siteUnavailable},
 
 		// Groups and tags have IDs of their own, and an account behind them.
 		{id: "UpdateGroup", method: http.MethodPatch, path: func(fx fixtures) string { return "/groups/" + fx.group }, body: constBody(map[string]any{"name": "Renamed"}), need: store.RoleEditor, scope: "manage"},
@@ -411,20 +426,23 @@ func matrixOps() []matrixOp {
 		{id: "ListExpiringLinks", method: http.MethodGet, path: team("/expiring-links"), need: store.RoleViewer, scope: "any", teamOnly: true},
 		{id: "CreateSite", method: http.MethodPost, path: fxPath(func(fixtures) string { return "/sites" }), body: func(fx fixtures) any {
 			return map[string]any{"name": "new-site", "team": fx.team}
-		}, need: store.RoleEditor, scope: "deploy", teamOnly: true},
+		}, need: store.RoleEditor, scope: "deploy", teamOnly: true, suspended: teamSuspended},
 		{id: "CreateGroup", method: http.MethodPost, path: team("/groups"), body: constBody(map[string]any{"name": "More"}), need: store.RoleEditor, scope: "manage", teamOnly: true},
 		{id: "CreateTag", method: http.MethodPost, path: team("/tags"), body: constBody(map[string]any{"name": "more"}), need: store.RoleEditor, scope: "manage", teamOnly: true},
 		{id: "OrganiseSites", method: http.MethodPost, path: team("/organise"), body: func(fx fixtures) any {
 			return map[string]any{"sites": []string{fx.site}, "addTagIds": []string{fx.tag}}
 		}, need: store.RoleEditor, scope: "manage", teamOnly: true},
+		{id: "OrganiseSitesPin", method: http.MethodPost, path: team("/organise"), body: func(fx fixtures) any {
+			return map[string]any{"sites": []string{fx.site}, "pinned": true}
+		}, need: store.RoleViewer, scope: "manage", teamOnly: true, personal: true},
 
 		{id: "GetTeam", method: http.MethodGet, path: members(""), need: store.RoleViewer, scope: "any", teamOnly: true},
 		{id: "ListTeamMembers", method: http.MethodGet, path: members("/members"), need: store.RoleViewer, scope: "any", teamOnly: true},
 		{id: "UpdateTeam", method: http.MethodPatch, path: members(""), body: constBody(api.UpdateTeamRequest{Name: "Renamed"}), need: store.RoleAdmin, scope: "session", teamOnly: true},
 		{id: "ListTeamInvitations", method: http.MethodGet, path: members("/invitations"), need: store.RoleAdmin, scope: "session", teamOnly: true},
-		{id: "InviteTeamMember", method: http.MethodPost, path: members("/invitations"), body: constBody(map[string]any{"email": "new@example.test", "role": "viewer"}), need: store.RoleAdmin, scope: "session", teamOnly: true},
+		{id: "InviteTeamMember", method: http.MethodPost, path: members("/invitations"), body: constBody(map[string]any{"email": "new@example.test", "role": "viewer"}), need: store.RoleAdmin, scope: "session", teamOnly: true, suspended: teamSuspended},
 		{id: "ListTeamTokens", method: http.MethodGet, path: members("/tokens"), need: store.RoleAdmin, scope: "session", teamOnly: true},
-		{id: "CreateTeamToken", method: http.MethodPost, path: members("/tokens"), body: constBody(map[string]any{"name": "new", "scopes": []string{"deploy"}}), need: store.RoleAdmin, scope: "session", teamOnly: true},
+		{id: "CreateTeamToken", method: http.MethodPost, path: members("/tokens"), body: constBody(map[string]any{"name": "new", "scopes": []string{"deploy"}}), need: store.RoleAdmin, scope: "session", teamOnly: true, suspended: teamSuspended},
 	}
 	return ops
 }
@@ -439,6 +457,8 @@ type matrixCaller struct {
 	role store.Role
 	// gone is a credential that no longer authenticates anyone.
 	gone bool
+	// teamToken is a token owned by a team, not a person.
+	teamToken bool
 }
 
 func tokenAccepts(scopes []string, need string) bool {
@@ -464,10 +484,24 @@ func (c matrixCaller) expect(op matrixOp) verdict {
 		return verdict{http.StatusForbidden, "forbidden"}
 	case c.role == "":
 		return verdict{http.StatusNotFound, "not_found"}
-	case !roleAtLeast(c.role, op.need):
+	case !roleAtLeast(c.role, op.need), op.personal && c.teamToken:
 		return verdict{http.StatusForbidden, "forbidden_role"}
 	}
 	return verdict{}
+}
+
+// expectSuspended is what the caller gets once the team is suspended: a team
+// token authenticates no one, and the rest get what they got, unless the
+// operation stops at the suspension.
+func (c matrixCaller) expectSuspended(op matrixOp) verdict {
+	if c.teamToken && c.role != "" {
+		return verdict{http.StatusUnauthorized, "unauthenticated"}
+	}
+	want := c.expect(op)
+	if want.status == 0 && op.suspended != "" {
+		return verdict{http.StatusConflict, op.suspended}
+	}
+	return want
 }
 
 func roleAtLeast(have, need store.Role) bool {
@@ -494,10 +528,10 @@ var teamCallers = []matrixCaller{
 	{cred: "viewer-both", scopes: both, role: store.RoleViewer},
 	{cred: "removed-both", scopes: both},
 	{cred: "suspended-both", gone: true},
-	{cred: "team-deploy", scopes: []string{"deploy"}, role: store.RoleEditor},
-	{cred: "team-manage", scopes: []string{"manage"}, role: store.RoleEditor},
-	{cred: "team-both", scopes: both, role: store.RoleEditor},
-	{cred: "other-team-both", scopes: both},
+	{cred: "team-deploy", scopes: []string{"deploy"}, role: store.RoleEditor, teamToken: true},
+	{cred: "team-manage", scopes: []string{"manage"}, role: store.RoleEditor, teamToken: true},
+	{cred: "team-both", scopes: both, role: store.RoleEditor, teamToken: true},
+	{cred: "other-team-both", scopes: both, teamToken: true},
 }
 
 var ownerCallers = []matrixCaller{
@@ -507,7 +541,7 @@ var ownerCallers = []matrixCaller{
 	{cred: "admin"},
 	{cred: "stranger"},
 	{cred: "editor-manage", scopes: []string{"manage"}},
-	{cred: "team-both", scopes: both},
+	{cred: "team-both", scopes: both, teamToken: true},
 }
 
 // missing is what the matrix calls a thing that does not exist.
@@ -564,6 +598,199 @@ func TestIsolationMatrix(t *testing.T) {
 				t.Run("own/"+c.cred, func(t *testing.T) { run(t, op, c, func(e *teamEnv) fixtures { return e.ownerFx }) })
 			}
 		})
+	}
+}
+
+// The suspended-team column: every operation again, with the team suspended.
+// Members keep what a taken-down site leaves its owner and team tokens stop
+// working; everyone else gets exactly what they got before.
+func TestSuspendedTeamMatrix(t *testing.T) {
+	shared := newTeamEnv(t)
+	shared.suspendTeam()
+	for _, op := range matrixOps() {
+		t.Run(op.id, func(t *testing.T) {
+			for _, c := range teamCallers {
+				t.Run(c.cred, func(t *testing.T) {
+					want := c.expectSuspended(op)
+					e := shared
+					if want.status == 0 && op.method != http.MethodGet {
+						t.Parallel()
+						e = newTeamEnv(t)
+						e.suspendTeam()
+					}
+					if want.status == 0 && op.before != nil {
+						op.before(e)
+					}
+					fx := e.teamFx
+					res := e.send(e.creds[c.cred], op.method, op.path(fx), bodyOf(op, fx))
+					if want.status == 0 {
+						if res.status >= 300 {
+							t.Fatalf("%s %s: %d %s; want success", op.method, op.path(fx), res.status, res.body)
+						}
+						return
+					}
+					if res.status != want.status || res.err(t).Code != want.code {
+						t.Fatalf("%s %s: %d %s; want %d %s", op.method, op.path(fx), res.status, res.body, want.status, want.code)
+					}
+				})
+			}
+		})
+	}
+}
+
+// "The same as a taken-down site": the column above is held to it, operation
+// by operation, by taking the site down instead.
+func TestSuspensionRefusesWhatATakedownRefuses(t *testing.T) {
+	for _, op := range matrixOps() {
+		if op.suspended == teamSuspended {
+			continue // about the team, not a site
+		}
+		t.Run(op.id, func(t *testing.T) {
+			t.Parallel()
+			e := newTeamEnv(t)
+			site, err := e.hs.db.Sites().GetByName(t.Context(), e.teamFx.site)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := e.hs.db.Sites().TakeDown(t.Context(), site.ID, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			if op.before != nil {
+				op.before(e)
+			}
+			res := e.send(e.people["admin"].cred, op.method, op.path(e.teamFx), bodyOf(op, e.teamFx))
+			if op.suspended == siteUnavailable {
+				res.want(t, http.StatusConflict, siteUnavailable)
+			} else if res.status >= 300 {
+				t.Fatalf("%d %s on a taken-down site, but a suspended team's goes through", res.status, res.body)
+			}
+		})
+	}
+}
+
+func (e *teamEnv) suspendTeam() {
+	e.t.Helper()
+	if _, err := e.svc.SuspendTeam(e.t.Context(), e.teamFx.team); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+func TestSuspendedTeam(t *testing.T) {
+	e := newTeamEnv(t)
+	team, site := e.teamFx.team, "/sites/"+e.teamFx.site
+	admin := e.people["admin"]
+	e.suspendTeam()
+
+	res := e.send(e.people["viewer"].cred, http.MethodGet, site, nil)
+	res.want(t, http.StatusOK, "")
+	var s api.Site
+	res.decode(t, &s)
+	if !s.Unavailable {
+		t.Fatal("a suspended team's site is not marked unavailable")
+	}
+	// A move would carry the site out of the suspension, or into one.
+	e.send(admin.cred, http.MethodPost, "/sites", map[string]any{"name": "mine"}).want(t, http.StatusCreated, "")
+	e.send(admin.cred, http.MethodPost, "/sites/mine/transfer", map[string]any{"to": map[string]any{"kind": "team", "id": team}}).
+		want(t, http.StatusConflict, "team_suspended")
+	e.send(admin.cred, http.MethodDelete, "/teams/"+team, nil).want(t, http.StatusConflict, "team_suspended")
+	// Members can still leave and still look after who is in the team.
+	e.send(admin.cred, http.MethodPatch, "/teams/"+team+"/members/"+e.people["viewer"].id, map[string]any{"role": "editor"}).want(t, http.StatusOK, "")
+	e.send(e.people["editor"].cred, http.MethodDelete, "/teams/"+team+"/members/"+e.people["editor"].id, nil).want(t, http.StatusNoContent, "")
+	// Their own accounts are their own.
+	e.send(e.people["viewer"].cred, http.MethodPost, "/sites", map[string]any{"name": "theirs"}).want(t, http.StatusCreated, "")
+	e.send(e.creds["viewer-both"], http.MethodGet, "/sites/theirs", nil).want(t, http.StatusOK, "")
+
+	if _, err := e.svc.ReinstateTeam(t.Context(), team); err != nil {
+		t.Fatal(err)
+	}
+	res = e.send(e.creds["team-both"], http.MethodGet, site, nil)
+	res.want(t, http.StatusOK, "")
+	res.decode(t, &s)
+	if s.Unavailable {
+		t.Fatal("still unavailable after reinstating")
+	}
+	e.send(e.creds["team-deploy"], http.MethodPost, site+"/deploys", manifest(file{"after.html", "after"})).want(t, http.StatusCreated, "")
+}
+
+// Every route under /teams/{id} is about a team, so an owner's own ID, whoever
+// asks, answers the same 404 as a team that is not there.
+func TestTeamRoutesRefuseAnythingButATeam(t *testing.T) {
+	e := newTeamEnv(t)
+	caller := e.people["admin"]
+	someone := e.people["owner"]
+	missingID := missing(e.teamFx).team
+	for _, r := range []struct {
+		name, method, path string
+		body               any
+	}{
+		{"GetTeam", http.MethodGet, "", nil},
+		{"UpdateTeam", http.MethodPatch, "", api.UpdateTeamRequest{Name: "Renamed"}},
+		{"DeleteTeam", http.MethodDelete, "", nil},
+		{"ListTeamMembers", http.MethodGet, "/members", nil},
+		{"SetTeamMemberRole", http.MethodPatch, "/members/" + caller.id, map[string]any{"role": "viewer"}},
+		{"RemoveTeamMember", http.MethodDelete, "/members/" + caller.id, nil},
+		{"ListTeamInvitations", http.MethodGet, "/invitations", nil},
+		{"InviteTeamMember", http.MethodPost, "/invitations", map[string]any{"email": "new@example.test", "role": "viewer"}},
+		{"DeleteTeamInvitation", http.MethodDelete, "/invitations/" + missingID, nil},
+		{"ListTeamTokens", http.MethodGet, "/tokens", nil},
+		{"CreateTeamToken", http.MethodPost, "/tokens", map[string]any{"name": "new", "scopes": []string{"deploy"}}},
+		{"RevokeTeamToken", http.MethodDelete, "/tokens/" + missingID, nil},
+	} {
+		t.Run(r.name, func(t *testing.T) {
+			absent := e.send(caller.cred, r.method, "/teams/"+missingID+r.path, r.body)
+			absent.want(t, http.StatusNotFound, "not_found")
+			for who, id := range map[string]string{"their own": caller.id, "someone else's": someone.id} {
+				res := e.send(caller.cred, r.method, "/teams/"+id+r.path, r.body)
+				if res.status != http.StatusNotFound || !bytes.Equal(res.body, absent.body) {
+					t.Errorf("%s ID: %d %s; want %s", who, res.status, res.body, absent.body)
+				}
+			}
+		})
+	}
+	// None of that left anything behind.
+	tokens, err := e.hs.db.APITokens().List(t.Context(), store.APITokenQuery{OwnerID: caller.id, Now: time.Now(), Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(tokens, func(tok store.APIToken) bool { return tok.Name == "new" }) {
+		t.Fatal("a team token was minted on a personal account")
+	}
+}
+
+func TestInvitationDiesWithItsInviter(t *testing.T) {
+	e := newTeamEnv(t)
+	admin, owner := e.people["admin"], e.people["owner"]
+	team := e.teamFx.team
+	res := e.send(admin.cred, http.MethodPost, "/teams/"+team+"/invitations", map[string]any{"email": owner.email, "role": "viewer"})
+	res.want(t, http.StatusCreated, "")
+	var inv api.TeamInvitation
+	res.decode(t, &inv)
+	absent := e.send(owner.cred, http.MethodPost, "/team-invitations/"+missing(e.teamFx).team+"/accept", nil)
+	absent.want(t, http.StatusNotFound, "not_found")
+
+	if _, err := e.svc.SuspendTeam(t.Context(), team); err != nil {
+		t.Fatal(err)
+	}
+	res = e.send(owner.cred, http.MethodPost, "/team-invitations/"+inv.Id+"/accept", nil)
+	if res.status != http.StatusNotFound || !bytes.Equal(res.body, absent.body) {
+		t.Fatalf("suspended team: %d %s; want %s", res.status, res.body, absent.body)
+	}
+	if _, err := e.svc.ReinstateTeam(t.Context(), team); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Suspend(t.Context(), admin.email); err != nil {
+		t.Fatal(err)
+	}
+	res = e.send(owner.cred, http.MethodPost, "/team-invitations/"+inv.Id+"/accept", nil)
+	if res.status != http.StatusNotFound || !bytes.Equal(res.body, absent.body) {
+		t.Fatalf("suspended inviter: %d %s; want %s", res.status, res.body, absent.body)
+	}
+	res = e.send(owner.cred, http.MethodGet, "/team-invitations", nil)
+	res.want(t, http.StatusOK, "")
+	var mine api.TeamInvitationList
+	res.decode(t, &mine)
+	if len(mine.Items) != 0 {
+		t.Fatalf("dead invitation listed: %+v", mine)
 	}
 }
 

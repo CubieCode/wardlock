@@ -15,7 +15,8 @@ import (
 
 const clearPrimary = `-- name: ClearPrimary :execrows
 UPDATE sites SET primary_base = 0, primary_domain_id = NULL
-WHERE id = ?1 AND owner_id = ?2 AND taken_down_at IS NULL
+WHERE sites.id = ?1 AND sites.owner_id = ?2 AND sites.taken_down_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM owners WHERE owners.id = sites.owner_id AND owners.suspended_at IS NOT NULL)
 `
 
 type ClearPrimaryParams struct {
@@ -54,7 +55,8 @@ func (q *Queries) CreateSite(ctx context.Context, arg CreateSiteParams) error {
 }
 
 const deleteSite = `-- name: DeleteSite :execrows
-DELETE FROM sites WHERE id = ?1 AND owner_id = ?2 AND taken_down_at IS NULL
+DELETE FROM sites WHERE sites.id = ?1 AND sites.owner_id = ?2 AND sites.taken_down_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM owners WHERE owners.id = sites.owner_id AND owners.suspended_at IS NOT NULL)
 `
 
 type DeleteSiteParams struct {
@@ -62,7 +64,7 @@ type DeleteSiteParams struct {
 	OwnerID string
 }
 
-// Owners cannot delete a taken-down site: its files are evidence (A2.13).
+// Owners cannot delete an unavailable site: its files are evidence (A2.13).
 func (q *Queries) DeleteSite(ctx context.Context, arg DeleteSiteParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteSite, arg.ID, arg.OwnerID)
 	if err != nil {
@@ -74,7 +76,8 @@ func (q *Queries) DeleteSite(ctx context.Context, arg DeleteSiteParams) (int64, 
 const getSiteByDomain = `-- name: GetSiteByDomain :one
 SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
   sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
-  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name,
+  owners.suspended_at AS owner_suspended_at
 FROM sites
 JOIN domains ON domains.site_id = sites.id
 JOIN owners ON owners.id = sites.owner_id
@@ -99,6 +102,7 @@ type GetSiteByDomainRow struct {
 	OwnerKind           string
 	OwnerEmail          string
 	TeamName            sql.NullString
+	OwnerSuspendedAt    sql.NullInt64
 }
 
 // Instance-wide, as GetSiteByName. Any status: the owner API resolves
@@ -121,6 +125,7 @@ func (q *Queries) GetSiteByDomain(ctx context.Context, hostname string) (GetSite
 		&i.OwnerKind,
 		&i.OwnerEmail,
 		&i.TeamName,
+		&i.OwnerSuspendedAt,
 	)
 	return i, err
 }
@@ -128,7 +133,8 @@ func (q *Queries) GetSiteByDomain(ctx context.Context, hostname string) (GetSite
 const getSiteByID = `-- name: GetSiteByID :one
 SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
   sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
-  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name,
+  owners.suspended_at AS owner_suspended_at
 FROM sites JOIN owners ON owners.id = sites.owner_id
 LEFT JOIN teams ON teams.id = sites.owner_id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
@@ -151,6 +157,7 @@ type GetSiteByIDRow struct {
 	OwnerKind           string
 	OwnerEmail          string
 	TeamName            sql.NullString
+	OwnerSuspendedAt    sql.NullInt64
 }
 
 // Instance-wide, as GetSiteByName.
@@ -172,6 +179,7 @@ func (q *Queries) GetSiteByID(ctx context.Context, id string) (GetSiteByIDRow, e
 		&i.OwnerKind,
 		&i.OwnerEmail,
 		&i.TeamName,
+		&i.OwnerSuspendedAt,
 	)
 	return i, err
 }
@@ -179,7 +187,8 @@ func (q *Queries) GetSiteByID(ctx context.Context, id string) (GetSiteByIDRow, e
 const getSiteByName = `-- name: GetSiteByName :one
 SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
   sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
-  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name,
+  owners.suspended_at AS owner_suspended_at
 FROM sites JOIN owners ON owners.id = sites.owner_id
 LEFT JOIN teams ON teams.id = sites.owner_id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
@@ -202,6 +211,7 @@ type GetSiteByNameRow struct {
 	OwnerKind           string
 	OwnerEmail          string
 	TeamName            sql.NullString
+	OwnerSuspendedAt    sql.NullInt64
 }
 
 // Instance-wide: the edge's routing, and owner reads through Actor.Require.
@@ -223,6 +233,7 @@ func (q *Queries) GetSiteByName(ctx context.Context, name string) (GetSiteByName
 		&i.OwnerKind,
 		&i.OwnerEmail,
 		&i.TeamName,
+		&i.OwnerSuspendedAt,
 	)
 	return i, err
 }
@@ -307,7 +318,8 @@ func (q *Queries) ListAllSites(ctx context.Context, arg ListAllSitesParams) ([]L
 const listSites = `-- name: ListSites :many
 SELECT sites.id, sites.owner_id, sites.name, sites.active_deploy_id, sites.created_at, deploys.activated_at, sites.taken_down_at, sites.group_id,
   sites.primary_base, primary_domains.hostname AS primary_domain, primary_domains.status AS primary_domain_status,
-  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name
+  owners.kind AS owner_kind, owners.email AS owner_email, teams.name AS team_name,
+  owners.suspended_at AS owner_suspended_at
 FROM sites JOIN owners ON owners.id = sites.owner_id
 LEFT JOIN teams ON teams.id = sites.owner_id
 LEFT JOIN deploys ON deploys.id = sites.active_deploy_id
@@ -341,6 +353,7 @@ type ListSitesRow struct {
 	OwnerKind           string
 	OwnerEmail          string
 	TeamName            sql.NullString
+	OwnerSuspendedAt    sql.NullInt64
 }
 
 func (q *Queries) ListSites(ctx context.Context, arg ListSitesParams) ([]ListSitesRow, error) {
@@ -372,6 +385,7 @@ func (q *Queries) ListSites(ctx context.Context, arg ListSitesParams) ([]ListSit
 			&i.OwnerKind,
 			&i.OwnerEmail,
 			&i.TeamName,
+			&i.OwnerSuspendedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -393,7 +407,7 @@ ORDER BY sites.id
 `
 
 // Sites that answer the unavailable page: taken down, or owned by a
-// suspended owner. The server polls it to drop cached sites when an
+// suspended owner or team. The server polls it to drop cached sites when an
 // operator command changes either in another process.
 func (q *Queries) ListUnavailableSiteIDs(ctx context.Context) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listUnavailableSiteIDs)
@@ -433,6 +447,7 @@ func (q *Queries) RestoreSite(ctx context.Context, id string) (int64, error) {
 const setActiveDeploy = `-- name: SetActiveDeploy :execrows
 UPDATE sites SET active_deploy_id = ?1
 WHERE sites.id = ?2 AND sites.owner_id = ?3 AND sites.taken_down_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM owners WHERE owners.id = sites.owner_id AND owners.suspended_at IS NOT NULL)
   AND EXISTS (SELECT 1 FROM deploys WHERE deploys.id = ?1 AND deploys.site_id = sites.id)
 `
 
@@ -442,7 +457,9 @@ type SetActiveDeployParams struct {
 	OwnerID  string
 }
 
-// A taken-down site keeps the deploy it had (A2.13).
+// An unavailable site keeps the deploy it had (A2.13), and these writes hold
+// that as they land: a site whose team was suspended after the service's check
+// changes nothing, exactly like one taken down.
 func (q *Queries) SetActiveDeploy(ctx context.Context, arg SetActiveDeployParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, setActiveDeploy, arg.DeployID, arg.SiteID, arg.OwnerID)
 	if err != nil {
@@ -453,7 +470,8 @@ func (q *Queries) SetActiveDeploy(ctx context.Context, arg SetActiveDeployParams
 
 const setPrimaryBase = `-- name: SetPrimaryBase :execrows
 UPDATE sites SET primary_base = 1, primary_domain_id = NULL
-WHERE id = ?1 AND owner_id = ?2 AND taken_down_at IS NULL
+WHERE sites.id = ?1 AND sites.owner_id = ?2 AND sites.taken_down_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM owners WHERE owners.id = sites.owner_id AND owners.suspended_at IS NOT NULL)
 `
 
 type SetPrimaryBaseParams struct {
@@ -476,6 +494,7 @@ func (q *Queries) SetPrimaryBase(ctx context.Context, arg SetPrimaryBaseParams) 
 const setPrimaryDomain = `-- name: SetPrimaryDomain :execrows
 UPDATE sites SET primary_base = 0, primary_domain_id = ?1
 WHERE sites.id = ?2 AND sites.owner_id = ?3 AND sites.taken_down_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM owners WHERE owners.id = sites.owner_id AND owners.suspended_at IS NOT NULL)
   AND EXISTS (SELECT 1 FROM domains WHERE domains.id = ?1 AND domains.site_id = sites.id AND domains.status = 'active')
 `
 

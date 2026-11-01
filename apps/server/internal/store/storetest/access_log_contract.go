@@ -177,10 +177,13 @@ func accessLogContract(t *testing.T, open Opener) {
 		f := newFixture(t, open)
 		o, suspended := f.owner(), f.owner()
 		down, held, free := f.site(o.ID), f.site(suspended.ID), f.site(o.ID)
+		tm := f.team(f.owner())
+		teamHeld := f.site(tm.ID)
 		f.must(f.r.Sites.TakeDown(t.Context(), down.ID, now))
 		f.must(f.r.Owners.Suspend(t.Context(), suspended.ID, now))
+		f.must(f.r.Teams.Suspend(t.Context(), tm.ID, now))
 		var entries []store.AccessEntry
-		for _, id := range []string{down.ID, held.ID, free.ID} {
+		for _, id := range []string{down.ID, held.ID, teamHeld.ID, free.ID} {
 			e := valid()
 			e.SiteID, e.OccurredAt = id, now.Add(-time.Hour)
 			entries = append(entries, e)
@@ -190,7 +193,7 @@ func accessLogContract(t *testing.T, open Opener) {
 		if err != nil || n != 1 {
 			t.Fatalf("Prune() = %d, %v; want only the free site's entry", n, err)
 		}
-		for owner, site := range map[string]string{o.ID: down.ID, suspended.ID: held.ID} {
+		for owner, site := range map[string]string{o.ID: down.ID, suspended.ID: held.ID, tm.ID: teamHeld.ID} {
 			got, err := f.r.AccessLog.ListBySite(t.Context(), store.ActorFor(owner), site, store.AccessCursor{}, 10)
 			if err != nil || len(got) != 1 {
 				t.Fatalf("held site %s entries = %v, %v", site, got, err)

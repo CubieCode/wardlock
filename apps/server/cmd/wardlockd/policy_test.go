@@ -115,7 +115,7 @@ func newPolicyEdge(t testing.TB, opts ...func(*access.Config)) *policyEdge {
 		Sites: db.Sites(), Deploys: db.Deploys(), Previews: db.Previews(), Blobs: blobs, Notifier: notifier,
 		Limits: deploys.DefaultLimits(), Now: p.now, Renditions: db.Renditions(),
 	})
-	p.e = p.newEdge(siteSource{baseDomain: "wardlock.localhost", owners: db.Owners(), sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(), previews: db.Previews(), renditions: db.Renditions(), now: p.now}, notifier)
+	p.e = p.newEdge(siteSource{baseDomain: "wardlock.localhost", sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(), previews: db.Previews(), renditions: db.Renditions(), now: p.now}, notifier)
 	t.Cleanup(p.e.Close)
 	p.h = platform.LogRequests(log, p.e)
 	p.owner = store.Owner{ID: store.NewID(), Email: "owner@example.test", CreatedAt: p.now()}
@@ -159,7 +159,7 @@ func (p *policyEdge) screening() *deploys.LocalNotifier {
 	screened := deploys.NewLocalNotifier()
 	db := p.db
 	p.e = p.newEdge(siteSource{
-		baseDomain: "wardlock.localhost", owners: db.Owners(), sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(),
+		baseDomain: "wardlock.localhost", sites: db.Sites(), domains: db.Domains(), deploys: db.Deploys(),
 		previews: db.Previews(), renditions: db.Renditions(), moderation: db.Moderation(), now: p.now,
 	}, invalidators{p.notifier, screened})
 	p.t.Cleanup(p.e.Close)
