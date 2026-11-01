@@ -52,9 +52,9 @@ func groupKey(name string) string {
 	return strings.ToLower(norm.NFC.String(strings.TrimSpace(name)))
 }
 
-// groups lists all of the owner's groups, by name.
+// groups lists all of the account's groups, by name.
 func (c *conn) groups(ctx context.Context) ([]apiclient.Group, error) {
-	res, err := c.api.ListGroupsWithResponse(ctx, nil, c.auth)
+	res, err := c.api.ListGroupsWithResponse(ctx, &apiclient.ListGroupsParams{Team: c.team}, c.auth)
 	if err != nil {
 		return nil, c.unreachable(ctx, err)
 	}
@@ -64,9 +64,9 @@ func (c *conn) groups(ctx context.Context) ([]apiclient.Group, error) {
 	return res.JSON200.Items, nil
 }
 
-// tags lists all of the owner's tags, by name.
+// tags lists all of the account's tags, by name.
 func (c *conn) tags(ctx context.Context) ([]apiclient.Tag, error) {
-	res, err := c.api.ListTagsWithResponse(ctx, nil, c.auth)
+	res, err := c.api.ListTagsWithResponse(ctx, &apiclient.ListTagsParams{Team: c.team}, c.auth)
 	if err != nil {
 		return nil, c.unreachable(ctx, err)
 	}
@@ -156,14 +156,23 @@ type organisation struct {
 	tags   map[string]string
 }
 
-// organisationNames fetches group and tag names, but only when some site
-// uses them, so a server without groups and tags is never asked.
+// organisationNames fetches group and tag names from each account that holds
+// sites, but only when some site uses them, so a server without groups and
+// tags is never asked.
 func (c *conn) organisationNames(ctx context.Context, sites []apiclient.Site) (organisation, error) {
 	o := organisation{groups: map[string]string{}, tags: map[string]string{}}
-	needGroups := slices.ContainsFunc(sites, func(s apiclient.Site) bool { return s.GroupId != nil })
-	needTags := slices.ContainsFunc(sites, func(s apiclient.Site) bool { return len(s.TagIds) > 0 })
-	if needGroups {
-		groups, err := c.groups(ctx)
+	var needGroups, needTags []string
+	for _, s := range sites {
+		team := siteTeam(s)
+		if s.GroupId != nil && !slices.Contains(needGroups, team) {
+			needGroups = append(needGroups, team)
+		}
+		if len(s.TagIds) > 0 && !slices.Contains(needTags, team) {
+			needTags = append(needTags, team)
+		}
+	}
+	for _, team := range needGroups {
+		groups, err := c.inTeam(team).groups(ctx)
 		if err != nil {
 			return o, err
 		}
@@ -171,8 +180,8 @@ func (c *conn) organisationNames(ctx context.Context, sites []apiclient.Site) (o
 			o.groups[g.Id] = g.Name
 		}
 	}
-	if needTags {
-		tags, err := c.tags(ctx)
+	for _, team := range needTags {
+		tags, err := c.inTeam(team).tags(ctx)
 		if err != nil {
 			return o, err
 		}
@@ -208,8 +217,9 @@ func orDash(s string) string {
 	return s
 }
 
-const siteUsage = "Usage: wardlock site organise SITE... [--group NAME|--no-group] [--tag NAME]... [--untag NAME]... [flags]\n\n" +
-	"  organise SITE...   Put sites in a group and add or remove their tags\n\n" +
+const siteUsage = "Usage: wardlock site <organise|move> SITE... [flags]\n\n" +
+	"  organise SITE...   Put sites in a group and add or remove their tags\n" +
+	"  move SITE          Move a site to a team (--team) or to you (--personal)\n\n" +
 	"Pin and unpin sites with wardlock pin and wardlock unpin.\n"
 
 func runSite(ctx context.Context, a *app, args []string) error {
@@ -225,6 +235,8 @@ func runSite(ctx context.Context, a *app, args []string) error {
 	switch sub {
 	case "organise":
 		return siteOrganise(ctx, a, args)
+	case "move":
+		return siteMove(ctx, a, args)
 	case "help", "--help", "-h":
 		fmt.Fprint(a.stdout, siteUsage)
 		return nil
@@ -246,7 +258,9 @@ func siteOrganise(ctx context.Context, a *app, args []string) error {
 		"Changes every SITE at once, all or nothing: --group puts them in an\n"+
 		"existing group (--no-group takes them out of theirs), --tag adds an\n"+
 		"existing tag and --untag removes one. Tags not named are kept. Give\n"+
-		"--tag and --untag once per tag. Needs a token with the manage scope.")
+		"--tag and --untag once per tag. Every SITE must be in the same account,\n"+
+		"yours or one team's, and the group and tags are that account's. Needs\n"+
+		"a token with the manage scope.")
 	g := addGlobalFlags(fs)
 	group := fs.String("group", "", "put the sites in this group")
 	noGroup := fs.Bool("no-group", false, "take the sites out of their group")
@@ -302,6 +316,9 @@ func siteOrganise(ctx context.Context, a *app, args []string) error {
 	if err != nil {
 		return err
 	}
+	if c, err = c.accountOf(ctx, names); err != nil {
+		return err
+	}
 	body := apiclient.OrganiseSitesRequest{Sites: names}
 	if *noGroup {
 		body.Ungroup = ptr(true)
@@ -333,7 +350,7 @@ func siteOrganise(ctx context.Context, a *app, args []string) error {
 			body.RemoveTagIds = ptr(tagIDs(found))
 		}
 	}
-	res, err := c.api.OrganiseSitesWithResponse(ctx, nil, body, c.auth)
+	res, err := c.api.OrganiseSitesWithResponse(ctx, &apiclient.OrganiseSitesParams{Team: c.team}, body, c.auth)
 	if err != nil {
 		return c.unreachable(ctx, err)
 	}
@@ -411,7 +428,32 @@ func (c *conn) siteNames(ctx context.Context, targets []target) ([]string, error
 	return names, nil
 }
 
-// sitesNamed returns the owner's sites called names, in that order.
+// accountOf returns c working in the account that holds the sites called
+// names, since organiseSites works in one account. A site the caller cannot
+// see is left for the server to refuse with the others, changing nothing.
+func (c *conn) accountOf(ctx context.Context, names []string) (*conn, error) {
+	all, err := c.sites(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var first *apiclient.Site
+	for _, n := range names {
+		i := slices.IndexFunc(all, func(s apiclient.Site) bool { return s.Name == n })
+		switch {
+		case i < 0:
+		case first == nil:
+			first = &all[i]
+		case siteTeam(all[i]) != siteTeam(*first):
+			return nil, fmt.Errorf("%s is in %s and %s in %s: name the sites of one account at a time, so each change is all or nothing", first.Name, accountName(*first), all[i].Name, accountName(all[i]))
+		}
+	}
+	if first == nil {
+		return c, nil
+	}
+	return c.inTeam(siteTeam(*first)), nil
+}
+
+// sitesNamed returns the account's sites called names, in that order.
 func (c *conn) sitesNamed(ctx context.Context, names []string) ([]apiclient.Site, error) {
 	all, err := c.sites(ctx)
 	if err != nil {
@@ -456,7 +498,7 @@ func pinSites(ctx context.Context, a *app, args []string, pin bool) error {
 	if !pin {
 		name, verb, does = "unpin", "Unpinned", "Unpins each SITE. Unpinning a site that is not pinned changes\nnothing."
 	}
-	fs := newFlagSet(a, name, "Usage: wardlock "+name+" SITE... [flags]\n\n"+does+" Every SITE changes\nat once, all or nothing, so a missing one changes none. Needs a token\nwith the manage scope.")
+	fs := newFlagSet(a, name, "Usage: wardlock "+name+" SITE... [flags]\n\n"+does+" Every SITE changes\nat once, all or nothing, so a missing one changes none, and they must\nall be in the same account, yours or one team's. A pin is personal, so\na team token cannot change one. Needs a token with the manage scope.")
 	g := addGlobalFlags(fs)
 	pos, err := parseArgs(fs, args)
 	if errors.Is(err, flag.ErrHelp) {
@@ -485,11 +527,18 @@ func pinSites(ctx context.Context, a *app, args []string, pin bool) error {
 	if err != nil {
 		return err
 	}
-	res, err := c.api.OrganiseSitesWithResponse(ctx, nil, apiclient.OrganiseSitesRequest{Sites: names, Pinned: &pin}, c.auth)
+	if c, err = c.accountOf(ctx, names); err != nil {
+		return err
+	}
+	res, err := c.api.OrganiseSitesWithResponse(ctx, &apiclient.OrganiseSitesParams{Team: c.team}, apiclient.OrganiseSitesRequest{Sites: names, Pinned: &pin}, c.auth)
 	if err != nil {
 		return c.unreachable(ctx, err)
 	}
 	if res.JSON200 == nil {
+		// Any member may pin, so only a team token is refused for its role.
+		if errorCode(res.Body) == "forbidden_role" {
+			return fmt.Errorf("%w A pin is personal, so a team token cannot change one", c.failed(res.HTTPResponse, res.Body))
+		}
 		if res.StatusCode() == http.StatusNotFound {
 			return fmt.Errorf("%w; nothing was changed", c.failed(res.HTTPResponse, res.Body))
 		}
