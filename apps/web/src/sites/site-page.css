@@ -313,3 +313,10 @@
 .site-live-deploy .site-muted {
   font-size: var(--text-sm);
 }
+
+.site-move-list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding-left: var(--space-5);
+}

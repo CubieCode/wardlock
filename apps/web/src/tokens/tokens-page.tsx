@@ -51,6 +51,56 @@ function Expiry({ token }: { token: ApiToken }) {
   );
 }
 
+/** The token table's columns, for the owner's tokens and a team's. */
+export function tokenColumns(
+  onRevoke: (token: ApiToken) => void,
+): TableColumn<ApiToken>[] {
+  return [
+    {
+      header: 'Name',
+      cell: (token) => (
+        <span className="token-name">
+          {token.name}
+          <code className="token-id">{token.publicId}</code>
+        </span>
+      ),
+    },
+    { header: 'Scopes', nowrap: true, cell: scopesText },
+    {
+      header: 'Created',
+      nowrap: true,
+      cell: (token) => formatDate(token.createdAt),
+    },
+    {
+      header: 'Expires',
+      nowrap: true,
+      cell: (token) => <Expiry token={token} />,
+    },
+    {
+      header: 'Last used',
+      nowrap: true,
+      cell: (token) =>
+        token.lastUsedAt === undefined ? (
+          'Never'
+        ) : (
+          <Time at={token.lastUsedAt} />
+        ),
+    },
+    {
+      header: 'Actions',
+      cell: (token) => (
+        <Button
+          type="button"
+          aria-label={`Revoke ${token.name}`}
+          onClick={() => onRevoke(token)}
+        >
+          Revoke
+        </Button>
+      ),
+    },
+  ];
+}
+
 /**
  * `/tokens`: the owner's usable API tokens, newest first: create one (shown
  * once) and revoke them. A token cannot do any of this itself, so these stay
@@ -124,53 +174,10 @@ export function ApiTokensPage({ api }: { api: ApiClient }) {
 
   const close = () => setOpen({ kind: 'none' });
 
-  const columns: TableColumn<ApiToken>[] = [
-    {
-      header: 'Name',
-      cell: (token) => (
-        <span className="token-name">
-          {token.name}
-          <code className="token-id">{token.publicId}</code>
-        </span>
-      ),
-    },
-    { header: 'Scopes', nowrap: true, cell: scopesText },
-    {
-      header: 'Created',
-      nowrap: true,
-      cell: (token) => formatDate(token.createdAt),
-    },
-    {
-      header: 'Expires',
-      nowrap: true,
-      cell: (token) => <Expiry token={token} />,
-    },
-    {
-      header: 'Last used',
-      nowrap: true,
-      cell: (token) =>
-        token.lastUsedAt === undefined ? (
-          'Never'
-        ) : (
-          <Time at={token.lastUsedAt} />
-        ),
-    },
-    {
-      header: 'Actions',
-      cell: (token) => (
-        <Button
-          type="button"
-          aria-label={`Revoke ${token.name}`}
-          onClick={() => {
-            setDone(null);
-            setOpen({ kind: 'revoke', token });
-          }}
-        >
-          Revoke
-        </Button>
-      ),
-    },
-  ];
+  const columns = tokenColumns((token) => {
+    setDone(null);
+    setOpen({ kind: 'revoke', token });
+  });
 
   let body;
   if (state.kind === 'loading') body = <p role="status">Loading API tokens…</p>;

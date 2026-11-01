@@ -20,7 +20,9 @@ import {
   untaggedIcon,
 } from '../shell/icons.js';
 import { useTitle } from '../shell/page.js';
+import { withTeam } from '../shell/router.js';
 import { AccessWord, relativeTime, shortId, Time } from '../sites/format.js';
+import { useScope, useTeamAccess } from '../teams/scope.js';
 import {
   expiringTotal,
   groupRows,
@@ -44,7 +46,7 @@ const number = new Intl.NumberFormat('en-NZ');
 const plural = (n: number, one: string, many = `${one}s`) =>
   `${number.format(n)} ${n === 1 ? one : many}`;
 
-const siteHref = (name: string) => `/sites/${encodeURIComponent(name)}`;
+const sitePath = (name: string) => `/sites/${encodeURIComponent(name)}`;
 
 /**
  * `/`: the signed-in home page. A greeting with the owner's site and group
@@ -53,6 +55,8 @@ const siteHref = (name: string) => `/sites/${encodeURIComponent(name)}`;
  */
 export function OverviewPage({ api }: { api: ApiClient }) {
   useTitle('Overview');
+  const { team } = useScope();
+  const { admin } = useTeamAccess();
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [version, setVersion] = useState<string>();
 
@@ -65,14 +69,14 @@ export function OverviewPage({ api }: { api: ApiClient }) {
       .GET('/api/v0/health')
       .then(({ data }) => live && setVersion(data?.version))
       .catch(() => live && setVersion(undefined));
-    loadOverview(api).then(
+    loadOverview(api, team).then(
       (data) => live && setState({ kind: 'ready', data }),
       () => live && setState({ kind: 'error' }),
     );
     return () => {
       live = false;
     };
-  }, [api, attempt]);
+  }, [api, team, attempt]);
   const retry = () => {
     setState({ kind: 'loading' });
     setAttempt((n) => n + 1);
@@ -85,6 +89,7 @@ export function OverviewPage({ api }: { api: ApiClient }) {
         description={
           <Greeting
             data={state.kind === 'ready' ? state.data : undefined}
+            subject={team ? 'This team' : undefined}
             version={version}
           />
         }
@@ -104,13 +109,24 @@ export function OverviewPage({ api }: { api: ApiClient }) {
       {state.kind === 'ready' && state.data.counts.all === 0 && (
         <EmptyState
           title="No sites yet"
-          action={<a href="/sites">Go to Sites</a>}
+          action={<a href={withTeam('/sites')}>Go to Sites</a>}
         >
-          <p>
-            Deploy a folder with <code>wardlock deploy</code> to create your
-            first site; it will be listed on the Sites page. What needs a look,
-            your pinned sites and groups and the latest deploys will show here.
-          </p>
+          {team ? (
+            <p>
+              {admin
+                ? 'Move one of your sites here from its Settings tab. '
+                : null}
+              What needs a look, pinned sites and groups and the latest deploys
+              will show here once the team has sites.
+            </p>
+          ) : (
+            <p>
+              Deploy a folder with <code>wardlock deploy</code> to create your
+              first site; it will be listed on the Sites page. What needs a
+              look, your pinned sites and groups and the latest deploys will
+              show here.
+            </p>
+          )}
         </EmptyState>
       )}
       {state.kind === 'ready' && state.data.counts.all > 0 && (
@@ -132,21 +148,25 @@ export function OverviewPage({ api }: { api: ApiClient }) {
 /** "Kia ora. You have 12 sites in 3 groups. This server runs Wardlock 0.2.0." */
 function Greeting({
   data,
+  subject,
   version,
 }: {
   data: OverviewData | undefined;
+  /** Whose sites these are, when they are not the reader's own. */
+  subject: string | undefined;
   version: string | undefined;
 }) {
   let sites = '';
   if (data) {
     const { all } = data.counts;
     const groups = data.groups.length;
+    const who = subject ? `${subject} has` : 'You have';
     sites =
       all === 0
-        ? ' You have no sites yet.'
+        ? ` ${who} no sites yet.`
         : groups === 0
-          ? ` You have ${plural(all, 'site')} and no groups.`
-          : ` You have ${plural(all, 'site')} in ${plural(groups, 'group')}.`;
+          ? ` ${who} ${plural(all, 'site')} and no groups.`
+          : ` ${who} ${plural(all, 'site')} in ${plural(groups, 'group')}.`;
   }
   return (
     <>
@@ -202,7 +222,7 @@ function ExpiringLinkRow({ link }: { link: ExpiringLink }) {
       <span className="attention-text">
         <span>
           <strong>{name}</strong> on{' '}
-          <a href={siteHref(link.site)}>{link.site}</a>
+          <a href={withTeam(sitePath(link.site))}>{link.site}</a>
         </span>
         <small>
           Expires {relativeTime(link.expiresAt)}
@@ -212,7 +232,9 @@ function ExpiringLinkRow({ link }: { link: ExpiringLink }) {
       </span>
       <a
         className="overview-action"
-        href={`${siteHref(link.site)}/links/${encodeURIComponent(link.id)}`}
+        href={withTeam(
+          `${sitePath(link.site)}/links/${encodeURIComponent(link.id)}`,
+        )}
         aria-label={`View link ${name} on ${link.site}`}
       >
         View link
@@ -330,7 +352,10 @@ export function Pinned({ data }: { data: OverviewData }) {
           {pinned.slice(0, shownPinned).map((site) => (
             <li key={site.id} className="pinned-row">
               <span className="pinned-main">
-                <a className="overview-name" href={siteHref(site.name)}>
+                <a
+                  className="overview-name"
+                  href={withTeam(sitePath(site.name))}
+                >
                   {site.name}
                 </a>
                 <Access site={site} />
@@ -401,7 +426,7 @@ export function LiveDeploys({ sites }: { sites: SiteSummary[] }) {
         <ul className="overview-list" aria-label="Live deploys">
           {live.map(({ id, name, deploy }) => (
             <li key={id} className="deploy-feed-row">
-              <a className="overview-name" href={siteHref(name)}>
+              <a className="overview-name" href={withTeam(sitePath(name))}>
                 {name}
               </a>
               <span className="deploy-feed-message">

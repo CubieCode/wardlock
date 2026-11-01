@@ -4,7 +4,9 @@
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import { Button, Card, EmptyState, Notice } from '@wardlock/ui';
 import { useEffect, useRef, useState } from 'react';
-import type { Site } from '../sites/format.js';
+import { withTeam } from '../shell/router.js';
+import { madeBy, type Site } from '../sites/format.js';
+import { useSiteAccess } from '../teams/scope.js';
 import { RotateLinkDialog, RevokeLinkDialog } from './confirm.js';
 import { CreateLinkDialog } from './create.js';
 import {
@@ -38,6 +40,8 @@ type Open =
  * access log.
  */
 export function ShareLinksCard({ api, site }: { api: ApiClient; site: Site }) {
+  const { edit } = useSiteAccess(site);
+  const team = site.owner.kind === 'team';
   const [state, setState] = useState<ListState>({ kind: 'loading' });
   const [open, setOpen] = useState<Open>({ kind: 'none' });
   const [done, setDone] = useState<string | null>(null);
@@ -152,6 +156,8 @@ export function ShareLinksCard({ api, site }: { api: ApiClient; site: Site }) {
             key={link.id}
             site={site}
             link={link}
+            edit={edit}
+            createdBy={team}
             onRevoke={() => setOpen({ kind: 'revoke', link })}
             onRotate={() => setOpen({ kind: 'rotate', link })}
           />
@@ -166,16 +172,18 @@ export function ShareLinksCard({ api, site }: { api: ApiClient; site: Site }) {
           Links open the site directly, with no login page. Revoked links stop
           working at once.
         </p>
-        <Button
-          type="button"
-          variant="primary"
-          onClick={() => {
-            setDone(null);
-            setOpen({ kind: 'create' });
-          }}
-        >
-          Create link
-        </Button>
+        {edit ? (
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => {
+              setDone(null);
+              setOpen({ kind: 'create' });
+            }}
+          >
+            Create link
+          </Button>
+        ) : null}
       </div>
       {done && <Notice>{done}</Notice>}
       {body}
@@ -249,11 +257,17 @@ export function ShareLinksCard({ api, site }: { api: ApiClient; site: Site }) {
 function LinkRow({
   site,
   link,
+  edit,
+  createdBy,
   onRevoke,
   onRotate,
 }: {
   site: Site;
   link: ShareLink;
+  /** False for a viewer: no rotating or revoking. */
+  edit: boolean;
+  /** Whether to say who made it: on a team's site, where it varies. */
+  createdBy: boolean;
   onRevoke: () => void;
   onRotate: () => void;
 }) {
@@ -271,22 +285,39 @@ function LinkRow({
         <p className="link-row-meta">
           {scopeText(link.path)} · {expiryText(link)} · {usesText(link)} ·{' '}
           {lastOpenedText(link)}
+          {createdBy && link.createdBy ? (
+            <> · Created by {madeBy(link.createdBy)}</>
+          ) : null}
         </p>
       </div>
       <div className="link-row-actions">
         <a
           className="wl-button wl-button-secondary link-action"
-          href={`/sites/${encodeURIComponent(site.name)}/links/${link.publicId}`}
+          href={withTeam(
+            `/sites/${encodeURIComponent(site.name)}/links/${link.publicId}`,
+          )}
           aria-label={`Access log of ${name}`}
         >
           Access log
         </a>
-        <Button type="button" aria-label={`Rotate ${name}`} onClick={onRotate}>
-          Rotate
-        </Button>
-        <Button type="button" aria-label={`Revoke ${name}`} onClick={onRevoke}>
-          Revoke
-        </Button>
+        {edit ? (
+          <>
+            <Button
+              type="button"
+              aria-label={`Rotate ${name}`}
+              onClick={onRotate}
+            >
+              Rotate
+            </Button>
+            <Button
+              type="button"
+              aria-label={`Revoke ${name}`}
+              onClick={onRevoke}
+            >
+              Revoke
+            </Button>
+          </>
+        ) : null}
       </div>
     </li>
   );

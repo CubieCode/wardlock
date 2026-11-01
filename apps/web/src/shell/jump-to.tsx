@@ -8,6 +8,7 @@ import {
   type CommandItem,
 } from '@wardlock/ui';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { teamQuery } from '../teams/scope.js';
 import { pageIcon, pinIcon, sitesIcon } from './icons.js';
 import {
   navigatorFilters,
@@ -15,7 +16,7 @@ import {
   sitesHref,
   tagSlot,
 } from './navigator.js';
-import { navigate } from './router.js';
+import { navigate, withTeam } from './router.js';
 import { shellRoutes } from './routes.js';
 
 type SiteSummary = components['schemas']['SiteSummary'];
@@ -56,10 +57,13 @@ interface Target extends CommandItem {
  */
 export function JumpTo({
   api,
+  team,
   onClose,
   filters = navigatorFilters,
 }: {
   api: ApiClient;
+  /** The team chosen in the switcher; undefined for the personal account. */
+  team?: string | undefined;
   onClose: () => void;
   filters?: boolean;
 }) {
@@ -76,6 +80,7 @@ export function JumpTo({
           .GET('/api/v0/site-summaries', {
             params: {
               query: {
+                ...teamQuery(team),
                 limit: siteLimit,
                 // Recent deploys first until there is something to match.
                 sort: search ? 'name' : 'deploy',
@@ -101,15 +106,16 @@ export function JumpTo({
       live = false;
       clearTimeout(timer);
     };
-  }, [api, search]);
+  }, [api, team, search]);
 
   useEffect(() => {
     if (!filters) return;
     let live = true;
+    const params = { query: teamQuery(team) };
     Promise.all([
-      api.GET('/api/v0/site-counts'),
-      api.GET('/api/v0/groups'),
-      api.GET('/api/v0/tags'),
+      api.GET('/api/v0/site-counts', { params }),
+      api.GET('/api/v0/groups', { params }),
+      api.GET('/api/v0/tags', { params }),
     ]).then(
       ([counts, groups, tags]) => {
         if (live && counts.data && groups.data && tags.data)
@@ -124,7 +130,7 @@ export function JumpTo({
     return () => {
       live = false;
     };
-  }, [api, filters]);
+  }, [api, team, filters]);
 
   const pending =
     sites.kind === 'loading' ||
@@ -191,7 +197,7 @@ export function results(
           label: site.name,
           hint: site.hostname,
           icon: icon(site.pinned ? pinIcon : sitesIcon),
-          href: `/sites/${encodeURIComponent(site.name)}`,
+          href: withTeam(`/sites/${encodeURIComponent(site.name)}`),
         }))
       : [];
 
@@ -259,7 +265,7 @@ export function results(
               id: `page:${route.path}`,
               label: route.rail.label,
               icon: icon(pageIcon),
-              href: route.path,
+              href: withTeam(route.path),
             },
           ]
         : [],
@@ -268,7 +274,7 @@ export function results(
   // The sites map has no rail place of its own; jump-to lists it after
   // Sites.
   const pages = out.at(-1)!.items;
-  const after = pages.findIndex((item) => item.href === '/sites') + 1;
+  const after = pages.findIndex((item) => item.id === 'page:/sites') + 1;
   if (matches(mapLabel))
     pages.splice(after, 0, {
       id: 'page:sites-map',

@@ -4,7 +4,8 @@
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import { Button, Card, Notice, TextField } from '@wardlock/ui';
 import { useEffect, useState } from 'react';
-import { AccessWord, type Policy, type Site } from '../sites/format.js';
+import { AccessWord, madeBy, type Policy, type Site } from '../sites/format.js';
+import { useSiteAccess } from '../teams/scope.js';
 import { DeletePolicyDialog } from './delete.js';
 import { PolicyDialog } from './edit.js';
 import {
@@ -65,6 +66,7 @@ export function PoliciesCard({
   const [open, setOpen] = useState<Open>({ kind: 'none' });
   const [done, setDone] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const { edit } = useSiteAccess(site);
 
   useEffect(() => {
     let live = true;
@@ -147,15 +149,17 @@ export function PoliciesCard({
           it, or the site default when none does. Policies do not combine: a
           public <code>/assets/</code> stays public under a protected site.
         </p>
-        <Button
-          type="button"
-          onClick={() => {
-            setDone(null);
-            setOpen({ kind: 'add' });
-          }}
-        >
-          Add path policy
-        </Button>
+        {edit ? (
+          <Button
+            type="button"
+            onClick={() => {
+              setDone(null);
+              setOpen({ kind: 'add' });
+            }}
+          >
+            Add path policy
+          </Button>
+        ) : null}
       </div>
       {done && <Notice>{done}</Notice>}
       <ul className="policy-list" aria-label="Access policies">
@@ -163,6 +167,8 @@ export function PoliciesCard({
           <PolicyRow
             key={policy.id}
             policy={policy}
+            edit={edit}
+            createdBy={site.owner.kind === 'team'}
             onEdit={() => {
               setDone(null);
               setOpen({ kind: 'edit', policy });
@@ -212,10 +218,16 @@ export function PoliciesCard({
 /** One policy: its path, access, ways in, allowlist and actions. */
 function PolicyRow({
   policy,
+  edit,
+  createdBy,
   onEdit,
   onDelete,
 }: {
   policy: Policy;
+  /** False for a viewer: no editing or deleting. */
+  edit: boolean;
+  /** Whether to say who changed it: on a team's site, where it varies. */
+  createdBy: boolean;
   onEdit: () => void;
   /** Absent for the site default, which cannot be deleted. */
   onDelete: (() => void) | undefined;
@@ -246,21 +258,28 @@ function PolicyRow({
         {allowlist && (
           <p className="policy-row-meta">Allowlist: {allowlist}.</p>
         )}
+        {createdBy && policy.createdBy ? (
+          <p className="policy-row-meta">
+            Last changed by {madeBy(policy.createdBy)}.
+          </p>
+        ) : null}
       </div>
-      <div className="policy-row-actions">
-        <Button type="button" aria-label={`Edit ${name}`} onClick={onEdit}>
-          Edit
-        </Button>
-        {onDelete && (
-          <Button
-            type="button"
-            aria-label={`Delete ${name}`}
-            onClick={onDelete}
-          >
-            Delete
+      {edit ? (
+        <div className="policy-row-actions">
+          <Button type="button" aria-label={`Edit ${name}`} onClick={onEdit}>
+            Edit
           </Button>
-        )}
-      </div>
+          {onDelete && (
+            <Button
+              type="button"
+              aria-label={`Delete ${name}`}
+              onClick={onDelete}
+            >
+              Delete
+            </Button>
+          )}
+        </div>
+      ) : null}
     </li>
   );
 }

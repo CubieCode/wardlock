@@ -5,6 +5,7 @@ import type { ApiClient } from '@wardlock/apiclient-ts';
 import { Button, Card, Fieldset, Notice, Radio } from '@wardlock/ui';
 import { useState, type FormEvent } from 'react';
 import type { Site } from '../sites/format.js';
+import { useSiteAccess } from '../teams/scope.js';
 import type { Domain } from './format.js';
 
 /**
@@ -111,6 +112,7 @@ export function PrimaryHostCard({
   onSaved: (site: Site) => void;
 }) {
   const { chosen, effective } = primaryOf(site, domains);
+  const { edit } = useSiteAccess(site);
   const [choice, setChoice] = useState(chosen ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -174,7 +176,7 @@ export function PrimaryHostCard({
           While the operator has taken this site down, its primary hostname
           stays as it is.
         </p>
-      ) : (
+      ) : !edit ? null : (
         <form className="domain-primary-form" onSubmit={save} noValidate>
           <Fieldset legend="Choose the primary">
             <Radio

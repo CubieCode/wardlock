@@ -4,7 +4,7 @@
 import type { ApiClient } from '@wardlock/apiclient-ts';
 import { Button, Dialog, Notice, TextField } from '@wardlock/ui';
 import { useState, type FormEvent } from 'react';
-import { navigate } from '../shell/router.js';
+import { navigate, withTeam } from '../shell/router.js';
 import { setFlash } from './flash.js';
 import type { Site } from './format.js';
 
@@ -48,7 +48,7 @@ export function TeardownDialog({
     // 404: it is already gone, which is what was asked for.
     if (result && (result.response.ok || result.response.status === 404)) {
       setFlash(`${site.name} was torn down. Its name is free to use again.`);
-      navigate('/sites');
+      navigate(withTeam('/sites'));
       return;
     }
     setError(

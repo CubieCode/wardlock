@@ -23,7 +23,7 @@ import {
   type RefObject,
 } from 'react';
 import { useTitle } from '../shell/page.js';
-import { navigate, useLocation } from '../shell/router.js';
+import { navigate, useLocation, withTeam } from '../shell/router.js';
 import { AccessWord } from './format.js';
 import { useMapSites } from './map-data.js';
 import {
@@ -82,7 +82,7 @@ export function hubName(hub: MapHub, filtering: boolean) {
 }
 
 const siteHref = (site: SiteSummary) =>
-  `/sites/${encodeURIComponent(site.name)}`;
+  withTeam(`/sites/${encodeURIComponent(site.name)}`);
 
 /** The map filtered to one group, keeping how the list is drawn. */
 const hubHref = (hub: MapHub, query: ListQuery) =>

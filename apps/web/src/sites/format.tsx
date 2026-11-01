@@ -45,6 +45,10 @@ export function Time({ at }: { at: number }) {
   );
 }
 
+/** Who made a deploy, policy or link: an address, or a team token by name. */
+export const madeBy = (by: components['schemas']['CreatedBy']) =>
+  by.kind === 'token' ? `the token ${by.name}` : by.name;
+
 /** Sizes in SI units: "1.5 MB". */
 export function formatBytes(bytes: number) {
   const steps = ['byte', 'kilobyte', 'megabyte', 'gigabyte'];

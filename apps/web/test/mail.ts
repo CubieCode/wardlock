@@ -97,10 +97,6 @@ export const ownerFor = (project: string, scheme: string) =>
 export const passkeyOwnerFor = (project: string, scheme: string) =>
   `${project}-${scheme}-passkeys@example.test`;
 
-/** The synthetic owner the CLI login spec signs in as. */
-export const cliOwnerFor = (project: string, scheme: string) =>
-  `${project}-${scheme}-cli@example.test`;
-
 /** The synthetic owner the sites spec signs in as. */
 export const sitesOwnerFor = (project: string, scheme: string) =>
   `${project}-${scheme}-sites@example.test`;
@@ -108,6 +104,9 @@ export const sitesOwnerFor = (project: string, scheme: string) =>
 /** The synthetic owner the site access spec signs in as. */
 export const accessOwnerFor = (project: string, scheme: string) =>
   `${project}-${scheme}-access@example.test`;
+
+/** The synthetic owner who runs every team in the teams spec. */
+export const teamAdmin = 'team-admin@example.test';
 
 /**
  * The first owner's signed-in browser state, saved by setup under the
@@ -117,6 +116,12 @@ export const accessOwnerFor = (project: string, scheme: string) =>
 export const firstOwnerState = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../../.local/browser-state/first-owner.json',
+);
+
+/** The team admin's signed-in browser state, saved by setup like the above. */
+export const teamAdminState = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../.local/browser-state/team-admin.json',
 );
 
 /** A site the first owner creates in setup; every other owner's foreign site. */

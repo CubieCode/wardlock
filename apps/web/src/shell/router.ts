@@ -102,6 +102,30 @@ export function matchPath(
   return params;
 }
 
+/** A team's settings page, which names its team in the path. */
+export const teamPath = (id: string) => `/teams/${encodeURIComponent(id)}`;
+
+/** The team a location is scoped to, undefined for the personal account. */
+export function teamOf(pathname: string, params: URLSearchParams) {
+  return (
+    matchPath('/teams/:teamId', pathname)?.teamId ??
+    (params.get('team') || undefined)
+  );
+}
+
+/**
+ * Keeps the team chosen in the switcher on a path inside the dashboard, so
+ * the address always says whose sites are showing and can be shared.
+ */
+export function withTeam(path: string) {
+  const here = new URL(window.location.href);
+  const team = teamOf(here.pathname, here.searchParams);
+  if (!team) return path;
+  const url = new URL(path, here.origin);
+  if (!url.searchParams.has('team')) url.searchParams.set('team', team);
+  return url.pathname + url.search + url.hash;
+}
+
 /**
  * Accepts a return path from the query only when it stays on this origin:
  * a single leading slash, no protocol-relative or backslash tricks, and no

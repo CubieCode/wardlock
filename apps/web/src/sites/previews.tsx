@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import type { ApiClient, components } from '@wardlock/apiclient-ts';
+import { useSiteAccess } from '../teams/scope.js';
 import {
   Button,
   Card,
@@ -301,6 +302,7 @@ function PreviewRow({
 }) {
   const { deploy } = preview;
   const live = deploy.id === site.activeDeployId;
+  const { edit } = useSiteAccess(site);
   return (
     <li className="preview-row" aria-label={preview.name}>
       <div className="preview-row-head">
@@ -320,7 +322,7 @@ function PreviewRow({
             >
               Open
             </OpenSiteButton>
-            {!live && (
+            {edit && !live && (
               <Button
                 type="button"
                 aria-label={`Promote ${preview.name}`}
@@ -329,13 +331,15 @@ function PreviewRow({
                 Promote
               </Button>
             )}
-            <Button
-              type="button"
-              aria-label={`Delete preview ${preview.name}`}
-              onClick={onDelete}
-            >
-              Delete
-            </Button>
+            {edit && (
+              <Button
+                type="button"
+                aria-label={`Delete preview ${preview.name}`}
+                onClick={onDelete}
+              >
+                Delete
+              </Button>
+            )}
           </div>
         )}
       </div>

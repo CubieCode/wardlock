@@ -12,7 +12,7 @@ import {
 } from '@wardlock/ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { failure, unreachable } from '../auth/messages.js';
-import { navigate } from '../shell/router.js';
+import { navigate, withTeam } from '../shell/router.js';
 import { useTitle } from '../shell/page.js';
 import { Time } from '../sites/format.js';
 import { DeleteWebhookDialog } from './delete-webhook.js';
@@ -279,7 +279,7 @@ export function WebhookPage({
   if (state.kind === 'loading') return <p role="status">Loading webhook…</p>;
   const back = (
     <p className="webhook-back">
-      <a href="/webhooks">All webhooks</a>
+      <a href={withTeam('/webhooks')}>All webhooks</a>
     </p>
   );
   if (state.kind === 'gone')
@@ -423,7 +423,7 @@ export function WebhookPage({
           api={api}
           webhook={webhook}
           onClose={() => setOpen('none')}
-          onDeleted={() => navigate('/webhooks')}
+          onDeleted={() => navigate(withTeam('/webhooks'))}
         />
       )}
     </>

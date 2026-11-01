@@ -32,6 +32,7 @@ import { savedViews, sitesChanged } from '../shell/navigator.js';
 import { useTitle } from '../shell/page.js';
 import { navigate, useLocation } from '../shell/router.js';
 import { useWide } from '../shell/wide.js';
+import { teamQuery, useScope, useTeamAccess } from '../teams/scope.js';
 import { useFlash } from './flash.js';
 import { MapPage } from './map-page.js';
 import { isMap, ViewSwitch } from './map-switch.js';
@@ -225,6 +226,7 @@ const SectionView = memo(function SectionView({
   onExpand,
   phone,
   choosing,
+  edit,
 }: {
   section: Section;
   sectionCount: number;
@@ -244,6 +246,8 @@ const SectionView = memo(function SectionView({
   phone: boolean;
   /** Select boxes show; below 48rem only after Select. */
   choosing: boolean;
+  /** False for a viewer: no selecting, so no bulk changes. */
+  edit: boolean;
 }) {
   const { key, title, sites } = section;
   const id = `sites-section-${key.replace(/[^a-z0-9-]/gi, '-')}`;
@@ -293,7 +297,7 @@ const SectionView = memo(function SectionView({
               <span className="wl-visually-hidden">, </span>
               {plural(sites.length, 'site')}
             </span>
-            {choosing ? selectAll : null}
+            {choosing && edit ? selectAll : null}
           </div>
         ) : (
           <div className="sites-section-head">
@@ -316,7 +320,7 @@ const SectionView = memo(function SectionView({
                 <span className="sites-section-note">{section.note}</span>
               ) : null}
             </span>
-            {selectAll}
+            {edit ? selectAll : null}
           </div>
         )}
         <div id={`${id}-rows`} hidden={folded}>
@@ -334,6 +338,7 @@ const SectionView = memo(function SectionView({
                     actions={actions}
                     phone={phone}
                     choosing={choosing}
+                    edit={edit}
                   />
                 ))}
               </HubLayout>
@@ -371,8 +376,10 @@ export function SitesPage({ api }: { api: ApiClient }) {
 function SitesList({ api }: { api: ApiClient }) {
   const { params } = useLocation();
   const query = useMemo(() => readQuery(params), [params]);
-  const list = useSites(api, query);
-  const meta = useMeta(api);
+  const { team } = useScope();
+  const { edit } = useTeamAccess();
+  const list = useSites(api, query, team);
+  const meta = useMeta(api, team);
   const flash = useFlash();
   // Below 48rem a section shows three rows before Show all, from 48rem five.
   const wide = useWide();
@@ -505,6 +512,7 @@ function SitesList({ api }: { api: ApiClient }) {
   const post = async (change: OrganiseRequest) => {
     try {
       const { data, error } = await api.POST('/api/v0/organise', {
+        params: { query: teamQuery(team) },
         body: change,
       });
       return data ?? error?.message ?? '';
@@ -557,7 +565,10 @@ function SitesList({ api }: { api: ApiClient }) {
     name: string,
   ) => {
     try {
-      const { data, error } = await api.POST(path, { body: { name } });
+      const { data, error } = await api.POST(path, {
+        params: { query: teamQuery(team) },
+        body: { name },
+      });
       return data ?? error?.message ?? '';
     } catch {
       return '';
@@ -866,7 +877,7 @@ function SitesList({ api }: { api: ApiClient }) {
           )}
         </div>
       )}
-      {phone && !choosing ? (
+      {phone && !choosing && edit ? (
         <div className="sites-applied">
           <span>
             {groupingWords[query.by]} · {sortChoices[query.sort].words}
@@ -1079,6 +1090,7 @@ function SitesList({ api }: { api: ApiClient }) {
                 onExpand={onExpand}
                 phone={phone}
                 choosing={choosing}
+                edit={edit}
               />
             ))}
           </HubLayout>

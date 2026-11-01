@@ -1783,6 +1783,11 @@
     border-right: 1px solid var(--color-border);
   }
 
+  /* Above the navigator, which follows it, so its popovers open over it. */
+  .wl-rail {
+    z-index: 2;
+  }
+
   .wl-rail-header,
   .wl-bottom-bar {
     display: none;

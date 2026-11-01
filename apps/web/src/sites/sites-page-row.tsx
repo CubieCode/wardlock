@@ -15,7 +15,7 @@ import {
 } from '@wardlock/ui';
 import { memo, useEffect, useRef, useState } from 'react';
 import { tagSlot } from '../shell/navigator.js';
-import { navigate } from '../shell/router.js';
+import { navigate, withTeam } from '../shell/router.js';
 import { Time } from './format.js';
 import { Star } from './site-page-header.js';
 import type { Group, Tag } from './site-page-organise.js';
@@ -231,11 +231,13 @@ function RowMenu({
   tags,
   groups,
   actions,
+  edit,
 }: {
   site: SiteSummary;
   tags: Tag[];
   groups: Group[];
   actions: ListActions;
+  edit: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<MenuMode>('menu');
@@ -287,7 +289,7 @@ function RowMenu({
           <Menu label={`Actions for ${site.name}`}>
             <MenuItem
               onSelect={() =>
-                navigate(`/sites/${encodeURIComponent(site.name)}`)
+                navigate(withTeam(`/sites/${encodeURIComponent(site.name)}`))
               }
             >
               Open
@@ -300,10 +302,14 @@ function RowMenu({
             >
               {site.pinned ? 'Unpin' : 'Pin'}
             </MenuItem>
-            <MenuItem onSelect={() => setMode('tags')}>Edit tags…</MenuItem>
-            <MenuItem onSelect={() => setMode('group')}>
-              Move to group…
-            </MenuItem>
+            {edit ? (
+              <MenuItem onSelect={() => setMode('tags')}>Edit tags…</MenuItem>
+            ) : null}
+            {edit ? (
+              <MenuItem onSelect={() => setMode('group')}>
+                Move to group…
+              </MenuItem>
+            ) : null}
             <MenuItem
               onSelect={() => {
                 close();
@@ -314,7 +320,11 @@ function RowMenu({
             </MenuItem>
             <MenuItem
               onSelect={() =>
-                navigate(`/sites/${encodeURIComponent(site.name)}/access-log`)
+                navigate(
+                  withTeam(
+                    `/sites/${encodeURIComponent(site.name)}/access-log`,
+                  ),
+                )
               }
             >
               Access log
@@ -363,6 +373,7 @@ export const SiteRow = memo(function SiteRow({
   actions,
   phone = false,
   choosing = true,
+  edit = true,
 }: {
   site: SiteSummary;
   selected: boolean;
@@ -372,13 +383,15 @@ export const SiteRow = memo(function SiteRow({
   actions: ListActions;
   phone?: boolean;
   choosing?: boolean;
+  /** False for a viewer, who can pin a site but not organise it. */
+  edit?: boolean;
 }) {
   const kind = access(site);
   const siteTags = site.tagIds.flatMap((id) => {
     const tag = tagsById.get(id);
     return tag ? [tag] : [];
   });
-  const check = (
+  const check = edit && (
     <Checkbox
       hideLabel
       label={`Select ${site.name}`}
@@ -391,7 +404,7 @@ export const SiteRow = memo(function SiteRow({
     <a
       className="sites-row-name"
       title={site.name}
-      href={`/sites/${encodeURIComponent(site.name)}`}
+      href={withTeam(`/sites/${encodeURIComponent(site.name)}`)}
     >
       {site.name}
     </a>
@@ -435,6 +448,7 @@ export const SiteRow = memo(function SiteRow({
           </div>
           {choosing ? null : (
             <RowMenu
+              edit={edit}
               site={site}
               tags={tags}
               groups={groups}
@@ -480,7 +494,13 @@ export const SiteRow = memo(function SiteRow({
         <LinksCell site={site} />
         <RequestsCell site={site} />
         <DeployCell site={site} />
-        <RowMenu site={site} tags={tags} groups={groups} actions={actions} />
+        <RowMenu
+          site={site}
+          tags={tags}
+          groups={groups}
+          actions={actions}
+          edit={edit}
+        />
       </div>
     </Wire>
   );

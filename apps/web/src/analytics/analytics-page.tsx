@@ -15,6 +15,8 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { tagSlot } from '../shell/navigator.js';
 import { useTitle } from '../shell/page.js';
+import { withTeam } from '../shell/router.js';
+import { useScope } from '../teams/scope.js';
 import { navigate } from '../shell/router.js';
 import { Breakdown, type BreakdownRow } from './breakdown.js';
 import { CountriesCard } from './countries-card.js';
@@ -118,6 +120,7 @@ export function AnalyticsPage({
   query: URLSearchParams;
 }) {
   useTitle('Analytics');
+  const { team } = useScope();
   const { scope, days } = useMemo(() => readQuery(query), [query]);
   const scoped = scopeValue(scope);
 
@@ -128,12 +131,15 @@ export function AnalyticsPage({
   const names = useRead(
     'names',
     tries.names,
-    useCallback(() => readOrganisation(api), [api]),
+    useCallback(() => readOrganisation(api, team), [api, team]),
   );
   const totals = useRead(
     scoped,
     tries.totals,
-    useCallback((value) => readTotals(api, parseScope(value)), [api]),
+    useCallback(
+      (value) => readTotals(api, parseScope(value), team),
+      [api, team],
+    ),
   );
   const counts = useRead(
     `${days}:${scoped}`,
@@ -145,9 +151,10 @@ export function AnalyticsPage({
           api,
           parseScope(value.slice(at + 1)),
           Number(value.slice(0, at)) as AnalyticsDays,
+          team,
         );
       },
-      [api],
+      [api, team],
     ),
   );
   const organisation =
@@ -388,7 +395,9 @@ function Charts({
     key: `${row.site}/${row.publicId}`,
     label: row.label ?? `Link ${row.publicId}`,
     hint: siteHint(row.site),
-    href: `/sites/${encodeURIComponent(row.site)}/links/${row.publicId}`,
+    href: withTeam(
+      `/sites/${encodeURIComponent(row.site)}/links/${row.publicId}`,
+    ),
     allowed: row.allowed,
     refused: row.refused,
   }));

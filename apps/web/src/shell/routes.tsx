@@ -12,6 +12,8 @@ import { OverviewPage } from '../overview/overview.js';
 import { SitePage } from '../sites/site-page.js';
 import { siteTabs } from '../sites/site-page-tabs.js';
 import { SitesPage } from '../sites/sites-page.js';
+import { TeamInvitationsPage } from '../teams/invitations-page.js';
+import { TeamPage } from '../teams/team-page.js';
 import { ApiTokensPage } from '../tokens/tokens-page.js';
 import { WebhookPage } from '../webhooks/webhook-page.js';
 import { WebhooksPage } from '../webhooks/webhooks-page.js';
@@ -120,6 +122,17 @@ export const shellRoutes: ShellRoute[] = [
     path: '/webhooks',
     rail: { label: 'Webhooks', icon: webhooksIcon },
     render: ({ api }) => <WebhooksPage api={api} />,
+  },
+  {
+    path: '/teams/:teamId',
+    render: ({ api, params }) => (
+      <TeamPage key={params.teamId} api={api} teamId={params.teamId!} />
+    ),
+  },
+  {
+    // The team invitation email links here (owners.TeamInvitationsPath).
+    path: '/team-invitations',
+    render: ({ api }) => <TeamInvitationsPage api={api} />,
   },
   {
     path: '/webhooks/:webhookId',

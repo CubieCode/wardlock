@@ -13,11 +13,17 @@ export function RevokeTokenDialog({
   token,
   onClose,
   onRevoked,
+  revoke: send = () =>
+    api.DELETE('/api/v0/tokens/{tokenId}', {
+      params: { path: { tokenId: token.id } },
+    }),
 }: {
   api: ApiClient;
   token: ApiToken;
   onClose: () => void;
   onRevoked: () => void;
+  /** Sends the request; the owner's own tokens unless given, as for a team. */
+  revoke?: () => Promise<{ response: Response }>;
 }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -25,11 +31,7 @@ export function RevokeTokenDialog({
   const revoke = async () => {
     setBusy(true);
     setProblem(null);
-    const result = await api
-      .DELETE('/api/v0/tokens/{tokenId}', {
-        params: { path: { tokenId: token.id } },
-      })
-      .catch(() => null);
+    const result = await send().catch(() => null);
     setBusy(false);
     // 404: already gone, which is what was asked for.
     if (result?.response.ok || result?.response.status === 404)

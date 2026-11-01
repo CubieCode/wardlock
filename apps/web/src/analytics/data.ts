@@ -3,6 +3,8 @@
 
 import type { ApiClient, components } from '@wardlock/apiclient-ts';
 import type { StackedBarsPoint } from '@wardlock/ui';
+import { withTeam } from '../shell/router.js';
+import { teamQuery } from '../teams/scope.js';
 
 export type Analytics = components['schemas']['Analytics'];
 export type AnalyticsDays = components['schemas']['AnalyticsDays'];
@@ -57,7 +59,7 @@ export function analyticsHref(scope: Scope, days: AnalyticsDays = defaultDays) {
   if (scope.kind === 'tag') query.set('t', scope.id);
   if (days !== defaultDays) query.set('days', String(days));
   const search = query.toString();
-  return search ? `/analytics?${search}` : '/analytics';
+  return withTeam(search ? `/analytics?${search}` : '/analytics');
 }
 
 /** What the totals row shows of the sites in scope, from their summaries. */
@@ -93,10 +95,14 @@ export function parseScope(value: string): Scope {
   return { kind: 'all' };
 }
 
-export async function readOrganisation(api: ApiClient): Promise<Organisation> {
+export async function readOrganisation(
+  api: ApiClient,
+  team?: string,
+): Promise<Organisation> {
+  const params = { query: teamQuery(team) };
   const [groups, tags] = await Promise.all([
-    api.GET('/api/v0/groups'),
-    api.GET('/api/v0/tags'),
+    api.GET('/api/v0/groups', { params }),
+    api.GET('/api/v0/tags', { params }),
   ]);
   if (!groups.data || !tags.data) throw new Error('could not list groups');
   return { groups: groups.data.items, tags: tags.data.items };
@@ -110,6 +116,7 @@ export async function readOrganisation(api: ApiClient): Promise<Organisation> {
 export async function readTotals(
   api: ApiClient,
   scope: Scope,
+  team?: string,
 ): Promise<SiteTotals> {
   const filter =
     scope.kind === 'group'
@@ -125,6 +132,7 @@ export async function readTotals(
     const { data } = await api.GET('/api/v0/site-summaries', {
       params: {
         query: {
+          ...teamQuery(team),
           ...filter,
           limit: 100,
           sort: 'name',
@@ -155,6 +163,7 @@ export async function readAnalytics(
   api: ApiClient,
   scope: Scope,
   days: AnalyticsDays,
+  team?: string,
 ): Promise<Analytics | 'missing'> {
   const query =
     scope.kind === 'group'
@@ -165,7 +174,7 @@ export async function readAnalytics(
           ? { days, site: scope.name }
           : { days };
   const { data, response } = await api.GET('/api/v0/analytics', {
-    params: { query },
+    params: { query: { ...teamQuery(team), ...query } },
   });
   if (response.status === 404) return 'missing';
   if (!data) throw new Error('could not read analytics');

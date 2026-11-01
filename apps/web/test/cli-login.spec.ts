@@ -7,7 +7,7 @@ import {
   type Page,
   type TestInfo,
 } from '@playwright/test';
-import { cliOwnerFor, mailbox, schemes } from './mail.js';
+import { firstOwnerState, schemes } from './mail.js';
 
 const origin = process.env.WARDLOCK_ACCEPTANCE_ORIGIN;
 if (!origin) throw new Error('Run through pnpm browser:test');
@@ -42,30 +42,19 @@ async function startLogin(cli: APIRequestContext): Promise<CliLogin> {
   return (await res.json()) as CliLogin;
 }
 
+// Signed in as the first owner, whose session setup saved: email-code sends
+// are limited per IP, and the other specs use them.
+test.use({ storageState: firstOwnerState });
+
 for (const scheme of schemes) {
   test(`CLI login approval (${scheme})`, async ({ page, playwright }, info) => {
     await page.emulateMedia({ colorScheme: scheme });
     const shot = (step: string) => check(page, info, `cli-${step}-${scheme}`);
-    const cli = await playwright.request.newContext();
+    // No cookies, as the CLI has none.
+    const cli = await playwright.request.newContext({
+      storageState: { cookies: [], origins: [] },
+    });
     try {
-      await test.step('the owner signs in', async () => {
-        // Sign in by email code rather than the invitation link: link
-        // redemptions are limited per IP, and the other specs use them.
-        const email = cliOwnerFor(info.project.name, scheme);
-        const inbox = mailbox(email);
-        await inbox.signInLink(); // skip the invitation
-        await page.goto(`${origin}/sign-in`);
-        await page.getByRole('textbox', { name: 'Email address' }).fill(email);
-        await page.getByRole('button', { name: 'Send code' }).click();
-        await page
-          .getByRole('textbox', { name: 'Sign-in code' })
-          .fill(await inbox.code());
-        await page.getByRole('button', { name: 'Sign in' }).click();
-        await expect(
-          page.getByRole('heading', { level: 1, name: 'Overview' }),
-        ).toBeVisible();
-      });
-
       await test.step('the page the CLI opens approves the login', async () => {
         const login = await startLogin(cli);
         expect(login.verificationUrlComplete).toBe(
@@ -113,7 +102,7 @@ for (const scheme of schemes) {
         expect(me.status()).toBe(200);
         expect(await me.json()).toMatchObject({
           credential: 'apiToken',
-          owner: { email: cliOwnerFor(info.project.name, scheme) },
+          owner: { email: 'first-owner@example.test' },
         });
       });
 

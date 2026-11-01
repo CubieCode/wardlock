@@ -235,6 +235,8 @@ describe('sites map', () => {
           '/api/v0/tags',
           '/api/v0/site-counts',
           '/api/v0/site-summaries',
+          '/api/v0/teams',
+          '/api/v0/team-invitations',
         ].includes(u.pathname),
       ),
     ).toBe(true);

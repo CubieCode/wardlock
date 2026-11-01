@@ -4,6 +4,7 @@
 import type { ApiClient, components } from '@wardlock/apiclient-ts';
 import { NavItem, NavList, type TagSlot } from '@wardlock/ui';
 import { useEffect, useState, type ReactNode } from 'react';
+import { teamQuery, useTeamAccess } from '../teams/scope.js';
 import {
   clockIcon,
   downIcon,
@@ -14,7 +15,7 @@ import {
   searchIcon,
   untaggedIcon,
 } from './icons.js';
-import { useLocation } from './router.js';
+import { useLocation, withTeam } from './router.js';
 import { shellRoutes } from './routes.js';
 
 type SiteCounts = components['schemas']['SiteCounts'];
@@ -56,7 +57,7 @@ export function sitesHref(
   for (const [key, value] of Object.entries(filter ?? {}))
     if (value) query.set(key, value);
   const text = query.toString();
-  return text ? `/sites?${text}` : '/sites';
+  return withTeam(text ? `/sites?${text}` : '/sites');
 }
 
 const sitesChangedEvent = 'wardlock:sites-changed';
@@ -83,11 +84,16 @@ interface Data {
 export type NavigatorState =
   { kind: 'loading' } | { kind: 'error' } | ({ kind: 'ready' } & Data);
 
-async function load(api: ApiClient, filters: boolean): Promise<Data> {
+async function load(
+  api: ApiClient,
+  filters: boolean,
+  team: string | undefined,
+): Promise<Data> {
+  const params = { query: teamQuery(team) };
   const [counts, groups, tags] = await Promise.all([
-    api.GET('/api/v0/site-counts'),
-    filters ? api.GET('/api/v0/groups') : undefined,
-    filters ? api.GET('/api/v0/tags') : undefined,
+    api.GET('/api/v0/site-counts', { params }),
+    filters ? api.GET('/api/v0/groups', { params }) : undefined,
+    filters ? api.GET('/api/v0/tags', { params }) : undefined,
   ]);
   if (!counts.data || (filters && (!groups?.data || !tags?.data)))
     throw new Error('could not count sites');
@@ -107,20 +113,21 @@ export function useNavigatorData(
   api: ApiClient,
   enabled: boolean,
   filters = navigatorFilters,
+  team?: string,
 ) {
   const [state, setState] = useState<NavigatorState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!enabled) return;
     let live = true;
-    load(api, filters).then(
+    load(api, filters, team).then(
       (data) => live && setState({ kind: 'ready', ...data }),
       () => live && setState({ kind: 'error' }),
     );
     return () => {
       live = false;
     };
-  }, [api, enabled, filters, attempt]);
+  }, [api, enabled, filters, team, attempt]);
   // A change on the sites list counts again, keeping the old counts shown
   // until the new ones arrive.
   useEffect(() => {
@@ -175,7 +182,9 @@ export function SitesNavigator({
   const href = (filter: { g?: string; t?: string; v?: string }) =>
     sitesHref({ ...filter, ...drawn });
   const ready = state.kind === 'ready' ? state : undefined;
-  const organise = organiseBuilt();
+  // Viewers read the groups and tags but cannot change them.
+  const { edit } = useTeamAccess();
+  const organise = organiseBuilt() && edit;
 
   return (
     <>
@@ -224,7 +233,7 @@ export function SitesNavigator({
           title="Groups"
           action={
             organise ? (
-              <a className="shell-nav-action" href={organisePath}>
+              <a className="shell-nav-action" href={withTeam(organisePath)}>
                 New group
               </a>
             ) : null
@@ -258,7 +267,7 @@ export function SitesNavigator({
           title="Tags"
           action={
             organise ? (
-              <a className="shell-nav-action" href={organisePath}>
+              <a className="shell-nav-action" href={withTeam(organisePath)}>
                 Manage tags
               </a>
             ) : null

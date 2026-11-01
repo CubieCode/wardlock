@@ -5,6 +5,7 @@ import type { ApiClient, components } from '@wardlock/apiclient-ts';
 import { Button, Card } from '@wardlock/ui';
 import { useRef, useState } from 'react';
 import { sitesHref } from '../shell/navigator.js';
+import { teamQuery } from '../teams/scope.js';
 import { useFocusAfterDelete, useFocusOnReturn } from './focus.js';
 import {
   attempt,
@@ -27,6 +28,8 @@ const noteField = {
 /** The owner's groups, with New group, Edit (name and note) and Delete. */
 export function GroupsCard({
   api,
+  team,
+  edit = true,
   groups,
   counts,
   recount,
@@ -35,6 +38,10 @@ export function GroupsCard({
   onDeleted,
 }: {
   api: ApiClient;
+  /** The team these belong to; undefined for the owner's own. */
+  team?: string | undefined;
+  /** False for a viewer: the list alone, with no way to change it. */
+  edit?: boolean;
   groups: Group[];
   /** Sites in each group, by group ID. */
   counts: Record<string, number>;
@@ -72,7 +79,9 @@ export function GroupsCard({
       </p>
       {groups.length === 0 ? (
         <p className="organise-empty">
-          No groups yet. Every site is in No group until you make one.
+          {edit
+            ? 'No groups yet. Every site is in No group until you make one.'
+            : 'No groups yet.'}
         </p>
       ) : (
         <ul ref={list} className="organise-list" aria-label="Groups">
@@ -80,6 +89,7 @@ export function GroupsCard({
             <GroupRow
               key={group.id}
               api={api}
+              edit={edit}
               group={group}
               count={counts[group.id] ?? 0}
               recount={recount}
@@ -89,7 +99,7 @@ export function GroupsCard({
           ))}
         </ul>
       )}
-      {creating ? (
+      {!edit ? null : creating ? (
         <NameForm
           label="New group name"
           hint={nameHint}
@@ -100,6 +110,7 @@ export function GroupsCard({
           onSubmit={async (name, note) => {
             const result = await attempt(() =>
               api.POST('/api/v0/groups', {
+                params: { query: teamQuery(team) },
                 body: note ? { name, note } : { name },
               }),
             );
@@ -133,6 +144,7 @@ export function GroupsCard({
 
 function GroupRow({
   api,
+  edit,
   group,
   count,
   recount,
@@ -140,6 +152,7 @@ function GroupRow({
   onDeleted,
 }: {
   api: ApiClient;
+  edit: boolean;
   group: Group;
   count: number;
   recount: () => Promise<void>;
@@ -194,23 +207,25 @@ function GroupRow({
         count={count}
         context={`in ${group.name}`}
       />
-      <span className="organise-actions">
-        <Button
-          ref={editButton}
-          type="button"
-          aria-label={`Edit ${group.name}`}
-          onClick={() => setEditing(true)}
-        >
-          Edit
-        </Button>
-        <Button
-          type="button"
-          aria-label={`Delete ${group.name}`}
-          onClick={() => setDeleting(true)}
-        >
-          Delete
-        </Button>
-      </span>
+      {edit ? (
+        <span className="organise-actions">
+          <Button
+            ref={editButton}
+            type="button"
+            aria-label={`Edit ${group.name}`}
+            onClick={() => setEditing(true)}
+          >
+            Edit
+          </Button>
+          <Button
+            type="button"
+            aria-label={`Delete ${group.name}`}
+            onClick={() => setDeleting(true)}
+          >
+            Delete
+          </Button>
+        </span>
+      ) : null}
       {deleting ? (
         <DeleteDialog
           title={`Delete the group “${group.name}”?`}
