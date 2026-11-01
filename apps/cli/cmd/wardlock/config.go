@@ -31,6 +31,9 @@ type projectConfig struct {
 	// Path is "path": deploy into this prefix of the site, keeping the
 	// rest (C1.13).
 	Path string `json:"path,omitempty"`
+	// Team is "team": the team a new site is created under, by name or ID
+	// (T7.3).
+	Team string `json:"team,omitempty"`
 	// Group is "group": file the deployed site in this existing group
 	// (V5.15).
 	Group string `json:"group,omitempty"`

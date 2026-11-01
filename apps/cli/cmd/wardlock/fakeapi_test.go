@@ -93,6 +93,8 @@ type fakeAPI struct {
 	deliveries []apiclient.WebhookDelivery
 	// dlInFlight and maxDlInFlight track download concurrency.
 	dlInFlight, maxDlInFlight int
+	// teams, members and the rest back the team commands (faketeams_test.go).
+	fakeTeams
 }
 
 // refusal is an error answer: an HTTP status and the API's error body.
@@ -147,7 +149,8 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 	t.Helper()
 	f := &fakeAPI{t: t, sites: map[string]*fakeSite{}, taken: map[string]bool{}, blobs: map[string]bool{},
 		uploads: map[string]int{}, scopes: []string{"deploy", "manage"},
-		content: map[string][]byte{}, downloads: map[string]int{}, withheld: map[string]bool{}, takenDown: map[string]bool{}}
+		fakeTeams: fakeTeams{members: map[string][]apiclient.TeamMember{}, suspendedTeams: map[string]bool{}, account: map[string]string{}},
+		content:   map[string][]byte{}, downloads: map[string]int{}, withheld: map[string]bool{}, takenDown: map[string]bool{}}
 	mux := http.NewServeMux()
 	handle := func(pattern, scope string, h func(w http.ResponseWriter, r *http.Request)) {
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
@@ -201,6 +204,7 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 	f.handleOrganisation(handle)
 	f.handlePreviews(handle)
 	f.handleWebhooks(handle)
+	f.handleTeams(handle)
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f
@@ -230,7 +234,7 @@ func (f *fakeAPI) withSite(h func(w http.ResponseWriter, r *http.Request, s *fak
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		s, ok := f.sites[r.PathValue("site")]
-		if !ok {
+		if !ok || !f.visible(s) {
 			reply(w, http.StatusNotFound, notFound)
 			return
 		}
@@ -249,6 +253,7 @@ func (f *fakeAPI) newSite(name string, policy apiclient.PolicyVisibility) *fakeS
 	s := &fakeSite{policy: policy, site: apiclient.Site{
 		Id: f.id(), Name: name, Hostname: name + "." + fakeBase,
 		Url: "https://" + name + "." + fakeBase + "/", CreatedAt: 1_800_000_000_000, TagIds: []string{},
+		Owner: personalOwner,
 	}}
 	f.sites[name] = s
 	return s
@@ -257,9 +262,15 @@ func (f *fakeAPI) newSite(name string, policy apiclient.PolicyVisibility) *fakeS
 func (f *fakeAPI) listSites(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	team := r.URL.Query().Get("team")
+	if !f.require(w, team, apiclient.TeamRoleViewer) {
+		return
+	}
 	var names []string
-	for n := range f.sites {
-		names = append(names, n)
+	for n, s := range f.sites {
+		if f.visible(s) && (team == "" || s.site.Owner.Id == team) {
+			names = append(names, n)
+		}
 	}
 	slices.Sort(names)
 	if host := r.URL.Query().Get("hostname"); host != "" {
@@ -305,11 +316,26 @@ func (f *fakeAPI) createSite(w http.ResponseWriter, r *http.Request) {
 		reply(w, r.status, r.body)
 		return
 	}
+	team := deref(body.Team)
+	if team == "" {
+		team = f.tokenTeam
+	}
+	if !f.require(w, team, apiclient.TeamRoleEditor) {
+		return
+	}
+	if f.suspendedTeams[team] {
+		reply(w, http.StatusConflict, apiErr("team_suspended", "The operator of this server has suspended this team."))
+		return
+	}
 	if f.taken[body.Name] || f.sites[body.Name] != nil {
 		reply(w, http.StatusConflict, apiErr("site_name_taken", "That site name is taken."))
 		return
 	}
-	reply(w, http.StatusCreated, f.newSite(body.Name, "").site)
+	s := f.newSite(body.Name, "")
+	if team != "" {
+		s.site.Owner = f.teamOwner(team)
+	}
+	reply(w, http.StatusCreated, s.site)
 }
 
 func (f *fakeAPI) listDeploys(w http.ResponseWriter, r *http.Request, s *fakeSite) {

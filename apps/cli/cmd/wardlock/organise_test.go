@@ -26,8 +26,12 @@ func (f *fakeAPI) handleOrganisation(handle func(pattern, scope string, h func(w
 			h(w, r)
 		}
 	}
-	handle("GET /api/v0/groups", "", locked(func(w http.ResponseWriter, _ *http.Request) {
-		items := slices.Clone(f.groups)
+	handle("GET /api/v0/groups", "", locked(func(w http.ResponseWriter, r *http.Request) {
+		team := f.accountOf(r)
+		if !f.require(w, team, apiclient.TeamRoleViewer) {
+			return
+		}
+		items := slices.DeleteFunc(slices.Clone(f.groups), func(g apiclient.Group) bool { return f.account[g.Id] != team })
 		slices.SortFunc(items, func(a, b apiclient.Group) int { return strings.Compare(groupKey(a.Name), groupKey(b.Name)) })
 		reply(w, http.StatusOK, apiclient.GroupList{Items: append([]apiclient.Group{}, items...)})
 	}))
@@ -35,6 +39,10 @@ func (f *fakeAPI) handleOrganisation(handle func(pattern, scope string, h func(w
 		var body apiclient.CreateGroupRequest
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
 			reply(w, http.StatusBadRequest, apiclient.Error{Code: "invalid_request", Message: "Invalid name.", Target: ptr("name")})
+			return
+		}
+		team := f.accountOf(r)
+		if !f.require(w, team, apiclient.TeamRoleEditor) {
 			return
 		}
 		if f.groupIndex(body.Name) >= 0 {
@@ -46,6 +54,7 @@ func (f *fakeAPI) handleOrganisation(handle func(pattern, scope string, h func(w
 			g.Note = body.Note
 		}
 		f.groups = append(f.groups, g)
+		f.account[g.Id] = team
 		reply(w, http.StatusCreated, g)
 	}))
 	withGroup := func(h func(w http.ResponseWriter, r *http.Request, i int)) func(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +62,9 @@ func (f *fakeAPI) handleOrganisation(handle func(pattern, scope string, h func(w
 			i := slices.IndexFunc(f.groups, func(g apiclient.Group) bool { return g.Id == r.PathValue("groupId") })
 			if i < 0 {
 				reply(w, http.StatusNotFound, notFound)
+				return
+			}
+			if !f.require(w, f.account[f.groups[i].Id], apiclient.TeamRoleEditor) {
 				return
 			}
 			h(w, r, i)
@@ -91,8 +103,12 @@ func (f *fakeAPI) handleOrganisation(handle func(pattern, scope string, h func(w
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	handle("GET /api/v0/tags", "", locked(func(w http.ResponseWriter, _ *http.Request) {
-		items := slices.Clone(f.tags)
+	handle("GET /api/v0/tags", "", locked(func(w http.ResponseWriter, r *http.Request) {
+		team := f.accountOf(r)
+		if !f.require(w, team, apiclient.TeamRoleViewer) {
+			return
+		}
+		items := slices.DeleteFunc(slices.Clone(f.tags), func(t apiclient.Tag) bool { return f.account[t.Id] != team })
 		slices.SortFunc(items, func(a, b apiclient.Tag) int { return strings.Compare(a.Name, b.Name) })
 		reply(w, http.StatusOK, apiclient.TagList{Items: append([]apiclient.Tag{}, items...)})
 	}))
@@ -100,6 +116,10 @@ func (f *fakeAPI) handleOrganisation(handle func(pattern, scope string, h func(w
 		var body apiclient.CreateTagRequest
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !tagNamePattern.MatchString(body.Name) {
 			reply(w, http.StatusBadRequest, apiclient.Error{Code: "invalid_request", Message: "Invalid name.", Target: ptr("name")})
+			return
+		}
+		team := f.accountOf(r)
+		if !f.require(w, team, apiclient.TeamRoleEditor) {
 			return
 		}
 		if slices.ContainsFunc(f.tags, func(t apiclient.Tag) bool { return t.Name == body.Name }) {
@@ -118,6 +138,7 @@ func (f *fakeAPI) handleOrganisation(handle func(pattern, scope string, h func(w
 			}
 		}
 		f.tags = append(f.tags, t)
+		f.account[t.Id] = team
 		reply(w, http.StatusCreated, t)
 	}))
 	withTag := func(h func(w http.ResponseWriter, r *http.Request, i int)) func(w http.ResponseWriter, r *http.Request) {
@@ -125,6 +146,9 @@ func (f *fakeAPI) handleOrganisation(handle func(pattern, scope string, h func(w
 			i := slices.IndexFunc(f.tags, func(t apiclient.Tag) bool { return t.Id == r.PathValue("tagId") })
 			if i < 0 {
 				reply(w, http.StatusNotFound, notFound)
+				return
+			}
+			if !f.require(w, f.account[f.tags[i].Id], apiclient.TeamRoleEditor) {
 				return
 			}
 			h(w, r, i)
@@ -164,7 +188,7 @@ func (f *fakeAPI) handleOrganisation(handle func(pattern, scope string, h func(w
 			reply(w, http.StatusBadRequest, apiErr("invalid_request", "The request is malformed."))
 			return
 		}
-		if !f.known(body.GroupId, body.TagIds) {
+		if !f.known(siteAccount(s), body.GroupId, body.TagIds) {
 			reply(w, http.StatusNotFound, notFound)
 			return
 		}
@@ -197,14 +221,26 @@ func (f *fakeAPI) organise(w http.ResponseWriter, r *http.Request) {
 	}
 	f.organised = append(f.organised, body)
 	add, remove := deref2(body.AddTagIds), deref2(body.RemoveTagIds)
-	if !f.known(body.GroupId, append(slices.Clone(add), remove...)) {
+	team := f.accountOf(r)
+	need := apiclient.TeamRoleEditor
+	if body.GroupId == nil && body.Ungroup == nil && add == nil && remove == nil {
+		need = apiclient.TeamRoleViewer // pinning alone is the caller's own
+	}
+	if !f.require(w, team, need) {
+		return
+	}
+	if body.Pinned != nil && f.tokenTeam != "" {
+		reply(w, http.StatusForbidden, forbiddenRole)
+		return
+	}
+	if !f.known(team, body.GroupId, append(slices.Clone(add), remove...)) {
 		reply(w, http.StatusNotFound, notFound)
 		return
 	}
 	var sites []*fakeSite
 	for _, n := range body.Sites {
 		s, ok := f.sites[n]
-		if !ok {
+		if !ok || siteAccount(s) != team {
 			reply(w, http.StatusNotFound, notFound)
 			return
 		}
@@ -245,13 +281,14 @@ func (f *fakeAPI) groupIndex(name string) int {
 	return slices.IndexFunc(f.groups, func(g apiclient.Group) bool { return groupKey(g.Name) == groupKey(name) })
 }
 
-// known reports whether the owner has the group (when given) and every tag.
-func (f *fakeAPI) known(groupID *string, tagIDs []string) bool {
-	if groupID != nil && !slices.ContainsFunc(f.groups, func(g apiclient.Group) bool { return g.Id == *groupID }) {
+// known reports whether the account ("" for the owner's) has the group (when
+// given) and every tag.
+func (f *fakeAPI) known(account string, groupID *string, tagIDs []string) bool {
+	if groupID != nil && (f.account[*groupID] != account || !slices.ContainsFunc(f.groups, func(g apiclient.Group) bool { return g.Id == *groupID })) {
 		return false
 	}
 	for _, id := range tagIDs {
-		if !slices.ContainsFunc(f.tags, func(t apiclient.Tag) bool { return t.Id == id }) {
+		if f.account[id] != account || !slices.ContainsFunc(f.tags, func(t apiclient.Tag) bool { return t.Id == id }) {
 			return false
 		}
 	}

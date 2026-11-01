@@ -305,7 +305,9 @@ func (m *mcpServer) call(ctx context.Context, t mcpTool, fn func(ctx context.Con
 }
 
 // forbiddenRecorder notes whether any answer was 403 forbidden: a token
-// without the scope an operation needs.
+// without the scope an operation needs. 403 forbidden_role is not that: the
+// token has the scope but the caller's role in a team does not allow it, and
+// the CLI's own message says so.
 type forbiddenRecorder struct {
 	next http.RoundTripper
 	seen atomic.Bool
@@ -313,10 +315,19 @@ type forbiddenRecorder struct {
 
 func (f *forbiddenRecorder) RoundTrip(r *http.Request) (*http.Response, error) {
 	res, err := f.next.RoundTrip(r)
-	if err == nil && res.StatusCode == http.StatusForbidden {
+	if err != nil || res.StatusCode != http.StatusForbidden {
+		return res, err
+	}
+	body, err := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	res.Body = io.NopCloser(bytes.NewReader(body))
+	if errorCode(body) != "forbidden_role" {
 		f.seen.Store(true)
 	}
-	return res, err
+	return res, nil
 }
 
 // run runs a command with --json and --server added to args.

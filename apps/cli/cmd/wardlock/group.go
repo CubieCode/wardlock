@@ -23,8 +23,9 @@ const groupUsage = "Usage: wardlock group <list|create|rename|delete> [NAME] [NE
 	"  create NAME [--note N]  Create a group\n" +
 	"  rename NAME NEW_NAME    Rename a group; --note changes its note\n" +
 	"  delete NAME             Delete a group; its sites are kept, ungrouped\n\n" +
-	"Names are matched ignoring case. Listing works with any token; the\n" +
-	"others need a token with the manage scope.\n"
+	"Names are matched ignoring case. --team uses that team's groups\n" +
+	"instead of yours. Listing works with any token; the others need a\n" +
+	"token with the manage scope.\n"
 
 func runGroup(ctx context.Context, a *app, args []string) error {
 	global, rest, err := leadingGlobalFlags(args)
@@ -89,10 +90,36 @@ func orgConn(a *app, fs *flag.FlagSet, g *globalFlags, args []string, minArgs, m
 	return c, pos, nil
 }
 
+// orgFlags are the flags of the group and tag commands: the global ones and
+// --team, since a team has its own groups and tags.
+type orgFlags struct {
+	*globalFlags
+	team string
+}
+
+func addOrgFlags(fs *flag.FlagSet) *orgFlags {
+	g := &orgFlags{globalFlags: addGlobalFlags(fs)}
+	fs.StringVar(&g.team, "team", "", "use this team's groups and tags instead of your own, by name or ID")
+	return g
+}
+
+// teamConn is orgConn, then moves to --team's account.
+func teamConn(ctx context.Context, a *app, fs *flag.FlagSet, g *orgFlags, args []string, minArgs, maxArgs int, check func(pos []string) error) (*conn, []string, error) {
+	c, pos, err := orgConn(a, fs, g.globalFlags, args, minArgs, maxArgs, check)
+	if err != nil || g.team == "" {
+		return c, pos, err
+	}
+	t, err := c.findTeam(ctx, g.team)
+	if err != nil {
+		return nil, nil, err
+	}
+	return c.inTeam(t.Id), pos, nil
+}
+
 func groupList(ctx context.Context, a *app, args []string) error {
 	fs := newFlagSet(a, "group list", "Usage: wardlock group list [flags]\n\nLists your groups by name.")
-	g := addGlobalFlags(fs)
-	c, _, err := orgConn(a, fs, g, args, 0, 0, nil)
+	g := addOrgFlags(fs)
+	c, _, err := teamConn(ctx, a, fs, g, args, 0, 0, nil)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}
@@ -126,10 +153,10 @@ func groupCreate(ctx context.Context, a *app, args []string) error {
 	fs := newFlagSet(a, "group create", "Usage: wardlock group create NAME [--note N] [flags]\n\n"+
 		"Creates a group of 1-40 characters, unique among yours ignoring case.\n"+
 		"Needs a token with the manage scope.")
-	g := addGlobalFlags(fs)
+	g := addOrgFlags(fs)
 	note := fs.String("note", "", "a note of up to 200 characters, such as \"Previews for clients\"")
 	var name string
-	c, _, err := orgConn(a, fs, g, args, 1, 1, func(pos []string) (err error) {
+	c, _, err := teamConn(ctx, a, fs, g, args, 1, 1, func(pos []string) (err error) {
 		name, err = checkGroupName(pos[0])
 		return err
 	})
@@ -143,7 +170,7 @@ func groupCreate(ctx context.Context, a *app, args []string) error {
 	if *note != "" {
 		body.Note = note
 	}
-	res, err := c.api.CreateGroupWithResponse(ctx, nil, body, c.auth)
+	res, err := c.api.CreateGroupWithResponse(ctx, &apiclient.CreateGroupParams{Team: c.team}, body, c.auth)
 	if err != nil {
 		return c.unreachable(ctx, err)
 	}
@@ -162,11 +189,11 @@ func groupRename(ctx context.Context, a *app, args []string) error {
 		"Renames the group NAME to NEW_NAME, or changes its note with --note\n"+
 		"(--note '' removes it). Its sites stay in it. Needs a token with the\n"+
 		"manage scope.")
-	g := addGlobalFlags(fs)
+	g := addOrgFlags(fs)
 	note := fs.String("note", "", "the group's new note; '' removes it")
 	var name string
 	body := apiclient.UpdateGroupJSONRequestBody{}
-	c, _, err := orgConn(a, fs, g, args, 1, 2, func(pos []string) (err error) {
+	c, _, err := teamConn(ctx, a, fs, g, args, 1, 2, func(pos []string) (err error) {
 		if name, err = checkGroupName(pos[0]); err != nil {
 			return err
 		}
@@ -220,10 +247,10 @@ func groupDelete(ctx context.Context, a *app, args []string) error {
 		"Deletes the group. Its sites are kept and become ungrouped. Asks you\n"+
 		"to type the group's name first; without a terminal, or with --json,\n"+
 		"pass --yes instead. Needs a token with the manage scope.")
-	g := addGlobalFlags(fs)
+	g := addOrgFlags(fs)
 	yes := fs.Bool("yes", false, "delete without asking")
 	var name string
-	c, _, err := orgConn(a, fs, g, args, 1, 1, func(pos []string) (err error) {
+	c, _, err := teamConn(ctx, a, fs, g, args, 1, 1, func(pos []string) (err error) {
 		if name, err = checkGroupName(pos[0]); err != nil {
 			return err
 		}
