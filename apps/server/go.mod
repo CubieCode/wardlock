@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/caddyserver/certmagic v0.25.6
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/go-jose/go-jose/v4 v4.1.6
+	github.com/go-jose/go-jose/v4 v4.1.8
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/google/uuid v1.6.0
 	github.com/letsencrypt/pebble/v2 v2.10.1
@@ -14,14 +14,14 @@ require (
 	github.com/libdns/libdns v1.1.1
 	github.com/miekg/dns v1.1.73
 	github.com/minio/minio-go/v7 v7.4.1
-	github.com/oapi-codegen/runtime v1.7.0
-	github.com/oschwald/maxminddb-golang/v2 v2.8.0
+	github.com/oapi-codegen/runtime v1.8.0
+	github.com/oschwald/maxminddb-golang/v2 v2.9.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.62.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/text v0.43.0
-	modernc.org/sqlite v1.61.0
+	modernc.org/sqlite v1.61.1
 	wardlock.nz/apiclient v0.0.0-00010101000000-000000000000
 )
 
